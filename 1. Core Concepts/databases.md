@@ -190,19 +190,19 @@ Relationships: (:John)-[:KNOWS]->(:Jane)
 
 ### When to Use SQL
 
-✅ **ACID transactions required** (banking, e-commerce checkout)  
-✅ **Complex queries with JOINs** (reporting, analytics)  
-✅ **Structured, predictable data** (user management, inventory)  
-✅ **Data integrity critical** (financial records)  
-✅ **Moderate scale** (millions of rows, not billions)
+- **ACID transactions required** (banking, e-commerce checkout)  
+- **Complex queries with JOINs** (reporting, analytics)  
+- **Structured, predictable data** (user management, inventory)  
+- **Data integrity critical** (financial records)  
+- **Moderate scale** (millions of rows, not billions)
 
 ### When to Use NoSQL
 
-✅ **Massive scale** (billions of records, petabytes of data)  
-✅ **High write throughput** (logging, time-series, IoT)  
-✅ **Flexible schema** (evolving data models, rapid iteration)  
-✅ **Horizontal scaling needed** (distributed across many nodes)  
-✅ **Availability over consistency** (social media feeds, recommendation engines)
+- **Massive scale** (billions of records, petabytes of data)  
+- **High write throughput** (logging, time-series, IoT)  
+- **Flexible schema** (evolving data models, rapid iteration)  
+- **Horizontal scaling needed** (distributed across many nodes)  
+- **Availability over consistency** (social media feeds, recommendation engines)
 
 ### Hybrid Approach (Polyglot Persistence)
 
@@ -333,8 +333,8 @@ Client → Write to Leader
 Leader → Wait for ALL followers to confirm
 Leader → Acknowledge to client
 ```
-✅ Strong consistency  
-❌ Higher latency (wait for followers)
+- Strong consistency  
+- Higher latency (wait for followers)
 
 **Asynchronous Replication:**
 ```
@@ -342,8 +342,8 @@ Client → Write to Leader
 Leader → Acknowledge immediately
 Leader → Replicate to followers (background)
 ```
-✅ Low latency  
-❌ Risk of data loss if leader fails before replication
+- Low latency  
+- Risk of data loss if leader fails before replication
 
 **Use Cases:**
 - PostgreSQL, MySQL, MongoDB (default)
@@ -465,10 +465,10 @@ Client → Read from 2 nodes → Get latest value
 
 | Isolation Level | Dirty Read? | Non-Repeatable Read? | Phantom Read? | Perf |
 |-----------------|-------------|----------------------|---------------|------|
-| **Read Uncommitted** | ✅ Yes | ✅ Yes | ✅ Yes | 🚀 Fastest |
-| **Read Committed** | ❌ No | ✅ Yes | ✅ Yes | ⚡ Fast |
-| **Repeatable Read** | ❌ No | ❌ No | ✅ Yes (Usually) | 🐢 Slow |
-| **Serializable** | ❌ No | ❌ No | ❌ No | 🐌 Slowest |
+| **Read Uncommitted** | Yes | Yes | Yes | Fastest |
+| **Read Committed** | No | Yes | Yes | Fast |
+| **Repeatable Read** | No | No | Yes (Usually) | Slow |
+| **Serializable** | No | No | No | Slowest |
 
 1.  **Dirty Read**: Reading uncommitted data (that might be rolled back).
 2.  **Non-Repeatable Read**: Re-reading a row gets different data (someone updated it).

@@ -24,11 +24,11 @@
 ### Strong Consistency (CP in CAP)
 ```
 Use when:
-✅ Financial transactions (bank transfers)
-✅ Inventory management (prevent overselling)
-✅ Booking systems (seat/hotel reservations)
-✅ Auction systems (highest bidder must be accurate)
-✅ Distributed locks
+- Financial transactions (bank transfers)
+- Inventory management (prevent overselling)
+- Booking systems (seat/hotel reservations)
+- Auction systems (highest bidder must be accurate)
+- Distributed locks
 
 Technologies:
 - Google Spanner
@@ -40,11 +40,11 @@ Technologies:
 ### Eventual Consistency (AP in CAP)
 ```
 Use when:
-✅ Social media feeds (stale OK)
-✅ Product catalogs (updates not urgent)
-✅ DNS (propagation delay acceptable)
-✅ Analytics dashboards
-✅ User profiles (own writes visible via session consistency)
+- Social media feeds (stale OK)
+- Product catalogs (updates not urgent)
+- DNS (propagation delay acceptable)
+- Analytics dashboards
+- User profiles (own writes visible via session consistency)
 
 Technologies:
 - Cassandra
@@ -76,10 +76,10 @@ Technologies:
 ### Optimize for Latency
 ```
 Use when:
-✅ User-facing APIs (web, mobile)
-✅ Real-time systems (gaming, trading)
-✅ Search engines
-✅ Payment processing
+- User-facing APIs (web, mobile)
+- Real-time systems (gaming, trading)
+- Search engines
+- Payment processing
 
 Techniques:
 - In-memory caching (Redis, Memcached)
@@ -91,10 +91,10 @@ Techniques:
 ### Optimize for Throughput
 ```
 Use when:
-✅ Batch processing
-✅ Log aggregation
-✅ Video transcoding
-✅ Data analytics pipelines
+- Batch processing
+- Log aggregation
+- Video transcoding
+- Data analytics pipelines
 
 Techniques:
 - Message queues (decouple producers/consumers)
@@ -134,11 +134,11 @@ Video Upload System:
 ### SQL: Use When
 
 ```
-✅ Structured data (user accounts, orders)
-✅ Complex relationships (many-to-many)
-✅ ACID transactions required
-✅ Reporting & analytics (complex queries)
-✅ Moderate scale (<1M QPS)
+- Structured data (user accounts, orders)
+- Complex relationships (many-to-many)
+- ACID transactions required
+- Reporting & analytics (complex queries)
+- Moderate scale (<1M QPS)
 
 Databases:
 - PostgreSQL: Advanced features, full-text search, JSONB
@@ -149,11 +149,11 @@ Databases:
 ### NoSQL: Use When
 
 ```
-✅ Massive scale (>1M QPS, billions of records)
-✅ Flexible/evolving schema
-✅ High write throughput (logs, events, IoT)
-✅ Key-value lookups (cache, sessions)
-✅ Graph relationships (social networks)
+- Massive scale (>1M QPS, billions of records)
+- Flexible/evolving schema
+- High write throughput (logs, events, IoT)
+- Key-value lookups (cache, sessions)
+- Graph relationships (social networks)
 
 Databases:
 - DynamoDB: Key-value, managed, predictable latency
@@ -182,9 +182,9 @@ E-commerce Example:
 
 ```
 Use when:
-✅ User needs immediate response
-✅ Simple, fast operations (<100ms)
-✅ Critical path operations
+- User needs immediate response
+- Simple, fast operations (<100ms)
+- Critical path operations
 
 Example:
 User → Login Request → Verify Password → Return JWT
@@ -198,9 +198,9 @@ User → Login Request → Verify Password → Return JWT
 
 ```
 Use when:
-✅ Long-running operations (>1s)
-✅ Non-critical path
-✅ Can tolerate eventual completion
+- Long-running operations (>1s)
+- Non-critical path
+- Can tolerate eventual completion
 
 Example:
 User → Upload Video → Queue Job → Return "Processing"
@@ -242,13 +242,13 @@ Examples:
 - Mobile push notifications
 
 Pros:
-✅ Real-time updates
-✅ Low latency (immediate)
+- Real-time updates
+- Low latency (immediate)
 
 Cons:
-❌ Persistent connections (resource intensive)
-❌ Complex scaling (stateful)
-❌ Client must be online
+- Persistent connections (resource intensive)
+- Complex scaling (stateful)
+- Client must be online
 
 Use when:
 - Real-time chat
@@ -267,13 +267,13 @@ Examples:
 - Polling (check for updates every N seconds)
 
 Pros:
-✅ Stateless, easy to scale
-✅ Works with offline clients
-✅ Simple load balancing
+- Stateless, easy to scale
+- Works with offline clients
+- Simple load balancing
 
 Cons:
-❌ Higher latency (polling interval)
-❌ Wasted requests (polling when no updates)
+- Higher latency (polling interval)
+- Wasted requests (polling when no updates)
 
 Use when:
 - Email inbox (check every 5 min)
@@ -290,12 +290,12 @@ Server → Client: New data OR timeout
 Client: Immediately reconnects
 
 Pros:
-✅ Lower latency than regular polling
-✅ Stateless (can load balance)
+- Lower latency than regular polling
+- Stateless (can load balance)
 
 Cons:
-❌ Still wastes connections
-❌ Not as real-time as WebSockets
+- Still wastes connections
+- Not as real-time as WebSockets
 
 Use when:
 - Moderate real-time needs
@@ -315,14 +315,14 @@ Add more resources to single machine:
 - Faster disk (SSD → NVMe)
 
 Pros:
-✅ Simple (no code changes)
-✅ No distributed system complexity
+- Simple (no code changes)
+- No distributed system complexity
 
 Cons:
-❌ Physical limits (max specs)
-❌ Single point of failure
-❌ Expensive (diminishing returns)
-❌  Downtime during upgrade
+- Physical limits (max specs)
+- Single point of failure
+- Expensive (diminishing returns)
+-  Downtime during upgrade
 
 Use when:
 - Early stage, low traffic
@@ -338,14 +338,14 @@ Add more machines:
 - Database sharding →  Multiple DB nodes
 
 Pros:
-✅ No upper limit (add infinite nodes)
-✅ Fault tolerant (no single point of failure)
-✅ Cost effective (commodity hardware)
+- No upper limit (add infinite nodes)
+- Fault tolerant (no single point of failure)
+- Cost effective (commodity hardware)
 
 Cons:
-❌ Complexity (distributed systems)
-❌ Data consistency challenges
-❌ Requires stateless design
+- Complexity (distributed systems)
+- Data consistency challenges
+- Requires stateless design
 
 Use when:
 - High traffic (>1M requests/day)
@@ -393,13 +393,13 @@ product_id | name   | price
 501        | Laptop | $1000
 
 Pros:
-✅ No redundancy (single source of truth)
-✅ Easy updates (change once)
-✅ Smaller storage
+- No redundancy (single source of truth)
+- Easy updates (change once)
+- Smaller storage
 
 Cons:
-❌ Requires JOINs (slower reads)
-❌ Complex queries
+- Requires JOINs (slower reads)
+- Complex queries
 
 Use when:
 - OLTP systems (many writes)
@@ -432,13 +432,13 @@ Orders Collection (MongoDB):
 Single document, no JOINs needed!
 
 Pros:
-✅ Faster reads (no JOINs)
-✅ Better for read-heavy workloads
+- Faster reads (no JOINs)
+- Better for read-heavy workloads
 
 Cons:
-❌ Data redundancy
-❌ Complex updates (update multiple places)
-❌ More storage
+- Data redundancy
+- Complex updates (update multiple places)
+- More storage
 
 Use when:
 - Read-heavy systems
@@ -469,12 +469,12 @@ def get_user(user_id):
     return user
 
 Pros:
-✅ Only cache what's needed
-✅ Cache failures don't break app
+- Only cache what's needed
+- Cache failures don't break app
 
 Cons:
-❌ Cache miss penalty (extra query)
-❌ Stale data possible
+- Cache miss penalty (extra query)
+- Stale data possible
 
 Use when:
 - Read-heavy workloads
@@ -491,12 +491,12 @@ def update_user(user_id, data):
     cache.set(user_id, data)
 
 Pros:
-✅ Cache always fresh
-✅ No stale reads
+- Cache always fresh
+- No stale reads
 
 Cons:
-❌ Higher write latency
-❌ Cache populated even if not read
+- Higher write latency
+- Cache populated even if not read
 
 Use when:
 - Read/write ratio high
@@ -513,12 +513,12 @@ def update_user(user_id, data):
     queue.enqueue("update_db", user_id, data)  # Async
 
 Pros:
-✅ Low write latency
-✅ Batch writes to DB
+- Low write latency
+- Batch writes to DB
 
 Cons:
-❌ Data loss risk (cache failure before DB write)
-❌ Complex
+- Data loss risk (cache failure before DB write)
+- Complex
 
 Use when:
 - Write-heavy workloads
@@ -532,11 +532,11 @@ Use when:
 ### When to Use Message Queues
 
 ```
-✅ Decouple producers from consumers
-✅ Handle traffic spikes (buffering)
-✅ Async processing
-✅ Retry failed operations
-✅ Fan-out (one message → many consumers)
+- Decouple producers from consumers
+- Handle traffic spikes (buffering)
+- Async processing
+- Retry failed operations
+- Fan-out (one message → many consumers)
 
 Examples:
 -  Order Processing: User creates order → Queue → Payment service, Email service, Inventory service

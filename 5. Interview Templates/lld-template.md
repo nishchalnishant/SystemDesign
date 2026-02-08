@@ -18,10 +18,10 @@
 ## Phase 1: Requirements Gathering (0-5 min)
 
 ### Goals
-- ✅ Understand the problem scope
-- ✅ Identify actors (users, systems)
-- ✅ List core features
-- ❌ **Don't**: Jump into classes before understanding requirements
+- Understand the problem scope
+- Identify actors (users, systems)
+- List core features
+- **Don't**: Jump into classes before understanding requirements
 
 ###Template Questions
 
@@ -41,7 +41,7 @@ Actors:
 - Admin (configures spots)
 
 Core Features:
-✅ Must-have:
+Must-have:
   - Park vehicle (car, bike, truck)
   - Calculate fee based on time
   - Find available spot
@@ -454,22 +454,22 @@ public synchronized Ticket parkVehicle(Vehicle vehicle) {
 ## SOLID Principles Checklist
 
 **S - Single Responsibility**
-- ✅ ParkingSpot only manages spot state
-- ✅ Ticket only tracks parking session
-- ✅ PricingStrategy only calculates fees
+- ParkingSpot only manages spot state
+- Ticket only tracks parking session
+- PricingStrategy only calculates fees
 
 **O - Open/Closed**
-- ✅ Can add new VehicleTypes without modifying ParkingSpot
-- ✅ Can add new PricingStrategies without modifying Ticket
+- Can add new VehicleTypes without modifying ParkingSpot
+- Can add new PricingStrategies without modifying Ticket
 
 **L - Liskov Substitution**
-- ✅ Car, Bike, Truck can replace Vehicle without breaking code
+- Car, Bike, Truck can replace Vehicle without breaking code
 
 **I - Interface Segregation**
-- ✅ PricingStrategy interface has only one method (focused)
+- PricingStrategy interface has only one method (focused)
 
 **D - Dependency Inversion**
-- ✅ ParkingLot depends on PricingStrategy interface, not concrete implementations
+- ParkingLot depends on PricingStrategy interface, not concrete implementations
 
 ---
 
@@ -491,17 +491,17 @@ public synchronized Ticket parkVehicle(Vehicle vehicle) {
 ## Interview Tips
 
 **Do's:**
-- ✅ Ask clarifying questions
-- ✅ Start with simple classes, then refine
-- ✅ Explain design pattern choices
-- ✅ Code at least 2-3 key methods
-- ✅ Use meaningful names (not FooManager, BarService)
+- Ask clarifying questions
+- Start with simple classes, then refine
+- Explain design pattern choices
+- Code at least 2-3 key methods
+- Use meaningful names (not FooManager, BarService)
 
 **Don'ts:**
-- ❌ Don't code before designing classes
-- ❌ Don't over-engineer (avoid 10 patterns for simple problem)
-- ❌ Don't forget edge cases (null checks, concurrency)
-- ❌ Don't use getters/setters for everything (violates encapsulation)
+- Don't code before designing classes
+- Don't over-engineer (avoid 10 patterns for simple problem)
+- Don't forget edge cases (null checks, concurrency)
+- Don't use getters/setters for everything (violates encapsulation)
 
 **Example Answer Template:**
 > "I'll design a parking lot with classes for ParkingLot, ParkingSpot, Vehicle (with Car/Bike/Truck subclasses), and Ticket. I'll use **Factory pattern** to create vehicles, **Strategy pattern** for flexible pricing, and **Observer pattern** to notify when spots become available. The key methods are parkVehicle() which finds an available spot atomically, and calculateFee() which computes cost based on the pricing strategy."

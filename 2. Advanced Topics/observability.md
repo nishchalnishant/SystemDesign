@@ -99,11 +99,11 @@ FATAL: Critical failure (system crash)
 ```
 
 **Best Practices:**
-- ✅ Use structured logging (JSON) for easy parsing
-- ✅ Include `trace_id` for correlation
-- ✅ Log user actions, not just errors
-- ❌ Don't log sensitive data (passwords, PII)
-- ❌ Don't log too verbosely (log fatigue)
+- Use structured logging (JSON) for easy parsing
+- Include `trace_id` for correlation
+- Log user actions, not just errors
+- Don't log sensitive data (passwords, PII)
+- Don't log too verbosely (log fatigue)
 
 **Tools:** ELK Stack (Elasticsearch, Logstash, Kibana), Splunk, CloudWatch Logs
 
@@ -369,13 +369,13 @@ else:
 
 ### Good Alert vs Bad Alert
 
-**❌ Bad Alert:**
+**Bad Alert:**
 ```
 ALERT: Disk usage > 50%
 → Not actionable, happens daily, ignored
 ```
 
-**✅ Good Alert:**
+**Good Alert:**
 ```
 ALERT: Disk usage > 90%, will be full in 2 hours
 → Actionable, urgent, specific action needed

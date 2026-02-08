@@ -20,10 +20,10 @@
 ## Phase 1: Requirements Gathering (0-10 min)
 
 ### Goals
-- ✅ Align on scope with interviewer
-- ✅ Identify constraints and scale
-- ✅ Clarify assumptions
-- ❌ **Don't**: Jump into design before understanding requirements
+- Align on scope with interviewer
+- Identify constraints and scale
+- Clarify assumptions
+- **Don't**: Jump into design before understanding requirements
 
 ### Functional Requirements
 
@@ -37,7 +37,7 @@
 
 **Example: URL Shortener**
 ```
-✅ Must-have:
+**Must-have:**
   - Generate short URL from long URL
   - Redirect short URL to long URL
   - URLs never expire
@@ -92,9 +92,9 @@ URL Shortener:
 ## Phase 2: Capacity Estimation (10-15 min)
 
 ### Goals
-- ✅ Estimate storage, bandwidth, QPS
-- ✅ Demonstrate quantitative thinking
-- ❌ **Don't**: Spend too long on precise calculations
+- Estimate storage, bandwidth, QPS
+- Demonstrate quantitative thinking
+- **Don't**: Spend too long on precise calculations
 
 ### Key Numbers to Remember
 

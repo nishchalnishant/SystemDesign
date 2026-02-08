@@ -5,22 +5,22 @@
 
 ---
 
-## 🎯 About This Repository
+## About This Repository
 
 This repository is optimized for **SDE-3 level interview preparation** (Senior/Staff Software Engineer). It consolidates system design concepts, eliminates duplicate content, and provides in-depth insights with production-level trade-offs.
 
 ### What's New (v2.0)?
 
-✅ **Consolidated Content**: Merged duplicate topics from multiple sources  
-✅ **Advanced Topics**: Distributed systems, consensus protocols, consistency models  
-✅ **Interview Templates**: Step-by-step HLD/LLD interview frameworks  
-✅ **Cheat Sheets**: Quick reference for capacity estimation & trade-offs  
-✅ **Enhanced Problems**: All 27 HLD problems with capacity estimation & scaling strategies  
-✅ **Production Focus**: Real-world examples, war stories, and operational insights
+- **Consolidated Content**: Merged duplicate topics from multiple sources  
+- **Advanced Topics**: Distributed systems, consensus protocols, consistency models  
+- **Interview Templates**: Step-by-step HLD/LLD interview frameworks  
+- **Cheat Sheets**: Quick reference for capacity estimation & trade-offs  
+- **Enhanced Problems**: All 27 HLD problems with capacity estimation & scaling strategies  
+- **Production Focus**: Real-world examples, war stories, and operational insights
 
 ---
 
-## 📚 Repository Structure
+## Repository Structure
 
 ```
 SystemDesign/
@@ -64,7 +64,7 @@ SystemDesign/
 
 ---
 
-## 🚀 Learning Paths
+## Learning Paths
 
 ### Path 1: Beginner to Intermediate (4-6 weeks)
 
@@ -164,7 +164,7 @@ SystemDesign/
 
 ---
 
-## 🎯 Interview Preparation Checklist
+## Interview Preparation Checklist
 
 ### Before the Interview
 
@@ -206,16 +206,16 @@ SystemDesign/
 
 ---
 
-## 💡 Key Principles for SDE-3 Interviews
+## Key Principles for SDE-3 Interviews
 
 ### 1. Always Discuss Trade-offs
 
 Don't just say "I'd use Redis for caching." Say:
 > "I'd use Redis for caching because:
-> - ✅ Sub-millisecond latency (critical for our 100ms SLA)
-> - ✅ Rich data structures (sorted sets for leaderboards)
-> - ❌ Limited storage (use LRU eviction)
-> - ❌ Not durable (persist to DB as source of truth)"
+> - Sub-millisecond latency (critical for our 100ms SLA)
+> - Rich data structures (sorted sets for leaderboards)
+> - Limited storage (use LRU eviction)
+> - Not durable (persist to DB as source of truth)"
 
 ### 2. Think at Scale
 
@@ -238,7 +238,7 @@ Don't just say "I'd use Redis for caching." Say:
 
 ---
 
-## 📖 Recommended Study Order
+## Recommended Study Order
 
 1. **Start here**: `5. Interview Templates/hld-template.md`
 2. **Learn basics**: `1. Core Concepts/fundamentals.md`
@@ -250,7 +250,7 @@ Don't just say "I'd use Redis for caching." Say:
 
 ---
 
-## 🔄 Migration from Old Structure
+## Migration from Old Structure
 
 If you're familiar with the old repository structure:
 
@@ -276,7 +276,7 @@ If you're familiar with the old repository structure:
 
 ---
 
-## 🛠️ How to Use This Repository
+## How to Use This Repository
 
 ### For Interview Preparation
 
@@ -303,7 +303,7 @@ Follow the learning paths above based on your current level.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 This repository is under active development. Contributions welcome!
 
@@ -318,7 +318,7 @@ This repository is under active development. Contributions welcome!
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
 ### Books
 - "Designing Data-Intensive Applications" by Martin Kleppmann
@@ -336,14 +336,14 @@ This repository is under active development. Contributions welcome!
 
 ---
 
-## 📝 License
+## License
 
 MIT License - Feel free to use this for your interview preparation and share with others!
 
 ---
 
-## ⭐ Star This Repository
+## Star This Repository
 
 If you find this helpful, please star ⭐ the repository and share with others preparing for senior-level interviews!
 
-**Good luck with your interviews! 🚀**
+**Good luck with your interviews!**
