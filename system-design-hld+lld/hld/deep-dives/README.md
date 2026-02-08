@@ -1,6 +1,0 @@
-# Deep dives
-
-Kafka
-
-Redis
-
