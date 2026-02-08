@@ -31,47 +31,63 @@ Design a rate limiter that restricts the number of requests a user can make to a
 
 ### 1. Fixed Window Counter
 
-```python
-# Simple but has burst problem at window boundaries
-class FixedWindowRateLimiter:
-    def __init__(self, max_requests, window_seconds):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.redis = Redis()
+```java
+// Simple but has burst problem at window boundaries
+public class FixedWindowRateLimiter {
+    private int maxRequests;
+    private int windowSeconds;
+    private RedisClient redis;
     
-    def allow_request(self, user_id):
-        key = f"rate_limit:{user_id}:{int(time.time() / self.window_seconds)}"
-        count = self.redis.incr(key)
+    public FixedWindowRateLimiter(int maxRequests, int windowSeconds) {
+        this.maxRequests = maxRequests;
+        this.windowSeconds = windowSeconds;
+        this.redis = new RedisClient();
+    }
+    
+    public boolean allowRequest(String userId) {
+        long currentWindow = System.currentTimeMillis() / 1000 / windowSeconds;
+        String key = "rate_limit:" + userId + ":" + currentWindow;
+        long count = redis.incr(key);
         
-        if count == 1:
-            self.redis.expire(key, self.window_seconds)
+        if (count == 1) {
+            redis.expire(key, windowSeconds);
+        }
         
-        return count <= self.max_requests
+        return count <= maxRequests;
+    }
+}
 ```
 
 **Problem**: Burst at window boundaries (20 requests in 1 second if 10 at end + 10 at start)
 
 ### 2. Sliding Window Log
 
-```python
-class SlidingWindowLogRateLimiter:
-    def allow_request(self, user_id):
-        key = f"rate_limit:{user_id}"
-        now = time.time()
-        window_start = now - self.window_seconds
+```java
+public class SlidingWindowLogRateLimiter {
+    private int maxRequests;
+    private int windowSeconds;
+    private RedisClient redis;
+    
+    public boolean allowRequest(String userId) {
+        String key = "rate_limit:" + userId;
+        long now = System.currentTimeMillis() / 1000;
+        long windowStart = now - windowSeconds;
         
-        # Remove old requests
-        self.redis.zremrangebyscore(key, 0, window_start)
+        // Remove old requests
+        redis.zremrangebyscore(key, 0, windowStart);
         
-        # Count requests in window
-        count = self.redis.zcard(key)
+        // Count requests in window
+        long count = redis.zcard(key);
         
-        if count < self.max_requests:
-            self.redis.zadd(key, {str(now): now})
-            self.redis.expire(key, self.window_seconds)
-            return True
+        if (count < maxRequests) {
+            redis.zadd(key, now, String.valueOf(now));
+            redis.expire(key, windowSeconds);
+            return true;
+        }
         
-        return False
+        return false;
+    }
+}
 ```
 
 **Pros**: Accurate  
@@ -79,31 +95,38 @@ class SlidingWindowLogRateLimiter:
 
 ### 3. Token Bucket (Most Common)
 
-```python
-class TokenBucketRateLimiter:
-    def allow_request(self, user_id):
-        key = f"rate_limit:{user_id}"
-        bucket = self.redis.hgetall(key)
+```java
+public class TokenBucketRateLimiter {
+    private int maxRequests;
+    private int windowSeconds;
+    private RedisClient redis;
+    
+    public boolean allowRequest(String userId) {
+        String key = "rate_limit:" + userId;
+        Map<String, String> bucket = redis.hgetall(key);
         
-        now = time.time()
-        last_refill = float(bucket.get('last_refill', now))
-        tokens = float(bucket.get('tokens', self.max_requests))
+        long now = System.currentTimeMillis() / 1000;
+        double lastRefill = Double.parseDouble(bucket.getOrDefault("last_refill", String.valueOf(now)));
+        double tokens = Double.parseDouble(bucket.getOrDefault("tokens", String.valueOf(maxRequests)));
         
-        # Refill tokens
-        elapsed = now - last_refill
-        tokens_to_add = elapsed * (self.max_requests / self.window_seconds)
-        tokens = min(self.max_requests, tokens + tokens_to_add)
+        // Refill tokens
+        double elapsed = now - lastRefill;
+        double tokensToAdd = elapsed * ((double) maxRequests / windowSeconds);
+        tokens = Math.min(maxRequests, tokens + tokensToAdd);
         
-        if tokens >= 1:
-            tokens -= 1
-            self.redis.hset(key, mapping={
-                'tokens': tokens,
-                'last_refill': now
-            })
-            self.redis.expire(key, self.window_seconds)
-            return True
+        if (tokens >= 1) {
+            tokens -= 1;
+            Map<String, String> values = new HashMap<>();
+            values.put("tokens", String.valueOf(tokens));
+            values.put("last_refill", String.valueOf(now));
+            redis.hset(key, values);
+            redis.expire(key, windowSeconds);
+            return true;
+        }
         
-        return False
+        return false;
+    }
+}
 ```
 
 **Pros**: Smooth rate limiting, allows bursts  

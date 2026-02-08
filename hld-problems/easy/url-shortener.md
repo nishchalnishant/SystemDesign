@@ -336,20 +336,26 @@ GSI: user_id-created_at-index
 
 **Option A: Hash-based (MD5/SHA + Base62)**
 
-```python
-import hashlib
-import base62
+```java
+import java.security.MessageDigest;
+import java.util.Random;
 
-def generate_short_code(long_url):
-    hash_val = hashlib.md5(long_url.encode()).hexdigest()  # 32 hex chars
-    decimal = int(hash_val[:8], 16)  # Take first 8 hex chars
-    short_code = base62.encode(decimal)[:7]  # Convert to base62, take 7 chars
-    return short_code
+public String generateShortCode(String longUrl) {
+    MessageDigest md = MessageDigest.getInstance("MD5");
+    byte[] hashBytes = md.digest(longUrl.getBytes());
+    String hashHex = bytesToHex(hashBytes);  // 32 hex chars
+    
+    long decimal = Long.parseLong(hashHex.substring(0, 8), 16);
+    String shortCode = Base62.encode(decimal).substring(0, 7);
+    
+    return shortCode;
+}
 
-# Collision handling
-while db.exists(short_code):
-    long_url += str(random.randint(0, 999))  # Append random to long_url
-    short_code = generate_short_code(long_url)
+// Collision handling
+while (db.exists(shortCode)) {
+    longUrl += String.valueOf(new Random().nextInt(1000));
+    shortCode = generateShortCode(longUrl);
+}
 ```
 
 **Pros:** Deterministic (same URL → same short code)  
@@ -359,15 +365,15 @@ while db.exists(short_code):
 
 **Option B: Auto-Incrementing Counter + Base62 (Recommended)**
 
-```python
-import base62
+```java
+public String generateShortCode(long counter) {
+    String encoded = Base62.encode(counter);
+    return String.format("%7s", encoded).replace(' ', '0');  // Pad to 7 chars
+}
 
-def generate_short_code(counter):
-    return base62.encode(counter).zfill(7)  # Pad to 7 chars
-
-# Usage
-counter = db.increment_counter()  # Distributed counter (e.g., PostgreSQL sequence)
-short_code = generate_short_code(counter)
+// Usage
+long counter = db.incrementCounter();  // Distributed counter (e.g., PostgreSQL sequence)
+String shortCode = generateShortCode(counter);
 ```
 
 **Pros:** Guaranteed unique, no collisions  
@@ -387,9 +393,9 @@ Snowflake ID (64 bits):
 Generates unique IDs across distributed servers
 ```
 
-```python
-snowflake_id = id_generator.get_id()  # e.g., 123456789012345
-short_code = base62.encode(snowflake_id)[:7]
+```java
+long snowflakeId = idGenerator.getId();  // e.g., 123456789012345L
+String shortCode = Base62.encode(snowflakeId).substring(0, 7);
 ```
 
 **Pros:** Distributed, no coordination, time-ordered  
@@ -427,20 +433,25 @@ result = db.query("SELECT * FROM urls WHERE short_code = ?", short_code)
 
 **Cache-Aside (Lazy Loading):**
 
-```python
-def get_long_url(short_code):
-    # 1. Check cache
-    long_url = redis.get(f"url:{short_code}")
-    if long_url:
-        return long_url  # Cache HIT
+```java
+public String getLongUrl(String shortCode) {
+    // 1. Check cache
+    String longUrl = redis.get("url:" + shortCode);
+    if (longUrl != null) {
+        return longUrl;  // Cache HIT
+    }
     
-    # 2. Cache MISS → Query DB
-    long_url = db.query("SELECT long_url FROM urls WHERE short_code = ?", short_code)
+    // 2. Cache MISS → Query DB
+    longUrl = db.query(
+        "SELECT long_url FROM urls WHERE short_code = ?", 
+        shortCode
+    );
     
-    # 3. Update cache
-    redis.set(f"url:{short_code}", long_url, ex=86400)  # TTL: 24 hours
+    // 3. Update cache
+    redis.setex("url:" + shortCode, 86400, longUrl);  // TTL: 24 hours
     
-    return long_url
+    return longUrl;
+}
 ```
 
 **Cache Eviction:** LRU (Least Recently Used)  
@@ -452,21 +463,23 @@ def get_long_url(short_code):
 
 **Token Bucket Algorithm (per user/IP):**
 
-```python
-def create_url(user_id, long_url):
-    key = f"rate_limit:{user_id}"
-    tokens = redis.get(key) or 10  # 10 tokens initially
+```java
+public void createUrl(String userId, String longUrl) {
+    String key = "rate_limit:" + userId;
+    Integer tokens = Integer.parseInt(redis.get(key) != null ? redis.get(key) : "10");  // 10 tokens initially
     
-    if tokens <= 0:
-        raise RateLimitExceeded("Try again in 1 minute")
+    if (tokens <= 0) {
+        throw new RateLimitExceededException("Try again in 1 minute");
+    }
     
-    # Deduct token
-    redis.decr(key)
-    redis.expire(key, 60)  # Refill after 60 seconds
+    // Deduct token
+    redis.decr(key);
+    redis.expire(key, 60);  // Refill after  60 seconds
     
-    # Proceed with URL creation
-    short_code = generate_short_code(...)
-    db.insert(short_code, long_url, user_id)
+    // Proceed with URL creation
+    String shortCode = generateShortCode(...);
+    db.insert(shortCode, longUrl, userId);
+}
 ```
 
 **Limits:**
