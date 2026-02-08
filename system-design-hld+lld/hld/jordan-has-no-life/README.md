@@ -1,2 +1,0 @@
-# Jordan has no life
-
