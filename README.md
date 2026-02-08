@@ -24,39 +24,39 @@ This repository is optimized for **SDE-3 level interview preparation** (Senior/S
 
 ```
 SystemDesign/
-├── 1. Core Concepts/                  # Fundamental building blocks
-│   ├── fund amentals.md                # Complete basics (networking, protocols, caching, etc.)
+├── core-concepts/                     # Fundamental building blocks
+│   ├── fundamentals.md                # Complete basics (networking, protocols, caching, etc.)
 │   ├── databases.md                    # SQL vs NoSQL, ACID, CAP, replication, sharding
 │   ├── caching-cdn.md
 │   ├── networking.md
 │   └── security.md
 │
-├── 2. Advanced Topics/                 # SDE-3 level deep dives
+├── advanced-topics/                    # SDE-3 level deep dives
 │   ├── distributed-systems.md          # Consistency models, consensus, time & ordering
 │   ├── consensus-protocols.md          # Raft, Paxos, Zab
 │   ├── distributed-transactions.md     # 2PC, Saga, Outbox patterns
 │   ├── observability.md                # Metrics, tracing, SLI/SLO/SLA
 │   └── chaos-engineering.md
 │
-├── 3. HLD Interview Problems/          # 27 enhanced system design problems
+├── hld-problems/                       # 27 enhanced system design problems
 │   ├── README.md                       # Problem catalog & difficulty ratings
 │   ├── easy/                           # URL Shortener, Pastebin, etc.
 │   ├── medium/                         # Twitter, Instagram, etc.
 │   └── hard/                           # Uber, Netflix, Distributed Message Queue
 │
-├── 4. LLD Interview Problems/          # Low-level design & patterns
+├── lld-problems/                       # Low-level design & patterns
 │   ├── design-patterns/
 │   ├── SOLID-principles/
 │   ├── concurrency/
 │   └── problems/
 │
-├── 5. Interview Templates/             # Frameworks for interviews
+├── interview-templates/                # Frameworks for interviews
 │   ├── hld-template.md                 # 45-60 min HLD interview guide
 │   ├── lld-template.md                 # LLD approach checklist
 │   ├── capacity-estimation.md          # QPS, storage, bandwidth calculations
 │   └── trade-offs-cheat-sheet.md       # SQL vs NoSQL, sync vs async, etc.
 │
-└── 6. Reference/                       # Quick reference materials
+└── reference/                          # Quick reference materials
     ├── numbers-to-know.md              # Latency, throughput, cost estimates
     ├── ml-system-design.md
     └── book-summaries/
@@ -71,31 +71,31 @@ SystemDesign/
 **Goal**: Build strong foundation in system design concepts
 
 **Week 1-2: Core Concepts**
-- [ ] Read `1. Core Concepts/fundamentals.md`
+- [ ] Read `core-concepts/fundamentals.md`
   - Networking: IP, DNS, TCP/UDP, HTTP/HTTPS
   - Load balancing, caching, CDN
   - Availability, scalability, reliability
-- [ ] Read `1. Core Concepts/databases.md`
+- [ ] Read `core-concepts/databases.md`
   - SQL vs NoSQL decision matrix
   - ACID vs BASE
   - CAP theorem
 
 **Week 3-4: Practice Easy Problems**
-- [ ] URL Shortener (`3. HLD Interview Problems/easy/`)
+- [ ] URL Shortener (`hld-problems/easy/`)
 - [ ] Pastebin
 - [ ] Key-Value Store
-- Use `5. Interview Templates/hld-template.md` for structured approach
+- Use `interview-templates/hld-template.md` for structured approach
 
 **Week 5-6: Intermediate Concepts**
-- [ ] Read `1. Core Concepts/caching-cdn.md`
+- [ ] Read `core-concepts/caching-cdn.md`
 - [ ] Practice medium problems:
   - Twitter Timeline
   - Instagram
   - Notification Service
 
 **Resources:**
-- `5. Interview Templates/capacity-estimation.md` for back-of-envelope calculations
-- `5. Interview Templates/trade-offs-cheat-sheet.md` for decision-making
+- `interview-templates/capacity-estimation.md` for back-of-envelope calculations
+- `interview-templates/trade-offs-cheat-sheet.md` for decision-making
 
 ---
 
@@ -104,21 +104,21 @@ SystemDesign/
 **Goal**: Master advanced topics and complex system design
 
 **Week 1-2: Master Core Concepts**
-- [ ] Review all files in `1. Core Concepts/`
+- [ ] Review all files in `core-concepts/`
 - [ ] Focus on trade-offs and production scenarios
 
 **Week 3-4: Advanced Distributed Systems**
-- [ ] `2. Advanced Topics/distributed-systems.md`
+- [ ] `advanced-topics/distributed-systems.md`
   - Consistency models (strong, eventual, causal)
   - Lamport/Vector clocks
   - CRDTs, conflict resolution
-- [ ] `2. Advanced Topics/consensus-protocols.md`
+- [ ] `advanced-topics/consensus-protocols.md`
   - Raft consensus (step-by-step)
   - Paxos algorithm
   - When to use each
 
 **Week 5-6: Distributed Transactions & Patterns**
-- [ ] `2. Advanced Topics/distributed-transactions.md`
+- [ ] `advanced-topics/distributed-transactions.md`
   - Two-Phase Commit (2PC)
   - Saga pattern (choreography vs orchestration)
   - Outbox pattern
@@ -129,7 +129,7 @@ SystemDesign/
 
 **Week 7-8: Mock Interviews & Refinement**
 - [ ] Practice all 27 HLD problems
-- [ ] Use `5. Interview Templates/hld-template.md` for every problem
+- [ ] Use `interview-templates/hld-template.md` for every problem
 - [ ] Time yourself (45-60 min per problem)
 - [ ] Focus on:
   - Capacity estimation (first 15 min)
@@ -138,10 +138,10 @@ SystemDesign/
   - Failure scenarios
 
 **Key Files for SDE-3:**
-1. `5. Interview Templates/capacity-estimation.md` → Master QPS, storage, bandwidth calculations
-2. `5. Interview Templates/trade-offs-cheat-sheet.md` → Decision matrices for all major choices
-3. `2. Advanced Topics/distributed-systems.md` → Understand consistency vs availability deeply
-4. `6. Reference/numbers-to-know.md` → Memorize latency numbers
+1. `interview-templates/capacity-estimation.md` → Master QPS, storage, bandwidth calculations
+2. `interview-templates/trade-offs-cheat-sheet.md` → Decision matrices for all major choices
+3. `advanced-topics/distributed-systems.md` → Understand consistency vs availability deeply
+4. `reference/numbers-to-know.md` → Memorize latency numbers
 
 ---
 
@@ -150,11 +150,11 @@ SystemDesign/
 **Goal**: Deep expertise in distributed systems and production operations
 
 **Focus Areas:**
-- [ ] `2. Advanced Topics/observability.md`
+- [ ] `advanced-topics/observability.md`
   - Distributed tracing (Jaeger, Zipkin)
   - SLI/SLO/SLA definitions with math
   - Alert fatigue prevention
-- [ ] `2. Advanced Topics/chaos-engineering.md`
+- [ ] `advanced-topics/chaos-engineering.md`
   - Resilience patterns
   - Production testing strategies
 - [ ] Advanced problem variants:
@@ -168,13 +168,13 @@ SystemDesign/
 
 ### Before the Interview
 
-- [ ] Review `5. Interview Templates/hld-template.md` (know the 7 phases)
-- [ ] Memorize numbers from `6. Reference/numbers-to-know.md`
+- [ ] Review `interview-templates/hld-template.md` (know the 7 phases)
+- [ ] Memorize numbers from `reference/numbers-to-know.md`
   - 1M requests/day ≈ 12 QPS
   - L1 cache: 0.5ns, RAM: 100ns, SSD: 150μs
   - 99.9% availability = 8.76 hours downtime/year
 - [ ] Practice capacity estimation (use `5 Interview Templates/capacity-estimation.md`)
-- [ ] Review trade-offs (use `5. Interview Templates/trade-offs-cheat-sheet.md`)
+- [ ] Review trade-offs (use `interview-templates/trade-offs-cheat-sheet.md`)
 
 ### During the Interview
 
@@ -240,13 +240,13 @@ Don't just say "I'd use Redis for caching." Say:
 
 ## Recommended Study Order
 
-1. **Start here**: `5. Interview Templates/hld-template.md`
-2. **Learn basics**: `1. Core Concepts/fundamentals.md`
-3. **Master databases**: `1. Core Concepts/databases.md`
-4. **Practice estimation**: `5. Interview Templates/capacity-estimation.md`
-5. **Learn trade-offs**: `5. Interview Templates/trade-offs-cheat-sheet.md`
-6. **Advanced topics**: `2. Advanced Topics/distributed-systems.md`
-7. **Practice problems**: `3. HLD Interview Problems/` (start easy → hard)
+1. **Start here**: `interview-templates/hld-template.md`
+2. **Learn basics**: `core-concepts/fundamentals.md`
+3. **Master databases**: `core-concepts/databases.md`
+4. **Practice estimation**: `interview-templates/capacity-estimation.md`
+5. **Learn trade-offs**: `interview-templates/trade-offs-cheat-sheet.md`
+6. **Advanced topics**: `advanced-topics/distributed-systems.md`
+7. **Practice problems**: `hld-problems/` (start easy → hard)
 
 ---
 
@@ -256,11 +256,11 @@ If you're familiar with the old repository structure:
 
 | Old Location | New Location |
 |--------------|--------------|
-| `system-design-hld+lld/hld/basics.md` | `1. Core Concepts/fundamentals.md` |
-| `glossary.md` + `system-design-components.md` | `1. Core Concepts/databases.md` |
+| `system-design-hld+lld/hld/basics.md` | `core-concepts/fundamentals.md` |
+| `glossary.md` + `system-design-components.md` | `core-concepts/databases.md` |
 | `30-days-theory/` | **Removed** (content integrated into Core Concepts) |
-| `hld/notes/interview-process/` | `3. HLD Interview Problems/` |
-| `lld/lld-interview-guide.md` | `5. Interview Templates/lld-template.md` |
+| `hld/notes/interview-process/` | `hld-problems/` |
+| `lld/lld-interview-guide.md` | `interview-templates/lld-template.md` |
 
 **What was removed:**
 - Duplicate content (glossary, repeated design patterns)
@@ -286,15 +286,15 @@ git clone https://github.com/yourusername/SystemDesign.git
 cd SystemDesign
 
 # Start with interview template
-cat "5. Interview Templates/hld-template.md"
+cat "interview-templates/hld-template.md"
 
 # Practice a problem using the template
 # Example: Design URL Shortener
-open "3. HLD Interview Problems/easy/url-shortener.md"
+open "hld-problems/easy/url-shortener.md"
 
 # Reference cheat sheets during practice
-open "5. Interview Templates/capacity-estimation.md"
-open "5. Interview Templates/trade-offs-cheat-sheet.md"
+open "interview-templates/capacity-estimation.md"
+open "interview-templates/trade-offs-cheat-sheet.md"
 ```
 
 ### For Learning
