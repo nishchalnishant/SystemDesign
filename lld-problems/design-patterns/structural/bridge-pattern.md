@@ -30,41 +30,48 @@
 
           <br>
 
-```python
-from abc import ABC, abstractmethod
+```java
+// ======= Interface for video quality =======
+interface PlayQuality {
+    void play(String title);
+}
 
-# ======= Interface for video quality =======
-class PlayQuality(ABC):
-    @abstractmethod
-    def play(self, title):
-        pass
+// Each class here represents a combination of platform and quality
+class WebHDPlayer implements PlayQuality {
+    public void play(String title) {
+        // Web player plays in HD
+        System.out.println("Web Player: Playing " + title + " in HD");
+    }
+}
 
-# Each class here represents a combination of platform and quality
-class WebHDPlayer(PlayQuality):
-    def play(self, title):
-        # Web player plays in HD
-        print(f"Web Player: Playing {title} in HD")
+class MobileHDPlayer implements PlayQuality {
+    public void play(String title) {
+        // Mobile player plays in HD
+        System.out.println("Mobile Player: Playing " + title + " in HD");
+    }
+}
 
-class MobileHDPlayer(PlayQuality):
-    def play(self, title):
-        # Mobile player plays in HD
-        print(f"Mobile Player: Playing {title} in HD")
+class SmartTVUltraHDPlayer implements PlayQuality {
+    public void play(String title) {
+        // Smart TV plays in Ultra HD
+        System.out.println("Smart TV: Playing " + title + " in ultra HD");
+    }
+}
 
-class SmartTVUltraHDPlayer(PlayQuality):
-    def play(self, title):
-        # Smart TV plays in Ultra HD
-        print(f"Smart TV: Playing {title} in ultra HD")
+class Web4KPlayer implements PlayQuality {
+    public void play(String title) {
+        // Web player plays in 4K
+        System.out.println("Web Player: Playing " + title + " in 4K");
+    }
+}
 
-class Web4KPlayer(PlayQuality):
-    def play(self, title):
-        # Web player plays in 4K
-        print(f"Web Player: Playing {title} in 4K")
-
-# ============ Main logic ================
-if __name__ == "__main__":
-    player = WebHDPlayer()
-    player.play("Interstellar")
-
+// ============ Main logic ================
+public class Main {
+    public static void main(String[] args) {
+        PlayQuality player = new WebHDPlayer();
+        player.play("Interstellar");
+    }
+}
 ```
 
 *   **Understanding the Issue**
@@ -75,58 +82,73 @@ if __name__ == "__main__":
 
 
 
-```python
-from abc import ABC, abstractmethod
+```java
+// ======== Implementor Interface =========
+interface VideoQuality {
+    void load(String title);
+}
 
-# ======== Implementor Interface =========
-class VideoQuality(ABC):
-    @abstractmethod
-    def load(self, title):
-        pass
+// ============ Concrete Implementors ==============
+class SDQuality implements VideoQuality {
+    public void load(String title) {
+        System.out.println("Streaming " + title + " in SD Quality");
+    }
+}
 
-# ============ Concrete Implementors ==============
-class SDQuality(VideoQuality):
-    def load(self, title):
-        print(f"Streaming {title} in SD Quality")
+class HDQuality implements VideoQuality {
+    public void load(String title) {
+        System.out.println("Streaming " + title + " in HD Quality");
+    }
+}
 
-class HDQuality(VideoQuality):
-    def load(self, title):
-        print(f"Streaming {title} in HD Quality")
+class UltraHDQuality implements VideoQuality {
+    public void load(String title) {
+        System.out.println("Streaming " + title + " in 4K Ultra HD Quality");
+    }
+}
 
-class UltraHDQuality(VideoQuality):
-    def load(self, title):
-        print(f"Streaming {title} in 4K Ultra HD Quality")
+// ========== Abstraction ==========
+abstract class VideoPlayer {
+    protected VideoQuality quality;
+    
+    public VideoPlayer(VideoQuality quality) {
+        this.quality = quality;
+    }
+    
+    abstract void play(String title);
+}
 
-# ========== Abstraction ==========
-class VideoPlayer(ABC):
-    def __init__(self, quality: VideoQuality):
-        self.quality = quality
+// =========== Refined Abstractions ==============
+class WebPlayer extends VideoPlayer {
+    public WebPlayer(VideoQuality quality) { super(quality); }
+    
+    void play(String title) {
+        System.out.println("Web Platform:");
+        quality.load(title);
+    }
+}
 
-    @abstractmethod
-    def play(self, title):
-        pass
+class MobilePlayer extends VideoPlayer {
+    public MobilePlayer(VideoQuality quality) { super(quality); }
+    
+    void play(String title) {
+        System.out.println("Mobile Platform:");
+        quality.load(title);
+    }
+}
 
-# =========== Refined Abstractions ==============
-class WebPlayer(VideoPlayer):
-    def play(self, title):
-        print("Web Platform:")
-        self.quality.load(title)
-
-class MobilePlayer(VideoPlayer):
-    def play(self, title):
-        print("Mobile Platform:")
-        self.quality.load(title)
-
-# Client Code
-if __name__ == "__main__":
-    # Playing on Web with HD Quality
-    player1 = WebPlayer(HDQuality())
-    player1.play("Interstellar")
-
-    # Playing on Mobile with Ultra HD Quality
-    player2 = MobilePlayer(UltraHDQuality())
-    player2.play("Inception")
-
+// Client Code
+public class Main {
+    public static void main(String[] args) {
+        // Playing on Web with HD Quality
+        VideoPlayer player1 = new WebPlayer(new HDQuality());
+        player1.play("Interstellar");
+        
+        // Playing on Mobile with Ultra HD Quality
+        VideoPlayer player2 = new MobilePlayer(new UltraHDQuality());
+        player2.play("Inception");
+    }
+}
 ```
 
 

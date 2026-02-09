@@ -9,75 +9,94 @@
 * #### Understanding the Problem
   * Consider you are building the checkout service of an e-commerce application, and you take the following approach as shown in the code below.
 
-```python
-# Represents a single product
-class Product:
-    def __init__(self, name, price):
-        self.name = name
-        self.price = price
+```java
+import java.util.*;
 
-    def getPrice(self):
-        return self.price
+// Represents a single product
+class Product {
+    private String name;
+    private double price;
+    
+    public Product(String name, double price) {
+        this.name = name;
+        this.price = price;
+    }
+    
+    public double getPrice() {
+        return price;
+    }
+    
+    public void display(String indent) {
+        System.out.println(indent + "Product: " + name + " – ₹" + price);
+    }
+}
 
-    def display(self, indent):
-        print(f"{indent}Product: {self.name} – ₹{self.price}")
+// Represents a bundle of products
+class ProductBundle {
+    private String bundleName;
+    private List<Product> products;
+    
+    public ProductBundle(String bundleName) {
+        this.bundleName = bundleName;
+        this.products = new ArrayList<>();
+    }
+    
+    public void addProduct(Product product) {
+        products.add(product);
+    }
+    
+    public double getPrice() {
+        return products.stream().mapToDouble(Product::getPrice).sum();
+    }
+    
+    public void display(String indent) {
+        System.out.println(indent + "Bundle: " + bundleName);
+        for (Product product : products) {
+            product.display(indent + "  ");
+        }
+    }
+}
 
-
-# Represents a bundle of products
-class ProductBundle:
-    def __init__(self, bundleName):
-        self.bundleName = bundleName
-        self.products = []
-
-    def addProduct(self, product):
-        self.products.append(product)
-
-    def getPrice(self):
-        return sum(product.getPrice() for product in self.products)
-
-    def display(self, indent):
-        print(f"{indent}Bundle: {self.bundleName}")
-        for product in self.products:
-            product.display(indent + "  ")
-
-
-# Main logic
-if __name__ == "__main__":
-    # Individual Items
-    book = Product("Book", 500)
-    headphones = Product("Headphones", 1500)
-    charger = Product("Charger", 800)
-    pen = Product("Pen", 20)
-    notebook = Product("Notebook", 60)
-
-    # Bundle: iPhone Combo
-    iphoneCombo = ProductBundle("iPhone Combo Pack")
-    iphoneCombo.addProduct(headphones)
-    iphoneCombo.addProduct(charger)
-
-    # Bundle: School Kit
-    schoolKit = ProductBundle("School Kit")
-    schoolKit.addProduct(pen)
-    schoolKit.addProduct(notebook)
-
-    # Add to cart logic
-    cart = [book, iphoneCombo, schoolKit]
-
-    # Display Cart
-    total = 0
-    print("Cart Details:\n")
-
-    for item in cart:
-        if isinstance(item, Product):
-            item.display("  ")
-            total += item.getPrice()
-        elif isinstance(item, ProductBundle):
-            item.display("  ")
-            total += item.getPrice()
-
-    print(f"\nTotal Price: ₹{total}")
-
-
+// Main logic
+public class Main {
+    public static void main(String[] args) {
+        // Individual Items
+        Product book = new Product("Book", 500);
+        Product headphones = new Product("Headphones", 1500);
+        Product charger = new Product("Charger", 800);
+        Product pen = new Product("Pen", 20);
+        Product notebook = new Product("Notebook", 60);
+        
+        // Bundle: iPhone Combo
+        ProductBundle iphoneCombo = new ProductBundle("iPhone Combo Pack");
+        iphoneCombo.addProduct(headphones);
+        iphoneCombo.addProduct(charger);
+        
+        // Bundle: School Kit
+        ProductBundle schoolKit = new ProductBundle("School Kit");
+        schoolKit.addProduct(pen);
+        schoolKit.addProduct(notebook);
+        
+        // Add to cart logic
+        List<Object> cart = Arrays.asList(book, iphoneCombo, schoolKit);
+        
+        // Display Cart
+        double total = 0;
+        System.out.println("Cart Details:\n");
+        
+        for (Object item : cart) {
+            if (item instanceof Product) {
+                ((Product) item).display("  ");
+                total += ((Product) item).getPrice();
+            } else if (item instanceof ProductBundle) {
+                ((ProductBundle) item).display("  ");
+                total += ((ProductBundle) item).getPrice();
+            }
+        }
+        
+        System.out.println("\nTotal Price: ₹" + total);
+    }
+}
 ```
 
 * **Working of Code**
@@ -104,81 +123,95 @@ if __name__ == "__main__":
 * Refactored Code Using Composite Pattern
   * Let's refactor the code using the Composite Pattern. The idea is to create a common interface `CartItem` for both `Product` and `ProductBundle`, allowing us to treat them uniformly.
 
-```python
-from abc import ABC, abstractmethod
+```java
+import java.util.*;
 
-# Interface for items that can be added to the cart
-class CartItem(ABC):
-    @abstractmethod
-    def getPrice(self):
-        pass
+// Interface for items that can be added to the cart
+interface CartItem {
+    double getPrice();
+    void display(String indent);
+}
 
-    @abstractmethod
-    def display(self, indent):
-        pass
+// Product class implementing CartItem
+class Product implements CartItem {
+    private String name;
+    private double price;
+    
+    public Product(String name, double price) {
+        this.name = name;
+        this.price = price;
+    }
+    
+    public double getPrice() {
+        return price;
+    }
+    
+    public void display(String indent) {
+        System.out.println(indent + "Product: " + name + " – ₹" + price);
+    }
+}
 
-# Product class implementing CartItem
-class Product(CartItem):
-    def __init__(self, name, price):
-        self.name = name
-        self.price = price
+// ProductBundle class implementing CartItem
+class ProductBundle implements CartItem {
+    private String bundleName;
+    private List<CartItem> items;
+    
+    public ProductBundle(String bundleName) {
+        this.bundleName = bundleName;
+        this.items = new ArrayList<>();
+    }
+    
+    public void addItem(CartItem item) {
+        items.add(item);
+    }
+    
+    public double getPrice() {
+        return items.stream().mapToDouble(CartItem::getPrice).sum();
+    }
+    
+    public void display(String indent) {
+        System.out.println(indent + "Bundle: " + bundleName);
+        for (CartItem item : items) {
+            item.display(indent + "  ");
+        }
+    }
+}
 
-    def getPrice(self):
-        return self.price
-
-    def display(self, indent):
-        print(f"{indent}Product: {self.name} – ₹{self.price}")
-
-# ProductBundle class implementing CartItem
-class ProductBundle(CartItem):
-    def __init__(self, bundleName):
-        self.bundleName = bundleName
-        self.items = []
-
-    def addItem(self, item):
-        self.items.append(item)
-
-    def getPrice(self):
-        return sum(item.getPrice() for item in self.items)
-
-    def display(self, indent):
-        print(f"{indent}Bundle: {self.bundleName}")
-        for item in self.items:
-            item.display(indent + "  ")
-
-# Main logic
-if __name__ == "__main__":
-    # Individual Products
-    book = Product("Atomic Habits", 499)
-    phone = Product("iPhone 15", 79999)
-    earbuds = Product("AirPods", 15999)
-    charger = Product("20W Charger", 1999)
-
-    # Combo Deal
-    iphoneCombo = ProductBundle("iPhone Essentials Combo")
-    iphoneCombo.addItem(phone)
-    iphoneCombo.addItem(earbuds)
-    iphoneCombo.addItem(charger)
-
-    # Back to School Kit
-    schoolKit = ProductBundle("Back to School Kit")
-    schoolKit.addItem(Product("Notebook Pack", 249))
-    schoolKit.addItem(Product("Pen Set", 99))
-    schoolKit.addItem(Product("Highlighter", 149))
-
-    # Add everything to cart
-    cart = [book, iphoneCombo, schoolKit]
-
-    # Display cart
-    print("Your Amazon Cart:")
-    total = 0
-    for item in cart:
-        item.display("  ")
-        total += item.getPrice()
-
-    print(f"\nTotal: ₹{total}")
-
-
+// Main logic
+public class Main {
+    public static void main(String[] args) {
+        // Individual Products
+        CartItem book = new Product("Atomic Habits", 499);
+        CartItem phone = new Product("iPhone 15", 79999);
+        CartItem earbuds = new Product("AirPods", 15999);
+        CartItem charger = new Product("20W Charger", 1999);
+        
+        // Combo Deal
+        ProductBundle iphoneCombo = new ProductBundle("iPhone Essentials Combo");
+        iphoneCombo.addItem(phone);
+        iphoneCombo.addItem(earbuds);
+        iphoneCombo.addItem(charger);
+        
+        // Back to School Kit
+        ProductBundle schoolKit = new ProductBundle("Back to School Kit");
+        schoolKit.addItem(new Product("Notebook Pack", 249));
+        schoolKit.addItem(new Product("Pen Set", 99));
+        schoolKit.addItem(new Product("Highlighter", 149));
+        
+        // Add everything to cart
+        List<CartItem> cart = Arrays.asList(book, iphoneCombo, schoolKit);
+        
+        // Display cart
+        System.out.println("Your Amazon Cart:");
+        double total = 0;
+        for (CartItem item : cart) {
+            item.display("  ");
+            total += item.getPrice();
+        }
+        
+        System.out.println("\nTotal: ₹" + total);
+    }
+}
 ```
 
 * **Working of Refactored Code**
