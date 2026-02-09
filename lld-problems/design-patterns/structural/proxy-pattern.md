@@ -12,46 +12,64 @@ Loading a high-res image takes time. We want to display it only when `display()`
 
 ## Implementation
 
-```python
-from abc import ABC, abstractmethod
-import time
+```java
+// Interface
+interface Image {
+    void display();
+}
 
-class Image(ABC):
-    @abstractmethod
-    def display(self): pass
-
-# Real Object (Heavy)
-class RealImage(Image):
-    def __init__(self, filename):
-        self.filename = filename
-        self._load_from_disk()
+// Real Object (Heavy)
+class RealImage implements Image {
+    private String filename;
     
-    def _load_from_disk(self):
-        print(f"Loading {self.filename} from disk... (Heavy IO)")
-        time.sleep(1)
-
-    def display(self):
-        print(f"Displaying {self.filename}")
-
-# Proxy Object (Lightweight)
-class ProxyImage(Image):
-    def __init__(self, filename):
-        self.filename = filename
-        self.real_image = None # Lazy Reference
-
-    def display(self):
-        if self.real_image is None:
-            self.real_image = RealImage(self.filename)
-        self.real_image.display()
-
-# Client
-if __name__ == "__main__":
-    img = ProxyImage("photo_4k.jpg")
-    print("Image object created (No disk IO yet)")
+    public RealImage(String filename) {
+        this.filename = filename;
+        loadFromDisk();
+    }
     
-    # Needs to render now
-    img.display() # Loads from disk now
-    img.display() # Uses cached object
+    private void loadFromDisk() {
+        System.out.println("Loading " + filename + " from disk... (Heavy IO)");
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    public void display() {
+        System.out.println("Displaying " + filename);
+    }
+}
+
+// Proxy Object (Lightweight)
+class ProxyImage implements Image {
+    private String filename;
+    private RealImage realImage; // Lazy Reference
+    
+    public ProxyImage(String filename) {
+        this.filename = filename;
+        this.realImage = null;
+    }
+    
+    public void display() {
+        if (realImage == null) {
+            realImage = new RealImage(filename);
+        }
+        realImage.display();
+    }
+}
+
+// Client
+public class Main {
+    public static void main(String[] args) {
+        Image img = new ProxyImage("photo_4k.jpg");
+        System.out.println("Image object created (No disk IO yet)");
+        
+        // Needs to render now
+        img.display(); // Loads from disk now
+        img.display(); // Uses cached object
+    }
+}
 ```
 
 ## Variations

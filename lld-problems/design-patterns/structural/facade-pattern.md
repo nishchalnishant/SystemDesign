@@ -12,37 +12,50 @@ Client just wants `watch_movie()`.
 
 ## Implementation
 
-```python
-# Subsystem Components
-class Amplifier:
-    def on(self): print("Amp ON")
-    def set_volume(self, level): print(f"Amp Volume {level}")
+```java
+// Subsystem Components
+class Amplifier {
+    public void on() { System.out.println("Amp ON"); }
+    public void setVolume(int level) { System.out.println("Amp Volume " + level); }
+}
 
-class Projector:
-    def on(self): print("Projector ON")
-    def set_input(self, src): print(f"Projector Input {src}")
+class Projector {
+    public void on() { System.out.println("Projector ON"); }
+    public void setInput(String src) { System.out.println("Projector Input " + src); }
+}
 
-class Lights:
-    def dim(self, level): print(f"Lights dimmed to {level}%")
+class Lights {
+    public void dim(int level) { System.out.println("Lights dimmed to " + level + "%"); }
+}
 
-# Facade
-class HomeTheaterFacade:
-    def __init__(self):
-        self.amp = Amplifier()
-        self.proj = Projector()
-        self.lights = Lights()
+// Facade
+class HomeTheaterFacade {
+    private Amplifier amp;
+    private Projector proj;
+    private Lights lights;
     
-    def watch_movie(self, movie):
-        print(f"--- Get ready to watch {movie} ---")
-        self.lights.dim(10)
-        self.proj.on()
-        self.proj.set_input("Netflix")
-        self.amp.on()
-        self.amp.set_volume(5)
+    public HomeTheaterFacade() {
+        this.amp = new Amplifier();
+        this.proj = new Projector();
+        this.lights = new Lights();
+    }
+    
+    public void watchMovie(String movie) {
+        System.out.println("--- Get ready to watch " + movie + " ---");
+        lights.dim(10);
+        proj.on();
+        proj.setInput("Netflix");
+        amp.on();
+        amp.setVolume(5);
+    }
+}
 
-# Client
-if __name__ == "__main__":
-    # Simple interface, hides complexity
-    home_theater = HomeTheaterFacade()
-    home_theater.watch_movie("Inception")
+// Client
+public class Main {
+    public static void main(String[] args) {
+        // Simple interface, hides complexity
+        HomeTheaterFacade homeTheater = new HomeTheaterFacade();
+        homeTheater.watchMovie("Inception");
+    }
+}
 ```

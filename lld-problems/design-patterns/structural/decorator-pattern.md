@@ -16,50 +16,62 @@ Calculate total cost allowing any combination.
 
 ## Implementation
 
-```python
-from abc import ABC, abstractmethod
+```java
+// 1. Component Interface
+interface Pizza {
+    String getDesc();
+    double getCost();
+}
 
-# 1. Component Interface
-class Pizza(ABC):
-    @abstractmethod
-    def get_desc(self): pass
-    @abstractmethod
-    def get_cost(self): pass
+// 2. Concrete Component (Base)
+class Margherita implements Pizza {
+    public String getDesc() { return "Margherita"; }
+    public double getCost() { return 100; }
+}
 
-# 2. Concrete Component (Base)
-class Margherita(Pizza):
-    def get_desc(self): return "Margherita"
-    def get_cost(self): return 100
+class VegDelight implements Pizza {
+    public String getDesc() { return "Veg Delight"; }
+    public double getCost() { return 150; }
+}
 
-class VegDelight(Pizza):
-    def get_desc(self): return "Veg Delight"
-    def get_cost(self): return 150
-
-# 3. Decorator (Base Wrapper)
-class PizzaDecorator(Pizza):
-    def __init__(self, pizza: Pizza):
-        self.pizza = pizza
+// 3. Decorator (Base Wrapper)
+abstract class PizzaDecorator implements Pizza {
+    protected Pizza pizza;
     
-    def get_desc(self): return self.pizza.get_desc()
-    def get_cost(self): return self.pizza.get_cost()
-
-# 4. Concrete Decorators (Toppings)
-class ExtraCheese(PizzaDecorator):
-    def get_desc(self): return self.pizza.get_desc() + ", Extra Cheese"
-    def get_cost(self): return self.pizza.get_cost() + 50
-
-class Olives(PizzaDecorator):
-    def get_desc(self): return self.pizza.get_desc() + ", Olives"
-    def get_cost(self): return self.pizza.get_cost() + 20
-
-# Client
-if __name__ == "__main__":
-    my_pizza = Margherita()                    # Cost: 100
-    my_pizza = ExtraCheese(my_pizza)           # Cost: 150
-    my_pizza = Olives(my_pizza)                # Cost: 170
+    public PizzaDecorator(Pizza pizza) {
+        this.pizza = pizza;
+    }
     
-    print(f"{my_pizza.get_desc()} = ${my_pizza.get_cost()}")
-    # Output: Margherita, Extra Cheese, Olives = $170
+    public String getDesc() { return pizza.getDesc(); }
+    public double getCost() { return pizza.getCost(); }
+}
+
+// 4. Concrete Decorators (Toppings)
+class ExtraCheese extends PizzaDecorator {
+    public ExtraCheese(Pizza pizza) { super(pizza); }
+    
+    public String getDesc() { return pizza.getDesc() + ", Extra Cheese"; }
+    public double getCost() { return pizza.getCost() + 50; }
+}
+
+class Olives extends PizzaDecorator {
+    public Olives(Pizza pizza) { super(pizza); }
+    
+    public String getDesc() { return pizza.getDesc() + ", Olives"; }
+    public double getCost() { return pizza.getCost() + 20; }
+}
+
+// Client
+public class Main {
+    public static void main(String[] args) {
+        Pizza myPizza = new Margherita();              // Cost: 100
+        myPizza = new ExtraCheese(myPizza);            // Cost: 150
+        myPizza = new Olives(myPizza);                 // Cost: 170
+        
+        System.out.println(myPizza.getDesc() + " = $" + myPizza.getCost());
+        // Output: Margherita, Extra Cheese, Olives = $170.0
+    }
+}
 ```
 
 ## Why not Inheritance?

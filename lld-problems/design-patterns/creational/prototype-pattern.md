@@ -32,47 +32,50 @@
 
 Real-life example&#x20;
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Target Interface
+// Abstract class to represent an Email Template
+abstract class EmailTemplate {
+    abstract void setContent(String content);
+    abstract void send(String to);
+}
 
-# Target Interface
-# Abstract class to represent an Email Template
-class EmailTemplate(ABC):
-    @abstractmethod
-    def set_content(self, content):
-        pass
+// A concrete email class, hardcoded
+class WelcomeEmail extends EmailTemplate {
+    private String subject;
+    private String content;
+    
+    public WelcomeEmail() {
+        this.subject = "Welcome to TUF+";
+        this.content = "Hi there! Thanks for joining us.";
+    }
+    
+    void setCont ent(String content) {
+        this.content = content;
+    }
+    
+    void send(String to) {
+        System.out.println("Sending to " + to + ": [" + subject + "] " + content);
+    }
+}
 
-    @abstractmethod
-    def send(self, to):
-        pass
-
-# A concrete email class, hardcoded
-class WelcomeEmail(EmailTemplate):
-    def __init__(self):
-        self.subject = "Welcome to TUF+"
-        self.content = "Hi there! Thanks for joining us."
-
-    def set_content(self, content):
-        self.content = content
-
-    def send(self, to):
-        print(f"Sending to {to}: [{self.subject}] {self.content}")
-
-if __name__ == "__main__":
-    # Create a welcome email
-    email1 = WelcomeEmail()
-    email1.send("user1@example.com")
-
-    # Suppose we want a similar email with slightly different content
-    email2 = WelcomeEmail()
-    email2.set_content("Hi there! Welcome to TUF Premium.")
-    email2.send("user2@example.com")
-
-    # Yet another variation
-    email3 = WelcomeEmail()
-    email3.set_content("Thanks for signing up. Let's get started!")
-    email3.send("user3@example.com")
-
+public class Main {
+    public static void main(String[] args) {
+        // Create a welcome email
+        EmailTemplate email1 = new WelcomeEmail();
+        email1.send("user1@example.com");
+        
+        // Similar email with slightly different content
+        EmailTemplate email2 = new WelcomeEmail();
+        email2.setContent("Hi there! Welcome to TUF Premium.");
+        email2.send("user2@example.com");
+        
+        // Yet another variation
+        EmailTemplate email3 = new WelcomeEmail();
+        email3.setContent("Thanks for signing up. Let's get started!");
+        email3.send("user3@example.com");
+    }
+}
 ```
 
 * **Issues in the Bad design**
@@ -87,56 +90,70 @@ if __name__ == "__main__":
 
 Good code&#x20;
 
-```python
-import copy
+```java
+// Defining the Prototype Interface
+interface Cloneable {
+    EmailTemplate clone();
+}
 
-# Defining the Prototype Interface
-class EmailTemplate:
-    def clone(self):
-        return copy.deepcopy(self)  # Recommended to perform deep copy
-
-    def set_content(self, content):
-        pass
-
-    def send(self, to):
-        pass
-
-# Concrete Class implementing clone logic
-class WelcomeEmail(EmailTemplate):
-    def __init__(self):
-        self.subject = "Welcome to TUF+"
-        self.content = "Hi there! Thanks for joining us."
-
-    def set_content(self, content):
-        self.content = content
-
-    def send(self, to):
-        print(f"Sending to {to}: [{self.subject}] {self.content}")
-
-# Template Registry to store and provide clones
-class EmailTemplateRegistry:
-    templates = {
-        "welcome": WelcomeEmail(),
-        # "discount": DiscountEmail(),
-        # "feature-update": FeatureUpdateEmail(),
+class EmailTemplate implements Cloneable {
+    protected String subject;
+    protected String content;
+    
+    public EmailTemplate clone() {
+        try {
+            return (EmailTemplate) super.clone();  // Deep copy
+        } catch (CloneNotSupportedException e) {
+            throw new RuntimeException(e);
+        }
     }
+    
+    public void setContent(String content) {
+        this.content = content;
+    }
+    
+    public void send(String to) {
+        System.out.println("Sending to " + to + ": [" + subject + "] " + content);
+    }
+}
 
-    @staticmethod
-    def get_template(type_):
-        return EmailTemplateRegistry.templates[type_].clone()  # clone to avoid modifying original
+// Concrete Class implementing clone logic
+class WelcomeEmail extends EmailTemplate {
+    public WelcomeEmail() {
+        this.subject = "Welcome to TUF+";
+        this.content = "Hi there! Thanks for joining us.";
+    }
+}
 
-# Driver code
-if __name__ == "__main__":
-    welcome_email1 = EmailTemplateRegistry.get_template("welcome")
-    welcome_email1.set_content("Hi Alice, welcome to TUF Premium!")
-    welcome_email1.send("alice@example.com")
+// Template Registry to store and provide clones
+class EmailTemplateRegistry {
+    private static Map<String, EmailTemplate> templates = new HashMap<>();
+    
+    static {
+        templates.put("welcome", new WelcomeEmail());
+        // templates.put("discount", new DiscountEmail());
+        // templates.put("feature-update", new FeatureUpdateEmail());
+    }
+    
+    public static EmailTemplate getTemplate(String type) {
+        return templates.get(type).clone();  // clone to avoid modifying original
+    }
+}
 
-    welcome_email2 = EmailTemplateRegistry.get_template("welcome")
-    welcome_email2.set_content("Hi Bob, thanks for joining!")
-    welcome_email2.send("bob@example.com")
-
-    # Reuse the base WelcomeEmail structure, just changing dynamic content
-
+// Driver code
+public class Main {
+    public static void main(String[] args) {
+        EmailTemplate welcomeEmail1 = EmailTemplateRegistry.getTemplate("welcome");
+        welcomeEmail1.setContent("Hi Alice, welcome to TUF Premium!");
+        welcomeEmail1.send("alice@example.com");
+        
+        EmailTemplate welcomeEmail2 = EmailTemplateRegistry.getTemplate("welcome");
+        welcomeEmail2.setContent("Hi Bob, thanks for joining!");
+        welcomeEmail2.send("bob@example.com");
+        
+        // Reuse the base WelcomeEmail structure, just changing dynamic content
+    }
+}
 ```
 
 *   **Benefits of Good Design**

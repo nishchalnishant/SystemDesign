@@ -194,27 +194,34 @@ Timeline Generation:
 ```
 
 **Implementation:**
-```python
-def get_timeline(user_id, page=1, size=20):
-    # Get cached timeline
-    cached_tweets = redis.lrange(f"feed:{user_id}", 0, size*2)
+```java
+public List<Tweet> getTimeline(String userId, int page, int size) {
+    // Get cached timeline
+    List<String> cachedTweetIds = redis.lrange("feed:" + userId, 0, size * 2);
+    List<Tweet> cachedTweets = getTweetsByIds(cachedTweetIds);
     
-    # Get celebrity tweets (users followed with >10K followers)
-    celebrity_ids = get_celebrity_followees(user_id)
-    if celebrity_ids:
-        celebrity_tweets = db.query(
-            "SELECT * FROM tweets WHERE user_id IN (%s) AND created_at > NOW() - INTERVAL '7 days' ORDER BY created_at DESC LIMIT 50",
-            celebrity_ids
-        )
+    // Get celebrity tweets (users followed with >10K followers)
+    List<String> celebrityIds = getCelebrityFollowees(userId);
+    List<Tweet> allTweets;
+    
+    if (!celebrityIds.isEmpty()) {
+        List<Tweet> celebrityTweets = db.query(
+            "SELECT * FROM tweets WHERE user_id IN (?) " +
+            "AND created_at > NOW() - INTERVAL '7 days' " +
+            "ORDER BY created_at DESC LIMIT 50",
+            celebrityIds
+        );
         
-        # Merge
-        all_tweets = merge_and_sort(cached_tweets, celebrity_tweets)
-    else:
-        all_tweets = cached_tweets
+        // Merge
+        allTweets = mergeAndSort(cachedTweets, celebrityTweets);
+    } else {
+        allTweets = cachedTweets;
+    }
     
-    # Paginate
-    start = (page - 1) * size
-    return all_tweets[start:start + size]
+    // Paginate
+    int start = (page - 1) * size;
+    return allTweets.subList(start, Math.min(start + size, allTweets.size()));
+}
 ```
 
 ## Caching Strategy
