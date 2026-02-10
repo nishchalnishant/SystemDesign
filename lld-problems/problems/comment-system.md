@@ -75,21 +75,138 @@ LIMIT 50;
 3. `0001/0002/0003` (Grandchild of 1)
 4. `0005` (New Root)
 
-### 2. Inserting a Reply
+### 2. Inserting a Reply (Java Implementation)
+
 Logic: `New_Path = Parent_Path + "/" + New_ID`.
 
-```python
-class CommentService:
-    def reply_to_comment(self, parent_id, user_id, content):
-        parent = self.db.fetch("SELECT path, depth, post_id FROM Comments WHERE id=%s", parent_id)
-        
-        new_id = self.generate_id() 
-        # Format ID to fixed length (e.g., 4 chars) for string sorting
-        child_path = f"{parent['path']}/{str(new_id).zfill(4)}"
-        child_depth = parent['depth'] + 1
+#### Class Diagram
 
-        sql = "INSERT INTO Comments (id, post_id, path, depth, content) VALUES (...)"
-        self.db.execute(sql, (new_id, parent['post_id'], child_path, child_depth, content))
+```mermaid
+classDiagram
+    class Comment {
+        +Long id
+        +Long postId
+        +Long userId
+        +String content
+        +String path
+        +int depth
+        +int upvotes
+        +int downvotes
+    }
+
+    class CommentService {
+        +replyToComment(Long parentId, Long userId, String content)
+        +getComments(Long postId)
+        -generateId() Long
+    }
+
+    class CommentRepository {
+        +findById(Long id) Comment
+        +save(Comment comment) void
+        +findByPostIdOrderByPath(Long postId) List~Comment~
+    }
+
+    CommentService --> CommentRepository
+    CommentService ..> Comment : Creates
+```
+
+#### Flow Chart: Posting a Reply
+
+```mermaid
+flowchart TD
+    A[User Request: Reply to Comment X] --> B{Validate Parent X Exists?}
+    B -- No --> C[Error: Parent Not Found]
+    B -- Yes --> D[Fetch Parent Path & Depth]
+    D --> E[Generate New ID]
+    E --> F[Construct New Path: ParentPath + / + NewID]
+    F --> G[Increment Depth: ParentDepth + 1]
+    G --> H[Save New Comment to DB]
+    H --> I[Update Cache (Async)]
+    I --> J[Return Success]
+```
+
+#### Java Code
+
+```java
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.UUID;
+
+public class CommentService {
+    private CommentRepository commentRepository;
+
+    public CommentService(CommentRepository commentRepository) {
+        this.commentRepository = commentRepository;
+    }
+
+    // Method to handle a reply to an existing comment
+    public void replyToComment(Long parentId, Long userId, Long postId, String content) throws SQLException {
+        // 1. Fetch parent comment to get its path and depth
+        Comment parent = commentRepository.findById(parentId);
+        if (parent == null) {
+            throw new IllegalArgumentException("Parent comment not found");
+        }
+
+        // 2. Generate a new ID (could be from sequence or snowflake)
+        Long newId = generateId(); 
+        
+        // 3. Construct the new path: Parent Path + "/" + Formatted ID
+        // Formatting ID ensuring consistent length for string sorting
+        String childPath = parent.getPath() + "/" + String.format("%04d", newId);
+        int childDepth = parent.getDepth() + 1;
+
+        // 4. Create the new comment object
+        Comment newComment = new Comment();
+        newComment.setId(newId);
+        newComment.setPostId(postId);
+        newComment.setUserId(userId);
+        newComment.setParentId(parentId);
+        newComment.setPath(childPath);
+        newComment.setDepth(childDepth);
+        newComment.setContent(content);
+
+        // 5. Save to database
+        commentRepository.save(newComment);
+        
+        System.out.println("Comment replied successfully with path: " + childPath);
+    }
+    
+    private Long generateId() {
+        // Placeholder for ID geeration logic (e.g., Snowflake, DB Sequence)
+        return System.currentTimeMillis(); 
+    }
+}
+
+// Simple POJO for Comment
+class Comment {
+    private Long id;
+    private Long postId;
+    private Long userId;
+    private Long parentId;
+    private String path;
+    private int depth;
+    private String content;
+    
+    // Getters and Setters omitted for brevity
+    
+    public String getPath() { return path; }
+    public void setPath(String path) { this.path = path; }
+    public int getDepth() { return depth; }
+    public void setDepth(int depth) { this.depth = depth; }
+    public void setId(Long id) { this.id = id; }
+    public void setPostId(Long postId) { this.postId = postId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+    public void setParentId(Long parentId) { this.parentId = parentId; }
+    public void setContent(String content) { this.content = content; }
+}
+
+// Mock Repository Interface
+interface CommentRepository {
+    Comment findById(Long id);
+    void save(Comment comment);
+}
 ```
 
 ## Optimization & Scaling

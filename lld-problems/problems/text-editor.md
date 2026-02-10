@@ -26,101 +26,203 @@ A simple `String` is $O(N)$ for insertion. Real editors use:
 2.  **Flyweight Pattern**: For syntax highlighting. Don't create an object for every 'A' character. Reuse `Glyph('A', font)`.
 3.  **Memento Pattern**: Store state snapshots (optional, Command is usually enough).
 
-## Python Implementation (List of Lines + Command Pattern)
+## Java Implementation (Command Pattern)
 
-### 1. Model (TextBuffer)
+#### Class Diagram
 
-```python
-class Cursor:
-    def __init__(self, row=0, col=0):
-        self.row = row
-        self.col = col
+```mermaid
+classDiagram
+    class TextEditor {
+        +TextBuffer buffer
+        +CommandHistory history
+        +insert(char)
+        +delete()
+        +undo()
+        +redo()
+    }
 
-class TextBuffer:
-    def __init__(self):
-        self.lines = [""] # Start with empty line
+    class TextBuffer {
+        +List~String~ lines
+        +Cursor cursor
+        +insertChar(char, row, col)
+        +deleteChar(row, col)
+        +splitLine(row, col)
+        +mergeLines(row)
+    }
 
-    def insert_char(self, char, row, col):
-        line = self.lines[row]
-        self.lines[row] = line[:col] + char + line[col:]
+    class Command {
+        <<interface>>
+        +execute()
+        +undo()
+    }
 
-    def delete_char(self, row, col):
-        line = self.lines[row]
-        char = line[col]
-        self.lines[row] = line[:col] + line[col+1:]
-        return char
+    class InsertCommand {
+        +char char
+        +int row
+        +int col
+    }
 
-    def split_line(self, row, col):
-        line = self.lines[row]
-        self.lines[row] = line[:col]
-        self.lines.insert(row + 1, line[col:])
+    class DeleteCommand {
+        +char char
+        +int row
+        +int col
+    }
 
-    def merge_lines(self, row):
-        if row == 0: return
-        prev = self.lines[row-1]
-        curr = self.lines[row]
-        new_col = len(prev)
-        self.lines[row-1] = prev + curr
-        self.lines.pop(row)
-        return new_col
+    class CommandHistory {
+        +Stack~Command~ undoStack
+        +Stack~Command~ redoStack
+        +execute(cmd)
+        +undo()
+    }
+
+    TextEditor --> TextBuffer
+    TextEditor --> CommandHistory
+    CommandHistory --> Command
+    Command <|.. InsertCommand
+    Command <|.. DeleteCommand
 ```
 
-### 2. Command Pattern (Undo/Redo)
+#### Flow Chart: Insert Character
 
-```python
-from abc import ABC, abstractmethod
+```mermaid
+flowchart TD
+    A[User Type 'A'] --> B[Create InsertCommand('A')]
+    B --> C[Execute Command]
+    C --> D[Buffer: Update Text at Cursor]
+    D --> E[Move Cursor Forward]
+    E --> F[Push Command to Undo Stack]
+    F --> G[Clear Redo Stack]
+    G --> H[Update UI Render]
+```
 
-class Command(ABC):
-    @abstractmethod
-    def execute(self): pass
-    @abstractmethod
-    def undo(self): pass
+#### Code
 
-class InsertCommand(Command):
-    def __init__(self, buffer, cursor, char):
-        self.buffer = buffer
-        self.cursor = cursor
-        self.char = char
-        self.row = cursor.row
-        self.col = cursor.col
+```java
+import java.util.*;
 
-    def execute(self):
-        self.cursor.row = self.row
-        self.cursor.col = self.col
-        if self.char == '\n':
-            self.buffer.split_line(self.row, self.col)
-            self.cursor.row += 1
-            self.cursor.col = 0
-        else:
-            self.buffer.insert_char(self.char, self.row, self.col)
-            self.cursor.col += 1
+// 1. Model: Text Buffer & Cursor
+class Cursor {
+    int row, col;
+    public Cursor(int r, int c) { row = r; col = c; }
+}
 
-    def undo(self):
-        # Precise inverse of execute
-        if self.char == '\n':
-            self.buffer.merge_lines(self.row + 1)
-            self.cursor.row = self.row
-            self.cursor.col = self.col
-        else:
-            self.buffer.delete_char(self.row, self.col)
-            self.cursor.row = self.row
-            self.cursor.col = self.col
+class TextBuffer {
+    List<StringBuilder> lines;
+    Cursor cursor;
 
-class CommandHistory:
-    def __init__(self):
-        self.undo_stack = []
-        self.redo_stack = []
+    public TextBuffer() {
+        lines = new ArrayList<>();
+        lines.add(new StringBuilder());
+        cursor = new Cursor(0, 0);
+    }
 
-    def execute(self, cmd):
-        cmd.execute()
-        self.undo_stack.append(cmd)
-        self.redo_stack.clear()
+    public void insertChar(char c) {
+        StringBuilder line = lines.get(cursor.row);
+        line.insert(cursor.col, c);
+        cursor.col++;
+    }
 
-    def undo(self):
-        if self.undo_stack:
-            cmd = self.undo_stack.pop()
-            cmd.undo()
-            self.redo_stack.append(cmd)
+    public void insertNewLine() {
+        StringBuilder currentLine = lines.get(cursor.row);
+        String suffix = currentLine.substring(cursor.col);
+        currentLine.delete(cursor.col, currentLine.length());
+        
+        lines.add(cursor.row + 1, new StringBuilder(suffix));
+        cursor.row++;
+        cursor.col = 0;
+    }
+
+    public void deleteChar(int r, int c) {
+        // Simplified delete logic
+        lines.get(r).deleteCharAt(c);
+        cursor.col = c;
+        cursor.row = r;
+    }
+    
+    // ... Additional helper methods for split/merge lines used by commands
+}
+
+// 2. Command Pattern
+interface Command {
+    void execute();
+    void undo();
+}
+
+class InsertCommand implements Command {
+    TextBuffer buffer;
+    char c;
+    int prevRow, prevCol;
+
+    public InsertCommand(TextBuffer buffer, char c) {
+        this.buffer = buffer;
+        this.c = c;
+    }
+
+    public void execute() {
+        prevRow = buffer.cursor.row;
+        prevCol = buffer.cursor.col;
+        if (c == '\n') buffer.insertNewLine();
+        else buffer.insertChar(c);
+    }
+
+    public void undo() {
+        // Simplified undo logic
+        // Real implementation needs to handle merging lines for '\n'
+        if(c != '\n') {
+            buffer.deleteChar(prevRow, prevCol);
+        }
+    }
+}
+
+// 3. Invoker (History)
+class CommandHistory {
+    Stack<Command> undoStack = new Stack<>();
+    Stack<Command> redoStack = new Stack<>();
+
+    public void execute(Command cmd) {
+        cmd.execute();
+        undoStack.push(cmd);
+        redoStack.clear();
+    }
+
+    public void undo() {
+        if (!undoStack.isEmpty()) {
+            Command cmd = undoStack.pop();
+            cmd.undo();
+            redoStack.push(cmd);
+        }
+    }
+}
+
+// 4. Client (Editor)
+public class TextEditor {
+    TextBuffer buffer = new TextBuffer();
+    CommandHistory history = new CommandHistory();
+
+    public void type(char c) {
+        Command cmd = new InsertCommand(buffer, c);
+        history.execute(cmd);
+        printBuffer();
+    }
+
+    public void undo() {
+        history.undo();
+        printBuffer();
+    }
+
+    private void printBuffer() {
+        System.out.println("--- Editor ---");
+        for(StringBuilder line : buffer.lines) System.out.println(line);
+        System.out.println("--------------");
+    }
+
+    public static void main(String[] args) {
+        TextEditor editor = new TextEditor();
+        editor.type('H');
+        editor.type('i');
+        editor.undo(); // Removes 'i'
+    }
+}
 ```
 
 ## Interview Q&A

@@ -29,149 +29,253 @@ The magic of IDM lies in the HTTP protocol.
 3.  **Worker (Thread)**: A separate thread responsible for downloading one Segment.
 4.  **DownloadManager**: The Controller. Starts tasks, manages thread pool, and handles file assembly.
 
-## Python Implementation
+## Java Implementation
 
-### Segment and Task
+#### Class Diagram
 
-```python
-import os
-import requests
-import threading
-from enum import Enum
+```mermaid
+classDiagram
+    class DownloadManager {
+        +List~DownloadTask~ tasks
+        +startDownload(url, output)
+    }
 
-class DownloadStatus(Enum):
-    PENDING = 1
-    DOWNLOADING = 2
-    PAUSED = 3
-    COMPLETED = 4
-    FAILED = 5
+    class DownloadTask {
+        +String url
+        +String status
+        +long fileSize
+        +List~Segment~ segments
+        +initialize()
+        +mergeFiles()
+    }
 
-class Segment:
-    def __init__(self, id, start, end, temp_path):
-        self.id = id
-        self.start = start
-        self.end = end
-        self.downloaded = 0
-        self.is_completed = False
-        self.temp_path = temp_path
+    class Segment {
+        +int id
+        +long start
+        +long end
+        +long downloaded
+        +boolean isCompleted
+        +String tempPath
+    }
 
-class DownloadTask:
-    def __init__(self, url, output_path, num_threads=4):
-        self.url = url
-        self.output_path = output_path
-        self.num_threads = num_threads
-        self.segments = []
-        self.status = DownloadStatus.PENDING
-        self.file_size = 0
-        self.lock = threading.Lock() # For safe status updates
+    class ChunkDownloader {
+        +DownloadTask task
+        +Segment segment
+        +run()
+    }
 
-    def initialize(self):
-        # 1. Head Request to get Size
-        response = requests.head(self.url)
-        self.file_size = int(response.headers.get('content-length', 0))
-        accept_ranges = response.headers.get('accept-ranges', 'none')
-
-        if self.file_size == 0:
-            raise Exception("Invalid File Size")
-
-        # 2. Calculate Segment Sizes
-        print(f"File Size: {self.file_size} bytes. Ranges Supported: {accept_ranges}")
-        
-        # If server doesn't support ranges, use 1 segment
-        if accept_ranges == 'none':
-            self.segments.append(Segment(0, 0, self.file_size, f"{self.output_path}.part0"))
-        else:
-            chunk_size = self.file_size // self.num_threads
-            for i in range(self.num_threads):
-                start = i * chunk_size
-                # Last chunk takes the remainder
-                end = self.file_size if i == self.num_threads - 1 else (start + chunk_size)
-                temp_path = f"{self.output_path}.part{i}"
-                self.segments.append(Segment(i, start, end, temp_path))
-
-    def merge_files(self):
-        print("Merging segments...")
-        with open(self.output_path, 'wb') as final_file:
-            for segment in self.segments:
-                with open(segment.temp_path, 'rb') as part_file:
-                    final_file.write(part_file.read())
-                # Cleanup temp file
-                os.remove(segment.temp_path)
-        self.status = DownloadStatus.COMPLETED
-        print("Download Complete!")
+    DownloadManager --> DownloadTask
+    DownloadTask --> Segment
+    ChunkDownloader --> Segment
+    ChunkDownloader ..> DownloadTask
 ```
 
-### Worker (Thread)
+#### Flow Chart: Parallel Download
 
-```python
-class ChunkDownloader(threading.Thread):
-    def __init__(self, url, segment):
-        super().__init__()
-        self.url = url
-        self.segment = segment
-
-    def run(self):
-        if self.segment.is_completed:
-            return
-
-        # Core Logic: HTTP Range Header
-        # We allow resuming by adding 'downloaded' offset to 'start'
-        current_start = self.segment.start + self.segment.downloaded
-        headers = {'Range': f'bytes={current_start}-{self.segment.end}'}
-        
-        print(f"Thread-{self.segment.id} requesting bytes {current_start}-{self.segment.end}")
-        
-        try:
-            with requests.get(self.url, headers=headers, stream=True) as r:
-                mode = 'ab' if self.segment.downloaded > 0 else 'wb'
-                with open(self.segment.temp_path, mode) as f:
-                    for chunk in r.iter_content(chunk_size=1024):
-                        if chunk:
-                            f.write(chunk)
-                            self.segment.downloaded += len(chunk)
-            
-            self.segment.is_completed = True
-            print(f"Thread-{self.segment.id} finished.")
-            
-        except Exception as e:
-            print(f"Thread-{self.segment.id} failed: {e}")
+```mermaid
+flowchart TD
+    A[Start Download Task] --> B[Head Request: Get File Size]
+    B --> C{Accept-Ranges?}
+    C -- No --> D[Create 1 Segment (Full File)]
+    C -- Yes --> E[Split into N Segments]
+    E --> F[Start N Threads in Parallel]
+    D --> F
+    F --> G{All Segments Complete?}
+    G -- No --> F
+    G -- Yes --> H[Merge Segments to Output File]
+    H --> I[Delete Temp Files]
+    I --> J[Mark Task Completed]
 ```
 
-### Manager (Orchestrator)
+#### Code
 
-```python
-class DownloadManager:
-    def __init__(self):
-        self.tasks = []
+```java
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-    def start_download(self, url, output_file):
-        task = DownloadTask(url, output_file)
-        self.tasks.append(task)
-        
-        try:
-            task.initialize()
-            task.status = DownloadStatus.DOWNLOADING
+enum DownloadStatus {
+    PENDING, DOWNLOADING, COMPLETED, FAILED
+}
+
+// 1. Segment Entity
+class Segment {
+    int id;
+    long start;
+    long end;
+    long downloaded;
+    boolean isCompleted;
+    File tempFile;
+
+    public Segment(int id, long start, long end, File tempFile) {
+        this.id = id;
+        this.start = start;
+        this.end = end;
+        this.tempFile = tempFile;
+        this.isCompleted = false;
+        this.downloaded = 0;
+    }
+}
+
+// 2. Worker Thread
+class ChunkDownloader implements Runnable {
+    private String fileUrl;
+    private Segment segment;
+    private CountDownLatch latch;
+    private AtomicBoolean failed;
+
+    public ChunkDownloader(String fileUrl, Segment segment, CountDownLatch latch, AtomicBoolean failed) {
+        this.fileUrl = fileUrl;
+        this.segment = segment;
+        this.latch = latch;
+        this.failed = failed;
+    }
+
+    @Override
+    public void run() {
+        if (segment.isCompleted) {
+            latch.countDown();
+            return;
+        }
+
+        long startByte = segment.start + segment.downloaded;
+        if (startByte >= segment.end) {
+            segment.isCompleted = true;
+            latch.countDown();
+            return;
+        }
+
+        try {
+            URL url = new URL(fileUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            String range = String.format("bytes=%d-%d", startByte, segment.end);
+            conn.setRequestProperty("Range", range);
             
-            # Create threads
-            workers = []
-            for segment in task.segments:
-                worker = ChunkDownloader(task.url, segment)
-                workers.append(worker)
-                worker.start()
+            System.out.println("Thread-" + segment.id + " downloading: " + range);
 
-            # Wait for all to finish (In real app, this would be async)
-            for worker in workers:
-                worker.join()
+            try (InputStream in = conn.getInputStream();
+                 RandomAccessFile raf = new RandomAccessFile(segment.tempFile, "rw")) {
+                
+                raf.seek(segment.downloaded);
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                
+                while ((bytesRead = in.read(buffer)) != -1) {
+                    raf.write(buffer, 0, bytesRead);
+                    segment.downloaded += bytesRead;
+                }
+            }
+            
+            segment.isCompleted = true;
+            System.out.println("Thread-" + segment.id + " finished.");
 
-            # Check if all successful
-            if all(s.is_completed for s in task.segments):
-                task.merge_files()
-            else:
-                task.status = DownloadStatus.FAILED
-                print("Download failed.")
+        } catch (IOException e) {
+            System.err.println("Thread-" + segment.id + " failed: " + e.getMessage());
+            failed.set(true);
+        } finally {
+            latch.countDown();
+        }
+    }
+}
 
-        except Exception as e:
-            print(f"Error: {e}")
+// 3. Task Entity & Manager Logic
+class DownloadTask {
+    String url;
+    String outputPath;
+    int numThreads;
+    long fileSize;
+    List<Segment> segments;
+    DownloadStatus status;
+
+    public DownloadTask(String url, String outputPath, int numThreads) {
+        this.url = url;
+        this.outputPath = outputPath;
+        this.numThreads = numThreads;
+        this.segments = new ArrayList<>();
+        this.status = DownloadStatus.PENDING;
+    }
+
+    public void start() {
+        try {
+            // 1. Get File Size
+            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setRequestMethod("HEAD");
+            fileSize = conn.getContentLengthLong();
+            String ranges = conn.getHeaderField("Accept-Ranges");
+            
+            if(fileSize <= 0) throw new RuntimeException("Invalid file size");
+
+            System.out.println("File Size: " + fileSize + " bytes");
+
+            // 2. Create Segments
+            if (ranges == null || !ranges.equals("bytes")) {
+                segments.add(new Segment(0, 0, fileSize, new File(outputPath + ".part0")));
+            } else {
+                long chunkSize = fileSize / numThreads;
+                for (int i = 0; i < numThreads; i++) {
+                    long start = i * chunkSize;
+                    long end = (i == numThreads - 1) ? fileSize : (start + chunkSize - 1) ; // Inclusive end
+                    segments.add(new Segment(i, start, end, new File(outputPath + ".part" + i)));
+                }
+            }
+
+            // 3. Start Parallel Download
+            ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+            CountDownLatch latch = new CountDownLatch(segments.size());
+            AtomicBoolean failed = new AtomicBoolean(false);
+
+            for (Segment seg : segments) {
+                executor.submit(new ChunkDownloader(url, seg, latch, failed));
+            }
+
+            latch.await();
+            executor.shutdown();
+
+            if (failed.get()) {
+                status = DownloadStatus.FAILED;
+                System.out.println("Download Failed!");
+            } else {
+                mergeFiles();
+                status = DownloadStatus.COMPLETED;
+                System.out.println("Download Complete!");
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            status = DownloadStatus.FAILED;
+        }
+    }
+
+    private void mergeFiles() throws IOException {
+        System.out.println("Merging segments...");
+        try (FileOutputStream fos = new FileOutputStream(outputPath)) {
+            for (Segment seg : segments) {
+                try (FileInputStream fis = new FileInputStream(seg.tempFile)) {
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    while ((read = fis.read(buffer)) != -1) {
+                        fos.write(buffer, 0, read);
+                    }
+                }
+                seg.tempFile.delete();
+            }
+        }
+    }
+}
+
+// 4. Main Class
+public class DownloadManager {
+    public static void main(String[] args) {
+        String url = "https://speed.hetzner.de/100MB.bin"; // Example URL
+        String output = "file.bin";
+        
+        DownloadTask task = new DownloadTask(url, output, 4);
+        task.start();
+    }
+}
 ```
 
 ## Key Design Decisions

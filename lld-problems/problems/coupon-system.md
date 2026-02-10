@@ -11,123 +11,200 @@ Design a flexible coupon system that supports:
 2.  **Rules/Constraints**: Min Order Value, Specific Category, User Specific, Expiry Date.
 3.  **Extensibility**: Marketing team introduces new rules (e.g., BOGO) without rewriting core logic.
 
-## Core Design Pattern: Strategy & Composite
+## Java Implementation
 
-*   **Strategy Pattern**: Use for `Reward` calculation. `PercentageReward`, `FlatReward`.
-*   **Composite Pattern**: A `Coupon` *has* a list of `Constraints`. It passes only if ALL constraints pass.
+#### Class Diagram
 
-## Class Design
+```mermaid
+classDiagram
+    class Coupon {
+        +String code
+        +Reward reward
+        +List~Constraint~ constraints
+        +isValid(cart)
+        +getDiscount(cart)
+    }
 
-### 1. Context (Cart)
+    class Reward {
+        <<interface>>
+        +calculate(cart) double
+    }
 
-```python
-class Item:
-    def __init__(self, name, price, category):
-        self.name = name
-        self.price = price
-        self.category = category
+    class FlatReward {
+        +double amount
+    }
 
-class Cart:
-    def __init__(self):
-        self.items = []
-    
-    def add_item(self, item):
-        self.items.append(item)
-        
-    def get_total_price(self):
-        return sum(item.price for item in self.items)
+    class PercentageReward {
+        +double percentage
+        +double maxDiscount
+    }
+
+    class Constraint {
+        <<interface>>
+        +validate(cart) boolean
+    }
+
+    class MinOrderConstraint {
+        +double minPrice
+    }
+
+    class CategoryConstraint {
+        +String category
+    }
+
+    class Cart {
+        +List~Item~ items
+        +getTotalPrice()
+    }
+
+    Coupon --> Reward
+    Coupon --> Constraint
+    Reward <|.. FlatReward
+    Reward <|.. PercentageReward
+    Constraint <|.. MinOrderConstraint
+    Constraint <|.. CategoryConstraint
 ```
 
-### 2. Constraints (Validation Logic)
+#### Flow Chart: Apply Coupon
 
-```python
-from abc import ABC, abstractmethod
-import datetime
-
-class Constraint(ABC):
-    @abstractmethod
-    def validate(self, cart: Cart) -> bool:
-        pass
-
-class MinOrderConstraint(Constraint):
-    def __init__(self, min_price):
-        self.min_price = min_price
-        
-    def validate(self, cart: Cart):
-        return cart.get_total_price() >= self.min_price
-
-class CategoryConstraint(Constraint):
-    def __init__(self, required_category):
-        self.required_category = required_category
-        
-    def validate(self, cart: Cart):
-        # Check if ANY item in cart belongs to the category
-        return any(item.category == self.required_category for item in cart.items)
+```mermaid
+flowchart TD
+    A[User Applies Coupon Code] --> B[Fetch Coupon Logic]
+    B --> C{Iterate Constraints}
+    C --> D{Constraint.validate(Cart)?}
+    D -- No --> E[Return: Coupon Invalid]
+    D -- Yes --> F{More Constraints?}
+    F -- Yes --> C
+    F -- No --> G[Calculate Discount (Reward Strategy)]
+    G --> H[Check Max Discount Cap]
+    H --> I[Apply Discount to Cart]
 ```
 
-### 3. Rewards (Calculation Logic)
+#### Code
 
-```python
-class Reward(ABC):
-    @abstractmethod
-    def calculate(self, cart: Cart) -> float:
-        pass
+```java
+import java.util.*;
 
-class FlatReward(Reward):
-    def __init__(self, amount):
-        self.amount = amount
-        
-    def calculate(self, cart: Cart):
-        return self.amount
+// 1. Context (Cart)
+class Item {
+    String name;
+    double price;
+    String category;
 
-class PercentageReward(Reward):
-    def __init__(self, percentage, max_discount=float('inf')):
-        self.percentage = percentage
-        self.max_discount = max_discount
-        
-    def calculate(self, cart: Cart):
-        discount = cart.get_total_price() * (self.percentage / 100)
-        return min(discount, self.max_discount)
-```
+    public Item(String name, double price, String category) {
+        this.name = name;
+        this.price = price;
+        this.category = category;
+    }
+}
 
-### 4. Coupon (Composite)
+class Cart {
+    List<Item> items = new ArrayList<>();
 
-```python
-class Coupon:
-    def __init__(self, code, reward: Reward):
-        self.code = code
-        self.reward = reward
-        self.constraints = []
+    public void addItem(Item item) {
+        items.add(item);
+    }
 
-    def add_constraint(self, constraint: Constraint):
-        self.constraints.append(constraint)
+    public double getTotalPrice() {
+        return items.stream().mapToDouble(i -> i.price).sum();
+    }
+}
 
-    def is_valid(self, cart: Cart):
-        for constraint in self.constraints:
-            if not constraint.validate(cart):
-                return False
-        return True
+// 2. Constraints (Validation Chain)
+interface Constraint {
+    boolean validate(Cart cart);
+}
 
-    def get_discount(self, cart: Cart):
-        if self.is_valid(cart):
-            discount = self.reward.calculate(cart)
-            return min(discount, cart.get_total_price())
-        return 0.0
-```
+class MinOrderConstraint implements Constraint {
+    double minPrice;
+    public MinOrderConstraint(double minPrice) { this.minPrice = minPrice; }
 
-## Usage Example
+    public boolean validate(Cart cart) {
+        return cart.getTotalPrice() >= minPrice;
+    }
+}
 
-```python
-if __name__ == "__main__":
-    cart = Cart()
-    cart.add_item(Item("MacBook", 2000, "Electronics"))
-    
-    # Coupon: "ELECTRO10" (10% off up to $100 if cart > $500 & contains Electronics)
-    coupon = Coupon("ELECTRO10", PercentageReward(10, max_discount=100))
-    coupon.add_constraint(CategoryConstraint("Electronics"))
-    coupon.add_constraint(MinOrderConstraint(500))
-    
-    print(f"Discount: ${coupon.get_discount(cart)}") # Output: 100
+class CategoryConstraint implements Constraint {
+    String requiredCategory;
+    public CategoryConstraint(String requiredCategory) { this.requiredCategory = requiredCategory; }
+
+    public boolean validate(Cart cart) {
+        return cart.items.stream().anyMatch(i -> i.category.equals(requiredCategory));
+    }
+}
+
+// 3. Rewards (Strategy Pattern)
+interface Reward {
+    double calculate(Cart cart);
+}
+
+class FlatReward implements Reward {
+    double amount;
+    public FlatReward(double amount) { this.amount = amount; }
+
+    public double calculate(Cart cart) { return amount; }
+}
+
+class PercentageReward implements Reward {
+    double percentage;
+    double maxDiscount;
+
+    public PercentageReward(double percentage, double maxDiscount) {
+        this.percentage = percentage;
+        this.maxDiscount = maxDiscount;
+    }
+
+    public double calculate(Cart cart) {
+        double discount = cart.getTotalPrice() * (percentage / 100);
+        return Math.min(discount, maxDiscount);
+    }
+}
+
+// 4. Coupon (Composite)
+class Coupon {
+    String code;
+    Reward reward;
+    List<Constraint> constraints = new ArrayList<>();
+
+    public Coupon(String code, Reward reward) {
+        this.code = code;
+        this.reward = reward;
+    }
+
+    public void addConstraint(Constraint constraint) {
+        constraints.add(constraint);
+    }
+
+    public boolean isValid(Cart cart) {
+        for (Constraint c : constraints) {
+            if (!c.validate(cart)) return false;
+        }
+        return true;
+    }
+
+    public double getDiscount(Cart cart) {
+        if (isValid(cart)) {
+            double discount = reward.calculate(cart);
+            return Math.min(discount, cart.getTotalPrice());
+        }
+        return 0.0;
+    }
+}
+
+// Usage
+public class CouponSystem {
+    public static void main(String[] args) {
+        Cart cart = new Cart();
+        cart.addItem(new Item("MacBook", 2000, "Electronics"));
+
+        // Coupon: "ELECTRO10" (10% off up to $100 if cart > $500 & contains Electronics)
+        Coupon coupon = new Coupon("ELECTRO10", new PercentageReward(10, 100));
+        coupon.addConstraint(new MinOrderConstraint(500));
+        coupon.addConstraint(new CategoryConstraint("Electronics"));
+
+        System.out.println("Discount: $" + coupon.getDiscount(cart)); // Output: 100.0
+    }
+}
 ```
 
 ## Interview Talking Points

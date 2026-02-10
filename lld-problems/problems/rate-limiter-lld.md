@@ -19,55 +19,136 @@ We use **Token Bucket** (Lazy Refill).
 
 ## Implementation
 
-```python
-import time
-import threading
+## Java Implementation (Thread-Safe Token Bucket)
 
-class TokenBucket:
-    def __init__(self, capacity, refill_rate):
-        self.capacity = capacity          # Max burst
-        self.tokens = capacity            # Current tokens
-        self.refill_rate = refill_rate    # Tokens/sec
-        self.last_refill = time.time()
-        self.lock = threading.Lock()      # Thread safety
+#### Class Diagram
 
-    def allow_request(self, tokens_needed=1):
-        with self.lock:
-            now = time.time()
-            # 1. Refill
-            elapsed = now - self.last_refill
-            added = elapsed * self.refill_rate
-            self.tokens = min(self.capacity, self.tokens + added)
-            self.last_refill = now
-            
-            # 2. Consume
-            if self.tokens >= tokens_needed:
-                self.tokens -= tokens_needed
-                return True
-            return False
+```mermaid
+classDiagram
+    class RateLimiter {
+        <<interface>>
+        +allowRequest(userId) boolean
+    }
+
+    class TokenBucketRateLimiter {
+        +Map~String, TokenBucket~ userBuckets
+        +allowRequest(userId) boolean
+        -cleanup()
+    }
+
+    class TokenBucket {
+        +long capacity
+        +double tokens
+        +long lastRefillTimestamp
+        +double refillRate
+        +allow() boolean
+        -refill()
+    }
+
+    RateLimiter <|.. TokenBucketRateLimiter
+    TokenBucketRateLimiter --> TokenBucket
 ```
 
-## Strategy Pattern for Extensibility
+#### Flow Chart: Allow Request
 
-To support multiple algorithms (Leaky Bucket, Sliding Window), use Strategy Pattern.
+```mermaid
+flowchart TD
+    A[Request(UserID)] --> B{Bucket Exists?}
+    B -- No --> C[Create New Bucket]
+    B -- Yes --> D[Get Bucket]
+    C --> D
+    D --> E[Lock Bucket]
+    E --> F[Refill Tokens based on Time Elapsed]
+    F --> G{Tokens >= 1?}
+    G -- Yes --> H[Decrement Token]
+    H --> I[Unlock & Return TRUE]
+    G -- No --> J[Unlock & Return FALSE]
+```
 
-```python
-class RateLimiterStrategy(ABC):
-    @abstractmethod
-    def allow_request(self, user_id): pass
+#### Code
 
-class TokenBucketStrategy(RateLimiterStrategy):
-    def __init__(self):
-        self.user_buckets = {} # UserID -> Bucket
-        self.lock = threading.Lock()
+```java
+import java.util.*;
+import java.util.concurrent.*;
 
-    def allow_request(self, user_id):
-        with self.lock:
-            if user_id not in self.user_buckets:
-                self.user_buckets[user_id] = TokenBucket(10, 1)
-            bucket = self.user_buckets[user_id]
+// 1. Core Bucket Entity
+class TokenBucket {
+    private final long capacity;
+    private final double refillRate; // Tokens per second
+    private double tokens;
+    private long lastRefillTimestamp;
+
+    public TokenBucket(long capacity, double refillRate) {
+        this.capacity = capacity;
+        this.refillRate = refillRate;
+        this.tokens = capacity;
+        this.lastRefillTimestamp = System.nanoTime();
+    }
+
+    public synchronized boolean allow() {
+        refill();
+        if (tokens >= 1) {
+            tokens -= 1;
+            return true;
+        }
+        return false;
+    }
+
+    private void refill() {
+        long now = System.nanoTime();
+        double elapsedSeconds = (now - lastRefillTimestamp) / 1_000_000_000.0;
+        double tokensToAdd = elapsedSeconds * refillRate;
         
-        return bucket.allow_request()
+        if (tokensToAdd > 0) {
+            tokens = Math.min(capacity, tokens + tokensToAdd);
+            lastRefillTimestamp = now;
+        }
+    }
+}
+
+// 2. Strategy Interface
+interface RateLimiter {
+    boolean allowRequest(String userId);
+}
+
+// 3. Concrete Strategy
+class TokenBucketRateLimiter implements RateLimiter {
+    private final Map<String, TokenBucket> userBuckets = new ConcurrentHashMap<>();
+    private final long capacity;
+    private final double refillRate;
+
+    public TokenBucketRateLimiter(long capacity, double refillRate) {
+        this.capacity = capacity;
+        this.refillRate = refillRate;
+    }
+
+    @Override
+    public boolean allowRequest(String userId) {
+        // ComputeIfAbsent is atomic for map insertion, but subsequent allow() needs to be thread-safe for the specific bucket
+        TokenBucket bucket = userBuckets.computeIfAbsent(userId, k -> new TokenBucket(capacity, refillRate));
+        return bucket.allow();
+    }
+}
+
+// 4. Client
+public class RateLimiterService {
+    public static void main(String[] args) throws InterruptedException {
+        // 10 tokens max, refill 1 token/sec
+        RateLimiter limiter = new TokenBucketRateLimiter(10, 1);
+
+        String user = "User1";
+        
+        // Simulate bursts
+        for (int i = 0; i < 12; i++) {
+            boolean allowed = limiter.allowRequest(user);
+            System.out.println("Request " + (i+1) + ": " + (allowed ? "Allowed" : "Denied"));
+        }
+        
+        // Wait and retry
+        Thread.sleep(2000); // Wait 2s -> Refill 2 tokens
+        System.out.println("Request after wait: " + (limiter.allowRequest(user) ? "Allowed" : "Denied"));
+    }
+}
 ```
 
 ## Interview Q&A

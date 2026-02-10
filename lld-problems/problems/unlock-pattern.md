@@ -15,89 +15,181 @@ Design the Android 3x3 Grid Unlock Pattern system.
 
 ## Implementation
 
-### Point Entity
+## Java Implementation
 
-```python
-class Point:
-    def __init__(self, row, col):
-        self.row = row
-        self.col = col
-        self.index = row * 3 + col
+#### Class Diagram
 
-    def __eq__(self, other):
-        return self.row == other.row and self.col == other.col
-    
-    def __hash__(self):
-        return hash(self.index)
+```mermaid
+classDiagram
+    class PatternLockSystem {
+        +String savedPatternHash
+        +PatternValidator validator
+        +setPattern(pattern)
+        +unlock(pattern)
+    }
+
+    class PatternValidator {
+        +int MIN_LENGTH = 4
+        +isValid(pattern) boolean
+        -getIntermediate(p1, p2) Point
+    }
+
+    class Point {
+        +int r
+        +int c
+        +int index
+    }
+
+    PatternLockSystem --> PatternValidator
+    PatternValidator ..> Point
 ```
 
-### Pattern Validator (The Hard Part)
+#### Flow Chart: Validation Logic
 
-The core logic handles the "Skip" rule using the midpoint formula.
-- Midpoint of `(r1, c1)` and `(r2, c2)` = `((r1+r2)/2, (c1+c2)/2)`.
-- If midpoint coordinates are integers, there is a node in between.
+```mermaid
+flowchart TD
+    A[Start Validation] --> B{Length >= 4?}
+    B -- No --> C[Invalid]
+    B -- Yes --> D[Init: Visited Set]
+    D --> E[Iterate Points (For P[i] -> P[i+1])]
+    E --> F{Is Next Visited?}
+    F -- Yes --> C
+    F -- No --> G[Calculate Midpoint]
+    G --> H{Is There Midpoint?}
+    H -- No --> I[Valid Move]
+    H -- Yes --> J{Is Midpoint Visited?}
+    J -- No --> C[Invalid (Skip Rule)]
+    J -- Yes --> I
+    I --> K[Add Next to Visited]
+    K --> L{More Points?}
+    L -- Yes --> E
+    L -- No --> M[Valid Pattern]
+```
 
-```python
-class PatternValidator:
-    def __init__(self):
-        self.MIN_LENGTH = 4
+#### Code
 
-    def is_valid_pattern(self, pattern: list[Point]) -> bool:
-        if len(pattern) < self.MIN_LENGTH:
-            return False
+```java
+import java.util.*;
+
+// 1. Point Entity
+class Point {
+    int r, c;
+    int index;
+
+    public Point(int r, int c) {
+        this.r = r;
+        this.c = c;
+        this.index = r * 3 + c;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Point point = (Point) o;
+        return r == point.r && c == point.c;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(r, c);
+    }
+}
+
+// 2. Validator (The Brains)
+class PatternValidator {
+    private static final int MIN_LENGTH = 4;
+
+    public boolean isValid(List<Point> pattern) {
+        if (pattern.size() < MIN_LENGTH) return false;
+
+        Set<Point> visited = new HashSet<>();
+        visited.add(pattern.get(0));
+
+        for (int i = 0; i < pattern.size() - 1; i++) {
+            Point curr = pattern.get(i);
+            Point next = pattern.get(i + 1);
+
+            // 1. Check Revisit
+            if (visited.contains(next)) return false;
+
+            // 2. Check Skip Logic
+            Point intermediate = getIntermediate(curr, next);
+            if (intermediate != null && !visited.contains(intermediate)) {
+                // Illegal skip over unvisited node
+                return false; 
+            }
+
+            visited.add(next);
+        }
+        return true;
+    }
+
+    // Returns the point EXACTLY between p1 and p2, or null if adjacency/knight-move
+    private Point getIntermediate(Point p1, Point p2) {
+        int rowSum = p1.r + p2.r;
+        int colSum = p1.c + p2.c;
+
+        // If sum is odd, midpoint is x.5 -> No integer node in between
+        if (rowSum % 2 != 0 || colSum % 2 != 0) {
+            return null;
+        }
+
+        int midR = rowSum / 2;
+        int midC = colSum / 2;
         
-        visited = set()
-        visited.add(pattern[0])
+        // Special case: Center of 3x3 is (1,1)
+        // Ensure we handle "middle" correctly
+        return new Point(midR, midC);
+    }
+}
 
-        for i in range(len(pattern) - 1):
-            curr = pattern[i]
-            next_node = pattern[i+1]
+// 3. System
+public class PatternLockSystem {
+    private String savedPatternHash;
+    private PatternValidator validator;
 
-            # 1. Check revisits
-            if next_node in visited:
-                return False
+    public PatternLockSystem() {
+        this.validator = new PatternValidator();
+    }
 
-            # 2. Check illegal skips
-            intermediate = self._get_intermediate_point(curr, next_node)
-            if intermediate and intermediate not in visited:
-                return False # Skipped over unvisited node!
+    public void setPattern(List<Point> pattern) {
+        if (validator.isValid(pattern)) {
+            this.savedPatternHash = hashPattern(pattern);
+            System.out.println("Pattern Set Successfully!");
+        } else {
+            System.out.println("Invalid Pattern!");
+        }
+    }
 
-            visited.add(next_node)
-            
-        return True
+    public boolean unlock(List<Point> inputPattern) {
+        if (savedPatternHash == null) return false;
+        return hashPattern(inputPattern).equals(savedPatternHash);
+    }
 
-    def _get_intermediate_point(self, p1: Point, p2: Point):
-        row_sum = p1.row + p2.row
-        col_sum = p1.col + p2.col
+    private String hashPattern(List<Point> pattern) {
+        // Simple string representation for demo
+        StringBuilder sb = new StringBuilder();
+        for (Point p : pattern) sb.append(p.index).append("->");
+        return sb.toString();
+    }
 
-        # If sum is odd, midpoint is 0.5 -> No integer node in between
-        if row_sum % 2 != 0 or col_sum % 2 != 0:
-            return None
-
-        return Point(row_sum // 2, col_sum // 2)
-```
-
-### Unlock System
-
-```python
-class PatternLockSystem:
-    def __init__(self):
-        self.saved_hash = None
-        self.validator = PatternValidator()
-
-    def set_pattern(self, pattern):
-        if self.validator.is_valid_pattern(pattern):
-            self.saved_hash = self._hash(pattern)
-            return True
-        return False
-
-    def unlock(self, input_pattern):
-        if not self.saved_hash: return False
-        return self._hash(input_pattern) == self.saved_hash
-    
-    def _hash(self, pattern):
-        # In production, use SHA-256 with Salt
-        return "->".join([str(p.index) for p in pattern])
+    public static void main(String[] args) {
+        PatternLockSystem system = new PatternLockSystem();
+        
+        // Valid L-Shape: 0 -> 3 -> 6 -> 7
+        List<Point> pattern = Arrays.asList(
+            new Point(0,0), new Point(1,0), new Point(2,0), new Point(2,1)
+        );
+        system.setPattern(pattern);
+        
+        // Invalid Skip: 0 -> 2 (Skipping 1 without visiting it)
+        List<Point> invalid = Arrays.asList(
+            new Point(0,0), new Point(0,2), new Point(1,1), new Point(2,2)
+        );
+        system.setPattern(invalid); 
+    }
+}
 ```
 
 ## Interview Q&A

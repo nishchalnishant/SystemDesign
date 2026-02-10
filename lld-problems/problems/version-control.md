@@ -17,70 +17,170 @@ Design a Git-like system.
 
 ## Implementation
 
-### Commit Node
+## Java Implementation (Mini-Git)
 
-```python
-import hashlib
-import datetime
+#### Class Diagram
 
-class Commit:
-    def __init__(self, message, files_snapshot, parent_id):
-        self.message = message
-        self.files = files_snapshot # {filename: content_hash}
-        self.parent_id = parent_id
-        self.id = self._generate_id()
+```mermaid
+classDiagram
+    class MiniGit {
+        +Map~String, Commit~ commitStore
+        +Map~String, String~ branches
+        +String currentBranch
+        +Map~String, String~ stagingArea
+        +commit(message)
+        +createBranch(name)
+        +switchBranch(name)
+    }
 
-    def _generate_id(self):
-        # SHA-1 of content + meta
-        data = f"{self.message}{self.parent_id}{str(self.files)}"
-        return hashlib.sha1(data.encode()).hexdigest()[:7]
+    class Commit {
+        +String id
+        +String message
+        +Map~String, String~ filesSnapshot
+        +String parentId
+        +generateId()
+    }
+
+    MiniGit --> Commit
 ```
 
-### VCS Engine
+#### Flow Chart: Commit Process
 
-```python
-class MiniGit:
-    def __init__(self):
-        self.commits = {} 
-        self.branches = {"master": None}
-        self.current_branch = "master"
-        self.staging = {}
+```mermaid
+flowchart TD
+    A[User: Commit(Message)] --> B[Get Current Branch HEAD]
+    B --> C[Clone Parent's File Snapshot]
+    C --> D[Apply Staging Area Changes]
+    D --> E[Create New Commit Object]
+    E --> F[Generate SHA-1 Hash (ID)]
+    F --> G[Save Commit to Store]
+    G --> H[Update Branch Pointer to New Commit]
+    H --> I[Clear Staging Area]
+```
 
-    def commit(self, message):
-        parent_id = self.branches[self.current_branch]
-        
-        # 1. Inherit parent state
-        new_files = {}
-        if parent_id:
-            new_files = self.commits[parent_id].files.copy()
+#### Code
+
+```java
+import java.util.*;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+
+// 1. Commit Node (Immutable Snapshot)
+class Commit {
+    String id;
+    String message;
+    Map<String, String> files; // Filename -> Content Hash (Simplification)
+    String parentId;
+    long timestamp;
+
+    public Commit(String message, Map<String, String> files, String parentId) {
+        this.message = message;
+        this.files = new HashMap<>(files); // Snapshot copy
+        this.parentId = parentId;
+        this.timestamp = System.currentTimeMillis();
+        this.id = generateId();
+    }
+
+    private String generateId() {
+        try {
+            String data = message + parentId + files.toString() + timestamp;
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            byte[] hash = digest.digest(data.getBytes(StandardCharsets.UTF_8));
             
-        # 2. Apply staging
-        new_files.update(self.staging)
+            // Convert to Hex
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format("%02x", b));
+            return hex.toString().substring(0, 7); // Short Hash
+            
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
+// 2. VCS Engine
+public class MiniGit {
+    Map<String, Commit> commitStore = new HashMap<>();
+    Map<String, String> branches = new HashMap<>(); // Branch Name -> Commit ID
+    String currentBranch = "master";
+    
+    // Staging: Filename -> Content Hash
+    Map<String, String> staging = new HashMap<>();
+
+    public MiniGit() {
+        branches.put("master", null);
+    }
+
+    public void addToStaging(String filename, String content) {
+        // In real Git, we'd hash the content (Blob)
+        staging.put(filename, content);
+    }
+
+    public String commit(String message) {
+        String parentId = branches.get(currentBranch);
         
-        # 3. Create Commit
-        c = Commit(message, new_files, parent_id)
-        self.commits[c.id] = c
+        // 1. Inherit parent state
+        Map<String, String> newFiles = new HashMap<>();
+        if (parentId != null) {
+            Commit parent = commitStore.get(parentId);
+            newFiles.putAll(parent.files);
+        }
         
-        # 4. Advance Branch Pointer
-        self.branches[self.current_branch] = c.id
-        self.staging.clear()
-        return c.id
+        // 2. Apply staging
+        newFiles.putAll(staging);
+        
+        // 3. Create Commit
+        Commit c = new Commit(message, newFiles, parentId);
+        commitStore.put(c.id, c);
+        
+        // 4. Advance Branch Pointer
+        branches.put(currentBranch, c.id);
+        staging.clear();
+        
+        System.out.println("Committed [" + c.id + "]: " + message);
+        return c.id;
+    }
 
-    def create_branch(self, name):
-        # Point new branch to current HEAD
-        self.branches[name] = self.branches[self.current_branch]
+    public void createBranch(String name) {
+        String head = branches.get(currentBranch);
+        branches.put(name, head);
+        System.out.println("Created branch " + name + " at " + head);
+    }
 
-    def switch_branch(self, name):
-        self.current_branch = name
+    public void switchBranch(String name) {
+        if (!branches.containsKey(name)) {
+            System.out.println("Branch not found");
+            return;
+        }
+        currentBranch = name;
+        System.out.println("Switched to " + name);
+    }
+    
+    public void printLog() {
+        String current = branches.get(currentBranch);
+        while(current != null) {
+            Commit c = commitStore.get(current);
+            System.out.println(c.id + " " + c.message);
+            current = c.parentId;
+        }
+    }
 
-    def merge(self, source_branch):
-        # Simplified Fast-Forward merge
-        source_head = self.branches[source_branch]
-        # In real Git: Ancestry check & 3-way merge logic
-        # Here: Just apply source files on top
-        source_files = self.commits[source_head].files
-        self.staging.update(source_files)
-        self.commit(f"Merge {source_branch}")
+    public static void main(String[] args) {
+        MiniGit git = new MiniGit();
+        
+        git.addToStaging("file1.txt", "Hello World");
+        git.commit("Initial Commit");
+        
+        git.createBranch("feature");
+        git.switchBranch("feature");
+        
+        git.addToStaging("file2.txt", "Feature Code");
+        git.commit("Added Feature");
+        
+        git.switchBranch("master");
+        git.printLog(); // Should only show Initial Commit
+    }
+}
 ```
 
 ## Interview Q&A

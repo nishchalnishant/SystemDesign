@@ -18,61 +18,152 @@ Expose a local web server (localhost:8080) to the public internet (myapp.tunnel.
 3.  **Tunnel Server** receives request, wraps it in a packet, and sends it *down* the persistent connection to Agent.
 4.  **Agent** unwraps, hits `localhost:8080`, gets response, and sends it back *up*.
 
-## Python Implementation (AsyncIO)
+## Java Implementation (Reverse Tunnel)
 
-We use `asyncio` for high concurrency.
+#### Class Diagram
 
-### Tunnel Server (Cloud)
+```mermaid
+classDiagram
+    class TunnelServer {
+        +Map~String, Connection~ activeTunnels
+        +registerAgent(subdomain, connection)
+        +handlePublicRequest(subdomain, request)
+    }
 
-```python
-import asyncio
+    class Agent {
+        +connectToServer(host, port)
+        +listenForTraffic()
+        +forwardToLocalhost(request)
+    }
 
-active_tunnels = {} # subdomain -> (reader, writer)
-
-async def handle_agent(reader, writer):
-    # Agent Handshake: "REGISTER:demo"
-    data = await reader.read(1024)
-    msg = data.decode()
-    if msg.startswith("REGISTER:"):
-        subdomain = msg.split(":")[1]
-        active_tunnels[subdomain] = (reader, writer)
-        # Keep alive...
-
-async def handle_public_request(reader, writer):
-    # 1. Parse Subdomain (e.g., demo.tunnel.com)
-    data = await reader.read(4096)
-    subdomain = parse_subdomain(data)
+    class Connection {
+        +Socket socket
+        +InputStream in
+        +OutputStream out
+    }
     
-    if subdomain in active_tunnels:
-        agent_reader, agent_writer = active_tunnels[subdomain]
-        # 2. Forward Request Down Tunnel
-        agent_writer.write(data)
-        await agent_writer.drain()
-        
-        # 3. Read Response from Agent
-        response = await agent_reader.read(4096)
-        writer.write(response) # Send to public user
+    TunnelServer --> Connection
+    Agent --> Connection
 ```
 
-### Tunnel Agent (Localhost)
+#### Flow Chart: Architecture
 
-```python
-async def start_agent():
-    # 1. Connect to Tunnel Server
-    remote_reader, remote_writer = await asyncio.open_connection('server.com', 9090)
-    remote_writer.write(b"REGISTER:demo")
+```mermaid
+flowchart TD
+    subgraph Cloud [Tunnel Server]
+    A[Public User] -->|HTTP Request| B[Tunnel Entry Point]
+    B -->|Lookup Subdomain| C{Is Agent Connected?}
+    end
     
-    while True:
-        # 2. Receive Request from Cloud
-        req = await remote_reader.read(4096)
-        
-        # 3. Forward to Localhost:8080
-        local_reader, local_writer = await asyncio.open_connection('127.0.0.1', 8080)
-        local_writer.write(req)
-        resp = await local_reader.read(4096)
-        
-        # 4. Send Response back to Cloud
-        remote_writer.write(resp)
+    subgraph Local [User Machine]
+    D[Agent] -->|Persistent TCP| C
+    end
+    
+    C -- Yes -->|Forward Request| D
+    D -->|Forward to Localhost| E[Local Web Server :8080]
+    E -->|Response| D
+    D -->|Send Back| B
+    B -->|HTTP Response| A
+```
+
+#### Code (Concept)
+
+```java
+import java.io.*;
+import java.net.*;
+import java.util.concurrent.*;
+
+// 1. Tunnel Server (Cloud)
+class TunnelServer {
+    // Subdomain -> Agent Connection
+    private static Map<String, Socket> tunnels = new ConcurrentHashMap<>();
+
+    public static void startServer(int port) throws IOException {
+        ServerSocket serverSocket = new ServerSocket(port);
+        System.out.println("Tunnel Server listening on port " + port);
+
+        while (true) {
+            Socket clientSocket = serverSocket.accept();
+            new Thread(() -> handleConnection(clientSocket)).start();
+        }
+    }
+
+    private static void handleConnection(Socket clientSocket) {
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+            String line = in.readLine();
+            
+            if (line.startsWith("REGISTER:")) {
+                String subdomain = line.split(":")[1];
+                tunnels.put(subdomain, clientSocket);
+                System.out.println("Registered tunnel: " + subdomain);
+            } else if (line.startsWith("GET /")) {
+                // Public Request Logic (Simulated)
+                // In reality, this would filter by Host header
+                handlePublicRequest(clientSocket);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    // Simplified forwarding logic
+    private static void handlePublicRequest(Socket publicSocket) {
+        // Assume request is for "demo"
+        Socket agentSocket = tunnels.get("demo");
+        if(agentSocket != null) {
+            // Forward bytes from publicSocket to agentSocket
+            // Forward bytes from agentSocket to publicSocket
+            // This requires async IO or separate threads
+        }
+    }
+}
+
+// 2. Tunnel Agent (Local)
+class TunnelAgent {
+    public static void start(String serverHost, int serverPort, int localPort) {
+        try (Socket tunnelSocket = new Socket(serverHost, serverPort)) {
+            PrintWriter out = new PrintWriter(tunnelSocket.getOutputStream(), true);
+            
+            // 1. Handshake
+            out.println("REGISTER:demo");
+            
+            // 2. Listen for forwarded requests
+            InputStream tunnelIn = tunnelSocket.getInputStream();
+            byte[] buffer = new byte[4096];
+            while (true) {
+                int bytesRead = tunnelIn.read(buffer);
+                if (bytesRead == -1) break; // Disconnected
+                
+                // 3. Forward to Localhost
+                String response = forwardToLocalhost(Arrays.copyOf(buffer, bytesRead), localPort);
+                
+                // 4. Send Response back to Tunnel
+                out.println(response);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static String forwardToLocalhost(byte[] requestData, int localPort) {
+        // Logic to open socket to localhost:localPort, write requestData, read response
+        return "HTTP/1.1 200 OK\r\n\r\nHello from Localhost";
+    }
+}
+```
+
+```java
+// Main entry point for demonstration
+public class NgrokClone {
+    public static void main(String[] args) {
+        if(args.length > 0 && args[0].equals("server")) {
+            try { TunnelServer.startServer(9090); } catch (Exception e){}
+        } else {
+            TunnelAgent.start("localhost", 9090, 8080);
+        }
+    }
+}
 ```
 
 ## Key Design Challenges

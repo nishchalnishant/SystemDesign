@@ -19,64 +19,220 @@ Create a 10x10 board game where players race to 100.
 
 ## Implementation
 
-```python
-import random
-from collections import deque
+## Implementation (Java)
 
-class Jump:
-    def __init__(self, start, end):
-        self.start = start
-        self.end = end
+#### Class Diagram
 
-class Cell:
-    def __init__(self):
-        self.jump = None
+```mermaid
+classDiagram
+    class Game {
+        +Board board
+        +Dice dice
+        +Deque~Player~ players
+        +startGame()
+    }
 
-class Board:
-    def __init__(self, size, count_snakes, count_ladders):
-        self.size = size
-        self.cells = [Cell() for _ in range(size*size + 1)]
-        self._add_random_jumps(count_snakes, count_ladders)
+    class Board {
+        +int size
+        +Cell[][] cells
+        -initializeCells()
+        -addSnakesAndLadders()
+        +getCell(int index) Cell
+    }
 
-class Player:
-    def __init__(self, id):
-        self.id = id
-        self.pos = 0
+    class Cell {
+        +Jump jump
+    }
 
-class Dice:
-    def roll(self):
-        return random.randint(1, 6)
+    class Jump {
+        +int start
+        +int end
+    }
 
-class Game:
-    def __init__(self):
-        self.board = Board(10, 5, 5)
-        self.dice = Dice()
-        self.players = deque([Player("P1"), Player("P2")])
-        self.winner = None
+    class Player {
+        +String id
+        +int currentPosition
+    }
 
-    def start(self):
-        while not self.winner:
-            player = self.players.popleft()
-            val = self.dice.roll()
-            new_pos = player.pos + val
-            
-            if new_pos > 100:
-                self.players.append(player)
-                continue
-                
-            # Check Jump
-            cell = self.board.cells[new_pos]
-            if cell.jump:
-                new_pos = cell.jump.end
-            
-            player.pos = new_pos
-            
-            if new_pos == 100:
-                self.winner = player
-                print(f"Winner: {player.id}")
-                return
+    class Dice {
+        +roll() int
+    }
 
-            self.players.append(player)
+    Game --> Board
+    Game --> Dice
+    Game --> Player
+    Board --> Cell
+    Cell --> Jump
+```
+
+#### Flow Chart: Game Turn
+
+```mermaid
+flowchart TD
+    A[Player Turn Starts] --> B[Roll Dice]
+    B --> C[Calculate New Position]
+    C --> D{New Position > 100?}
+    D -- Yes --> E[Stay at Old Position]
+    D -- No --> F{Is There a Jump?}
+    F -- Yes --> G[Move to Jump End]
+    F -- No --> H[Move to New Position]
+    G --> I{Position == 100?}
+    H --> I
+    I -- Yes --> J[Declare Winner]
+    I -- No --> K[Next Player Turn]
+    E --> K
+```
+
+#### Code
+
+```java
+import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
+
+// 1. Jump Entity (Snake or Ladder)
+class Jump {
+    int start;
+    int end;
+
+    public Jump(int start, int end) {
+        this.start = start;
+        this.end = end;
+    }
+}
+
+// 2. Cell Entity
+class Cell {
+    Jump jump;
+}
+
+// 3. Board Entity
+class Board {
+    Cell[][] cells;
+
+    Board(int boardSize, int numberOfSnakes, int numberOfLadders) {
+        initializeCells(boardSize);
+        addSnakesLadders(cells, numberOfSnakes, numberOfLadders);
+    }
+
+    private void initializeCells(int boardSize) {
+        cells = new Cell[boardSize][boardSize];
+        for(int i=0;i<boardSize;i++) {
+            for(int j=0; j<boardSize;j++) {
+                Cell cellObj = new Cell();
+                cells[i][j] = cellObj;
+            }
+        }
+    }
+
+    private void addSnakesLadders(Cell[][] cells, int numberOfSnakes, int numberOfLadders) {
+        // Logic to add random jumps (omitted for brevity)
+        // Ensure start > end for Snake, start < end for Ladder
+    }
+    
+    public Cell getCell(int playerPosition) {
+        int boardRow = playerPosition / cells.length;
+        int boardCol = (playerPosition % cells.length);
+        return cells[boardRow][boardCol];
+    }
+}
+
+// 4. Player Entity
+class Player {
+    String id;
+    int currentPosition;
+
+    public Player(String id, int currentPosition) {
+        this.id = id;
+        this.currentPosition = currentPosition;
+    }
+}
+
+// 5. Dice Entity
+class Dice {
+    int diceCount;
+    int min = 1;
+    int max = 6;
+
+    public Dice(int diceCount) {
+        this.diceCount = diceCount;
+    }
+
+    public int rollDice() {
+        int totalSum = 0;
+        int diceUsed = 0;
+        while (diceUsed < diceCount) {
+            totalSum += ThreadLocalRandom.current().nextInt(min, max + 1);
+            diceUsed++;
+        }
+        return totalSum;
+    }
+}
+
+// 6. Game Orchestrator
+public class Game {
+    Board board;
+    Dice dice;
+    Deque<Player> playersList = new LinkedList<>();
+    Player winner;
+
+    public Game() {
+        initializeGame();
+    }
+
+    private void initializeGame() {
+        board = new Board(10, 5, 5);
+        dice = new Dice(1);
+        winner = null;
+        addPlayers();
+    }
+
+    private void addPlayers() {
+        Player player1 = new Player("p1", 0);
+        Player player2 = new Player("p2", 0);
+        playersList.add(player1);
+        playersList.add(player2);
+    }
+
+    public void startGame() {
+        while(winner == null) {
+            // Check whose turn now
+            Player playerTurn = playersList.removeFirst();
+            System.out.println("player turn is:" + playerTurn.id + " current position is: " + playerTurn.currentPosition);
+
+            // Roll the dice
+            int diceValue = dice.rollDice();
+
+            // Calculate new position
+            int playerNewPosition = playerTurn.currentPosition + diceValue;
+            playerNewPosition = jumpCheck(playerNewPosition);
+            playerTurn.currentPosition = playerNewPosition;
+
+            System.out.println("player turn is:" + playerTurn.id + " new Position is: " + playerNewPosition);
+
+            if(playerNewPosition >= 100){
+                winner = playerTurn;
+            }
+
+            playersList.addLast(playerTurn);
+        }
+
+        System.out.println("WINNER IS:" + winner.id);
+    }
+
+    private int jumpCheck(int playerNewPosition) {
+        if(playerNewPosition > 100 ){
+            return playerNewPosition;
+        }
+
+        Cell cell = board.getCell(playerNewPosition);
+        if(cell.jump != null && cell.jump.start == playerNewPosition) {
+            String jumpBy = (cell.jump.start < cell.jump.end) ? "ladder" : "snake";
+            System.out.println("jump done by: " + jumpBy);
+            return cell.jump.end;
+        }
+        return playerNewPosition;
+    }
+}
 ```
 
 ## Key Points

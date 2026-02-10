@@ -19,74 +19,157 @@ Decouple metadata from actual blob storage.
 
 ## Implementation
 
-### Storage Strategy (Blob Store)
+## Java Implementation
 
-```python
-import uuid
-import os
+#### Class Diagram
 
-class StorageBackend:
-    def save(self, data) -> str:
-        # Content Addressable Storage (CAS) or UUID
-        path_id = str(uuid.uuid4())
-        with open(f"./data/{path_id}", "wb") as f:
-            f.write(data)
-        return path_id
+```mermaid
+classDiagram
+    class S3Service {
+        +BucketManager bucketManager
+        +StorageBackend storage
+        +createBucket(name)
+        +putObject(bucket, key, data)
+        +getObject(bucket, key) byte[]
+    }
 
-    def load(self, path_id) -> bytes:
-        with open(f"./data/{path_id}", "rb") as f:
-            return f.read()
+    class BucketManager {
+        +Map~String, Bucket~ buckets
+        +getBucket(name) Bucket
+    }
+
+    class Bucket {
+        +String name
+        +Map~String, S3ObjectMetadata~ objects
+    }
+
+    class S3ObjectMetadata {
+        +String key
+        +long size
+        +String storagePath
+    }
+
+    class StorageBackend {
+        +save(byte[] data) String
+        +load(String path) byte[]
+    }
+
+    S3Service --> BucketManager
+    S3Service --> StorageBackend
+    BucketManager --> Bucket
+    Bucket --> S3ObjectMetadata
 ```
 
-### Metadata Service
+#### Flow Chart: Put Object
 
-```python
-class S3Object:
-    def __init__(self, key, size, storage_path):
-        self.key = key
-        self.size = size
-        self.storage_path = storage_path
-
-class Bucket:
-    def __init__(self, name):
-        self.name = name
-        self.objects = {} # Key -> S3Object
-
-    def put_metadata(self, obj):
-        self.objects[obj.key] = obj
-
-    def get_metadata(self, key):
-        return self.objects.get(key)
+```mermaid
+flowchart TD
+    A[Client: PutObject(Bucket, Key, Data)] --> B{Does Bucket Exist?}
+    B -- No --> C[Error: Bucket Not Found]
+    B -- Yes --> D[StorageBackend: Save Data to Disk/SSD]
+    D --> E[Generate Storage Path / ID]
+    E --> F[Create Metadata Object (Key, Size, Path)]
+    F --> G[Bucket: Map Key -> Metadata]
+    G --> H[Return Success]
 ```
 
-### S3 Service Facade
+#### Code
 
-```python
-class S3Service:
-    def __init__(self, storage):
-        self.storage = storage
-        self.buckets = {}
+```java
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
-    def create_bucket(self, name):
-        self.buckets[name] = Bucket(name)
+// 1. Storage Backend (The physical layer)
+class StorageBackend {
+    private String rootDir = "./s3_data";
 
-    def put_object(self, bucket_name, key, data):
-        bucket = self.buckets.get(bucket_name)
-        if not bucket: raise ValueError("No bucket")
+    public StorageBackend() {
+        new File(rootDir).mkdirs();
+    }
 
-        # 1. Save Bytes
-        phys_path = self.storage.save(data)
+    public String save(byte[] data) throws IOException {
+        String pathId = UUID.randomUUID().toString();
+        Path path = Paths.get(rootDir, pathId);
+        Files.write(path, data);
+        return path.toString();
+    }
+
+    public byte[] load(String pathId) throws IOException {
+        return Files.readAllBytes(Paths.get(pathId));
+    }
+}
+
+// 2. Metadata Entities
+class S3ObjectMetadata {
+    String key;
+    long size;
+    String storagePath;
+
+    public S3ObjectMetadata(String key, long size, String storagePath) {
+        this.key = key;
+        this.size = size;
+        this.storagePath = storagePath;
+    }
+}
+
+class Bucket {
+    String name;
+    Map<String, S3ObjectMetadata> objects = new ConcurrentHashMap<>();
+
+    public Bucket(String name) {
+        this.name = name;
+    }
+}
+
+// 3. S3 Service (Facade)
+public class S3Service {
+    private StorageBackend storage;
+    private Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+
+    public S3Service() {
+        this.storage = new StorageBackend();
+    }
+
+    public void createBucket(String name) {
+        buckets.putIfAbsent(name, new Bucket(name));
+        System.out.println("Bucket created: " + name);
+    }
+
+    public void putObject(String bucketName, String key, byte[] data) throws IOException {
+        Bucket bucket = buckets.get(bucketName);
+        if (bucket == null) throw new IllegalArgumentException("Bucket not found");
+
+        // 1. Save Blob
+        String physicalPath = storage.save(data);
+
+        // 2. Save Metadata
+        S3ObjectMetadata meta = new S3ObjectMetadata(key, data.length, physicalPath);
+        bucket.objects.put(key, meta);
         
-        # 2. Save Metadata
-        obj = S3Object(key, len(data), phys_path)
-        bucket.put_metadata(obj)
+        System.out.println("Object uploaded: " + key);
+    }
 
-    def get_object(self, bucket_name, key):
-        bucket = self.buckets.get(bucket_name)
-        meta = bucket.get_metadata(key)
-        if not meta: return None
+    public byte[] getObject(String bucketName, String key) throws IOException {
+        Bucket bucket = buckets.get(bucketName);
+        if (bucket == null) throw new IllegalArgumentException("Bucket not found");
+
+        S3ObjectMetadata meta = bucket.objects.get(key);
+        if (meta == null) return null;
+
+        return storage.load(meta.storagePath);
+    }
+    
+    public static void main(String[] args) throws IOException {
+        S3Service s3 = new S3Service();
+        s3.createBucket("my-images");
+        s3.putObject("my-images", "vacation.png", new byte[]{10, 20, 30});
         
-        return self.storage.load(meta.storage_path)
+        byte[] data = s3.getObject("my-images", "vacation.png");
+        System.out.println("Downloaded bytes: " + data.length);
+    }
+}
 ```
 
 ## Key Design Challenges

@@ -23,39 +23,188 @@ Mentors define availability: "Mon 9-11 AM".
 
 ## Implementation
 
-### Classes
+## Implementation (Java)
 
-```python
-class TimeSlot:
-    def __init__(self, start, end):
-        self.start = start
-        self.end = end
+#### Class Diagram
 
-class Mentor:
-    def __init__(self, id, name):
-        self.id = id
-        self.availability = [] # List of TimeSlots
+```mermaid
+classDiagram
+    class MentorshipPlatform {
+        +bookSession(mentorId, menteeId, timeSlot) Booking
+        +searchMentors(criteria) List~Mentor~
+    }
 
-    def is_available(self, requested_slot):
-        # Overlap Logic
-        for slot in self.availability:
-            if slot.start <= requested_slot.start and slot.end >= requested_slot.end:
-                return True
-        return False
+    class Mentor {
+        +String id
+        +String name
+        +List~TimeSlot~ availability
+        +addAvailability(TimeSlot)
+        +isAvailable(TimeSlot) boolean
+    }
 
-class BookingSystem:
-    def __init__(self):
-        self.bookings = {} # ID -> Booking
+    class Mentee {
+        +String id
+        +String name
+    }
 
-    def book_session(self, mentor, mentee, slot):
-        # 1. Concurrency Check (Critical)
-        # In DB: SELECT * FROM Bookings WHERE mentor_id=? AND time=? FOR UPDATE
-        if not mentor.is_available(slot):
-            raise Exception("Slot unavailable")
+    class Booking {
+        +String id
+        +Mentor mentor
+        +Mentee mentee
+        +TimeSlot slot
+        +BookingStatus status
+    }
+
+    class TimeSlot {
+        +LocalDateTime start
+        +LocalDateTime end
+        +overlaps(TimeSlot) boolean
+    }
+    
+    class BookingStatus {
+        <<enumeration>>
+        PENDING
+        CONFIRMED
+        CANCELLED
+    }
+
+    MentorshipPlatform --> Mentor
+    MentorshipPlatform --> Mentee
+    MentorshipPlatform --> Booking
+    Booking --> Mentor
+    Booking --> Mentee
+    Booking --> TimeSlot
+```
+
+#### Flow Chart: Booking a Session
+
+```mermaid
+flowchart TD
+    A[Mentee Requests Booking] --> B{Is Slot Available?}
+    B -- No --> C[Error: Slot Unavailable]
+    B -- Yes --> D[Lock Slot (Concurrency Control)]
+    D --> E{Double Check Availability}
+    E -- No --> F[Release Lock & Error]
+    E -- Yes --> G[Create Booking (PENDING)]
+    G --> H[Update Mentor Availability]
+    H --> I[Release Lock]
+    I --> J[Notify Mentor & Mentee]
+    J --> K[Return Booking Confirmation]
+```
+
+#### Java Code
+
+```java
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+// 1. TimeSlot Entity
+class TimeSlot {
+    LocalDateTime start;
+    LocalDateTime end;
+
+    public TimeSlot(LocalDateTime start, LocalDateTime end) {
+        this.start = start;
+        this.end = end;
+    }
+
+    public boolean overlaps(TimeSlot other) {
+        return this.start.isBefore(other.end) && other.start.isBefore(this.end);
+    }
+}
+
+// 2. Mentor Entity
+class Mentor {
+    String id;
+    String name;
+    List<TimeSlot> availability;
+
+    public Mentor(String id, String name) {
+        this.id = id;
+        this.name = name;
+        this.availability = new ArrayList<>();
+    }
+
+    public void addAvailability(TimeSlot slot) {
+        this.availability.add(slot);
+    }
+
+    // Check if mentor is available for a requested slot
+    public boolean isAvailable(TimeSlot requestedSlot) {
+        for (TimeSlot slot : availability) {
+            if (slot.start.isEqual(requestedSlot.start) && slot.end.isEqual(requestedSlot.end)) {
+                return true; // Simplified check (exact match)
+            }
+        }
+        return false;
+    }
+    
+    public void removeAvailability(TimeSlot slot) {
+        availability.removeIf(s -> s.start.isEqual(slot.start) && s.end.isEqual(slot.end));
+    }
+}
+
+// 3. Mentee Entity
+class Mentee {
+    String id;
+    String name;
+
+    public Mentee(String id, String name) {
+        this.id = id;
+        this.name = name;
+    }
+}
+
+// 4. Booking Entity
+class Booking {
+    String id;
+    Mentor mentor;
+    Mentee mentee;
+    TimeSlot slot;
+
+    public Booking(Mentor mentor, Mentee mentee, TimeSlot slot) {
+        this.id = UUID.randomUUID().toString();
+        this.mentor = mentor;
+        this.mentee = mentee;
+        this.slot = slot;
+    }
+}
+
+// 5. Booking System (Service)
+public class BookingSystem {
+    Map<String, Booking> bookings = new ConcurrentHashMap<>();
+    // A simple lock map for demonstration. In production, use Redis Distributed Lock.
+    Map<String, Lock> mentorLocks = new ConcurrentHashMap<>();
+
+    public Booking bookSession(Mentor mentor, Mentee mentee, TimeSlot slot) {
+        // 1. Get lock for the mentor to handle concurrency
+        Lock lock = mentorLocks.computeIfAbsent(mentor.id, k -> new ReentrantLock());
+        lock.lock();
+        
+        try {
+            // 2. Double check availability under lock
+            if (!mentor.isAvailable(slot)) {
+                throw new IllegalStateException("Slot unavailable");
+            }
+
+            // 3. Create Booking
+            Booking booking = new Booking(mentor, mentee, slot);
+            bookings.put(booking.id, booking);
+
+            // 4. Remove slot from availability (Consistency)
+            mentor.removeAvailability(slot);
             
-        booking = Booking(mentor, mentee, slot)
-        self.bookings[booking.id] = booking
-        return booking
+            System.out.println("Booking confirmed for " + mentee.name + " with " + mentor.name);
+            return booking;
+            
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 ```
 
 ## Key Discussion Points
