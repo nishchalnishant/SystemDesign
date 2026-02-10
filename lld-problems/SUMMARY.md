@@ -2,7 +2,7 @@
 
 * [Introduction](README.md)
 
-## 📋 LLD Interview Problems
+## LLD Interview Problems
 
 * [Problems Overview](problems/README.md)
 * [1. Design Parking Lot](problems/1-design-parking-lot.md)
@@ -29,7 +29,7 @@
 * [22. Design Download Manager](problems/22-design-download-manager.md)
 * [23. Design Unlock Pattern](problems/23-design-unlock-pattern.md)
 
-## 🎨 Design Patterns
+## Design Patterns
 
 * [Design Patterns Overview](design-patterns/README.md)
 
@@ -66,7 +66,7 @@
 * [Template Method Pattern](design-patterns/behavioral/template-method-pattern.md)
 * [Visitor Pattern](design-patterns/behavioral/visitor-pattern.md)
 
-## 🏛️ SOLID Principles
+## SOLID Principles
 
 * [SOLID Overview](SOLID-principles/README.md)
 * [1. Single Responsibility Principle](SOLID-principles/1.%20single-responsibility-principle.md)
@@ -75,7 +75,7 @@
 * [4. Interface Segregation Principle](SOLID-principles/4.%20interface-segregation-principle.md)
 * [5. Dependency Inversion Principle](SOLID-principles/5.%20dependency-inversion-principle.md)
 
-## 🎓 OOP Concepts
+## OOP Concepts
 
 * [OOP Introduction](oops-concepts/introduction.md)
 * [Four Pillars of OOP](oops-concepts/four-pillars.md)
@@ -83,6 +83,6 @@
 * [Java OOP](oops-concepts/java-oops.md)
 * [Python OOP](oops-concepts/python-oops.md)
 
-## 📐 Other Topics
+## Other Topics
 
 * [UML Diagrams](uml-diagrams.md)
