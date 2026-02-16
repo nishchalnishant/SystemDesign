@@ -110,4 +110,7 @@
 * [6. Reference](6.-reference/README.md)
   * [Book Summaries](6.-reference/book-summaries/README.md)
     * [DDIA](reference/book-summaries/ddia.md)
+    * [Head First Java](reference/book-summaries/head-first-java/README.md)
+    * [Head First OOA&D](reference/book-summaries/head-first-ooand/README.md)
   * [Numbers to Know](reference/numbers-to-know.md)
+
