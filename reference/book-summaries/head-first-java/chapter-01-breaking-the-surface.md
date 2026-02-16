@@ -22,13 +22,17 @@ Java basics and first program
 
 ### 1. Java platform basics
 
-_Essential concept for mastering Java and OOP._
+You’ll type a source code file, compile it using thejavac compiler, then run the compiled bytecodeon a Java virtual machine.
 
-**Example**:
+**source —** create a source document party.java
 
-```java
-Java takes you to new places. From its humble release to the public as the 
-```
+**compiler —** checks for errors and won't let us compile till it is satisfied that everything will run correctly. ex— patry.class(made up of bytecode)
+
+**output —** compiler creates a new doc coded into java byte code, this is platform independent, the bytecode is then used to run the code into jvm
+
+**virtual machine —** any machine which has jvm installed can run the compiled byte code.
+
+
 
 ### 2. Compiling and running Java
 
