@@ -1,4 +1,4 @@
-# Chapter 1: Breaking the Surface
+# Ch 01: Breaking the Surface
 
 **Source**: Head First Java, Second Edition | **Pages**: 35-60
 
@@ -8,33 +8,34 @@ Java basics and first program
 
 ## 📚 Key Concepts
 
-- Java platform basics
-- Compiling and running Java
-- main() method structure
-- System.out.println()
-- Basic syntax and structure
-- while loops and conditionals
-- Variables and types intro
+* Java platform basics
+* Compiling and running Java
+* main() method structure
+* System.out.println()
+* Basic syntax and structure
+* while loops and conditionals
+* Variables and types intro
 
----
+***
 
 ## 📖 Detailed Notes
 
 ### 1. Java platform basics
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 Java takes you to new places. From its humble release to the public as the 
 ```
 
-
 ### 2. Compiling and running Java
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 import java.awt.*;
 import java.awt.event.*;
@@ -50,42 +51,42 @@ class Party {
 }
 ```
 
-
 ### 3. main() method structure
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 Party.class file is made up 
 ```
 
-
 ### 4. System.out.println()
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 Method void buildInvite()
 ```
 
-
 ### 5. Basic syntax and structure
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 Party.class file. The JVM 
 ```
 
-
 ### 6. while loops and conditionals
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 int size = 27;
 String name = “Fido”;
@@ -107,13 +108,13 @@ catch(FileNotFoundException ex) {
    System.out.print(“File not found.”);
 }
 ```
-
 
 ### 7. Variables and types intro
 
-*Essential concept for mastering Java and OOP.*
+_Essential concept for mastering Java and OOP._
 
 **Example**:
+
 ```java
 int size = 27;
 String name = “Fido”;
@@ -136,17 +137,16 @@ catch(FileNotFoundException ex) {
 }
 ```
 
-
----
+***
 
 ## 💡 Important Points to Remember
 
-- that Java is a strongly-typed lan-
-- this is not meant to be a tutorial... you’ll be 
-- when you type this into an editor, let 
-- Each snippet 
+* that Java is a strongly-typed lan-
+* this is not meant to be a tutorial... you’ll be
+* when you type this into an editor, let
+* Each snippet
 
----
+***
 
 ## ✅ Self-Check Questions
 
@@ -159,15 +159,15 @@ Test your understanding:
 
 ## 🔄 Quick Revision Points
 
-- [ ] Java platform basics
-- [ ] Compiling and running Java
-- [ ] main() method structure
-- [ ] System.out.println()
-- [ ] Basic syntax and structure
-- [ ] while loops and conditionals
-- [ ] Variables and types intro
+* [ ] Java platform basics
+* [ ] Compiling and running Java
+* [ ] main() method structure
+* [ ] System.out.println()
+* [ ] Basic syntax and structure
+* [ ] while loops and conditionals
+* [ ] Variables and types intro
 
----
+***
 
 ## 📝 Practice Exercises
 
@@ -180,6 +180,131 @@ Test your understanding:
 
 Review related concepts from other chapters to build comprehensive understanding.
 
----
+***
 
-*For complete details, diagrams, and all examples, refer to Head First Java Second Edition, pages 35-60.*
+_For complete details, diagrams, and all examples, refer to Head First Java Second Edition, pages 35-60._
+
+## Chapter 1: Breaking the Surface — Study Notes
+
+This chapter provides a high-level overview of how Java works, from writing code to running it on the Java Virtual Machine (JVM). It introduces the basic syntax, structure, and control flow needed to start programming.
+
+<a class="button secondary"></a>
+
+### 1. The Java Workflow
+
+The process of creating a Java application follows three main steps:
+
+<a class="button secondary"></a>
+
+1. Source: You write a source file (e.g., `Party.java`).
+2. Compiler: You run the compiler (`javac`), which checks for errors and translates the source into Bytecode.
+3. Output: The compiler creates a `.class` file (e.g., `Party.class`). This bytecode is platform-independent.
+4. Virtual Machine: The JVM translates the bytecode into something the underlying operating system understands and executes the program.
+
+***
+
+### 2. Java Structure
+
+In Java, everything lives in a Class. A class is the blueprint for an object.
+
+<a class="button secondary"></a>
+
+* Classes: Your program is made of one or more classes.
+* Methods: Inside a class, you have methods (functions). Methods contain the instructions for what the program should do.
+* Statements: Inside methods, you write statements (individual instructions like variable declarations or mathematical operations).
+
+#### The Anatomy of a Class
+
+Java
+
+```
+public class MyFirstApp { 
+    public static void main (String[] args) {
+        System.out.println("I Rule!");
+    }
+}
+```
+
+*   `public static void main (String[] args)`: This is the entry point of your program. Every Java application must have at least one class with a `main` method to run.
+
+    <a class="button secondary">+1</a>
+
+***
+
+### 3. Basic Syntax and Rules
+
+*   Statements: Each statement must end with a semicolon (`;`).
+
+    <a class="button secondary"></a>
+* Comments: Use `//` for single-line comments.
+*   Variables: Must be declared with a type and a name (e.g., `int x = 5;`).
+
+    <a class="button secondary"></a>
+* White Space: The compiler ignores extra spaces, but they are crucial for human readability.
+
+***
+
+### 4. Control Flow (Loops & Conditionals)
+
+Java uses standard C-style syntax for making decisions and repeating actions.
+
+<a class="button secondary"></a>
+
+#### The `while` Loop
+
+Repeats a block of code as long as a boolean condition is true.
+
+Java
+
+```
+int x = 1;
+while (x < 3) {
+    System.out.print("Doo");
+    System.out.print("Bee");
+    x = x + 1;
+}
+```
+
+#### The `if/else` Conditional
+
+Executes a block of code only if the condition is met.
+
+Java
+
+```
+if (x == 3) {
+    System.out.print("Do");
+}
+```
+
+#### Key Operators
+
+*   Comparison: `==` (equals), `!=` (not equal), `<` (less than), `>` (greater than).
+
+    <a class="button secondary"></a>
+*   Assignment: `=` (sets the value).
+
+    <a class="button secondary"></a>
+
+***
+
+### 5. The Java Virtual Machine (JVM)
+
+The JVM is the "magic" that makes Java portable. Because the compiler creates bytecode instead of native machine code, the same `.class` file can run on any device (Windows, Mac, Linux) that has a JVM installed.
+
+<a class="button secondary"></a>
+
+***
+
+### 6. Summary Checklist for Revision
+
+* Does every statement end with a `;`?
+* Is your code wrapped in a `class`?
+* Do you have a `main` method to start the program?
+*   Are you using `System.out.println` to output text?
+
+    <a class="button secondary"></a>
+*   Is your loop condition eventually becoming `false` to avoid infinite loops?
+
+    <a class="button secondary"></a>
+
