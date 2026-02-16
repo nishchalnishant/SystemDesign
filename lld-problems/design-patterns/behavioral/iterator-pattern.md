@@ -15,8 +15,8 @@
 
 
 
-```python
-#include <bits/stdc++.h>
+```java
+//include <bits/stdc++.h>
 using namespace std;
 
 // A simple Video class
@@ -86,72 +86,90 @@ int main() {
 
 
 
-```python
-# ========== Video class representing a single video ==========
-class Video:
-    def __init__(self, title):
-        self.title = title
+```java
+// ========== Video class representing a single video ==========
+class Video {
+    private String title;
+    
+    public Video(String title) {
+        this.title = title;
+    }
+    
+    public String getTitle() {
+        return this.title;
+    }
+}
 
-    def get_title(self):
-        return self.title
+// ========== YouTubePlaylist class (Aggregate) ==========
+class YouTubePlaylist {
+    private List<Video> videos;
+    
+    public YouTubePlaylist() {
+        this.videos = new ArrayList<>();
+    }
+    
+    // Method to add video to playlist
+    public void addVideo(Video video) {
+        this.videos.add(video);
+    }
+    
+    // Method to expose internal video list 
+    public List<Video> getVideos() {
+        return this.videos;
+    }
+}
 
+// ========== Iterator interface ==========
+interface PlaylistIterator {
+    boolean hasNext();
+    Video next();
+}
 
-# ========== YouTubePlaylist class (Aggregate) ==========
-class YouTubePlaylist:
-    def __init__(self):
-        self.videos = []
+// ========== Concrete Iterator class ==========
+class YouTubePlaylistIterator implements PlaylistIterator {
+    private List<Video> videos;
+    private int position;
+    
+    public YouTubePlaylistIterator(List<Video> videos) {
+        this.videos = videos;
+        this.position = 0;
+    }
+    
+    // Check if more videos are left to iterate
+    @Override
+    public boolean hasNext() {
+        return this.position < this.videos.size();
+    }
+    
+    // Return the next video in sequence
+    @Override
+    public Video next() {
+        if (this.hasNext()) {
+            Video video = this.videos.get(this.position);
+            this.position++;
+            return video;
+        }
+        return null;
+    }
+}
 
-    # Method to add video to playlist
-    def add_video(self, video):
-        self.videos.append(video)
-
-    # Method to expose internal video list 
-    def get_videos(self):
-        return self.videos
-
-
-# ========== Iterator interface ==========
-class PlaylistIterator:
-    def has_next(self):
-        raise NotImplementedError
-
-    def next(self):
-        raise NotImplementedError
-
-
-# ========== Concrete Iterator class ==========
-class YouTubePlaylistIterator(PlaylistIterator):
-    def __init__(self, videos):
-        self.videos = videos
-        self.position = 0
-
-    # Check if more videos are left to iterate
-    def has_next(self):
-        return self.position < len(self.videos)
-
-    # Return the next video in sequence
-    def next(self):
-        if self.has_next():
-            video = self.videos[self.position]
-            self.position += 1
-            return video
-        return None
-
-
-# ========== Main method (Client code) ==========
-if __name__ == "__main__":
-    # Create a playlist and add videos
-    playlist = YouTubePlaylist()
-    playlist.add_video(Video("LLD Tutorial"))
-    playlist.add_video(Video("System Design Basics"))
-
-    # Client directly creates the iterator using internal list (not ideal)
-    iterator = YouTubePlaylistIterator(playlist.get_videos())
-
-    # Use the iterator to loop through the playlist
-    while iterator.has_next():
-        print(iterator.next().get_title())
-
+// ========== Main method (Client code) ==========
+public class Main {
+    public static void main(String[] args) {
+        // Create a playlist and add videos
+        YouTubePlaylist playlist = new YouTubePlaylist();
+        playlist.addVideo(new Video("LLD Tutorial"));
+        playlist.addVideo(new Video("System Design Basics"));
+        
+        // Client directly creates the iterator using internal list (not ideal)
+        PlaylistIterator iterator = new YouTubePlaylistIterator(playlist.getVideos());
+        
+        // Use the iterator to loop through the playlist
+        while (iterator.hasNext()) {
+            System.out.println(iterator.next().getTitle());
+        }
+    }
+}
 ```
 
 * **How This Solves the Problem**
@@ -176,82 +194,99 @@ if __name__ == "__main__":
 
 
 
-```python
+```java
+// ========== Video class representing a single video ==========
+class Video {
+    private String title;
+    
+    public Video(String title) {
+        this.title = title;
+    }
+    
+    public String getTitle() {
+        return this.title;
+    }
+}
 
-# ========== Video class representing a single video ==========
-class Video:
-    def __init__(self, title):
-        self.title = title
+// ================ Playlist interface ================
+// (acts as a contract for collections that are iterable) 
+interface Playlist {
+    PlaylistIterator createIterator();
+}
 
-    def get_title(self):
-        return self.title
+// ========== Iterator interface (defines traversal contract) ==========
+interface PlaylistIterator {
+    boolean hasNext();
+    Video next();
+}
 
+// ========== Concrete Iterator class ==========
+// Implements the actual logic for traversing the YouTubePlaylist
+class YouTubePlaylistIterator implements PlaylistIterator {
+    private List<Video> videos;
+    private int position;
+    
+    public YouTubePlaylistIterator(List<Video> videos) {
+        this.videos = videos;
+        this.position = 0;
+    }
+    
+    // Check if more videos are left
+    @Override
+    public boolean hasNext() {
+        return this.position < this.videos.size();
+    }
+    
+    // Return the next video in the playlist
+    @Override
+    public Video next() {
+        if (this.hasNext()) {
+            Video video = this.videos.get(this.position);
+            this.position++;
+            return video;
+        }
+        return null;
+    }
+}
 
-# ================ Playlist interface ================
-# (acts as a contract for collections that are iterable) 
-class Playlist:
-    def create_iterator(self):
-        raise NotImplementedError
+// ========== YouTubePlaylist class (Aggregate) ==========
+// Implements Playlist to guarantee it provides an iterator
+class YouTubePlaylist implements Playlist {
+    private List<Video> videos;
+    
+    public YouTubePlaylist() {
+        this.videos = new ArrayList<>();
+    }
+    
+    // Method to add a video to the playlist
+    public void addVideo(Video video) {
+        this.videos.add(video);
+    }
+    
+    // Instead of exposing the list, return an iterator
+    @Override
+    public PlaylistIterator createIterator() {
+        return new YouTubePlaylistIterator(this.videos);
+    }
+}
 
-
-# ========== Iterator interface (defines traversal contract) ==========
-class PlaylistIterator:
-    def has_next(self):
-        raise NotImplementedError
-
-    def next(self):
-        raise NotImplementedError
-
-
-# ========== Concrete Iterator class ==========
-# Implements the actual logic for traversing the YouTubePlaylist
-class YouTubePlaylistIterator(PlaylistIterator):
-    def __init__(self, videos):
-        self.videos = videos
-        self.position = 0
-
-    # Check if more videos are left
-    def has_next(self):
-        return self.position < len(self.videos)
-
-    # Return the next video in the playlist
-    def next(self):
-        if self.has_next():
-            video = self.videos[self.position]
-            self.position += 1
-            return video
-        return None
-
-
-# ========== YouTubePlaylist class (Aggregate) ==========
-# Implements Playlist to guarantee it provides an iterator
-class YouTubePlaylist(Playlist):
-    def __init__(self):
-        self.videos = []
-
-    # Method to add a video to the playlist
-    def add_video(self, video):
-        self.videos.append(video)
-
-    # Instead of exposing the list, return an iterator
-    def create_iterator(self):
-        return YouTubePlaylistIterator(self.videos)
-
-
-# ========== Main method (Client code) ==========
-if __name__ == "__main__":
-    # Create a playlist and add videos to it
-    playlist = YouTubePlaylist()
-    playlist.add_video(Video("LLD Tutorial"))
-    playlist.add_video(Video("System Design Basics"))
-
-    # Client simply asks for an iterator — no access to internal data structure
-    iterator = playlist.create_iterator()
-
-    # Iterate through the playlist using the provided interface
-    while iterator.has_next():
-        print(iterator.next().get_title())
-
+// ========== Main method (Client code) ==========
+public class Main {
+    public static void main(String[] args) {
+        // Create a playlist and add videos to it
+        YouTubePlaylist playlist = new YouTubePlaylist();
+        playlist.addVideo(new Video("LLD Tutorial"));
+        playlist.addVideo(new Video("System Design Basics"));
+        
+        // Client simply asks for an iterator — no access to internal data structure
+        PlaylistIterator iterator = playlist.createIterator();
+        
+        // Iterate through the playlist using the provided interface
+        while (iterator.hasNext()) {
+            System.out.println(iterator.next().getTitle());
+        }
+    }
+}
 ```
 
 * **Key Improvements**
@@ -278,12 +313,19 @@ if __name__ == "__main__":
 
         <br>
 
-        ```python
-        nums = [10, 20, 30]
-        it = iter(nums)
-
-        print(next(it))  # 10
-        print(next(it))  # 20
+        ```java
+        // Python's iter() and next() example:
+        // nums = [10, 20, 30]
+        // it = iter(nums)
+        // print(next(it))  // 10
+        // print(next(it))  // 20
+        
+        // Java equivalent using Iterator:
+        List<Integer> nums = Arrays.asList(10, 20, 30);
+        Iterator<Integer> it = nums.iterator();
+        
+        System.out.println(it.next());  // 10
+        System.out.println(it.next());  // 20
         ```
 
         <br>

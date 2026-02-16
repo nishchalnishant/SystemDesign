@@ -20,45 +20,64 @@
   * Imagine you're building a feature like Google Maps where you need to **visually represent trees** across the globe. Now, even though millions of trees are shown, most of them belong to only a few common types like “Oak”, “Pine”, or “Birch”.&#x20;
   * However, if we were to create a separate object for each individual tree — storing the same data repeatedly for tree type, color, and texture — it would lead to massive memory consumption.<br>
 
-```python
-# ================ Tree Class =================
-class Tree:
-    # Attributes that keep on changing 
-    def __init__(self, x, y, name, color, texture):
-        self.x = x
-        self.y = y
+```java
+// ================ Tree Class =================
+class Tree {
+    // Attributes that keep on changing 
+    private int x;
+    private int y;
+    
+    // Attributes that remain constant
+    private String name;
+    private String color;
+    private String texture;
+    
+    public Tree(int x, int y, String name, String color, String texture) {
+        this.x = x;
+        this.y = y;
+        this.name = name;
+        this.color = color;
+        this.texture = texture;
+    }
+    
+    public void draw() {
+        System.out.println("Drawing tree at (" + this.x + ", " + this.y + ") with type " + this.name);
+    }
+}
 
-        # Attributes that remain constant
-        self.name = name
-        self.color = color
-        self.texture = texture
+// ================ Forest Class =================
+class Forest {
+    private List<Tree> trees;
+    
+    public Forest() {
+        this.trees = new ArrayList<>();
+    }
+    
+    public void plantTree(int x, int y, String name, String color, String texture) {
+        Tree tree = new Tree(x, y, name, color, texture);
+        this.trees.add(tree);
+    }
+    
+    public void draw() {
+        for (Tree tree : this.trees) {
+            tree.draw();
+        }
+    }
+}
 
-    def draw(self):
-        print(f"Drawing tree at ({self.x}, {self.y}) with type {self.name}")
-
-# ================ Forest Class =================
-class Forest:
-    def __init__(self):
-        self.trees = []
-
-    def plant_tree(self, x, y, name, color, texture):
-        tree = Tree(x, y, name, color, texture)
-        self.trees.append(tree)
-
-    def draw(self):
-        for tree in self.trees:
-            tree.draw()
-
-# =============== Client Code ==================
-if __name__ == "__main__":
-    forest = Forest()
-
-    # Planting 1 million trees
-    for i in range(1000000):
-        forest.plant_tree(i, i, "Oak", "Green", "Rough")
-
-    print("Planted 1 million trees.")
-
+// =============== Client Code ==================
+public class Main {
+    public static void main(String[] args) {
+        Forest forest = new Forest();
+        
+        // Planting 1 million trees
+        for (int i = 0; i < 1000000; i++) {
+            forest.plantTree(i, i, "Oak", "Green", "Rough");
+        }
+        
+        System.out.println("Planted 1 million trees.");
+    }
+}
 ```
 
 *   **Understanding the Issues**
@@ -74,67 +93,92 @@ if __name__ == "__main__":
 
 
 
-```python
-# ============= TreeType Class ================
-class TreeType:
-    # Properties that are common among all trees of this type
-    def __init__(self, name, color, texture):
-        self.name = name
-        self.color = color
-        self.texture = texture
+```java
+// ============= TreeType Class ================
+class TreeType {
+    // Properties that are common among all trees of this type
+    private String name;
+    private String color;
+    private String texture;
+    
+    public TreeType(String name, String color, String texture) {
+        this.name = name;
+        this.color = color;
+        this.texture = texture;
+    }
+    
+    public void draw(int x, int y) {
+        System.out.println("Drawing " + this.name + " tree at (" + x + ", " + y + ")");
+    }
+}
 
-    def draw(self, x, y):
-        print(f"Drawing {self.name} tree at ({x}, {y})")
+// ================ Tree Class =================
+class Tree {
+    // Attributes that keep on changing 
+    private int x;
+    private int y;
+    
+    // Attributes that remain constant
+    private TreeType treeType;
+    
+    public Tree(int x, int y, TreeType treeType) {
+        this.x = x;
+        this.y = y;
+        this.treeType = treeType;
+    }
+    
+    public void draw() {
+        this.treeType.draw(this.x, this.y);
+    }
+}
 
-# ================ Tree Class =================
-class Tree:
-    # Attributes that keep on changing 
-    def __init__(self, x, y, tree_type):
-        self.x = x
-        self.y = y
+// ============ TreeFactory Class ==============
+class TreeFactory {
+    private static Map<String, TreeType> treeTypeMap = new HashMap<>();
+    
+    public static TreeType getTreeType(String name, String color, String texture) {
+        String key = name + " - " + color + " - " + texture;
+        if (!treeTypeMap.containsKey(key)) {
+            treeTypeMap.put(key, new TreeType(name, color, texture));
+        }
+        return treeTypeMap.get(key);
+    }
+}
 
-        # Attributes that remain constant
-        self.tree_type = tree_type
+// ================ Forest Class =================
+class Forest {
+    private List<Tree> trees;
+    
+    public Forest() {
+        this.trees = new ArrayList<>();
+    }
+    
+    public void plantTree(int x, int y, String name, String color, String texture) {
+        TreeType treeType = TreeFactory.getTreeType(name, color, texture);
+        Tree tree = new Tree(x, y, treeType);
+        this.trees.add(tree);
+    }
+    
+    public void draw() {
+        for (Tree tree : this.trees) {
+            tree.draw();
+        }
+    }
+}
 
-    def draw(self):
-        self.tree_type.draw(self.x, self.y)
-
-# ============ TreeFactory Class ==============
-class TreeFactory:
-    tree_type_map = {}
-
-    @staticmethod
-    def get_tree_type(name, color, texture):
-        key = f"{name} - {color} - {texture}"
-        if key not in TreeFactory.tree_type_map:
-            TreeFactory.tree_type_map[key] = TreeType(name, color, texture)
-        return TreeFactory.tree_type_map[key]
-
-# ================ Forest Class =================
-class Forest:
-    def __init__(self):
-        self.trees = []
-
-    def plant_tree(self, x, y, name, color, texture):
-        tree_type = TreeFactory.get_tree_type(name, color, texture)
-        tree = Tree(x, y, tree_type)
-        self.trees.append(tree)
-
-    def draw(self):
-        for tree in self.trees:
-            tree.draw()
-
-# =============== Client Code ==================
-if __name__ == "__main__":
-    forest = Forest()
-
-    # Planting 1 million trees
-    for i in range(1000000):
-        forest.plant_tree(i, i, "Oak", "Green", "Rough")
-
-    print("Planted 1 million trees.")
-
-
+// =============== Client Code ==================
+public class Main {
+    public static void main(String[] args) {
+        Forest forest = new Forest();
+        
+        // Planting 1 million trees
+        for (int i = 0; i < 1000000; i++) {
+            forest.plantTree(i, i, "Oak", "Green", "Rough");
+        }
+        
+        System.out.println("Planted 1 million trees.");
+    }
+}
 ```
 
 

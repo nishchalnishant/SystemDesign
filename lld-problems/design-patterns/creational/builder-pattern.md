@@ -14,31 +14,38 @@
   * Different customers can use the same process to get entirely different pizzas.&#x20;
   * This is the essence of the Builder Pattern: a structured, step-wise approach to creating customised complex objects.
 * Understanding the problem
-  * Imagine you're building a **BurgerMeal** in your application.&#x20;
-  * A burger must have some mandatory components like: Bun and Patty.&#x20;
+  * Imagine you're building a **BurgerMeal** in your application. 
+  * A burger must have some mandatory components like: Bun and Patty. 
   * And it can also include **option components** like: Sides, Toppings, and Cheese.
 
-```python
-# Represents a customizable Burger Meal
-class BurgerMeal:
-    # Constructor trying to handle all combinations
-    def __init__(self, bun, patty, sides=None, toppings=None, cheese=False):
-        # Mandatory components
-        self.bun = bun
-        self.patty = patty
+```java
+// Represents a customizable Burger Meal
+class BurgerMeal {
+    // Mandatory components
+    private String bun;
+    private String patty;
+    
+    // Optional components
+    private String sides;
+    private String toppings;
+    private boolean cheese;
+    
+    // Constructor trying to handle all combinations
+    public BurgerMeal(String bun, String patty, String sides, String toppings, boolean cheese) {
+        this.bun = bun;
+        this.patty = patty;
+        this.sides = sides;
+        this.toppings = toppings;
+        this.cheese = cheese;
+    }
+}
 
-        # Optional components
-        self.sides = sides
-        self.toppings = toppings
-        self.cheese = cheese
-
-# Constructing the object with only required details
-burger_meal = BurgerMeal("wheat", "veg", None, None, False)
-
+// Constructing the object with only required details
+BurgerMeal burgerMeal = new BurgerMeal("wheat", "veg", null, null, false);
 ```
 
 * **Issues in Code:** This constructor approach works, but it creates multiple problems:
-  * Hard to Read and Maintain:\
+  * Hard to Read and Maintain:
     The user has to remember the order of parameters and their types. It becomes difficult to read when more optional parameters are added.
   * Unnecessary null values:\
     Even if the user doesn’t want toppings or sides, they still have to pass null explicitly. This clutters the object creation code.
@@ -52,7 +59,7 @@ burger_meal = BurgerMeal("wheat", "veg", None, None, False)
   * To manage optional parameters, many developers try to solve this by writing multiple overloaded constructors — each with one more optional parameter than the last.&#x20;
   * For example:<br>
 
-```python
+```java
 class BurgerMeal {
     public BurgerMeal(String bun, String patty) { ... }
     public BurgerMeal(String bun, String patty, boolean cheese) { ... }

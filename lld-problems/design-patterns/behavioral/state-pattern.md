@@ -8,65 +8,108 @@
 Behavior of "Insert Coin" or "Press Button" depends on current state (`Idle`, `HasCoin`, `Dispensing`, `OutOfStock`).
 
 ## Bad Code (If-Else)
-```python
-def insert_coin(self):
-    if state == "Idle": accept()
-    elif state == "HasCoin": reject()
-    elif state == "OutOfStock": reject()
+```java
+public void insertCoin() {
+    if (state.equals("Idle")) accept();
+    else if (state.equals("HasCoin")) reject();
+    else if (state.equals("OutOfStock")) reject();
+}
 ```
 *Problem*: Adding a new state requires changing all methods.
 
 ## Implementation (State Pattern)
 
-```python
-from abc import ABC, abstractmethod
+```java
+// 1. State Interface
+interface State {
+    void insertCoin();
+    void pressButton();
+    void dispense();
+}
 
-# 1. State Interface
-class State(ABC):
-    @abstractmethod
-    def insert_coin(self): pass
-    @abstractmethod
-    def press_button(self): pass
-    @abstractmethod
-    def dispense(self): pass
-
-# 2. Context (The Machine)
-class VendingMachine:
-    def __init__(self):
-        self.idle_state = IdleState(self)
-        self.has_coin_state = HasCoinState(self)
-        self.current_state = self.idle_state
-
-    def set_state(self, state):
-        self.current_state = state
-
-    def insert_coin(self): self.current_state.insert_coin()
-    def press_button(self): self.current_state.press_button()
-
-# 3. Concrete States
-class IdleState(State):
-    def __init__(self, machine): self.machine = machine
-
-    def insert_coin(self):
-        print("Coin inserted")
-        self.machine.set_state(self.machine.has_coin_state)
+// 2. Context (The Machine)
+class VendingMachine {
+    private State idleState;
+    private State hasCoinState;
+    private State currentState;
     
-    def press_button(self): print("Insert coin first")
-    def dispense(self): print("Insert coin first")
-
-class HasCoinState(State):
-    def __init__(self, machine): self.machine = machine
-
-    def insert_coin(self): print("Coin already inserted")
+    public VendingMachine() {
+        this.idleState = new IdleState(this);
+        this.hasCoinState = new HasCoinState(this);
+        this.currentState = this.idleState;
+    }
     
-    def press_button(self):
-        print("Button pressed...")
-        self.machine.set_state(self.machine.idle_state) # Transition logic
-        
-    def dispense(self): print("Dispensing...")
+    public void setState(State state) {
+        this.currentState = state;
+    }
+    
+    public void insertCoin() {
+        currentState.insertCoin();
+    }
+    
+    public void pressButton() {
+        currentState.pressButton();
+    }
+   
+    public State getIdleState() { return idleState; }
+    public State getHasCoinState() { return hasCoinState; }
+}
 
-# Client
-vm = VendingMachine()
-vm.insert_coin()  # State changes to HasCoin
-vm.press_button() # Action allowed
+// 3. Concrete States
+class IdleState implements State {
+    private VendingMachine machine;
+    
+    public IdleState(VendingMachine machine) {
+        this.machine = machine;
+    }
+    
+    @Override
+    public void insertCoin() {
+        System.out.println("Coin inserted");
+        machine.setState(machine.getHasCoinState());
+    }
+    
+    @Override
+    public void pressButton() {
+        System.out.println("Insert coin first");
+    }
+    
+    @Override
+    public void dispense() {
+        System.out.println("Insert coin first");
+    }
+}
+
+class HasCoinState implements State {
+    private VendingMachine machine;
+    
+    public HasCoinState(VendingMachine machine) {
+        this.machine = machine;
+    }
+    
+    @Override
+    public void insertCoin() {
+        System.out.println("Coin already inserted");
+    }
+    
+    @Override
+    public void pressButton() {
+        System.out.println("Button pressed...");
+        machine. setState(machine.getIdleState()); // Transition logic
+    }
+    
+    @Override
+    public void dispense() {
+        System.out.println("Dispensing...");
+    }
+}
+
+// Client
+public class Main {
+    public static void main(String[] args) {
+        VendingMachine vm = new VendingMachine();
+        vm.insertCoin();   // State changes to HasCoin
+        vm.pressButton();  // Action allowed
+    }
+}
 ```

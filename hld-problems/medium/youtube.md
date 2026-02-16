@@ -304,14 +304,17 @@ CREATE TABLE comments (
 ```
 
 #### View Counts (Redis + Batch Processing)
-```python
-# Real-time counter in Redis
-redis.incr(f"views:{video_id}")
+```java
+// Real-time counter in Redis
+redis.incr("views:" + videoId);
 
-# Batch update to DB every 5 minutes
-for video_id, count in redis.scan_iter("views:*"):
-    db.execute("UPDATE videos SET view_count = view_count + %s WHERE video_id = %s", (count, video_id))
-    redis.delete(f"views:{video_id}")
+// Batch update to DB every 5 minutes
+for (Map.Entry<String, Long> entry : redis.scanIter("views:*")) {
+    String videoId = entry.getKey();
+    Long count = entry.getValue();
+    db.execute("UPDATE videos SET view_count = view_count + ? WHERE video_id = ?", count, videoId);
+    redis.delete("views:" + videoId);
+}
 ```
 
 ### 4. Search Service (Elasticsearch)
@@ -408,12 +411,12 @@ Shard 9: video_id hash % 100 = 90-99
 **Problem:** Updating counters creates DB hotspot
 
 **Solution: Batch Writes**
-```python
-# Buffer in Redis
-redis.incr(f"likes:{video_id}")
+```java
+// Buffer in Redis
+redis.incr("likes:" + videoId);
 
-# Flush to DB periodically
-cron.schedule("*/5 * * * *", flush_counters)
+// Flush to DB periodically
+cron.schedule("*/5 * * * *", this::flushCounters);
 ```
 
 ---

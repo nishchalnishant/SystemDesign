@@ -44,21 +44,21 @@
 **Types:**
 
 **Counter** (always increasing)
-```python
+```java
 http_requests_total{method="GET", status="200"} = 1,234,567
 ```
 
 **Gauge** (goes up/down)
-```python
+```java
 cpu_usage_percent{instance="app-1"} = 67.3
-memory_usage_bytes{instance="app-1"} = 8,589,934,592  # 8GB
+memory_usage_bytes{instance="app-1"} = 8,589,934,592  // 8GB
 ```
 
 **Histogram** (distribution)
-```python
-http_request_duration_seconds_bucket{le="0.1"} = 9500  # 95% < 100ms
-http_request_duration_seconds_bucket{le="0.5"} = 9900  # 99% < 500ms
-http_request_duration_seconds_bucket{le="1.0"} = 10000 # All requests
+```java
+http_request_duration_seconds_bucket{le="0.1"} = 9500  // 95% < 100ms
+http_request_duration_seconds_bucket{le="0.5"} = 9900  // 99% < 500ms
+http_request_duration_seconds_bucket{le="1.0"} = 10000 // All requests
 ```
 
 **Tools:** Prometheus, Grafana, CloudWatch, Datadog
@@ -137,15 +137,15 @@ Trace (abc123)
 ```
 
 **Implementation:**
-```python
+```java
 import opentelemetry
 
-# Start trace
+// Start trace
 with tracer.start_as_current_span("process_order") as span:
     span.set_attribute("user_id", user_id)
     span.set_attribute("order_total", 99.99)
     
-    # Child span
+    // Child span
     with tracer.start_as_current_span("check_inventory"):
         inventory_service.check(product_id)
     
@@ -177,11 +177,11 @@ with tracer.start_as_current_span("process_order") as span:
 ```
 
 **How to Measure:**
-```python
-# Availability SLI (%)
+```java
+// Availability SLI (%)
 availability = (successful_requests / total_requests) × 100
 
-# Latency SLI (percentile)
+// Latency SLI (percentile)
 p99_latency = 95th_percentile(request_durations)
 ```
 

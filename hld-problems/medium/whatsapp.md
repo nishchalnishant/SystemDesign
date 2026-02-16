@@ -367,15 +367,15 @@ LIMIT 50;
 
 ### Undelivered Messages (Redis)
 
-```python
-# Queue messages for offline users
-redis.lpush(f"inbox:{user_id}", message_json)
+```java
+// Queue messages for offline users
+redis.lpush("inbox:" + user_id + "", message_json)
 
-# On user reconnect
-messages = redis.lrange(f"inbox:{user_id}", 0, -1)
+// On user reconnect
+messages = redis.lrange("inbox:" + user_id + "", 0, -1)
 for msg in messages:
     deliver(msg)
-redis.delete(f"inbox:{user_id}")
+redis.delete("inbox:" + user_id + "")
 ```
 
 ---
@@ -427,11 +427,11 @@ CREATE TABLE reactions (
 ```
 
 ### 3. Typing Indicators
-```python
-# Ephemeral, not stored
-redis.setex(f"typing:{conversation_id}:{user_id}", 5, "true")
+```java
+// Ephemeral, not stored
+redis.setex("typing:" + conversation_id + ":{user_id}", 5, "true")
 
-# Broadcast to conversation members
+// Broadcast to conversation members
 websocket.broadcast(conversation_id, {
     "type": "typing",
     "userId": user_id
@@ -451,22 +451,22 @@ websocket.broadcast(conversation_id, {
 ### Failure Handling
 
 **WebSocket disconnect:**
-```python
+```java
 on_disconnect(user_id):
     session_manager.unregister(user_id)
     presence_service.update_last_seen(user_id, now())
-    # Messages queued in Redis for redelivery
+    // Messages queued in Redis for redelivery
 ```
 
 **Message delivery retry:**
-```python
+```java
 max_retries = 3
 for attempt in range(max_retries):
     if deliver_message(msg):
         break
     sleep(exponential_backoff(attempt))
 else:
-    # Send push notification
+    // Send push notification
     fcm.send(user_id, msg)
 ```
 

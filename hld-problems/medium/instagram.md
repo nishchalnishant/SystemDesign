@@ -271,27 +271,32 @@ graph LR
 - High CPU usage
 
 #### Hybrid Approach (Instagram's Strategy)
-```python
-def generate_feed(user_id):
-    # Check if celebrity
-    follower_count = graph_db.get_follower_count(user_id)
+```java
+public Feed generateFeed(String userId) {
+    // Check if celebrity
+    int followerCount = graphDb.getFollowerCount(userId);
     
-    if follower_count > 1_000_000:
-        # Pull model for celebrities
-        return pull_feed(user_id)
-    else:
-        # Push model for regular users
-        return redis.get(f"feed:{user_id}")
+    if (followerCount > 1_000_000) {
+        // Pull model for celebrities
+        return pullFeed(userId);
+    } else {
+        // Push model for regular users
+        return redis.get("feed:" + userId);
+    }
+}
 
-def pull_feed(user_id):
-    following = graph_db.get_following(user_id, limit=200)
-    posts = []
-    for followed_user in following:
-        posts.extend(post_db.get_recent_posts(followed_user, limit=10))
+public Feed pullFeed(String userId) {
+    List<String> following = graphDb.getFollowing(userId, 200);
+    List<Post> posts = new ArrayList<>();
     
-    # Rank by ML model
-    ranked_posts = ranking_service.rank(posts, user_id)
-    return ranked_posts[:50]
+    for (String followedUser : following) {
+        posts.addAll(postDb.getRecentPosts(followedUser, 10));
+    }
+    
+    // Rank by ML model
+    List<Post> rankedPosts = rankingService.rank(posts, userId);
+    return rankedPosts.subList(0, Math.min(50, rankedPosts.size()));
+}
 ```
 
 ### 3. Database Schema
@@ -378,19 +383,19 @@ UPDATE like_counts SET count = count + 1 WHERE post_id = 'abc123';
 ### 4. Timeline Cache (Redis)
 
 **Data Structure:**
-```python
-# Sorted set: score = timestamp
-redis.zadd(f"feed:{user_id}", {
+```java
+// Sorted set: score = timestamp
+redis.zadd("feed:" + user_id + "", {
     "post:abc123": 1644444444,
     "post:def456": 1644444500,
     "post:ghi789": 1644444600
 })
 
-# Retrieve feed (most recent first)
-posts = redis.zrevrange(f"feed:{user_id}", 0, 19)  # Top 20
+// Retrieve feed (most recent first)
+posts = redis.zrevrange("feed:" + user_id + "", 0, 19)  // Top 20
 
-# TTL: 7 days
-redis.expire(f"feed:{user_id}", 604800)
+// TTL: 7 days
+redis.expire("feed:" + user_id + "", 604800)
 ```
 
 **Memory Optimization:**
@@ -454,16 +459,16 @@ Shard 15: user_id % 16 = 15
 **Problem:** Viral post overwhelms like_counts table
 
 **Solution: Write-Behind Cache**
-```python
-# Buffer likes in Redis
-redis.incr(f"likes:{post_id}")
-redis.sadd(f"likers:{post_id}", user_id)
+```java
+// Buffer likes in Redis
+redis.incr("likes:" + post_id + "")
+redis.sadd("likers:" + post_id + "", user_id)
 
-# Batch flush every 10 seconds
+// Batch flush every 10 seconds
 for post_id in redis.scan_iter("likes:*"):
-    count = redis.get(f"likes:{post_id}")
+    count = redis.get("likes:" + post_id + "")
     cassandra.execute("UPDATE like_counts SET count = count + ? WHERE post_id = ?", (count, post_id))
-    redis.delete(f"likes:{post_id}")
+    redis.delete("likes:" + post_id + "")
 ```
 
 ---
@@ -478,7 +483,7 @@ for post_id in redis.scan_iter("likes:*"):
 - Creator authority (follower count)
 
 **Model:**
-```python
+```java
 score = (
     0.3 * text_similarity(post.caption, user.interests) +
     0.4 * engagement_rate(post) +
@@ -492,11 +497,11 @@ score = (
 - **S3** with lifecycle policy (delete after 24h)
 - **Redis** for active stories list
 
-```python
-# Store story
+```java
+// Store story
 s3.put_object("stories/user123/story456.mp4", video_data,\n    expires_at=now + 24h)
 
-# Add to active stories
+// Add to active stories
 redis.zadd("stories:user123", {story_id: timestamp})
 redis.expire("stories:user123", 86400)
 ```

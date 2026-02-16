@@ -54,20 +54,22 @@ Latency: 1ms (99% reduction!)
 ### 1. Cache-Aside (Lazy Loading)
 
 **How it works:**
-```python
-def get_user(user_id):
-    # 1. Check cache first
-    user = cache.get(f"user:{user_id}")
-    if user:
-        return user  # Cache HIT
+```java
+public User getUser(String userId) {
+    // 1. Check cache first
+    User user = cache.get("user:" + userId);
+    if (user != null) {
+        return user;  // Cache HIT
+    }
     
-    # 2. Cache MISS → Query database
-    user = db.query("SELECT * FROM users WHERE id = ?", user_id)
+    // 2. Cache MISS → Query database
+    user = db.query("SELECT * FROM users WHERE id = ?", userId);
     
-    # 3. Populate cache
-    cache.set(f"user:{user_id}", user, ttl=3600)  # 1 hour TTL
+    // 3. Populate cache
+    cache.set("user:" + userId, user, 3600);  // 1 hour TTL
     
-    return user
+    return user;
+}
 ```
 
 **Characteristics:**
@@ -103,9 +105,9 @@ Cache library automatically handles DB query on miss.
 - Cleaner application code
 
 **Example (Redis with read-through):**
-```python
-# Cache library handles miss automatically
-user = cache.get("user:123")  # If miss, fetches from DB
+```java
+// Cache library handles miss automatically
+User user = cache.get("user:123");  // If miss, fetches from DB
 ```
 
 **Pros:**
@@ -121,15 +123,16 @@ user = cache.get("user:123")  # If miss, fetches from DB
 ### 3. Write-Through Cache
 
 **How it works:**
-```python
-def update_user(user_id, data):
-    # 1. Write to database
-    db.update("UPDATE users SET name = ? WHERE id = ?", data.name, user_id)
+```java
+public boolean updateUser(String userId, User data) {
+    // 1. Write to database
+    db.update("UPDATE users SET name = ? WHERE id = ?", data.getName(), userId);
     
-    # 2. Synchronously update cache
-    cache.set(f"user:{user_id}", data, ttl=3600)
+    // 2. Synchronously update cache
+    cache.set("user:" + userId, data, 3600);
     
-    return success
+    return true;
+}
 ```
 
 **Characteristics:**
@@ -153,20 +156,22 @@ def update_user(user_id, data):
 ### 4. Write-Behind (Write-Back) Cache
 
 **How it works:**
-```python
-def update_user(user_id, data):
-    # 1. Write to cache only (fast!)
-    cache.set(f"user:{user_id}", data)
+```java
+public boolean updateUser(String userId, User data) {
+    // 1. Write to cache only (fast!)
+    cache.set("user:" + userId, data);
     
-    # 2. Queue database write (async)
-    queue.enqueue("db_write", user_id, data)
+    // 2. Queue database write (async)
+    queue.enqueue("db_write", userId, data);
     
-    return success  # Respond immediately
+    return true;  // Respond immediately
+}
 
-# Background worker
-def db_worker():
-    task = queue.dequeue()
-    db.update(task.user_id, task.data)
+// Background worker
+public void dbWorker() {
+    Task task = queue.dequeue();
+    db.update(task.getUserId(), task.getData());
+}
 ```
 
 **Characteristics:**
@@ -191,16 +196,19 @@ def db_worker():
 ### 5. Refresh-Ahead (Predictive Refresh)
 
 **How it works:**
-```python
-# Cache monitors access patterns
-# Before TTL expires, proactively refresh hot keys
-def background_refresh():
-    hot_keys = cache.get_hot_keys()  # e.g., "homepage_data"
-    for key in hot_keys:
-        if cache.ttl(key) < 300:  # 5 min before expiry
-            # Proactively refresh
-            data = db.query(key)
-            cache.set(key, data, ttl=3600)
+```java
+// Cache monitors access patterns
+// Before TTL expires, proactively refresh hot keys
+public void backgroundRefresh() {
+    List<String> hotKeys = cache.getHotKeys();  // e.g., "homepage_data"
+    for (String key : hotKeys) {
+        if (cache.ttl(key) < 300) {  // 5 min before expiry
+            // Proactively refresh
+            Object data = db.query(key);
+            cache.set(key, data, 3600);
+        }
+    }
+}
 ```
 
 **Pros:**
@@ -225,9 +233,9 @@ def background_refresh():
 
 #### 1. TTL (Time-To-Live)
 
-```python
-# Set expiration time
-cache.set("user:123", user_data, ttl=3600)  # Expire after 1 hour
+```java
+// Set expiration time
+cache.set("user:123", userData, 3600);  // Expire after 1 hour
 ```
 
 **Pros:** Simple, automatic cleanup  
@@ -237,11 +245,12 @@ cache.set("user:123", user_data, ttl=3600)  # Expire after 1 hour
 
 #### 2. Event-Based Invalidation
 
-```python
-def update_user(user_id, data):
-    db.update(user_id, data)
-    # Invalidate on write
-    cache.delete(f"user:{user_id}")
+```java
+public void updateUser(String userId, User data) {
+    db.update(userId, data);
+    // Invalidate on write
+    cache.delete("user:" + userId);
+}
 ```
 
 **Pros:** No stale data (immediate invalidation)  
@@ -251,13 +260,13 @@ def update_user(user_id, data):
 
 #### 3. Versioning
 
-```python
-# Include version in cache key
-version = 1
-cache.set(f"user:123:v{version}", user_data)
+```java
+// Include version in cache key
+int version = 1;
+cache.set("user:123:v" + version, userData);
 
-# On schema change, increment version
-version = 2  # Old cache keys auto-expire via TTL
+// On schema change, increment version
+version = 2;  // Old cache keys auto-expire via TTL
 ```
 
 **Pros:** Smooth rollouts, no invalidation storms  
@@ -288,9 +297,9 @@ Clients
 ```
 
 **Sharding Strategy (Consistent Hashing):**
-```python
-slot = CRC16(key) mod 16384
-node = slot_to_node_mapping[slot]
+```java
+int slot = CRC16(key) % 16384;
+Node node = slotToNodeMapping.get(slot);
 ```
 
 **Pros:**

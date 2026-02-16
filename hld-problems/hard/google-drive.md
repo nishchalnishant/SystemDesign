@@ -257,37 +257,45 @@ sequenceDiagram
 ```
 
 **Conflict Resolution:**
-```python
-if local_version < remote_version:
-    # Remote is newer, pull changes
-    download_file()
-elif local_version > remote_version:
-    # Local is newer, push changes
-    upload_file()
-else:
-    # Version match, check timestamp
-    if local_modified > remote_modified:
-        create_conflict_copy()  # file.txt (conflict copy)
+```java
+public void resolveConflict(int localVersion, int remoteVersion, long localModified, long remoteModified) {
+    if (localVersion < remoteVersion) {
+        // Remote is newer, pull changes
+        downloadFile();
+    } else if (localVersion > remoteVersion) {
+        // Local is newer, push changes
+        uploadFile();
+    } else {
+        // Version match, check timestamp
+        if (localModified > remoteModified) {
+            createConflictCopy();  // file.txt (conflict copy)
+        }
+    }
+}
 ```
 
 ### 4. Delta Sync (Bandwidth Optimization)
 
 **rsync-style algorithm:**
-```python
-def delta_sync(file):
-    # Client sends rolling hash signatures
-    client_signatures = [
-        {"chunk_index": 0, "weak_hash": "a1b2", "strong_hash": "sha256..."},
-        {"chunk_index": 1, "weak_hash": "c3d4", "strong_hash": "sha256..."}
-    ]
+```java
+public Delta deltaSync(File file) {
+    // Client sends rolling hash signatures
+    List<ChunkSignature> clientSignatures = Arrays.asList(
+        new ChunkSignature(0, "a1b2", "sha256..."),
+        new ChunkSignature(1, "c3d4", "sha256...")
+    );
     
-    # Server compares against remote version
-    delta = []
-    for i, chunk in enumerate(remote_file.chunks):
-        if chunk.hash not in client_signatures:
-            delta.append({"index": i, "data": chunk.data})
+    // Server compares against remote version
+    List<ChunkDelta> delta = new ArrayList<>();
+    for (int i = 0; i < remoteFile.getChunks().size(); i++) {
+        Chunk chunk = remoteFile.getChunks().get(i);
+        if (!clientSignatures.contains(chunk.getHash())) {
+            delta.add(new ChunkDelta(i, chunk.getData()));
+        }
+    }
     
-    return delta  # Client applies delta
+    return new Delta(delta);  // Client applies delta
+}
 ```
 
 **Reduces bandwidth by 80%+ for small edits**
@@ -324,23 +332,26 @@ CREATE TABLE share_links (
 ```
 
 **Access Control:**
-```python
-def check_access(user_id, file_id, action):
-    # Check direct permission
-    perm = db.query("""
-        SELECT permission_type FROM permissions 
-        WHERE user_id = %s AND file_id = %s
-    """, (user_id, file_id))
+```java
+public boolean checkAccess(long userId, String fileId, String action) {
+    // Check direct permission
+    Permission perm = db.query(
+        "SELECT permission_type FROM permissions WHERE user_id = ? AND file_id = ?",
+        userId, fileId
+    );
     
-    if perm and perm.can(action):
-        return True
+    if (perm != null && perm.can(action)) {
+        return true;
+    }
     
-    # Check inherited folder permission
-    parent = get_parent_folder(file_id)
-    if parent:
-        return check_access(user_id, parent, action)
+    // Check inherited folder permission
+    String parent = getParentFolder(fileId);
+    if (parent != null) {
+        return checkAccess(userId, parent, action);
+    }
     
-    return False
+    return false;
+}
 ```
 
 ### 6. Version Control

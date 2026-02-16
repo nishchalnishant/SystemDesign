@@ -19,64 +19,77 @@
 
 Bad design: Hardcoded Object Creation in CheckoutService
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Interface representing any payment gateway
+interface PaymentGate way {
+    void processPayment(double amount);
+}
 
-# Interface representing any payment gateway
-class PaymentGateway(ABC):
-    @abstractmethod
-    def process_payment(self, amount):
-        pass
+// Concrete implementation: Razorpay
+class RazorpayGateway implements PaymentGateway {
+    @Override
+    public void processPayment(double amount) {
+        System.out.println("Processing INR payment via Razorpay: " + amount);
+    }
+}
 
-# Concrete implementation: Razorpay
-class RazorpayGateway(PaymentGateway):
-    def process_payment(self, amount):
-        print(f"Processing INR payment via Razorpay: {amount}")
+// Concrete implementation: PayU
+class PayUGateway implements PaymentGateway {
+    @Override
+    public void processPayment(double amount) {
+        System.out.println("Processing INR payment via PayU: " + amount);
+    }
+}
 
-# Concrete implementation: PayU
-class PayUGateway(PaymentGateway):
-    def process_payment(self, amount):
-        print(f"Processing INR payment via PayU: {amount}")
+// Interface representing invoice generation
+interface Invoice {
+    void generateInvoice();
+}
 
-# Interface representing invoice generation
-class Invoice(ABC):
-    @abstractmethod
-    def generate_invoice(self):
-        pass
+// Concrete invoice implementation for India
+class GSTInvoice implements Invoice {
+    @Override
+    public void generateInvoice() {
+        System.out.println("Generating GST Invoice for India.");
+    }
+}
 
-# Concrete invoice implementation for India
-class GSTInvoice(Invoice):
-    def generate_invoice(self):
-        print("Generating GST Invoice for India.")
+// CheckoutService that directly handles object creation (bad practice)
+class CheckoutService {
+    private String gatewayType;
+    
+    public CheckoutService(String gatewayType) {
+        // Constructor accepts a string to determine which gateway to use
+        this.gatewayType = gatewayType;
+    }
+    
+    // Checkout process hardcodes logic for gateway and invoice creation
+    public void checkOut(double amount) {
+        // Hardcoded decision logic
+        PaymentGateway paymentGateway;
+        if (this.gatewayType.equals("razorpay")) {
+            paymentGateway = new RazorpayGateway();
+        } else {
+            paymentGateway = new PayUGateway();
+        }
+        
+        // Process payment using selected gateway
+        paymentGateway.processPayment(amount);
+        
+        // Always uses GSTInvoice, even though more types may exist later
+        Invoice invoice = new GSTInvoice();
+        invoice.generateInvoice();
+    }
+}
 
-# CheckoutService that directly handles object creation (bad practice)
-class CheckoutService:
-    def __init__(self, gateway_type):
-        # Constructor accepts a string to determine which gateway to use
-        self.gateway_type = gateway_type
-
-    # Checkout process hardcodes logic for gateway and invoice creation
-    def check_out(self, amount):
-        # Hardcoded decision logic
-        if self.gateway_type == "razorpay":
-            payment_gateway = RazorpayGateway()
-        else:
-            payment_gateway = PayUGateway()
-
-        # Process payment using selected gateway
-        payment_gateway.process_payment(amount)
-
-        # Always uses GSTInvoice, even though more types may exist later
-        invoice = GSTInvoice()
-        invoice.generate_invoice()
-
-# Main method
-if __name__ == "__main__":
-    # Example: Using Razorpay
-    razorpay_service = CheckoutService("razorpay")
-    razorpay_service.check_out(1500.00)
-
-
+// Main method
+public class Main {
+    public static void main(String[] args) {
+        // Example: Using Razorpay
+        CheckoutService razorpayService = new CheckoutService("razorpay");
+        razorpayService.checkOut(1500.00);
+    }
+}
 ```
 
 * **Issues with this design**
@@ -89,102 +102,131 @@ if __name__ == "__main__":
 
 Improved design: Abstract Factory pattern for checkoutService
 
-```python
-from abc import ABC, abstractmethod
+```java
+// ========== Interfaces ==========
+interface PaymentGateway {
+    void processPayment(double amount);
+}
 
-# ========== Interfaces ==========
-class PaymentGateway(ABC):
-    @abstractmethod
-    def process_payment(self, amount):
-        pass
+interface Invoice {
+    void generateInvoice();
+}
 
-class Invoice(ABC):
-    @abstractmethod
-    def generate_invoice(self):
-        pass
+// ========== India Implementations ==========
+class RazorpayGateway implements PaymentGateway {
+    @Override
+    public void processPayment(double amount) {
+        System.out.println("Processing INR payment via Razorpay: " + amount);
+    }
+}
 
-# ========== India Implementations ==========
-class RazorpayGateway(PaymentGateway):
-    def process_payment(self, amount):
-        print(f"Processing INR payment via Razorpay: {amount}")
+class PayUGateway implements PaymentGateway {
+    @Override
+    public void processPayment(double amount) {
+        System.out.println("Processing INR payment via PayU: " + amount);
+    }
+}
 
-class PayUGateway(PaymentGateway):
-    def process_payment(self, amount):
-        print(f"Processing INR payment via PayU: {amount}")
+class GSTInvoice implements Invoice {
+    @Override
+    public void generateInvoice() {
+        System.out.println("Generating GST Invoice for India.");
+    }
+}
 
-class GSTInvoice(Invoice):
-    def generate_invoice(self):
-        print("Generating GST Invoice for India.")
+// ========== US Implementations ==========
+class PayPalGateway implements PaymentGateway {
+    @Override
+    public void processPayment(double amount) {
+        System.out.println("Processing USD payment via PayPal: " + amount);
+    }
+}
 
-# ========== US Implementations ==========
-class PayPalGateway(PaymentGateway):
-    def process_payment(self, amount):
-        print(f"Processing USD payment via PayPal: {amount}")
+class StripeGateway implements PaymentGateway {
+    @Override
+    public void processPayment(double amount) {
+        System.out.println("Processing USD payment via Stripe: " + amount);
+    }
+}
 
-class StripeGateway(PaymentGateway):
-    def process_payment(self, amount):
-        print(f"Processing USD payment via Stripe: {amount}")
+class USInvoice implements Invoice {
+    @Override
+    public void generateInvoice() {
+        System.out.println("Generating Invoice as per US norms.");
+    }
+}
 
-class USInvoice(Invoice):
-    def generate_invoice(self):
-        print("Generating Invoice as per US norms.")
+// ========== Abstract Factory ==========
+interface RegionFactory {
+    PaymentGateway createPaymentGateway(String gatewayType);
+    Invoice createInvoice();
+}
 
-# ========== Abstract Factory ==========
-class RegionFactory(ABC):
-    @abstractmethod
-    def create_payment_gateway(self, gateway_type):
-        pass
+// ========== Concrete Factories ==========
+class IndiaFactory implements RegionFactory {
+    @Override
+    public PaymentGateway createPaymentGateway(String gatewayType) {
+        if (gatewayType.equals("razorpay")) {
+            return new RazorpayGateway();
+        } else if (gatewayType.equals("payu")) {
+            return new PayUGateway();
+        }
+        throw new IllegalArgumentException("Unsupported gateway for India: " + gatewayType);
+    }
+    
+    @Override
+    public Invoice createInvoice() {
+        return new GSTInvoice();
+    }
+}
 
-    @abstractmethod
-    def create_invoice(self):
-        pass
+class USFactory implements RegionFactory {
+    @Override
+    public PaymentGateway createPaymentGateway(String gatewayType) {
+        if (gatewayType.equals("paypal")) {
+            return new PayPalGateway();
+        } else if (gatewayType.equals("stripe")) {
+            return new StripeGateway();
+        }
+        throw new IllegalArgumentException("Unsupported gateway for US: " + gatewayType);
+    }
+    
+    @Override
+    public Invoice createInvoice() {
+        return new USInvoice();
+    }
+}
 
-# ========== Concrete Factories ==========
-class IndiaFactory(RegionFactory):
-    def create_payment_gateway(self, gateway_type):
-        if gateway_type == "razorpay":
-            return RazorpayGateway()
-        elif gateway_type == "payu":
-            return PayUGateway()
-        raise ValueError(f"Unsupported gateway for India: {gateway_type}")
+// ========== Checkout Service ==========
+class CheckoutService {
+    private PaymentGateway paymentGateway;
+    private Invoice invoice;
+    
+    public CheckoutService(RegionFactory factory, String gatewayType) {
+        this.paymentGateway = factory.createPaymentGateway(gatewayType);
+        this.invoice = factory.createInvoice();
+    }
+    
+    public void completeOrder(double amount) {
+        this.paymentGateway.processPayment(amount);
+        this.invoice.generateInvoice();
+    }
+}
 
-    def create_invoice(self):
-        return GSTInvoice()
-
-class USFactory(RegionFactory):
-    def create_payment_gateway(self, gateway_type):
-        if gateway_type == "paypal":
-            return PayPalGateway()
-        elif gateway_type == "stripe":
-            return StripeGateway()
-        raise ValueError(f"Unsupported gateway for US: {gateway_type}")
-
-    def create_invoice(self):
-        return USInvoice()
-
-# ========== Checkout Service ==========
-class CheckoutService:
-    def __init__(self, factory, gateway_type):
-        self.payment_gateway = factory.create_payment_gateway(gateway_type)
-        self.invoice = factory.create_invoice()
-
-    def complete_order(self, amount):
-        self.payment_gateway.process_payment(amount)
-        self.invoice.generate_invoice()
-
-# ========== Main Method ==========
-if __name__ == "__main__":
-    # Using Razorpay in India
-    india_checkout = CheckoutService(IndiaFactory(), "razorpay")
-    india_checkout.complete_order(1999.0)
-
-    print("---")
-
-    # Using PayPal in US
-    us_checkout = CheckoutService(USFactory(), "paypal")
-    us_checkout.complete_order(49.99)
-
-
+// ========== Main Method ==========
+public class Main {
+    public static void main(String[] args) {
+        // Using Razorpay in India
+        CheckoutService indiaCheckout = new CheckoutService(new IndiaFactory(), "razorpay");
+        indiaCheckout.completeOrder(1999.0);
+        
+        System.out.println("---");
+        
+        // Using PayPal in US
+        CheckoutService usCheckout = new CheckoutService(new USFactory(), "paypal");
+        usCheckout.completeOrder(49.99);
+    }
+}
 ```
 
 *   **How This Code Fixes the Original Issues**

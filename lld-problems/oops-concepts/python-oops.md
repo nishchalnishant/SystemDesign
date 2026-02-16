@@ -37,183 +37,214 @@ Class ATM:
 
 
 
-```python
-#!/usr/bin/env python
+```java
+// This code shows that an Instance can access it's own
+// attributes as well as Class attributes.
 
-# 08-class-instance-attributes-1.py
+// We have a class attribute named 'count', and we add 1 to
+// it each time we create an instance. This can help count the
+// number of instances at the time of instantiation.
 
-# This code shows that an Instance can access it's own
-# attributes as well as Class attributes.
+class InstanceCounter {
+    private static int count = 0;
+    private int val;
+    
+    public InstanceCounter(int val) {
+        this.val = val;
+        InstanceCounter.count++;
+    }
+    
+    public void setVal(int newval) {
+        this.val = newval;
+    }
+    
+    public void getVal() {
+        System.out.println(this.val);
+    }
+    
+    public void getCount() {
+        System.out.println(InstanceCounter.count);
+    }
+}
 
-# We have a class attribute named 'count', and we add 1 to
-# it each time we create an instance. This can help count the
-# number of instances at the time of instantiation.
-
-
-class InstanceCounter(object):
-    count = 0
-
-    def __init__(self, val):
-        self.val = val
-        InstanceCounter.count += 1
-
-    def set_val(self, newval):
-        self.val = newval
-
-    def get_val(self):
-        print(self.val)
-
-    def get_count(self):
-        print(InstanceCounter.count)
-
-
-a = InstanceCounter(5)
-b = InstanceCounter(10)
-c = InstanceCounter(15)
-
+public class Main {
+    public static void main(String[] args) {
+        InstanceCounter a = new InstanceCounter(5);
+        InstanceCounter b = new InstanceCounter(10);
+        InstanceCounter c = new InstanceCounter(15);
+    }
+}
 ```
 
 
 
-```python
-#!/usr/bin/env python
+```java
+// NOTE: Python decorators are a Python-specific feature.
+// Java uses annotations (@Override, @Deprecated, etc.) instead.
+// This example shows the decorator concept, which wraps functions
+// to add behavior before/after execution.
 
-# Reference: Decorators 101 - A Gentle Introduction to Functional Programming.
-# By Jillian Munson - PyGotham 2014.
-# https://www.youtube.com/watch?v=yW0cK3IxlHc
-
-# 20-decorators-2.py
-# An updated version of 19-decorators-1.py
-
-# This code snippet takes the previous example, and add a bit more information
-# to the output.
-
+// Python code (decorators are not directly translatable to Java):
+/*
 import datetime
-
 
 def my_decorator(inner):
     def inner_decorator():
         print(datetime.datetime.utcnow())
         inner()
         print(datetime.datetime.utcnow())
-
     return inner_decorator
-
 
 @my_decorator
 def decorated():
     print("This happened!")
 
-
 if __name__ == "__main__":
     decorated()
 
-# This will print: (NOTE: The time will change of course :P)
-# # python 20-decorators-2.py
-# 2016-05-29 11:46:07.444330
-# This happened!
-# 2016-05-29 11:46:07.444367
+// This will print: (NOTE: The time will change of course :P)
+// 2016-05-29 11:46:07.444330
+// This happened!
+// 2016-05-29 11:46:07.444367
+*/
+
+// Java equivalent concept (using method wrapping):
+import java.time.LocalDateTime;
+
+public class DecoratorExample {
+    // Functional interface for the action
+    interface Action {
+        void execute();
+    }
+    
+    // Decorator method  that wraps an action
+    public static void decoratedAction(Action action) {
+        System.out.println(LocalDateTime.now());
+        action.execute();
+        System.out.println(LocalDateTime.now());
+    }
+    
+    public static void main(String[] args) {
+        decoratedAction(() -> System.out.println("This happened!"));
+    }
+}
 ```
 
-```python
-#!/usr/bin/env python
+```java
+// NOTE: Python decorators are Python-specific.
+// This example demonstrates function wrapping.
+// Java equivalent uses higher-order functions or lambda expressions.
 
-# 19-decorators-1.py
-# Decorators, as simple as it gets :)
-
-# Reference: Decorators 101 - A Gentle Introduction to Functional Programming.
-# By Jillian Munson - PyGotham 2014.
-# https://www.youtube.com/watch?v=yW0cK3IxlHc
-
-# Decorators are functions that compliment other functions,
-# or in other words, modify a function or method.
-
-# In the example below, we have a function named `decorated`.
-# This function just prints "This happened".
-# We have a decorator created named `inner_decorator()`.
-# This decorator function has an function within, which
-# does some operations (print stuff for simplicity) and then
-# returns the return-value of the internal function.
-
-# How does it work?
-# a) The function `decorated()` gets called.
-# b) Since the decorator `@my_decorator` is defined above
-# `decorated()`, `my_decorator()` gets called.
-# c) my_decorator() takes a function name as args, and hence `decorated()`
-# gets passed as the arg.
-# d) `my_decorator()` does it's job, and when it reaches `myfunction()`
-# calls the actual function, ie.. decorated()
-# e) Once the function `decorated()` is done, it gets back to `my_decorator()`.
-# f) Hence, using a decorator can drastically change the behavior of the
-# function you're actually executing.
-
-
-def my_decorator(my_function):  # <-- (4)
-    def inner_decorator():  # <-- (5)
-        print("This happened before!")  # <-- (6)
-        my_function()  # <-- (7)
-        print("This happens after ")  # <-- (10)
-        print("This happened at the end!")  # <-- (11)
-
+// Python code (decorator pattern):
+/*
+def my_decorator(my_function):
+    def inner_decorator():
+        print("This happened before!")
+        my_function()
+        print("This happens after ")
+        print("This happened at the end!")
     return inner_decorator
-    # return None
 
-
-@my_decorator  # <-- (3)
-def my_decorated():  # <-- (2) <-- (8)
-    print("This happened!")  # <-- (9)
-
+@my_decorator
+def my_decorated():
+    print("This happened!")
 
 if __name__ == "__main__":
-    my_decorated()  # <-- (1)
+    my_decorated()
 
-# This prints:
-# # python 19-decorators-1.py
-# This happened before!
-# This happened!
-# This happens after
-# This happened at the end!
+// This prints:
+// This happened before!
+// This happened!
+// This happens after
+// This happened at the end!
+*/
+
+// Java equivalent (using Runnable interface):
+public class DecoratorPattern {
+    // Functional interface for wrapping
+    interface Action {
+        void execute();
+    }
+    
+    // Decorator that wraps an action
+    public static Action myDecorator(Action myFunction) {
+        return () -> {
+            System.out.println("This happened before!");
+            myFunction.execute();
+            System.out.println("This happens after");
+            System.out.println("This happened at the end!");
+        };
+    }
+    
+    public static void main(String[] args) {
+        Action myDecorated = myDecorator(() -> System.out.println("This happened!"));
+        myDecorated.execute();
+    }
+}
 ```
 
 
 
 
 
-```python
-#!/usr/bin/env python
+```java
+// NOTE: Python decorators with arguments (*args, **kwargs)
+// Java equivalent uses varargs or generics
 
-
+// Python code:
+/*
 def decorator(inner):
     def inner_decorator(*args, **kwargs):
         print("This function takes " + str(len(args)) + " arguments")
         inner(*args)
-
     return inner_decorator
-
 
 @decorator
 def decorated(string_args):
     print("This happened: " + str(string_args))
 
-
 @decorator
 def alsoDecorated(num1, num2):
     print("Sum of " + str(num1) + "and" + str(num2) + ": " + str(num1 + num2))
 
-
 if __name__ == "__main__":
     decorated("Hello")
     alsoDecorated(1, 2)
-    
-    
-"""
-This function takes 1 arguments
-This happened: Hello
-This function takes 2 arguments
-Sum of 1and2: 3
 
-=== Code Execution Successful ===
-"""
+// Output:
+// This function takes 1 arguments
+// This happened: Hello
+// This function takes 2 arguments
+// Sum of 1and2: 3
+*/
+
+// Java equivalent (using varargs):
+public class VarargsDecorator {
+    // Functional interface
+    interface VarAction {
+        void execute(Object... args);
+    }
+    
+    // Decorator with varargs
+    public static VarAction decorator(VarAction inner) {
+        return (args) -> {
+            System.out.println("This function takes " + args.length + " arguments");
+            inner.execute(args);
+        };
+    }
+    
+    public static void main(String[] args) {
+        VarAction decorated = decorator((a) -> 
+            System.out.println("This happened: " + a[0]));
+        
+        VarAction alsoDecorated = decorator((a) -> 
+            System.out.println("Sum of " + a[0] + "and" + a[1] + ": " + 
+            ((int)a[0] + (int)a[1])));
+        
+        decorated.execute("Hello");
+        alsoDecorated.execute(1, 2);
+    }
+}
 ```
 
 
@@ -222,32 +253,17 @@ Sum of 1and2: 3
 
 
 
-```python
-#!/usr/bin/env python
+```java
+// NOTE: Python class decorators are Python-specific.
+// Java equivalent would use inheritance or composition.
 
-# 26-class-decorators.py
-
-# Reference : https://www.youtube.com/watch?v=Slf1b3yUocc
-# Talk by Mike Burns
-
-# Till the previous examples, we saw function decorators.
-# But decorators can be applied to Classes as well.
-# This example deals with class decorators.
-
-# NOTE: If you are creating a decorator for a class, you'll it
-# to return a Class.
-
-# NOTE: Similarly, if you are creating a decorator for a function,
-# you'll need it to return a function.
-
-
+// Python code (class decorator):
+/*
 def honirific(cls):
     class HonirificCls(cls):
         def full_name(self):
             return "Dr. " + super(HonirificCls, self).full_name()
-
     return HonirificCls
-
 
 @honirific
 class Name(object):
@@ -258,10 +274,41 @@ class Name(object):
     def full_name(self):
         return " ".join([self.first_name, self.last_name])
 
-
 result = Name("Vimal", "A.R").full_name()
 print("Full name: {0}".format(result))
+*/
 
+// Java equivalent (using inheritance):
+class Name {
+    protected String firstName;
+    protected String lastName;
+    
+    public Name(String firstName, String lastName) {
+        this.firstName = firstName;
+        this.lastName = lastName;
+    }
+    
+    public String fullName() {
+        return this.firstName + " " + this.lastName;
+    }
+}
 
-# This needs further check. Erroring out.
+class HonorificName extends Name {
+    public HonorificName(String firstName, String lastName) {
+        super(firstName, lastName);
+    }
+    
+    @Override
+    public String fullName() {
+        return "Dr. " + super.fullName();
+    }
+}
+
+public class Main {
+    public static void main(String[] args) {
+        HonorificName person = new HonorificName("Vimal", "A.R");
+        String result = person.fullName();
+        System.out.println("Full name: " + result);
+    }
+}
 ```

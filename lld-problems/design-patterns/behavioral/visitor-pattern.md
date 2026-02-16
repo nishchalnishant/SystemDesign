@@ -21,64 +21,70 @@
 
 
 
-```python
-# Class representing a Physical Product
-class PhysicalProduct:
-    # Method to print invoice for physical product
-    def printInvoice(self):
-        print("Printing invoice for Physical Product...")
+```java
+// Class representing a Physical Product
+class PhysicalProduct {
+    // Method to print invoice for physical product
+    public void printInvoice() {
+        System.out.println("Printing invoice for Physical Product...");
+    }
+    
+    // Method to calculate shipping cost for physical product
+    public double calculateShippingCost() {
+        System.out.println("Calculating shipping cost for Physical Product...");
+        return 10.0;  // Example shipping cost
+    }
+}
 
-    # Method to calculate shipping cost for physical product
-    def calculateShippingCost(self):
-        print("Calculating shipping cost for Physical Product...")
-        return 10.0  # Example shipping cost
+// Class representing a Digital Product
+class DigitalProduct {
+    // Method to print invoice for digital product
+    public void printInvoice() {
+        System.out.println("Printing invoice for Digital Product...");
+    }
+    
+    // No shipping cost for digital product
+}
 
+// Class representing a Gift Card Product
+class GiftCard {
+    // Method to print invoice for gift card
+    public void printInvoice() {
+        System.out.println("Printing invoice for Gift Card...");
+    }
+    
+    // Method to calculate discount for gift card
+    public double calculateDiscount() {
+        System.out.println("Calculating discount for Gift Card...");
+        return 5.0;  // Example discount
+    }
+}
 
-# Class representing a Digital Product
-class DigitalProduct:
-    # Method to print invoice for digital product
-    def printInvoice(self):
-        print("Printing invoice for Digital Product...")
-
-    # No shipping cost for digital product
-
-
-# Class representing a Gift Card Product
-class GiftCard:
-    # Method to print invoice for gift card
-    def printInvoice(self):
-        print("Printing invoice for Gift Card...")
-
-    # Method to calculate discount for gift card
-    def calculateDiscount(self):
-        print("Calculating discount for Gift Card...")
-        return 5.0  # Example discount
-
-
-def main():
-    # Create instances of different products
-    cart = [PhysicalProduct(), DigitalProduct(), GiftCard()]
-
-    # Loop through cart and perform actions based on product type
-    for item in cart:
-        if isinstance(item, PhysicalProduct):
-            item.printInvoice()
-            shippingCost = item.calculateShippingCost()
-            print(f"Shipping cost: {shippingCost}\n")
-        elif isinstance(item, DigitalProduct):
-            item.printInvoice()
-            print("No shipping cost for Digital Product.\n")
-        elif isinstance(item, GiftCard):
-            item.printInvoice()
-            discount = item.calculateDiscount()
-            print(f"Discount applied: {discount}\n")
-
-
-if __name__ == "__main__":
-    main()
-
-
-
+public class Main {
+    public static void main(String[] args) {
+        // Create instances of different products
+        Object[] cart = {new PhysicalProduct(), new DigitalProduct(), new GiftCard()};
+        
+        // Loop through cart and perform actions based on product type
+        for (Object item : cart) {
+            if (item instanceof PhysicalProduct) {
+                PhysicalProduct product = (PhysicalProduct) item;
+                product.printInvoice();
+                double shippingCost = product.calculateShippingCost();
+                System.out.println("Shipping cost: " + shippingCost + "\n");
+            } else if (item instanceof DigitalProduct) {
+                DigitalProduct product = (DigitalProduct) item;
+                product.printInvoice();
+                System.out.println("No shipping cost for Digital Product.\n");
+            } else if (item instanceof GiftCard) {
+                GiftCard product = (GiftCard) item;
+                product.printInvoice();
+                double discount = product.calculateDiscount();
+                System.out.println("Discount applied: " + discount + "\n");
+            }
+        }
+    }
+}
 ```
 
 * **Issues with the Code**
@@ -108,91 +114,131 @@ if __name__ == "__main__":
 
 
 
-```python
+```java
+// ======= Element Interface ==========
+interface Item {
+    void accept(ItemVisitor visitor);
+}
 
-# ======= Element Interface ==========
-from abc import ABC, abstractmethod
+// ======= Concrete elements ===========
+class PhysicalProduct implements Item {
+    private String name;
+    private double weight;
+    
+    public PhysicalProduct(String name, double weight) {
+        this.name = name;
+        this.weight = weight;
+    }
+    
+    public String getName() { return this.name; }
+    public double getWeight() { return this.weight; }
+    
+    @Override
+    public void accept(ItemVisitor visitor) {
+        visitor.visit(this);
+    }
+}
 
-class Item(ABC):
-    @abstractmethod
-    def accept(self, visitor):
-        pass
+// ======= Concrete elements ===========
+class DigitalProduct implements Item {
+    private String name;
+    private int downloadSizeInMB;
+    
+    public DigitalProduct(String name, int downloadSizeInMB) {
+        this.name = name;
+        this.downloadSizeInMB = downloadSizeInMB;
+    }
+    
+    public String getName() { return this.name; }
+    public int getDownloadSizeInMB() { return this.downloadSizeInMB; }
+    
+    @Override
+    public void accept(ItemVisitor visitor) {
+        visitor.visit(this);
+    }
+}
 
-# ======= Concrete elements ===========
-class PhysicalProduct(Item):
-    def __init__(self, name, weight):
-        self.name = name
-        self.weight = weight
+// ======= Concrete elements ===========
+class GiftCard implements Item {
+    private String code;
+    private int amount;
+    
+    public GiftCard(String code, int amount) {
+        this.code = code;
+        this.amount = amount;
+    }
+    
+    public String getCode() { return this.code; }
+    public int getAmount() { return this.amount; }
+    
+    @Override
+    public void accept(ItemVisitor visitor) {
+        visitor.visit(this);
+    }
+}
 
-    def accept(self, visitor):
-        visitor.visit(self)
+// ======== Visitor Interface ============
+interface ItemVisitor {
+    void visit(PhysicalProduct item);
+    void visit(DigitalProduct item);
+    void visit(GiftCard item);
+}
 
-# ======= Concrete elements ===========
-class DigitalProduct(Item):
-    def __init__(self, name, downloadSizeInMB):
-        self.name = name
-        self.downloadSizeInMB = downloadSizeInMB
+// ============ Concrete Visitors ==============
+class InvoiceVisitor implements ItemVisitor {
+    @Override
+    public void visit(PhysicalProduct item) {
+        System.out.println("Invoice: " + item.getName() + " - Shipping to customer");
+    }
+    
+    @Override
+    public void visit(DigitalProduct item) {
+        System.out.println("Invoice: " + item.getName() + " - Email with download link");
+    }
+    
+    @Override
+    public void visit(GiftCard item) {
+        System.out.println("Invoice: Gift Card - Code: " + item.getCode());
+    }
+}
 
-    def accept(self, visitor):
-        visitor.visit(self)
+// ============ Concrete Visitors ==============
+class ShippingCostVisitor implements ItemVisitor {
+    @Override
+    public void visit(PhysicalProduct item) {
+        System.out.println("Shipping cost for " + item.getName() + ": Rs. " + (item.getWeight() * 10));
+    }
+    
+    @Override
+    public void visit(DigitalProduct item) {
+        System.out.println(item.getName() + " is digital -- No shipping cost.");
+    }
+    
+    @Override
+    public void visit(GiftCard item) {
+        System.out.println("GiftCard delivery via email -- No shipping cost.");
+    }
+}
 
-# ======= Concrete elements ===========
-class GiftCard(Item):
-    def __init__(self, code, amount):
-        self.code = code
-        self.amount = amount
-
-    def accept(self, visitor):
-        visitor.visit(self)
-
-
-# ======== Visitor Interface ============
-class ItemVisitor(ABC):
-    @abstractmethod
-    def visit(self, item):
-        pass
-
-# ============ Concrete Visitors ==============
-class InvoiceVisitor(ItemVisitor):
-    def visit(self, item):
-        if isinstance(item, PhysicalProduct):
-            print(f"Invoice: {item.name} - Shipping to customer")
-        elif isinstance(item, DigitalProduct):
-            print(f"Invoice: {item.name} - Email with download link")
-        elif isinstance(item, GiftCard):
-            print(f"Invoice: Gift Card - Code: {item.code}")
-
-# ============ Concrete Visitors ==============
-class ShippingCostVisitor(ItemVisitor):
-    def visit(self, item):
-        if isinstance(item, PhysicalProduct):
-            print(f"Shipping cost for {item.name}: Rs. {item.weight * 10}")
-        elif isinstance(item, DigitalProduct):
-            print(f"{item.name} is digital -- No shipping cost.")
-        elif isinstance(item, GiftCard):
-            print("GiftCard delivery via email -- No shipping cost.")
-
-
-# Client Code
-def main():
-    items = [
-        PhysicalProduct("Shoes", 1.2),
-        DigitalProduct("Ebook", 100),
-        GiftCard("TUF500", 500)
-    ]
-
-    invoiceGenerator = InvoiceVisitor()
-    shippingCalculator = ShippingCostVisitor()
-
-    for item in items:
-        item.accept(invoiceGenerator)
-        item.accept(shippingCalculator)
-        print()
-
-if __name__ == "__main__":
-    main()
-
-
+// Client Code
+public class Main {
+    public static void main(String[] args) {
+        Item[] items = {
+            new PhysicalProduct("Shoes", 1.2),
+            new DigitalProduct("Ebook", 100),
+            new GiftCard("TUF500", 500)
+        };
+        
+        ItemVisitor invoiceGenerator = new InvoiceVisitor();
+        ItemVisitor shippingCalculator = new ShippingCostVisitor();
+        
+        for (Item item : items) {
+            item.accept(invoiceGenerator);
+            item.accept(shippingCalculator);
+            System.out.println();
+        }
+    }
+}
 ```
 
 

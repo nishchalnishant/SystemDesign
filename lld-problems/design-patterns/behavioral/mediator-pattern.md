@@ -19,46 +19,55 @@
 
 
 
-```python
+```java
+// Class representing a User in a collaborative document editor
+class User {
+    private String name;
+    private List<User> others;  // List of users that have access to this user
+    
+    public User(String name) {
+        this.name = name;
+        this.others = new ArrayList<>();
+    }
+    
+    // Method to add a collaborator to this user (grants access to the user)
+    public void addCollaborator(User user) {
+        this.others.add(user);
+    }
+    
+    // Method to make a change to the document and notify all collaborators
+    public void makeChange(String change) {
+        System.out.println(this.name + " made a change: " + change);
+        for (User u : this.others) {
+            u.receiveChange(change, this);  // Notify each collaborator about the change
+        }
+    }
+    
+    // Method to receive a change notification from another user
+    public void receiveChange(String change, User fromUser) {
+        System.out.println(this.name + " received: \"" + change + "\" from " + fromUser.name);
+    }
+}
 
-# Class representing a User in a collaborative document editor
-class User:
-    def __init__(self, name):
-        self.name = name
-        self.others = []  # List of users that have access to this user
-
-    # Method to add a collaborator to this user (grants access to the user)
-    def addCollaborator(self, user):
-        self.others.append(user)
-
-    # Method to make a change to the document and notify all collaborators
-    def makeChange(self, change):
-        print(f"{self.name} made a change: {change}")
-        for u in self.others:
-            u.receiveChange(change, self)  # Notify each collaborator about the change
-
-    # Method to receive a change notification from another user
-    def receiveChange(self, change, from_user):
-        print(f"{self.name} received: \"{change}\" from {from_user.name}")
-
-
-# Client Code
-if __name__ == "__main__":
-    # Creating users
-    alice = User("Alice")
-    bob = User("Bob")
-    charlie = User("Charlie")
-
-    # Adding collaborators (Alice gives access to Bob and Charlie)
-    alice.addCollaborator(bob)
-    alice.addCollaborator(charlie)
-
-    # Alice makes a change, notifying Bob and Charlie
-    alice.makeChange("Updated the document title")
-
-    # Bob makes a change, notifying Alice and Charlie
-    bob.makeChange("Added a new section to the document")
-
+// Client Code
+public class Main {
+    public static void main(String[] args) {
+        // Creating users
+        User alice = new User("Alice");
+        User bob = new User("Bob");
+        User charlie = new User("Charlie");
+        
+        // Adding collaborators (Alice gives access to Bob and Charlie)
+        alice.addCollaborator(bob);
+        alice.addCollaborator(charlie);
+        
+        // Alice makes a change, notifying Bob and Charlie
+        alice.makeChange(" Updated the document title");
+        
+        // Bob makes a change, notifying Alice and Charlie
+        bob.makeChange("Added a new section to the document");
+    }
+}
 ```
 
 *   **Explanation of The Code:**
@@ -95,65 +104,78 @@ if __name__ == "__main__":
   * Instead of having users directly communicate with each other to notify changes, the `CollaborativeDocument` will act as the mediator.&#x20;
   * This way, users only interact with the document (mediator) to communicate changes, promoting loose coupling and simplifying the overall structure.
 
-```python
+```java
+// Mediator Interface
+interface DocumentSessionMediator {
+    void broadcastChange(String change, User sender);
+    void join(User user);
+}
 
-# Mediator Interface
-class DocumentSessionMediator:
-    def broadcastChange(self, change, sender):
-        pass
+// Concrete Mediator Class
+class CollaborativeDocument implements DocumentSessionMediator {
+    private List<User> users;
+    
+    public CollaborativeDocument() {
+        this.users = new ArrayList<>();
+    }
+    
+    @Override
+    public void join(User user) {
+        this.users.add(user);
+    }
+    
+    @Override
+    public void broadcastChange(String change, User sender) {
+        for (User user : this.users) {
+            if (user != sender) {
+                user.receiveChange(change, sender);
+            }
+        }
+    }
+}
 
-    def join(self, user):
-        pass
+// User Class
+class User {
+    private String name;
+    private DocumentSessionMediator mediator;
+    
+    public User(String name, DocumentSessionMediator mediator) {
+        this.name = name;
+        this.mediator = mediator;
+    }
+    
+    // Method for users to make a change
+    public void makeChange(String change) {
+        System.out.println(this.name + " edited the document: " + change);
+        this.mediator.broadcastChange(change, this);
+    }
+    
+    // Method to receive a change from another user
+    public void receiveChange(String change, User sender) {
+        System.out.println(this.name + " saw change from " + sender.name + ": \"" + change + "\"");
+    }
+}
 
-
-# Concrete Mediator Class
-class CollaborativeDocument(DocumentSessionMediator):
-    def __init__(self):
-        self.users = []
-
-    def join(self, user):
-        self.users.append(user)
-
-    def broadcastChange(self, change, sender):
-        for user in self.users:
-            if user != sender:
-                user.receiveChange(change, sender)
-
-
-# User Class
-class User:
-    def __init__(self, name, mediator):
-        self.name = name
-        self.mediator = mediator
-
-    # Method for users to make a change
-    def makeChange(self, change):
-        print(f"{self.name} edited the document: {change}")
-        self.mediator.broadcastChange(change, self)
-
-    # Method to receive a change from another user
-    def receiveChange(self, change, sender):
-        print(f"{self.name} saw change from {sender.name}: \"{change}\"")
-
-
-# Client Code
-if __name__ == "__main__":
-    doc = CollaborativeDocument()
-
-    # Creating users
-    alice = User("Alice", doc)
-    bob = User("Bob", doc)
-    charlie = User("Charlie", doc)
-
-    # Joining the collaborative document
-    doc.join(alice)
-    doc.join(bob)
-    doc.join(charlie)
-
-    # Users making changes
-    alice.makeChange("Added project title")
-    bob.makeChange("Corrected grammar in paragraph 2")
-
+// Client Code
+public class Main {
+    public static void main(String[] args) {
+        CollaborativeDocument doc = new CollaborativeDocument();
+        
+        // Creating users
+        User alice = new User("Alice", doc);
+        User bob = new User("Bob", doc);
+        User charlie = new User("Charlie", doc);
+        
+        // Joining the collaborative document
+        doc.join(alice);
+        doc.join(bob);
+        doc.join(charlie);
+        
+        // Users making changes
+        alice.makeChange("Added project title");
+        bob.makeChange("Corrected grammar in paragraph 2");
+    }
+}
 ```
 
 

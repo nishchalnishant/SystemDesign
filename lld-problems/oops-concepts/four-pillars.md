@@ -5,14 +5,22 @@
 * A class is a blueprint or template that defines the properties and behavior of an object.
 * An object is an instance of a class created using the class defination.
 
-```python
-class Car:
-    def __inti(self, make, model, year):
-        self.make = make
-        self.model= model
-        self.year= year
-    def start_engine(self):
-        print("the {self.make} {self.model}'s engine is starting ")
+```java
+public class Car {
+    private String make;
+    private String model;
+    private int year;
+    
+    public Car(String make, String model, int year) {
+        this.make = make;
+        this.model = model;
+        this.year = year;
+    }
+    
+    public void startEngine() {
+        System.out.println("The " + this.make + " " + this.model + "'s engine is starting");
+    }
+}
 ```
 
 ## <mark style="color:purple;">Following are the four pilers of OOPs:</mark>
@@ -48,20 +56,28 @@ Lets use an example of vehicle class to explain the four pilers of the OOPs:
 * Here the \_\_make and \_\_model are private meaning it can't be accessed  directly from outside the class.
 * Here's how encapsulation can be applied to a `Vehicle` class:
 
-```python
-class Vehicle: 
-    def init(self, make, model): 
-        self.__make = make # encapsulated attribute 
-        self.__model = model # encapsulated attribute
-        
-    def display_info(self):
-        print(f"Vehicle: {self.__make} {self.__model}")
+```java
+public class Vehicle {
+    private String make;  // Encapsulated attribute
+    private String model; // Encapsulated attribute
     
-    def start(self):
-        print("Vehicle started.")
+    public Vehicle(String make, String model) {
+        this.make = make;
+        this.model = model;
+    }
     
-    def stop(self):
-        print("Vehicle stopped.")
+    public void displayInfo() {
+        System.out.println("Vehicle: " + this.make + " " + this.model);
+    }
+    
+    public void start() {
+        System.out.println("Vehicle started.");
+    }
+    
+    public void stop() {
+        System.out.println("Vehicle stopped.");
+    }
+}
 ```
 
 In this example:
@@ -76,29 +92,41 @@ In this example:
 * In python we can achieve this using abstract basic classes(ABC) and abstract methods
 * Here's how abstraction is implemented in our `Vehicle` class:
 
-```python
-from abc import ABC, abstractmethods
+```java
+// Abstract class representing a Shape
+abstract class Shape {
+    public abstract double area();
+}
 
-class Shape(ABC):
-    @abstractmethod
-    def area(self):
-        pass
-        
-class Rectangle(SHape):
-    def __inti__(self, width, height):
-        self.width = width
-        self.height = height
-        
-    def area(self):
-        return self.width*self.heaight
-        
-        
-class Circle(shape):
-    def __inti__(self, radius):
-        sefl.radius=radius
-        
-    def area(self):
-        return 3.14*self.radius **2
+// Rectangle class extending Shape
+class Rectangle extends Shape {
+    private double width;
+    private double height;
+    
+    public Rectangle(double width, double height) {
+        this.width = width;
+        this.height = height;
+    }
+    
+    @Override
+    public double area() {
+        return this.width * this.height;
+    }
+}
+
+// Circle class extending Shape
+class Circle extends Shape {
+    private double radius;
+    
+    public Circle(double radius) {
+        this.radius = radius;
+    }
+    
+    @Override
+    public double area() {
+        return 3.14 * this.radius * this.radius;
+    }
+}
 ```
 
 In this example:
@@ -122,28 +150,41 @@ Here's how inheritance can be used to extend our `Vehicle` class:
 
 
 
-```python
-# define a parent class called "vehicle"
-class Vehicle:
-    def __init__(self, color):
-        self.color = color
-        
-    def honk(self):
-    print("honk honk")
+```java
+// Define a parent class called "Vehicle"
+class Vehicle {
+    protected String color;
     
-# define a child class called "car" that iherits from vehicle
-class Car(Vehicle):
-    def __init__(self, color, speed):
-        super().__init__(color)
-        self.speed = speed
-        
-   def accelerate(self):
-       slef.speed +=10
-       
-          
- # create an object (instance of the casr class
- my_car = Car("red", 60)
- my_car.honk()   
+    public Vehicle(String color) {
+        this.color = color;
+    }
+    
+    public void honk() {
+        System.out.println("Honk honk");
+    }
+}
+
+// Define a child class called "Car" that inherits from Vehicle
+class Car extends Vehicle {
+    private int speed;
+    
+    public Car(String color, int speed) {
+        super(color);  // Call parent constructor
+        this.speed = speed;
+    }
+    
+    public void accelerate() {
+        this.speed += 10;
+    }
+}
+
+// Create an object (instance of the Car class)
+public class Main {
+    public static void main(String[] args) {
+        Car myCar = new Car("red", 60);
+        myCar.honk();
+    }
+}
 ```
 
 In this example:
@@ -157,26 +198,38 @@ In this example:
 * It enables you to write generic code that can work with objects of multiple types, as long as they share a common interface.
 * Here's how polymorphism is demonstrated using our `Vehicle` and `Car` classes:
 
-```python
-class Document:
-    def show(self):
-        raise NotImplementedError("Subclass must implement abstract method")
-    
-class pdf(Document):
-    def show(self):
-        return "show PDF Content"
-        
-class Word(Docuemnt):
-    def show(self):
-        return "show workd content"
-        
-docs = [pdf(), word()]
+```java
+// Abstract Document class
+abstract class Document {
+    public abstract String show();
+}
 
-for doc in docs:
-    print(doc.show())
-    
-    
-    
+// PDF class implementing Document
+class PDF extends Document {
+    @Override
+    public String show() {
+        return "Show PDF Content";
+    }
+}
+
+// Word class implementing Document
+class Word extends Document {
+    @Override
+    public String show() {
+        return "Show Word content";
+    }
+}
+
+// Client code demonstrating polymorphism
+public class Main {
+    public static void main(String[] args) {
+        Document[] docs = {new PDF(), new Word()};
+        
+        for (Document doc : docs) {
+            System.out.println(doc.show());
+        }
+    }
+}
 ```
 
 In this example:
