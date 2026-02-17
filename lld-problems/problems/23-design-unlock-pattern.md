@@ -1,23 +1,61 @@
 # Design Android Unlock Pattern
 
-> **Difficulty**: Medium  
-> **Topics**: Graph Theory, DFS/Backtracking, Validation Logic  
-> **Key Concept**: Midpoint Formula for Skip Logic
+> **Difficulty**: Medium
+> **Topics**: Graph Theory, DFS/Backtracking, Validation Logic
+> **Key Concepts**: Midpoint Formula for Skip Logic, Adjacency Matrix.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design the Android 3x3 Grid Unlock Pattern system.
-- **Grid**: 9 dots (0-8).
-- **Rules**:
-  1.  Min length 4 nodes.
-  2.  Cannot visit same node twice (unless hopping over it, but that node must be visited).
-  3.  **Skip Rule**: Connecting a non-adjacent node (e.g., 0 to 2) is ONLY valid if the middle node (1) has completely been visited.
+### Goals
+- Design the logic to validate and set the 3x3 Android Grid unlock pattern.
 
-## Implementation
+### 1. Who are the actors?
+- **User**: Draws a pattern on the screen.
+- **System**: Validates the pattern constraints.
 
-## Java Implementation
+### 2. What are the must-have features? (Core)
+- **Grid**: 3x3 dots (Indices 0-8).
+- **Constraints**:
+    1.  Minimum 4 dots.
+    2.  Each dot visited at most once.
+    3.  **Skip Rule**: Connecting non-adjacent dots (e.g., 0 -> 2) is valid ONLY if the middle dot (1) was *already visited*.
 
-#### Class Diagram
+### 3. What are the constraints?
+- **Complexity**: $O(N!)$ validation is fine since N=9.
+- **Storage**: Store hashed pattern, not raw sequence.
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Set Pattern
+**Actor**: User
+**Flow**:
+1. User connects sequence: `0 -> 3 -> 6 -> 7`.
+2. System validates:
+    - Length >= 4? Yes.
+    - No repeats? Yes.
+    - Valid moves? (0->3 adjacent, 3->6 adjacent). Yes.
+3. System saves pattern hash.
+
+### UC2: Invalid Skip
+**Actor**: User
+**Flow**:
+1. User connects: `0 -> 2`.
+2. System calculates Midpoint between 0 and 2 is 1.
+3. System checks: Is 1 in `visited` set? No.
+4. System rejects pattern: "Cannot skip over unvisited node".
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **PatternLockSystem**: Facade.
+- **PatternValidator**: Encapsulates the complex rules.
+- **Point**: Represents (r, c) or index.
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -31,7 +69,7 @@ classDiagram
     class PatternValidator {
         +int MIN_LENGTH = 4
         +isValid(pattern) boolean
-        -getIntermediate(p1, p2) Point
+        -getMidpoint(p1, p2) Point
     }
 
     class Point {
@@ -44,29 +82,23 @@ classDiagram
     PatternValidator ..> Point
 ```
 
-#### Flow Chart: Validation Logic
+---
 
-```mermaid
-flowchart TD
-    A[Start Validation] --> B{Length >= 4?}
-    B -- No --> C[Invalid]
-    B -- Yes --> D[Init: Visited Set]
-    D --> E[Iterate Points (For P[i] -> P[i+1])]
-    E --> F{Is Next Visited?}
-    F -- Yes --> C
-    F -- No --> G[Calculate Midpoint]
-    G --> H{Is There Midpoint?}
-    H -- No --> I[Valid Move]
-    H -- Yes --> J{Is Midpoint Visited?}
-    J -- No --> C[Invalid (Skip Rule)]
-    J -- Yes --> I
-    I --> K[Add Next to Visited]
-    K --> L{More Points?}
-    L -- Yes --> E
-    L -- No --> M[Valid Pattern]
-```
+## Phase 4: Design Patterns
 
-#### Code
+### 1. Strategy Pattern
+- **Description**: Defines a family of algorithms, encapsulates each one, and makes them interchangeable.
+- **Why used**: Validation rules might evolve (e.g., 3x3 grid vs 4x4 grid, allow repeats vs no repeats). Strategy allows injecting different `PatternValidator` implementations without changing the `LockSystem` code.
+
+### 2. Graph Theory (DFS)
+- **Description**: Modeling the grid as a Graph where nodes are dots and edges are valid moves.
+- **Why used**: Validating a pattern is essentially traversing a path in a graph. We use DFS to ensure the path doesn't visit a node twice (unless allowed) and respects the "Skip" constraints (edges exist only if intermediate node visited).
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
@@ -94,6 +126,9 @@ class Point {
     public int hashCode() {
         return Objects.hash(r, c);
     }
+    
+    @Override
+    public String toString() { return "(" + r + "," + c + ")"; }
 }
 
 // 2. Validator (The Brains)
@@ -104,19 +139,25 @@ class PatternValidator {
         if (pattern.size() < MIN_LENGTH) return false;
 
         Set<Point> visited = new HashSet<>();
+        // Add first point
         visited.add(pattern.get(0));
 
         for (int i = 0; i < pattern.size() - 1; i++) {
             Point curr = pattern.get(i);
             Point next = pattern.get(i + 1);
 
-            // 1. Check Revisit
+            // 1. Check Revisit (Pattern itself cannot contain duplicates)
+            // Note: Android actually allows revisit if it's a "crossing", but we simplify to no-revisit for Basic LLD
             if (visited.contains(next)) return false;
 
             // 2. Check Skip Logic
             Point intermediate = getIntermediate(curr, next);
+            
+            // If there IS a point strictly between curr and next
+            // AND we haven't visited it yet
+            // THEN it's an invalid move
             if (intermediate != null && !visited.contains(intermediate)) {
-                // Illegal skip over unvisited node
+                System.out.println("Invalid Skip: " + curr + " -> " + next + " skips " + intermediate);
                 return false; 
             }
 
@@ -131,6 +172,7 @@ class PatternValidator {
         int colSum = p1.c + p2.c;
 
         // If sum is odd, midpoint is x.5 -> No integer node in between
+        // Example: (0,0) and (1,2) -> Sums (1, 2) -> Mid (0.5, 1) -> No node.
         if (rowSum % 2 != 0 || colSum % 2 != 0) {
             return null;
         }
@@ -138,8 +180,7 @@ class PatternValidator {
         int midR = rowSum / 2;
         int midC = colSum / 2;
         
-        // Special case: Center of 3x3 is (1,1)
-        // Ensure we handle "middle" correctly
+        // Return the midpoint
         return new Point(midR, midC);
     }
 }
@@ -178,27 +219,44 @@ public class PatternLockSystem {
         PatternLockSystem system = new PatternLockSystem();
         
         // Valid L-Shape: 0 -> 3 -> 6 -> 7
+        // (0,0) -> (1,0) -> (2,0) -> (2,1)
         List<Point> pattern = Arrays.asList(
             new Point(0,0), new Point(1,0), new Point(2,0), new Point(2,1)
         );
         system.setPattern(pattern);
         
         // Invalid Skip: 0 -> 2 (Skipping 1 without visiting it)
+        // (0,0) -> (0,2)
         List<Point> invalid = Arrays.asList(
-            new Point(0,0), new Point(0,2), new Point(1,1), new Point(2,2)
+            new Point(0,0), new Point(0,2), new Point(1,1)
         );
         system.setPattern(invalid); 
     }
 }
 ```
 
-## Interview Q&A
+---
 
-**Q: "How to count total valid patterns?"**
-- A: "Use DFS / Backtracking. Recursively traverse from each starting node, keeping track of `visited` set. Total is ~389,000 valid patterns."
+## Phase 6: Discussion
 
-**Q: "Security?"**
-- A: "Salt and Hash the pattern sequence. Don't store plain lists."
+### Combinatorics
+**Q: "How many valid patterns exist?"**
+- A: "Using DFS to count, there are exactly **389,112** valid patterns for a 3x3 grid with min length 4."
 
-**Q: "Knight's Move (0 -> 5)?"**
-- A: "Valid. The midpoint logic `(0+1)/2 = 0.5` correctly returns `None`, meaning no node is skipped over."
+### Security
+**Q: "Is it secure?"**
+- A: "Entropy is lower than a 6-digit PIN. Smudge attacks (grease on screen) can reveal the pattern. Should throttle attempts (exponential backoff after 5 failures)."
+
+### Knight's Move
+**Q: "Is 0 -> 5 valid?"**
+- A: "Yes. Use the midpoint formula: $(0+1)/2 = 0.5$, $(0+2)/2 = 1.0$. Row is fractional, so no integer node exists between them. Direct connection allowed."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `PatternLockSystem` manages auth state, `Validator` manages graph rules.
+- **O (Open/Closed)**: Logic is extensible.
+- **L (Liskov Substitution)**: N/A.
+- **I (Interface Segregation)**: N/A.
+- **D (Dependency Inversion)**: N/A.

@@ -4,16 +4,62 @@
 > **Topics**: State Design Pattern, State Machine
 > **Key Concepts**: Managing state transitions, inventory, handling money.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a Vending Machine that:
-1.  **States**: Handles different states (Idle, Ready, Dispensing, OutOfOrder).
-2.  **Inventory**: Manages products and their counts.
-3.  **Money**: Accepts coins/notes and returns change.
-4.  **Selection**: Allows users to select products via code (e.g., A1, B2).
-5.  **Refund**: Allows cancelling the request and returning money.
+### Goals
+- Design a Vending Machine that dispenses products based on user selection and payment.
+- Identify states and transitions.
+- Handle edge cases like insufficient funds or out-of-stock items.
 
-## Class Diagram
+### 1. Who are the actors?
+- **User**: Selects items, inserts money, collects product and change.
+- **Admin**: Restocks items and collects money.
+- **System**: Manages inventory, state, and transactions.
+
+### 2. What are the must-have features? (Core)
+- **Product Selection**: User selects an item by code (e.g., A1).
+- **Payment Processing**: User inserts coins/notes.
+- **Dispensing**: Machine dispenses item if balance >= price.
+- **Change Return**: Machine returns excess balance.
+- **State Management**: Handle Idle, Selection, Dispensing, OutOfOrder states.
+
+### 3. What are the constraints?
+- **Concurrency**: One user at a time (physical machine).
+- **Hardware Interface**: Methods to control motors/display (abstracted here).
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Purchase Item
+**Actor**: User
+**Flow**:
+1. User selects an item (State: Idle -> Selection).
+2. System checks inventory.
+3. User inserts money (State: Selection).
+4. If balance >= price, change state to Dispensing.
+5. System dispenses item and returns change.
+6. System resets to Idle state.
+
+### UC2: Cancel Request
+**Actor**: User
+**Flow**:
+1. User presses cancel during selection.
+2. System refunds inserted money.
+3. System resets to Idle state.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **VendingMachine**: Context class holding state and inventory.
+- **State** (Interface): Defines behavior for states.
+- **Inventory**: Manages products and counts.
+- **Product**: Item details.
+- **Coin/Note**: Money entities (simplified as double for this design).
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -56,23 +102,19 @@ classDiagram
     VendingMachine --> Inventory
 ```
 
-## Flow Chart: Purchase Process
+---
 
-```mermaid
-flowchart TD
-    A[Idle State] -->|Select Item| B[Selection State]
-    B -->|Check Inventory| C{Available?}
-    C -- No --> A
-    C -- Yes --> D[Wait for Money]
-    D -->|Insert Money| E{Sufficient?}
-    E -- No --> D
-    E -- Yes --> F[Dispense State]
-    F --> G[Dispense Item]
-    G --> H[Return Change]
-    H --> A
-```
+## Phase 4: Design Patterns
 
-## Java Implementation
+### 1. State Pattern
+- **Description**: Allows an object to alter its behavior when its internal state changes. The object will appear to change its class.
+- **Why used**: The Vending Machine has distinct behaviors depending on its state (e.g., `Idle`, `Selection`, `Dispensing`). The pattern eliminates complex `if-else` or `switch` statements by delegating behavior to state objects.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
@@ -225,13 +267,28 @@ public class VendingMachineDemo {
 }
 ```
 
-## Interview Q&A
+---
 
-**Q: "How to handle concurrency (two users selecting same last item)?"**
+## Phase 6: Discussion
+
+### Concurrency
+**Q: How to handle concurrency (two users selecting same last item)?**
 - A: "In `Inventory.deduct()`, implement a double-check lock or use `AtomicInteger` for counts. If using database, use optimistic locking."
 
-**Q: "How to add new states (e.g., Maintenance)?"**
-- A: "Create `MaintenanceState` class implementing `State` interface. Add transition logic in Admin specific methods."
+### Extension: Maintenance Mode
+**Q: How to add new states (e.g., Maintenance)?**
+- A: "Create `MaintenanceState` class implementing `State` interface. Add transition logic (only Admin can trigger). In Maintenance, all actions like `insertMoney` would throw exceptions or return error messages."
 
-**Q: "How to handle exact change only?"**
+### Hardware Integration
+**Q: How to handle exact change only?**
 - A: "The machine needs to track its own internal cash inventory. In `DispenseState`, check if internal cash can provide the change using a Greedy algorithm (DP for optimal)."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `Inventory` manages stock, `States` manage transitions, `VendingMachine` acts as context.
+- **O (Open/Closed)**: New states can be added without modifying existing states significantly.
+- **L (Liskov Substitution)**: All states implement `State` interface correctly.
+- **I (Interface Segregation)**: `State` interface covers all necessary actions.
+- **D (Dependency Inversion)**: `VendingMachine` depends on `State` interface, not concrete states.

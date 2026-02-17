@@ -1,37 +1,63 @@
 # Design Internet Download Manager (IDM)
 
-> **Difficulty**: Intermediate  
-> **Topics**: Concurrency, Multi-threading, HTTP Range Headers, File I/O  
-> **Extension**: Resumable Downloads
+> **Difficulty**: Hard
+> **Topics**: Concurrency, Multi-threading, HTTP Range Headers, File I/O
+> **Key Concepts**: Range Requests, RandomAccessFile, Thread Pooling.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a download manager that can:
-1.  Download files from a URL.
-2.  Accelerate download by splitting file into multiple parts (segments) and downloading in parallel.
-3.  Pause and resume downloads.
-4.  Merge segments into final file.
-5.  Handle network failures.
+### Goals
+- Design a download manager that accelerates downloads using parallel connections.
+- Support pausing, resuming, and error recovery.
 
-## Core Concept: HTTP Range Headers
+### 1. Who are the actors?
+- **User**: Starts downloads, pauses/resumes.
+- **Worker Threads**: Independent threads downloading chunks.
+- **Server**: HTTP Server hosting the file (must support Range requests).
 
-The magic of IDM lies in the HTTP protocol.
+### 2. What are the must-have features? (Core)
+- **Parallelism**: Split file into N segments.
+- **Resumability**: Save progress state to disk.
+- **Assembly**: Merge segments into final file.
 
-1.  **Head Request**: Send `HEAD` request to check file size (`Content-Length`) and if server supports parallel downloads (`Accept-Ranges: bytes`).
-2.  **Range Request**: Workers send `GET` requests with specific byte ranges.
-    *   _Worker 1:_ `Range: bytes=0-1000`
-    *   _Worker 2:_ `Range: bytes=1001-2000`
+### 3. What are the constraints?
+- **Disk I/O**: Writing to same file concurrently requires locking or `RandomAccessFile`.
+- **Network**: Server might ban too many connections.
 
-## System Entities
+---
 
-1.  **DownloadTask**: Represents the file being downloaded. Holds metadata (URL, file size, status).
-2.  **Segment (Chunk)**: Represents a specific byte range (Start, End) and its download status.
-3.  **Worker (Thread)**: A separate thread responsible for downloading one Segment.
-4.  **DownloadManager**: The Controller. Starts tasks, manages thread pool, and handles file assembly.
+## Phase 2: Use Cases
 
-## Java Implementation
+### UC1: Start Download
+**Actor**: User
+**Flow**:
+1. User provides URL.
+2. Manager sends `HEAD` request to get `Content-Length`.
+3. Checks `Accept-Ranges: bytes`.
+4. Calculates segment size (Size / N).
+5. Creates N `Segment` objects (Start, End, Downloaded=0).
+6. Starts N `Worker` threads.
 
-#### Class Diagram
+### UC2: Worker Progress
+**Actor**: Worker Thread
+**Flow**:
+1. Worker sends `GET` with header `Range: bytes=Start-End`.
+2. Server responds with `206 Partial Content`.
+3. Worker streams bytes to `temp_part_k` file (or offsets in main file).
+4. Updates `downloaded` count in shared state.
+5. If interrupted, saves state.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **DownloadManager**: Facade.
+- **DownloadTask**: State of one file download.
+- **Segment**: Metadata for a chunk.
+- **Worker**: Runnable.
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -55,7 +81,7 @@ classDiagram
         +long end
         +long downloaded
         +boolean isCompleted
-        +String tempPath
+        +File tempFile
     }
 
     class ChunkDownloader {
@@ -70,24 +96,23 @@ classDiagram
     ChunkDownloader ..> DownloadTask
 ```
 
-#### Flow Chart: Parallel Download
+---
 
-```mermaid
-flowchart TD
-    A[Start Download Task] --> B[Head Request: Get File Size]
-    B --> C{Accept-Ranges?}
-    C -- No --> D[Create 1 Segment (Full File)]
-    C -- Yes --> E[Split into N Segments]
-    E --> F[Start N Threads in Parallel]
-    D --> F
-    F --> G{All Segments Complete?}
-    G -- No --> F
-    G -- Yes --> H[Merge Segments to Output File]
-    H --> I[Delete Temp Files]
-    I --> J[Mark Task Completed]
-```
+## Phase 4: Design Patterns
 
-#### Code
+### 1. Master-Worker Pattern (Parallel Processing)
+- **Description**: A controller (Master) distributes identical tasks to multiple worker threads and aggregates the results.
+- **Why used**: To saturate the bandwidth, the Manager splits a large file into N segments. It assigns each segment to a Worker thread. The Manager then waits (Barrier) for all to finish before merging the parts.
+
+### 2. State Pattern
+- **Description**: Allows an object to alter its behavior when its internal state changes.
+- **Why used**: A Download Task has complex states (`PENDING`, `DOWNLOADING`, `PAUSED`, `FAILED`, `COMPLETED`). The behavior of clicking "Start/Resume" depends entirely on the current state (e.g., Resume only works if Paused).
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.io.*;
@@ -141,6 +166,7 @@ class ChunkDownloader implements Runnable {
             return;
         }
 
+        // Resume from where we left off
         long startByte = segment.start + segment.downloaded;
         if (startByte >= segment.end) {
             segment.isCompleted = true;
@@ -151,15 +177,17 @@ class ChunkDownloader implements Runnable {
         try {
             URL url = new URL(fileUrl);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            // Critical: Range Header
             String range = String.format("bytes=%d-%d", startByte, segment.end);
             conn.setRequestProperty("Range", range);
             
             System.out.println("Thread-" + segment.id + " downloading: " + range);
 
             try (InputStream in = conn.getInputStream();
+                 // rw mode allows seeking
                  RandomAccessFile raf = new RandomAccessFile(segment.tempFile, "rw")) {
                 
-                raf.seek(segment.downloaded);
+                raf.seek(segment.downloaded); // Seek to end of existing content
                 byte[] buffer = new byte[4096];
                 int bytesRead;
                 
@@ -200,18 +228,19 @@ class DownloadTask {
 
     public void start() {
         try {
-            // 1. Get File Size
+            // 1. Get File Size (HEAD Request)
             HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setRequestMethod("HEAD");
             fileSize = conn.getContentLengthLong();
             String ranges = conn.getHeaderField("Accept-Ranges");
             
             if(fileSize <= 0) throw new RuntimeException("Invalid file size");
-
             System.out.println("File Size: " + fileSize + " bytes");
 
-            // 2. Create Segments
+            // 2. Create Create Segments (Strategy: Split by Size)
+            this.segments.clear();
             if (ranges == null || !ranges.equals("bytes")) {
+                // Server doesn't support ranges -> Single Thread
                 segments.add(new Segment(0, 0, fileSize, new File(outputPath + ".part0")));
             } else {
                 long chunkSize = fileSize / numThreads;
@@ -231,6 +260,7 @@ class DownloadTask {
                 executor.submit(new ChunkDownloader(url, seg, latch, failed));
             }
 
+            // Wait for all workers
             latch.await();
             executor.shutdown();
 
@@ -260,7 +290,7 @@ class DownloadTask {
                         fos.write(buffer, 0, read);
                     }
                 }
-                seg.tempFile.delete();
+                seg.tempFile.delete(); // Cleanup temp file
             }
         }
     }
@@ -272,23 +302,35 @@ public class DownloadManager {
         String url = "https://speed.hetzner.de/100MB.bin"; // Example URL
         String output = "file.bin";
         
+        // 4 Threads
         DownloadTask task = new DownloadTask(url, output, 4);
         task.start();
     }
 }
 ```
 
-## Key Design Decisions
+---
 
-1.  **Handling Resume (Persistence)**:
-    *   Serialize `DownloadTask` (with segments and downloaded bytes) to a file (e.g., JSON) on disk.
-    *   On startup, read file, reconstruct objects, and calculate new Range header: `bytes=(start + downloaded)-end`.
+## Phase 6: Discussion
 
-2.  **File I/O Optimization**:
-    *   Use separate temporary files (`.part0`, `.part1`) to avoid locking contention on a single file. Merging at the end is faster than mutex locking on every write.
+### Resume Logic
+**Q: "How to handle crashes?"**
+- A: "Serialize the `DownloadTask` object (including `segments` list and `downloaded` bytes for each) to a JSON file on disk. On restart, load JSON, check file sizes of `.part` files, and adjust `Range: bytes=(Start+Downloaded)-End`."
 
-3.  **Concurrency Model**:
-    *   Thread per Segment is simple but strictly bound (e.g., max 8 threads) to avoid context switching overhead.
+### File I/O Optimization
+**Q: "Why separate temp files?"**
+- A: "Writing to a single file from multiple threads requires `RandomAccessFile` and careful seeking. While `RandomAccessFile` is thread-safe for different offsets, locking can still occur at OS level. Separate files avoid contention entirely, merging is sequential I/O (fast)."
 
-4.  **Network Failure**:
-    *   If a chunk fails, only that segment is marked `FAILED`. Retry logic spins up a new thread for just that segment.
+### Concurrency
+**Q: "Optimal Thread Pool Size?"**
+- A: "Network Bound. Not CPU bound. However, too many threads = overhead + server ban. Usually 4-8 is optimal for consumer connections."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `ChunkDownloader` downloads bytes, `DownloadTask` manages segments, `Manager` starts tasks.
+- **O (Open/Closed)**: Add `FTPDownloader` by extending worker.
+- **L (Liskov Substitution)**: N/A.
+- **I (Interface Segregation)**: N/A.
+- **D (Dependency Inversion)**: N/A.

@@ -1,85 +1,61 @@
-# Design Reddit Comments System (LLD & Schema)
+# Design Reddit Comments System
 
-> **Difficulty**: Medium  
-> **Topics**: Database Schema, Hierarchical Data, Materialized Path, Recursion  
-> **Extension**: Pagination, Vote Counts
+> **Difficulty**: Medium
+> **Topics**: Database Schema, Hierarchical Data, Materialized Path, Recursion
+> **Key Concepts**: Storing trees in SQL, Read vs Write optimization.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a scalable comment system like Reddit.
-- **Features**: Threaded comments (infinite nesting), Upvotes/Downvotes, Pagination.
-- **Scale**: Millions of comments. Read-heavy.
-- **Challenge**: Storing and fetching trees efficiently in SQL.
+### Goals
+- Design a scalable comment system supporting infinite nesting.
+- Efficiently store and retrieve deep comment trees.
+- Handle high read volume (viral posts).
 
-## Core Problem: Storing Trees in SQL
+### 1. Who are the actors?
+- **User**: Posts comments, replies, upvotes/downvotes.
+- **System**: Renders comment threads, manages scores.
 
-| Strategy | Concept | Pros | Cons | Verdict |
-| :--- | :--- | :--- | :--- | :--- |
-| **Adjacency List** | Column `parent_id` | Simple, easy inserts. | Fetching tree needs recursive queries (CTEs). Slow for deep trees. | Standard |
-| **Materialized Path** | Column `path` (e.g., "001/005/012") | Fast subtree retrieval via prefix scan. Sorting by string path gives DFS order! | Moving subtrees is hard. | **Best for Reddit** |
+### 2. What are the must-have features? (Core)
+- **Posting**: Add a root comment or a reply.
+- **Retrieval**: Fetch comments for a post in hierarchical order (Threaded view).
+- **Ranking**: Order by score (Upvotes - Downvotes) or time.
+- **Pagination**: Load top-level comments and expand replies on demand.
 
-## Database Schema
+### 3. What are the constraints?
+- **Scale**: Millions of comments per popular post.
+- **Latency**: Read latency must be low (< 200ms).
+- **Depth**: Support deep nesting (e.g., 50+ levels).
 
-### Table 1: `Comments`
+---
 
-```sql
-CREATE TABLE Comments (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    post_id BIGINT NOT NULL,          -- The Thread ID
-    user_id BIGINT NOT NULL,
-    parent_id BIGINT NULL,            -- Optimization for direct parent lookups
-    
-    -- THE MAGIC COLUMN
-    -- Stores the lineage: "root_id/child_id/grandchild_id"
-    -- Example ID 101 nested under 50 nested under 1: "0001/0050/0101"
-    path VARCHAR(255) NOT NULL,
-    
-    content TEXT,
-    depth INT DEFAULT 0,              -- Indentation level (UI helper)
-    
-    -- Denormalized Counters (For Read Speed)
-    upvote_count INT DEFAULT 0,
-    downvote_count INT DEFAULT 0,
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_post_path (post_id, path) -- Crucial for "ORDER BY path"
-);
-```
+## Phase 2: Use Cases
 
-### Table 2: `Votes` (Prevent double voting)
+### UC1: Post Comment/Reply
+**Actor**: User
+**Flow**:
+1. User submits content for a `PostId` (and optionally `ParentId` if reply).
+2. System calculates `Path` and `Depth` based on Parent.
+3. System saves comment to DB.
+4. System updates denormalized counts (e.g., total comments on post).
 
-```sql
-CREATE TABLE CommentVotes (
-    user_id BIGINT,
-    comment_id BIGINT,
-    vote_value TINYINT, -- +1 for Up, -1 for Down
-    PRIMARY KEY (user_id, comment_id)
-);
-```
+### UC2: View Comments
+**Actor**: User
+**Flow**:
+1. User requests comments for `PostId`.
+2. System fetches comments ordered by `Path` (Materialized Path sorting gives DFS order).
+3. Frontend renders tree structure using `Depth`.
 
-## Key Operations
+---
 
-### 1. Fetching the Tree (Depth-First Order)
-Sorting by `path` naturally groups comments in the correct threaded order for UI.
+## Phase 3: Class Diagram
 
-```sql
-SELECT * FROM Comments 
-WHERE post_id = 55 
-ORDER BY path ASC 
-LIMIT 50; 
-```
-**Result**:
-1. `0001` (Root)
-2. `0001/0002` (Child of 1)
-3. `0001/0002/0003` (Grandchild of 1)
-4. `0005` (New Root)
+### Step 1: Core Entities
+- **Comment**: The main unit of content.
+- **User**: Author.
+- **Post**: Context container.
+- **Vote**: User interaction.
 
-### 2. Inserting a Reply (Java Implementation)
-
-Logic: `New_Path = Parent_Path + "/" + New_ID`.
-
-#### Class Diagram
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -110,76 +86,45 @@ classDiagram
     CommentService ..> Comment : Creates
 ```
 
-#### Flow Chart: Posting a Reply
+### Database Schema
 
-```mermaid
-flowchart TD
-    A[User Request: Reply to Comment X] --> B{Validate Parent X Exists?}
-    B -- No --> C[Error: Parent Not Found]
-    B -- Yes --> D[Fetch Parent Path & Depth]
-    D --> E[Generate New ID]
-    E --> F[Construct New Path: ParentPath + / + NewID]
-    F --> G[Increment Depth: ParentDepth + 1]
-    G --> H[Save New Comment to DB]
-    H --> I[Update Cache (Async)]
-    I --> J[Return Success]
-```
+#### Table: `Comments`
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `id` | BIGINT | PK |
+| `post_id` | BIGINT | The Post ID |
+| `user_id` | BIGINT | The Author |
+| `parent_id` | BIGINT | Direct Parent (NULL for Root) |
+| `path` | VARCHAR | Lineage: `0001/0050/0101` |
+| `depth` | INT | Indentation Level |
+| `content` | TEXT | Body |
+| `upvote_count` | INT | Denormalized count |
 
-#### Java Code
+*Index: `(post_id, path)` for fast retrieval.*
+
+---
+
+## Phase 4: Design Patterns
+
+### 1. Materialized Path Pattern
+- **Description**: A hierarchical data model where each node stores its full ancestry path (e.g., "1/5/9") as a string.
+- **Why used**: Allows fetching an entire comment subtree or sorting by conversation thread depth with a simple `ORDER BY path` query, avoiding expensive recursive joins or CTEs in the database.
+
+### 2. CQRS (Command Query Responsibility Segregation)
+- **Description**: Separates read and update operations for a data store.
+- **Why used**: Comment systems often have high read-to-write ratios (Viral posts). CQRS allows optimizing the Read model (denormalized, flat structure) differently from the Write model (normalized, relational) for performance.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.UUID;
+import java.util.*;
 
-public class CommentService {
-    private CommentRepository commentRepository;
-
-    public CommentService(CommentRepository commentRepository) {
-        this.commentRepository = commentRepository;
-    }
-
-    // Method to handle a reply to an existing comment
-    public void replyToComment(Long parentId, Long userId, Long postId, String content) throws SQLException {
-        // 1. Fetch parent comment to get its path and depth
-        Comment parent = commentRepository.findById(parentId);
-        if (parent == null) {
-            throw new IllegalArgumentException("Parent comment not found");
-        }
-
-        // 2. Generate a new ID (could be from sequence or snowflake)
-        Long newId = generateId(); 
-        
-        // 3. Construct the new path: Parent Path + "/" + Formatted ID
-        // Formatting ID ensuring consistent length for string sorting
-        String childPath = parent.getPath() + "/" + String.format("%04d", newId);
-        int childDepth = parent.getDepth() + 1;
-
-        // 4. Create the new comment object
-        Comment newComment = new Comment();
-        newComment.setId(newId);
-        newComment.setPostId(postId);
-        newComment.setUserId(userId);
-        newComment.setParentId(parentId);
-        newComment.setPath(childPath);
-        newComment.setDepth(childDepth);
-        newComment.setContent(content);
-
-        // 5. Save to database
-        commentRepository.save(newComment);
-        
-        System.out.println("Comment replied successfully with path: " + childPath);
-    }
-    
-    private Long generateId() {
-        // Placeholder for ID geeration logic (e.g., Snowflake, DB Sequence)
-        return System.currentTimeMillis(); 
-    }
-}
-
-// Simple POJO for Comment
+// 1. Comment POJO
 class Comment {
     private Long id;
     private Long postId;
@@ -188,9 +133,8 @@ class Comment {
     private String path;
     private int depth;
     private String content;
-    
-    // Getters and Setters omitted for brevity
-    
+
+    // Getters and Setters
     public String getPath() { return path; }
     public void setPath(String path) { this.path = path; }
     public int getDepth() { return depth; }
@@ -202,15 +146,95 @@ class Comment {
     public void setContent(String content) { this.content = content; }
 }
 
-// Mock Repository Interface
+// 2. Repository Interface
 interface CommentRepository {
     Comment findById(Long id);
     void save(Comment comment);
+    // SELECT * FROM Comments WHERE post_id = ? ORDER BY path ASC
+    List<Comment> findByPostIdOrderByPath(Long postId); 
+}
+
+// 3. Service Layer
+public class CommentService {
+    private CommentRepository commentRepository;
+
+    public CommentService(CommentRepository commentRepository) {
+        this.commentRepository = commentRepository;
+    }
+
+    // Logic to post a root comment
+    public void addRootComment(Long postId, Long userId, String content) {
+        Long newId = generateId();
+        String path = String.format("%04d", newId); // Pad ID for string sorting
+        
+        Comment c = new Comment();
+        c.setId(newId);
+        c.setPostId(postId);
+        c.setUserId(userId);
+        c.setContent(content);
+        c.setPath(path);
+        c.setDepth(0);
+        
+        commentRepository.save(c);
+    }
+
+    // Logic to reply to an existing comment
+    public void replyToComment(Long parentId, Long userId, Long postId, String content) {
+        // 1. Fetch parent to get path info
+        Comment parent = commentRepository.findById(parentId);
+        if (parent == null) throw new IllegalArgumentException("Parent comment not found");
+
+        // 2. Generate ID
+        Long newId = generateId(); 
+        
+        // 3. Construct Path: ParentPath + "/" + SelfID
+        String childPath = parent.getPath() + "/" + String.format("%04d", newId);
+        int childDepth = parent.getDepth() + 1;
+
+        // 4. Create Object
+        Comment newComment = new Comment();
+        newComment.setId(newId);
+        newComment.setPostId(postId);
+        newComment.setUserId(userId);
+        newComment.setParentId(parentId);
+        newComment.setPath(childPath);
+        newComment.setDepth(childDepth);
+        newComment.setContent(content);
+
+        // 5. Save
+        commentRepository.save(newComment);
+        System.out.println("Reply added at path: " + childPath);
+    }
+    
+    private Long generateId() {
+        // In reality, use Snowflake or DB Sequence
+        return System.nanoTime(); 
+    }
 }
 ```
 
-## Optimization & Scaling
+---
 
-1.  **Viral Post (Hot Partition)**: Shard DB by `post_id`. All comments for a post stay on one shard to maintain the tree.
-2.  **Denormalization**: `upvote_count` in `Comments` table avoids `COUNT(*)` on huge `Votes` table every read.
-3.  **Caching**: Cache top 200 comments of hot threads in Redis (List/SortedSet).
+## Phase 6: Discussion
+
+### Tree Storage Strategies
+**Q: Why Materialized Path over Adjacency List?**
+- **Adjacency List (`parent_id`)**: Good for inserts, but fetching a whole tree requires Recursive CTEs (`WITH RECURSIVE`), which can be slow and memory-intensive for deep trees.
+- **Materialized Path**: Storing string path allows simple `ORDER BY path` to get DFS tree traversal order. Very fast for reads. downside is updating the tree (moving a subtree requires rewriting paths for all descendants).
+
+### Scaling
+**Q: How to handle viral threads (100k+ comments)?**
+- **Pagination**: Don't load everything. Fetch top-level comments first (`depth=0`). Load replies asynchronously when user clicks "Load More".
+- **Caching**: Cache the first page of comments for popular posts in Redis.
+
+### Denormalization
+**Q: Where to store vote counts?**
+- A: Store `upvote_count` in the `Comments` table. Do not `COUNT(*)` from `Votes` table on every read. Update this counter asynchronously or in batch when votes occur.
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: Service handles logic, Repository handles DB.
+- **O (Open/Closed)**: New retrieval strategies (e.g., Sort by Top) can be added.
+- **D (Dependency Inversion)**: Service depends on Repository interface.

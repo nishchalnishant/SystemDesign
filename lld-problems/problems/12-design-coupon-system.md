@@ -1,19 +1,66 @@
 # Design Coupon & Discount System
 
-> **Difficulty**: Medium  
-> **Topics**: Strategy Pattern, Chain of Responsibility, Composite Pattern  
-> **Similar**: Zepto, Amazon, Swiggy Discounts
+> **Difficulty**: Medium
+> **Topics**: Strategy Pattern, Chain of Responsibility, Composite Pattern
+> **Key Concepts**: Decoupling validation logic from calculation logic.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a flexible coupon system that supports:
-1.  **Discount Types**: Percentage ("10% Off"), Flat ("$50 Off"), Free Shipping.
-2.  **Rules/Constraints**: Min Order Value, Specific Category, User Specific, Expiry Date.
-3.  **Extensibility**: Marketing team introduces new rules (e.g., BOGO) without rewriting core logic.
+### Goals
+- Design a flexible coupon system for an e-commerce platform.
+- Support various discount types (Percentage, Flat, Free Initial).
+- Support complex validation rules (Min Cart Value, Specific Category, Expiry).
 
-## Java Implementation
+### 1. Who are the actors?
+- **User**: Applies coupons to their cart.
+- **Admin**: Creates new coupons and rules.
+- **System**: Validates and calculates final price.
 
-#### Class Diagram
+### 2. What are the must-have features? (Core)
+- **Discount Types**: 
+    - Percentage Off (e.g., "10% off up to $50").
+    - Flat Amount Off (e.g., "$10 off").
+- **Constraints**: 
+    - Minimum Order Value.
+    - Category restricted (e.g., "Electronics only").
+    - Usage limits (e.g., "Once per user").
+
+### 3. What are the constraints?
+- **Extensibility**: Marketing team needs to add new rules without code changes (ideally) or with minimal changes.
+- **Performance**: Coupon application should be instant (< 100ms).
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Apply Coupon
+**Actor**: User
+**Flow**:
+1. User enters Coupon Code (e.g., "SUMMER10").
+2. System fetches Coupon configuration.
+3. System runs all Validation Rules (Constraints).
+4. If valid, System calculates Discount amount using Reward Strategy.
+5. System returns Discounted Total.
+
+### UC2: Admin Creates Coupon
+**Actor**: Admin
+**Flow**:
+1. Admin defines Code ("SAVE20").
+2. Admin selects Reward Type (Percentage: 20%).
+3. Admin attaches Constraints (MinCart: 100, Expiry: 2025-12-31).
+4. System saves Coupon structure.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **Coupon**: The main entity containing Code, Reward, and Constraints.
+- **Reward**: Strategy for calculating discount.
+- **Constraint**: Condition that must be met.
+- **Cart**: Context object containing Items.
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -65,27 +112,28 @@ classDiagram
     Constraint <|.. CategoryConstraint
 ```
 
-#### Flow Chart: Apply Coupon
+---
 
-```mermaid
-flowchart TD
-    A[User Applies Coupon Code] --> B[Fetch Coupon Logic]
-    B --> C{Iterate Constraints}
-    C --> D{Constraint.validate(Cart)?}
-    D -- No --> E[Return: Coupon Invalid]
-    D -- Yes --> F{More Constraints?}
-    F -- Yes --> C
-    F -- No --> G[Calculate Discount (Reward Strategy)]
-    G --> H[Check Max Discount Cap]
-    H --> I[Apply Discount to Cart]
-```
+## Phase 4: Design Patterns
 
-#### Code
+### 1. Strategy Pattern
+- **Description**: Defines a family of algorithms, encapsulates each one, and makes them interchangeable.
+- **Why used**: Discounts can be calculated in many ways (Flat off, Percentage off, BOGO). Strategy encapsulates this calculation logic in separate classes (`FlatReward`, `PercentageReward`), making it easy to add new reward types.
+
+### 2. Composite Pattern
+- **Description**: Composes objects into tree structures to represent part-whole hierarchies.
+- **Why used**: A Coupon is valid only if *all* its constraints are met. We can treat a list of constraints as a single "Composite Constraint" that passes only if all children pass.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
 
-// 1. Context (Cart)
+// 1. Context (Cart & Items)
 class Item {
     String name;
     double price;
@@ -110,7 +158,7 @@ class Cart {
     }
 }
 
-// 2. Constraints (Validation Chain)
+// 2. Constraints (Validation Logic)
 interface Constraint {
     boolean validate(Cart cart);
 }
@@ -133,7 +181,7 @@ class CategoryConstraint implements Constraint {
     }
 }
 
-// 3. Rewards (Strategy Pattern)
+// 3. Rewards (Calculation Strategy)
 interface Reward {
     double calculate(Cart cart);
 }
@@ -156,11 +204,11 @@ class PercentageReward implements Reward {
 
     public double calculate(Cart cart) {
         double discount = cart.getTotalPrice() * (percentage / 100);
-        return Math.min(discount, maxDiscount);
+        return Math.min(discount, maxDiscount); // Cap the discount
     }
 }
 
-// 4. Coupon (Composite)
+// 4. Coupon (Composite Root)
 class Coupon {
     String code;
     Reward reward;
@@ -185,13 +233,14 @@ class Coupon {
     public double getDiscount(Cart cart) {
         if (isValid(cart)) {
             double discount = reward.calculate(cart);
+            // Ensure discount doesn't exceed total price (no negative validation here, just logic)
             return Math.min(discount, cart.getTotalPrice());
         }
         return 0.0;
     }
 }
 
-// Usage
+// 5. Client / Demo
 public class CouponSystem {
     public static void main(String[] args) {
         Cart cart = new Cart();
@@ -202,13 +251,40 @@ public class CouponSystem {
         coupon.addConstraint(new MinOrderConstraint(500));
         coupon.addConstraint(new CategoryConstraint("Electronics"));
 
-        System.out.println("Discount: $" + coupon.getDiscount(cart)); // Output: 100.0
+        System.out.println("Cart Total: " + cart.getTotalPrice());
+        if (coupon.isValid(cart)) {
+            System.out.println("Discount: $" + coupon.getDiscount(cart)); // Output: 100.0
+            System.out.println("Final Price: $" + (cart.getTotalPrice() - coupon.getDiscount(cart)));
+        } else {
+            System.out.println("Coupon Invalid");
+        }
     }
 }
 ```
 
-## Interview Talking Points
+---
 
-1.  **Why Strategy Pattern?**: Avoids `if-else` blocks for coupon types (`if type == 'PERCENT'`). Adding a new type just means adding a new `Reward` subclass.
-2.  **Concurrency**: If a coupon is "First 100 users only", the `GlobalLimitConstraint` needs to interact with Redis `DECR` to prevent overselling.
-3.  **Stacking Coupons**: `CouponManager` could take a list of coupons, apply one, update the effective price, and try applying the next.
+## Phase 6: Discussion
+
+### Extensibility
+**Q: How to add "Buy One Get One" (BOGO)?**
+- A: "Create a `BogoReward` class implementing `Reward`. The `calculate(Cart)` method would iterate items to find pairs and deduct the price of the cheapest item."
+
+### Concurrency
+**Q: How to handle 'First 100 Users Only'?**
+- A: "This requires a `GlobalCountConstraint`. It would need to interact with a centralized counter (like Redis `INCR`).
+    - `validate()` checks `Redis.get(coupon_code) < limit`.
+    - However, strictly enforcing *exactly* 100 concurrent requests is hard. We might allow slight overbooking or use `Lua scripts` in Redis for atomic check-and-increment."
+
+### Stacking
+**Q: Can we apply multiple coupons?**
+- A: "Yes. The `Cart` manager could hold a list of Coupons. We can apply them sequentially. Order matters (Percentage after Flat vs Flat after Percentage)."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: Constraint validates, Reward calculates, Coupon holds structure.
+- **O (Open/Closed)**: New Rewards or Constraints can be added without modifying Coupon.
+- **L (Liskov Substitution)**: All Constraints work interchangeably.
+- **D (Dependency Inversion)**: Coupon depends on `Reward` interface, not specific implementation.

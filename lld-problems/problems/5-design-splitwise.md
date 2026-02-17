@@ -4,16 +4,66 @@
 > **Topics**: Strategy Pattern, Graph Simplification, Observer Pattern
 > **Key Concepts**: Managing debts, different split types (Equal, Exact, Percent).
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design an expense sharing application like Splitwise that:
-1.  **Users & Groups**: Users can be part of groups.
-2.  **Add Expense**: Users can add expenses paid by one, split among many.
-3.  **Split Support**: Supports Equal, Exact, and Percentage splits.
-4.  **Balance Sheet**: Shows who owes whom.
-5.  **Simplify Debt**: (Optional optimization) Minimize transactions.
+### Goals
+- Design an expense sharing application.
+- Identify users, groups, and expense types.
+- Define how debts are recorded and settled.
 
-## Class Diagram
+### 1. Who are the actors?
+- **User**: Adds expenses, views balances, settles debts.
+- **Group**: A collection of users sharing expenses.
+- **System**: Calculates splits and updates balances.
+
+### 2. What are the must-have features? (Core)
+- **Add Expense**: User pays, others owe.
+- **Split Types**: Support Equal, Exact, and Percentage splits.
+- **Balance Sheet**: Show net balance per user.
+- **Settle Up**: Record payments to clear debts.
+
+### 3. What are the constraints?
+- **Validation**: Percentages must add to 100%. Exact amounts must equal total.
+- **Precision**: Handle currency rounding (2 decimal places).
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Add Expense
+**Actor**: User
+**Flow**:
+1. User selects a group or friends.
+2. User enters total amount and selects split type (e.g., Equal).
+3. System validates the split.
+4. System calculates individual shares.
+5. System updates the Balance Sheet (Graph).
+6. System notifies involved users.
+
+### UC2: Settle Up
+**Actor**: User
+**Flow**:
+1. User A pays User B X amount.
+2. System records a "Payment" transaction.
+3. System updates the debt graph (A owes B reduced by X).
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **SplitwiseService**: Facade for operations.
+- **ExpenseManager**: Manages expenses and balances.
+- **Expense**: Stores details (amount, payer, splits).
+- **Split**: Abstract class for split logic.
+- **User**: Participant.
+
+### Step 2: Relationships
+- `Expense` **has-many** `Split`.
+- `Split` **references** `User`.
+- `ExpenseManager` **has-many** `Expense`.
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -58,20 +108,23 @@ classDiagram
     Split <|-- PercentSplit
 ```
 
-## Flow Chart: Add Expense
+---
 
-```mermaid
-flowchart TD
-    A[User Adds Expense] --> B[Validate Total Amount vs Splits]
-    B --> C{Validation Passed?}
-    C -- No --> D[Error]
-    C -- Yes --> E[Create Expense Object]
-    E --> F[Update Balance Sheet]
-    F --> G[Notify Users involved]
-    G --> H[Success]
-```
+## Phase 4: Design Patterns
 
-## Java Implementation
+### 1. Strategy Pattern
+- **Description**: Defines a family of algorithms, encapsulates each one, and makes them interchangeable.
+- **Why used**: Different split types (`EqualSplit`, `ExactSplit`, `PercentSplit`) require different validation and calculation logic. Strategy allows adding new split types easily.
+
+### 2. Observer Pattern
+- **Description**: Defines a one-to-many dependency between objects so that when one object changes state, all its dependents are notified and updated automatically.
+- **Why used**: To notify group members when an expense is added, modified, or settled, ensuring all users have up-to-date balance information.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
@@ -136,9 +189,9 @@ class ExpenseManager {
             balances.put(paidTo, balances.get(paidTo) + split.getAmount());
 
             // Split User (paidTo) owes (-amount) to paidBy
-            balances = balanceSheet.computeIfAbsent(paidTo, k -> new HashMap<>());
-            if (!balances.containsKey(paidBy.id)) balances.put(paidBy.id, 0.0);
-            balances.put(paidBy.id, balances.get(paidBy.id) - split.getAmount());
+            Map<String, Double> debtorBalances = balanceSheet.computeIfAbsent(paidTo, k -> new HashMap<>());
+            if (!debtorBalances.containsKey(paidBy.id)) debtorBalances.put(paidBy.id, 0.0);
+            debtorBalances.put(paidBy.id, debtorBalances.get(paidBy.id) - split.getAmount());
         }
     }
 
@@ -175,32 +228,59 @@ public class SplitwiseDemo {
 
         ExpenseManager manager = new ExpenseManager();
 
-        // 1. Equal Split: Alice paid 100 for Bob and Charlie
-        // (Implementation note: Usually Service handles 'Equal' logic to set amounts)
-        // Here we simulate amounts are pre-calculated for simplicity or use specific Split logic
+        // 1. Equal Split: Alice paid 300 for Alice, Bob, Charlie (100 each)
+        // Note: The logic to divide 300 by 3 would be in the Service layer before creating EqualSplit objects
         
-        // Simulating Alice paying 300, split equally (100 each)
         List<Split> splits = new ArrayList<>();
-        Split s1 = new EqualSplit(u1); s1.setAmount(100);
+        // Alice pays 300 total.
+        // Alice owes herself 100 (net 0 effect usually filtered, but kept for logic)
+        // Bob owes Alice 100
+        // Charlie owes Alice 100
+        
         Split s2 = new EqualSplit(u2); s2.setAmount(100);
         Split s3 = new EqualSplit(u3); s3.setAmount(100);
-        splits.add(s1); splits.add(s2); splits.add(s3);
+        splits.add(s2); splits.add(s3);
 
+        // We only add splits for others to the manager typically, or handle self-split logic internally.
+        // For simplicity here, Alice paid 300 total, covering 100 for Bob and 100 for Charlie.
+        // We register the debt for Bob and Charlie.
+        
         manager.addExpense(300, u1, splits);
         
-        manager.showBalance("u2"); // Bob owes Alice 100
-        manager.showBalance("u1"); // Bob owes Alice 100, Charlie owes Alice 100
+        manager.showBalance("u2"); // Bob owes ...
+        manager.showBalance("u1"); // Alice is owed ...
     }
 }
 ```
 
-## Interview Q&A
+---
 
-**Q: "How to simplify debts (Debt Graph optimization)?"**
-- A: "Use a Min-Heap and Max-Heap. Calculate net balance for each user. Push creditors to Max-Heap, debtors to Min-Heap. Pop max creditor and max debtor, settle minimum of absolute values, re-push remainder. Repeat until heaps empty."
+## Phase 6: Discussion
 
-**Q: "How to handle huge number of users?"**
-- A: "Sharding users by ID. For groups, shard by GroupID so group expenses are on the same node."
+### Debt Simplification
+**Q: How to simplify debts (minimize transactions)?**
+- A: "Use a **Min-Heap and Max-Heap**. Calculate the net balance for each user (Credits - Debts).
+    1. Push users with `net > 0` to Max-Heap (Creditors).
+    2. Push users with `net < 0` to Min-Heap (Debtors).
+    3. Pop max creditor ($C$) and max debtor ($D$).
+    4. Settle amount `min(|D|, |C|)`.
+    5. Update remaining balance and push back to heaps if not zero.
+    6. Repeat until heaps are empty."
 
-**Q: "How to validate percentage splits?"**
-- A: "Sum of all percentages must equal 100%. Check this in the `ExpenseValidator` before processing."
+### Scalability
+**Q: How to handle millions of users?**
+- A: "Shard users by `UserID`. Since most expenses are within a `Group`, shard groups by `GroupID` and ensure all group data resides on the same shard to avoid cross-shard transactions."
+
+### Concurrency
+**Q: Handling race conditions (two people editing same expense)?**
+- A: "Use **Optimistic Locking** (versioning) on the Expense object. If version mismatch during save, prompt user to refresh."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `Expense` stores data, `ExpenseManager` calculates logic, `Split` defines type.
+- **O (Open/Closed)**: New `Split` types (e.g., specific share) can be added by extending `Split`.
+- **L (Liskov Substitution)**: `EqualSplit` works wherever `Split` is needed.
+- **I (Interface Segregation)**: Not heavily used, but interfaces are clean.
+- **D (Dependency Inversion)**: `ExpenseManager` depends on `Split` abstraction.

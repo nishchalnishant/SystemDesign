@@ -4,15 +4,60 @@
 > **Topics**: Object-Oriented Design, Concurrency, Date Logic
 > **Key Concepts**: Booking management, room allocation, avoiding double bookings.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a Hotel Management System that:
-1.  **Search**: Allows users to search for available rooms by type and date range.
-2.  **Booking**: Guests can book rooms, cancel bookings, and check-in/out.
-3.  **Rooms**: Manages different room types (Standard, Deluxe, Suite).
-4.  **Concurrency**: Handles multiple users trying to book the same room simultaneously.
+### Goals
+- Design a system to manage hotel bookings.
+- Support room search, booking, and cancellation.
+- specific focus on concurrency (prevent double booking).
 
-## Class Diagram
+### 1. Who are the actors?
+- **Guest**: Searches for rooms, makes bookings.
+- **Receptionist**: Checks guests in/out, manages bookings.
+- **System**: Validates availability, stores data.
+
+### 2. What are the must-have features? (Core)
+- **Search**: Find rooms by type (Standard, Deluxe, Suite) and date range.
+- **Book**: Reserve a room for a specific user.
+- **Cancel**: Refund and release room.
+- **Check-in/Out**: Update booking status.
+
+### 3. What are the constraints?
+- **Concurrency**: Two users cannot book the same room for overlapping dates.
+- **Invariant**: Bookings must not overlap for the same room.
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Search Rooms
+**Actor**: User
+**Flow**:
+1. User enters `StartDate`, `EndDate`, and `RoomType`.
+2. System filters all rooms of `RoomType`.
+3. System checks availability for each room against existing bookings.
+4. System returns list of available rooms.
+
+### UC2: Book Room
+**Actor**: User
+**Flow**:
+1. User selects a specific `Room`.
+2. System attempts to lock the room/date slots.
+3. System verifies availability one last time (Double Check).
+4. System creates `Booking` record.
+5. System confirms reservation.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **Hotel**: Singleton, manages Rooms.
+- **Room**: Has ID, Type, Price, and List of Bookings.
+- **Booking**: Links User, Room, DateRange.
+- **User/Guest**: Person making the booking.
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -58,22 +103,23 @@ classDiagram
     Booking --> User
 ```
 
-## Flow Chart: Booking Process
+---
 
-```mermaid
-flowchart TD
-    A[User Searches Rooms] --> B[System Filters Available Rooms]
-    B --> C[User Selects Room]
-    C --> D[Lock Room Object]
-    D --> E{Still Available?}
-    E -- No --> F[Booking Failed]
-    E -- Yes --> G[Create Booking Record]
-    G --> H[Update Room Calendar]
-    H --> I[Unlock Room]
-    I --> J[Booking Confirmed]
-```
+## Phase 4: Design Patterns
 
-## Java Implementation
+### 1. Singleton Pattern
+- **Description**: Ensures a class has only one instance and provides a global point of access to it.
+- **Why used**: The `Hotel` system acts as the centralized controller for all rooms and bookings. A single instance ensures consistent access to the inventory and prevents data inconsistency.
+
+### 2. Lock / Synchronization (Concurrency Pattern)
+- **Description**: Mechanisms to control access to shared resources by multiple threads.
+- **Why used**: Two guests might try to book the same room at the same exact second. Locking (Optimistic or Pessimistic) ensures only one transaction succeeds, preventing double bookings.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
@@ -94,8 +140,9 @@ class DateRange {
     }
 
     public boolean overlaps(DateRange other) {
-        // (StartA <= EndB) and (EndA >= StartB)
-        return !start.isAfter(other.end) && !end.isBefore(other.start);
+        // (StartA < EndB) and (EndA > StartB)
+        // Adjust logic depending on inclusive/exclusive dates
+        return !start.isAfter(other.end.minusDays(1)) && !end.isBefore(other.start.plusDays(1));
     }
 }
 
@@ -113,6 +160,7 @@ class Room {
         this.bookedDates = new ArrayList<>();
     }
 
+    // Check if room is free for the given range
     public synchronized boolean isAvailable(DateRange range) {
         for (DateRange booked : bookedDates) {
             if (booked.overlaps(range)) return false;
@@ -120,6 +168,7 @@ class Room {
         return true;
     }
 
+    // Atomic check-and-book
     public synchronized boolean book(DateRange range) {
         if (!isAvailable(range)) return false;
         bookedDates.add(range);
@@ -168,6 +217,7 @@ class Hotel {
 
     public List<Room> searchRooms(RoomType type, DateRange range) {
         List<Room> available = new ArrayList<>();
+        // In real DB, this filters by type AND checks NOT EXISTS(bookings overlapping dates)
         for (Room r : rooms) {
             if (r.type == type && r.isAvailable(range)) {
                 available.add(r);
@@ -177,7 +227,8 @@ class Hotel {
     }
 
     public Booking bookRoom(User user, Room room, DateRange range) {
-        // Check and Book atomically inside Room class
+        // Critical Section: Ensure room isn't taken between search and book
+        // Delegated to Room.synchronized method
         if (room.book(range)) {
             Booking booking = new Booking(user, room, range);
             bookingMap.put(booking.id, booking);
@@ -214,13 +265,30 @@ public class HotelDemo {
 }
 ```
 
-## Interview Q&A
+---
 
-**Q: "How delay/expire unpaid bookings?"**
-- A: "Use a temporary hold status (`PENDING_PAYMENT`) with a TTL (Time To Live). A scheduled job (or Redis Key Expiry) releases the room if payment isn't confirmed within 10 mins."
+## Phase 6: Discussion
 
-**Q: "How to handle pricing surges?"**
-- A: "Implement dynamic pricing strategy based on occupancy rate. `calculatePrice(basePrice, date, currentOccupancy)`."
+### Concurrency & Isolation
+**Q: How to handle concurrency in a massive distributed system?**
+- A: "The Java `synchronized` only works on one machine. For distributed systems (multiple servers), rely on **Database Locking**."
+    - **Optimistic Locking**: Add `version` column to Booking/Room table. `WHERE id=? AND version=current_version`.
+    - **Pessimistic Locking**: `SELECT * FROM Rooms FOR UPDATE`.
 
-**Q: "Database Isolation for bookings?"**
-- A: "Use `SERIALIZABLE` or `SELECT FOR UPDATE` (Pessimistic Locking) in SQL to prevent overbooking rows."
+### Expiration
+**Q: How delay/expire unpaid bookings?**
+- A: "Use a temporary status (`PENDING_PAYMENT`) with a TTL (Time To Live). A Redis key `booking:{id}` with expiry 10m can trigger a release if payment hook isn't received."
+
+### Dynamic Pricing
+**Q: How to handle pricing surges?**
+- A: "Implement **Strategy Pattern** for pricing. `PricingStrategy` can calculate price based on demand (occupancy %), seasonality, or user loyalty."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: Room manages availability, Hotel manages Global Search.
+- **O (Open/Closed)**: Add new `RoomTypes` or `PricingStrategies` without modifying core logic.
+- **L (Liskov Substitution)**: N/A (Standard OOP).
+- **I (Interface Segregation)**: Booking interfaces for Admin vs User could be split.
+- **D (Dependency Inversion)**: Hotel could depend on `RoomRepository` instead of list.

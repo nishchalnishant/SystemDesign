@@ -1,26 +1,62 @@
 # Design Tetris Game
 
-> **Difficulty**: Medium  
-> **Topics**: Matrix Manipulation, Game Loop, Factory Pattern  
-> **Key Logic**: Rotation Matrix, Collision Detection.
+> **Difficulty**: Medium
+> **Topics**: Matrix Manipulation, Game Loop, Factory Pattern
+> **Key Concepts**: Rotation Matrix, Collision Detection, Game Loop.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Blocks fall. Move them to clear lines.
-- **Tetrominoes**: Shapes (I, O, T, S, Z, J, L).
-- **Rotation**: 90-degree turn.
+### Goals
+- Design the core logic for Tetris.
+- Handle different shapes (Tetrominoes), rotation, movement, and line clearing.
 
-## Core Concepts
+### 1. Who are the actors?
+- **Player**: Controls the active piece.
+- **Game Loop**: Forces gravity (ticks).
 
-1.  **Shapes**: Defined as list of `Point(row, col)` relative to a pivot `(0,0)`.
-2.  **Rotation Formula**: To rotate $(x, y)$ 90-deg clockwise: $(y, -x)$.
-3.  **Collision**: Handled by Board. "Does this Point overlap with existing Block?"
+### 2. What are the must-have features? (Core)
+- **7 Shapes**: I, O, T, S, Z, J, L.
+- **Movement**: Left, Right, Down (Soft Drop), Rotate.
+- **Game Physics**: Gravity, Collision detection (walls, other blocks).
+- **Clearing**: Full rows disappear, blocks above fall down.
 
-## Implementation (Snippet)
+### 3. What are the constraints?
+- **Grid Size**: Standard is 10 cols x 20 rows.
+- **Rotation**: 90 degrees clockwise.
 
-## Java Implementation
+---
 
-#### Class Diagram
+## Phase 2: Use Cases
+
+### UC1: Game Tick (Gravity)
+**Actor**: System
+**Flow**:
+1. Timer fires (e.g., every 500ms).
+2. Active Piece moves down 1 unit.
+3. System checks collision.
+    - If Collision: Undo move, Lock piece to board, Check for full lines, Spawn next piece.
+    - If No Collision: Update Display.
+
+### UC2: User Rotate
+**Actor**: Player
+**Flow**:
+1. Player presses 'Up/Rotate'.
+2. System calculates new coordinates for the shape.
+3. System checks if new coordinates collide with walls/blocks.
+    - If Safe: Apply rotation.
+    - If Collision: Ignore input (or "Wall Kick" - advanced feature).
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **TetrisGame**: Main controller.
+- **Board**: N*M grid state.
+- **Tetromino**: The active piece (Strategy for shape).
+- **Point**: Helper class.
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -63,46 +99,47 @@ classDiagram
     Tetromino --> Point
 ```
 
-#### Flow Chart: Game Loop
+---
 
-```mermaid
-flowchart TD
-    A[Game Start] --> B[Spawn Random Piece]
-    B --> C[Loop: Update / Tick]
-    C --> D[Gravity: Move Piece Down]
-    D --> E{Collision?}
-    E -- No --> F[Update Display]
-    E -- Yes --> G[Undo Move (Move Up)]
-    G --> H[Lock Piece on Board]
-    H --> I[Check & Clear Full Lines]
-    I --> J{Is Game Over? (Spawn Blocked)}
-    J -- Yes --> K[End Game]
-    J -- No --> B
-```
+## Phase 4: Design Patterns
 
-#### Code
+### 1. Factory Pattern
+- **Description**: A creational pattern that provides an interface for creating objects in a superclass, but allows subclasses to alter the type of objects that will be created.
+- **Why used**: `TetrominoFactory` centralizes the complex logic of creating different shapes (I, L, Z, T) with their specific initial coordinates and colors. The Game Loop simply asks for a "Random Piece".
+
+### 2. Command Pattern
+- **Description**: Encapsulates a request as an object, thereby letting you parameterize clients with different requests, queue or log requests, and support undoable operations.
+- **Why used**: (Optional) Mapping user inputs (Up, Down, Left, Right) to Command objects allows for remapping controls easily and implementing an "Undo" feature for debugging or training AI agents.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
 
-// 1. Point
+// 1. Point Helper
 class Point {
     int r, c;
     public Point(int r, int c) { this.r = r; this.c = c; }
 }
 
-// 2. Tetromino (Shape)
+// 2. Tetromino (Shape Strategy)
 class Tetromino {
-    List<Point> shape; // Relative coordinates
-    Point pos; // Absolute position on board
+    List<Point> shape; // Relative coordinates from pivot (0,0)
+    Point pos;         // Absolute position on board
 
     public Tetromino(List<Point> shape) {
         this.shape = new ArrayList<>();
+        // Deep copy points
         for(Point p : shape) this.shape.add(new Point(p.r, p.c));
-        this.pos = new Point(0, 4); // Start at top-middle
+        this.pos = new Point(0, 4); // Start top-center
     }
 
     // Rotate 90 degrees clockwise: (r, c) -> (c, -r)
+    // Example: (1, 0) -> (0, -1)
     public void rotate() {
         for (Point p : shape) {
             int temp = p.r;
@@ -125,14 +162,15 @@ class Tetromino {
     public void moveRight() { pos.c++; }
 }
 
-// 3. Factory Pattern
+// 3. Factory
 class TetrominoFactory {
     public static Tetromino getRandomPiece() {
         // Example: T-Shape
         //  *
         // ***
+        // Pivot at (0,0) is center '*'
         List<Point> tShape = Arrays.asList(
-            new Point(0, 0), // Center
+            new Point(0, 0),
             new Point(0, -1),
             new Point(0, 1),
             new Point(-1, 0)
@@ -164,8 +202,29 @@ class Board {
     }
 
     public void clearLines() {
-        // Logic to remove full rows and shift down
-        System.out.println("Checking for full lines...");
+        for (int i = rows - 1; i >= 0; i--) {
+            boolean full = true;
+             for (int j = 0; j < cols; j++) {
+                 if (grid[i][j] == 0) {
+                     full = false;
+                     break;
+                 }
+             }
+             if (full) {
+                 removeLine(i);
+                 i++; // Check this row index again as lines shifted down
+             }
+        }
+    }
+    
+    private void removeLine(int r) {
+        // Shift everything down
+        for (int i = r; i > 0; i--) {
+            grid[i] = grid[i-1].clone();
+        }
+        // Clear top row
+        Arrays.fill(grid[0], 0);
+        System.out.println("Line Cleared!");
     }
 }
 
@@ -195,18 +254,40 @@ class Game {
         // Gravity
         piece.moveDown();
         if (!board.isValid(piece)) {
-            piece.moveUp(); // Undo
+            // Collision detected
+            piece.moveUp(); // Undo move
             board.place(piece);
             board.clearLines();
             spawnNext();
         } else {
-            System.out.println("Piece moved down");
+            System.out.println("Piece fell one step.");
         }
     }
 }
 ```
 
-## Interview Q&A
+---
 
-**Q: "How to decouple Shapes from Game?"**
-- A: "Tetromino Factory. `Factory.get_random_piece()` returns a Shape subclass. Game doesn't know about specific shapes."
+## Phase 6: Discussion
+
+### Rotation Logic
+**Q: How does rotation math work?**
+- A: "Basic Linear Algebra. Rotating a point $(x, y)$ 90 degrees around origin $(0,0)$ results in $(y, -x)$. Since our shapes store relative coordinates to a center pivot, we just apply this transform to every point in the shape list."
+
+### Collision
+**Q: Optimal collision detection?**
+- A: "Since grid is small (10x20) and shape is small (4 blocks), checking all 4 blocks against the grid array O(1) is extremely fast. No need for QuadTrees."
+
+### Concurrency
+**Q: What if user presses 'Rotate' exactly when Gravity tick happens?**
+- A: "Game Loop pattern usually handles input and updates sequentially in a single thread to avoid race conditions. `while(running) { handleInput(); update(); render(); }`."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `Board` manages grid state, `Tetromino` manages shape logic.
+- **O (Open/Closed)**: Add new Shapes to Factory without changing Game logic.
+- **L (Liskov Substitution)**: N/A.
+- **I (Interface Segregation)**: N/A.
+- **D (Dependency Inversion)**: Game depends on `Tetromino` abstraction (if made abstract/interface).

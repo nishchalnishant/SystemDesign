@@ -4,23 +4,119 @@
 > **Topics**: Object-Oriented Design, Board Game Logic, 2D Arrays  
 > **Extension**: NxN Board, AI Player (Minimax).
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a simple 2-player Tic-Tac-Toe game.
-- **Board**: 3x3 Grid.
-- **Pieces**: X and O.
-- **Rules**: Take turns. First to get row, col, or diagonal wins.
+### Goals
+- Design a Tic-Tac-Toe game for two players.
+- Identify core entities: Board, Player, Piece.
+- Define game rules and winning conditions.
 
-## Class Design
+### 1. Who are the actors?
+- **Players**: Two players (X and O) who take turns.
+- **Game System**: Validates moves, checks for winners, and manages the turn flow.
 
-### 1. Piece (Enum & Class)
+### 2. What are the must-have features? (Core)
+- **Game Board**: 3x3 grid (extensible to NxN).
+- **Move Logic**: Players place their piece on an empty cell.
+- **Win Detection**: Check row, column, and diagonal for a match.
+- **Draw Detection**: Identify when the board is full with no winner.
+
+### 3. What are the constraints?
+- **Turn-based**: Strict alternation between players.
+- **Validity**: Cannot place a piece on an occupied cell.
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Make Move
+**Actor**: Player
+**Flow**:
+1. Player chooses a cell (row, col).
+2. System validates if the cell is empty and within bounds.
+3. System places the piece.
+4. System checks for a win or draw.
+5. If game over, announce result.
+6. If not, switch turn to the next player.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **Game**: Manages the flow.
+- **Board**: Manages the grid.
+- **Player**: Has a name and a playing piece.
+- **PlayingPiece**: Represents 'X' or 'O'.
+- **PieceType**: Enum for X/O.
+
+### UML Diagram
+
+```mermaid
+classDiagram
+    class TicTacToeGame {
+        +Board board
+        +Deque~Player~ players
+        +initializeGame()
+        +startGame()
+        -checkWinner(row, col, pieceType) boolean
+    }
+
+    class Board {
+        +int size
+        +PlayingPiece[][] grid
+        +addPiece(row, col, piece) boolean
+        +getFreeCells() List
+    }
+
+    class Player {
+        +String name
+        +PlayingPiece playingPiece
+    }
+
+    class PlayingPiece {
+        +PieceType type
+    }
+    
+    class PieceType {
+        <<enumeration>>
+        X
+        O
+    }
+
+    TicTacToeGame --> Board
+    TicTacToeGame --> Player
+    Player --> PlayingPiece
+    PlayingPiece --> PieceType
+```
+
+---
+
+## Phase 4: Design Patterns
+
+### 1. Strategy Pattern
+- **Description**: Defines a family of algorithms, encapsulates each one, and makes them interchangeable.
+- **Why used**: Enables switching between different playing strategies for an AI opponent (e.g., `EasyStrategy` (Random), `HardStrategy` (Minimax)) without modifying the Game class.
+
+### 2. Factory Pattern
+- **Description**: A creational pattern that provides an interface for creating objects in a superclass, but allows subclasses to alter the type of objects that will be created.
+- **Why used**: Centralizes the creation of game pieces (`PlayingPieceX`, `PlayingPieceO`) or players, making the system extensible for new piece types or player types.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
-public enum PieceType {
+import java.util.*;
+
+// 1. Piece Enum & Class
+enum PieceType {
     X, O;
 }
 
-public class PlayingPiece {
+class PlayingPiece {
     public PieceType type;
 
     public PlayingPiece(PieceType type) {
@@ -28,25 +124,20 @@ public class PlayingPiece {
     }
 }
 
-public class PlayingPieceX extends PlayingPiece {
+class PlayingPieceX extends PlayingPiece {
     public PlayingPieceX() {
         super(PieceType.X);
     }
 }
 
-public class PlayingPieceO extends PlayingPiece {
+class PlayingPieceO extends PlayingPiece {
     public PlayingPieceO() {
         super(PieceType.O);
     }
 }
-```
 
-### 2. Board
-
-```java
-import java.util.*;
-
-public class Board {
+// 2. Board
+class Board {
     public int size;
     public PlayingPiece[][] grid;
 
@@ -89,70 +180,19 @@ public class Board {
         return freeCells;
     }
 }
-```
 
-### 3. Game Orchestrator (Controller)
+// 3. Player
+class Player {
+    public String name;
+    public PlayingPiece playingPiece;
 
-#### Class Diagram
-
-```mermaid
-classDiagram
-    class TicTacToeGame {
-        +Board board
-        +Deque~Player~ players
-        +initializeGame()
-        +startGame()
-        -checkWinner(row, col, pieceType) boolean
+    public Player(String name, PlayingPiece playingPiece) {
+        this.name = name;
+        this.playingPiece = playingPiece;
     }
+}
 
-    class Board {
-        +int size
-        +PlayingPiece[][] grid
-        +addPiece(row, col, piece) boolean
-        +getFreeCells() List
-    }
-
-    class Player {
-        +String name
-        +PlayingPiece playingPiece
-    }
-
-    class PlayingPiece {
-        +PieceType type
-    }
-    
-    class PieceType {
-        <<enumeration>>
-        X
-        O
-    }
-
-    TicTacToeGame --> Board
-    TicTacToeGame --> Player
-    Player --> PlayingPiece
-    PlayingPiece --> PieceType
-```
-
-#### Flow Chart: Make a Move
-
-```mermaid
-flowchart TD
-    A[Start Turn] --> B{Is Valid Move?}
-    B -- No --> C[Request Input Again]
-    B -- Yes --> D[Place Piece on Board]
-    D --> E{Check Winner?}
-    E -- Yes --> F[Announce Winner & End Game]
-    E -- No --> G{Check Draw / Board Full?}
-    G -- Yes --> H[Announce Draw & End Game]
-    G -- No --> I[Switch Player]
-    I --> A
-```
-
-#### Java Implementation
-
-```java
-import java.util.*;
-
+// 4. Game Controller
 public class TicTacToeGame {
     Deque<Player> players;
     Board board;
@@ -251,23 +291,28 @@ public class TicTacToeGame {
 }
 ```
 
-```java
-// Simple Player Class
-public class Player {
-    public String name;
-    public PlayingPiece playingPiece;
+---
 
-    public Player(String name, PlayingPiece playingPiece) {
-        this.name = name;
-        this.playingPiece = playingPiece;
-    }
-}
-```
+## Phase 6: Discussion
 
-## Interview Q&A
+### Scalability
+**Q: How to scale to NxN board?**
+- A: "The logic in `isThereWinner` already uses `board.size`. The main change would be input validation and potentially the WIN condition (e.g., in a 100x100 grid, maybe 5 in a row wins)."
 
-**Q: "How to scale to NxN board?"**
-- A: "Logic remains same. The `check_winner` function iterates `range(N)` instead of hardcoded 3."
+### Undo Feature
+**Q: How to add Undo feature?**
+- A: "Use the **Command Pattern**. Encapsulate each move as a `Command` object with `execute()` and `undo()` methods. Store these commands in a stack. When `undo()` is called, pop the stack and reverse the move (set cell to null)."
 
-**Q: "How to add Undo feature?"**
-- A: "Use Command Pattern or store moves in a Stack `[(row, col, player)]`. `Undo` pops stack and sets `grid[row][col] = None`."
+### AI Opponent
+**Q: How to implement a single player mode?**
+- A: "Create an `AIPlayer` class. Use the **Minimax Algorithm** (potentially with Alpha-Beta pruning) to determine the best move by simulating future game states."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `Board` handles grid, `Game` handles flow, `Player` holds data.
+- **O (Open/Closed)**: New `PieceType` (e.g., Triangle) can be added by extending `PlayingPiece`.
+- **L (Liskov Substitution)**: `PlayingPieceX` works wherever `PlayingPiece` is expected.
+- **I (Interface Segregation)**: Not heavily used here, but interfaces are kept simple.
+- **D (Dependency Inversion)**: `Game` depends on `PlayingPiece` abstraction, not concrete X/O classes.

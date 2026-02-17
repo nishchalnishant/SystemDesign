@@ -2,26 +2,59 @@
 
 > **Difficulty**: Beginner  
 > **Topics**: Board Games, HashMap / 1D Array Logic, Randomness  
-> **Entities**: Board, Dice, Player, Jump (Snake/Ladder).
+> **Key Concepts**: Board entity, Dice roll, Player movement, Jumps (Snakes/Ladders).
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Create a 10x10 board game where players race to 100.
-- **Snakes**: Move you down.
-- **Ladders**: Move you up.
+### Goals
+- Design a Snake and Ladder game for multiple players.
+- Identify core entities: Board, Dice, Player.
+- Define game rules and winning conditions.
 
-## Core Logic
+### 1. Who are the actors?
+- **Players**: Race to reach the final position (100).
+- **Game System**: Manages the board, dice rolls, and turn flow.
 
-- **Board**: Don't use 2D array. Use 1D array of size 101.
-- **Jump**: Snake and Ladder are the SAME entity `Jump(start, end)`.
-  - Snake: start > end.
-  - Ladder: start < end.
+### 2. What are the must-have features? (Core)
+- **Board**: A 10x10 grid (numbered 1-100).
+- **Dice**: A standard 6-sided dice.
+- **Snakes**: Regress player position (Start > End).
+- **Ladders**: Advance player position (Start < End).
+- **Movement**: Player moves forward based on dice roll.
+- **Win Condition**: First player to reach position 100 wins.
 
-## Implementation
+### 3. What are the constraints?
+- **Winning**: Must land exactly on 100 (optional rule, but standard is >= 100 or == 100).
+- **Jumps**: Snakes and Ladders are static configurations on the board.
 
-## Implementation (Java)
+---
 
-#### Class Diagram
+## Phase 2: Use Cases
+
+### UC1: Play Turn
+**Actor**: Player
+**Flow**:
+1. Player rolls the dice.
+2. System calculates NEW position (Current + Dice).
+3. System checks if NEW position has a Jump (Snake/Ladder).
+4. If Jump exists, update NEW position to Jump End.
+5. System updates Player's position.
+6. Check if Player won.
+7. If not, pass turn to next player.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **Game**: Orchestrator.
+- **Board**: Contains Cells and Jumps.
+- **Cell**: Represents a square on the board.
+- **Player**: Has position and ID.
+- **Dice**: Generates random numbers.
+- **Jump**: Represents both Snake and Ladder (Start, End).
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -65,25 +98,23 @@ classDiagram
     Cell --> Jump
 ```
 
-#### Flow Chart: Game Turn
+---
 
-```mermaid
-flowchart TD
-    A[Player Turn Starts] --> B[Roll Dice]
-    B --> C[Calculate New Position]
-    C --> D{New Position > 100?}
-    D -- Yes --> E[Stay at Old Position]
-    D -- No --> F{Is There a Jump?}
-    F -- Yes --> G[Move to Jump End]
-    F -- No --> H[Move to New Position]
-    G --> I{Position == 100?}
-    H --> I
-    I -- Yes --> J[Declare Winner]
-    I -- No --> K[Next Player Turn]
-    E --> K
-```
+## Phase 4: Design Patterns
 
-#### Code
+### 1. Strategy Pattern (Optional)
+- **Description**: Defines a family of algorithms, encapsulates each one, and makes them interchangeable.
+- **Why used**: Allows switching between different Dice implementations (`NormalDice`, `CrookedDice`, `SumDice`) without changing the Game logic.
+
+### 2. Singleton Pattern (Optional)
+- **Description**: Ensures a class has only one instance and provides a global point of access to it.
+- **Why used**: The `Game` class manages the global state of the match (board, players, turns). A single instance ensures there is only one authoritative source of truth for the game status.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
@@ -125,13 +156,26 @@ class Board {
     }
 
     private void addSnakesLadders(Cell[][] cells, int numberOfSnakes, int numberOfLadders) {
-        // Logic to add random jumps (omitted for brevity)
-        // Ensure start > end for Snake, start < end for Ladder
+        // Logic to add random jumps would go here.
+        // For interview, you can hardcode a few or explain the randomization logic:
+        // 1. Pick random start, end.
+        // 2. Ensure start > end for Snake.
+        // 3. Ensure start < end for Ladder.
+        // 4. Ensure no cycle (Snake head at Ladder bottom).
+        
+        // Example Hardcoded:
+        // Ladder: 2 -> 20
+        // Snake: 99 -> 10
     }
     
     public Cell getCell(int playerPosition) {
+        // Map linear position (1-100) to 2D coordinates
+        // Note: Logic depends on board numbering (ZigZag or standard).
+        // For simplicity in this LLD, we treat it as row-major or just use linear logic if board was 1D.
+        // Here assuming simple row-major for 2D access:
         int boardRow = playerPosition / cells.length;
         int boardCol = (playerPosition % cells.length);
+        if (boardRow >= cells.length) return null; // Out of bounds
         return cells[boardRow][boardCol];
     }
 }
@@ -225,7 +269,7 @@ public class Game {
         }
 
         Cell cell = board.getCell(playerNewPosition);
-        if(cell.jump != null && cell.jump.start == playerNewPosition) {
+        if(cell != null && cell.jump != null && cell.jump.start == playerNewPosition) {
             String jumpBy = (cell.jump.start < cell.jump.end) ? "ladder" : "snake";
             System.out.println("jump done by: " + jumpBy);
             return cell.jump.end;
@@ -235,9 +279,28 @@ public class Game {
 }
 ```
 
-## Key Points
+---
 
-1.  **Polymorphism (Not needed)**:
-    -   We don't need `class Snake` and `class Ladder`. They have identical behavior (teleport player). A single `Jump` class is cleaner.
-2.  **Dice Strategy**:
-    -   If interviewer asks for "Rigged Dice", implement `DiceStrategy` interface.
+## Phase 6: Discussion
+
+### Entity Design
+**Q: Why Single Jump Class?**
+- A: "Polymorphism isn't strictly needed here. Snake and Ladder behavior is identical: `Move player from A to B`. The only difference is `A > B` vs `A < B`, which is data, not behavior. A single `Jump` class is simpler."
+
+### Extensibility
+**Q: How to add special squares (e.g., Skip Turn)?**
+- A: "Extend `Cell` to have a `CellType` or `Effect`. Or use **Chain of Responsibility** where the move passes through handlers like `SnakeHandler`, `LadderHandler`, `FreezeHandler`."
+
+### Dice Variations
+**Q: How to handle multiple dice?**
+- A: "The `Dice` class already supports `diceCount`. We can extend `rollDice()` to sum up N dice."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `Board` holds grid, `Dice` rolls numbers, `Game` manages loop.
+- **O (Open/Closed)**: New Jump types (e.g., `Teleport`) can be added by extending `Jump` or modifying `jumpCheck`.
+- **L (Liskov Substitution)**: Not heavily used, but `Jump` subclasses would work if we had them.
+- **I (Interface Segregation)**: `Dice` could implement `IDice` to allow `RiggedDice`.
+- **D (Dependency Inversion)**: `Game` depends on abstract `Dice` logic (conceptually).

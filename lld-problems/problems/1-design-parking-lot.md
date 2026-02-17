@@ -4,16 +4,74 @@
 > **Topics**: Object-Oriented Design, Singleton, Factory Pattern, Strategy Pattern
 > **Key Concepts**: Managing shared resources, pricing logic, concurrency.
 
-## Problem Statement
+## Phase 1: Requirements Gathering
 
-Design a Parking Lot system with the following requirements:
-1.  **Multiple Levels**: The parking lot has multiple levels.
-2.  **Spot Types**: Supports different vehicle types (Motorcycle, Car, Truck) with specific spots.
-3.  **Entry/Exit**: Issues a ticket on entry and calculates fees on exit.
-4.  **Capacity**: Tracks available spots in real-time.
-5.  **Pricing**: Flexible pricing strategy (e.g., $2 for first hour, then $1/hr).
+### Goals
+- Understand the scope: A multi-level parking lot for different vehicle types.
+- Identify users: Customers, Parking Attendant/System, Admin.
+- Define core features (Must-have vs Should-have).
 
-## Class Diagram
+### 1. Who are the actors?
+- **Customer**: Arrives with a vehicle, parks, and pays the fee.
+- **System/Attendant**: Issues tickets, assigns spots, calculates fees.
+- **Admin**: Manages parking lot capacity, rates, and maintenance (optional).
+
+### 2. What are the must-have features? (Core)
+- **Multi-Level Parking**: Support multiple floors.
+- **Spot Assignment**: Find the nearest available spot for a specific vehicle type.
+- **Ticket Generation**: Issue a ticket with entry time upon arrival.
+- **Fee Calculation**: Calculate parking fee upon exit based on duration.
+- **Payment**: Process payment and release the spot.
+
+### 3. What are the constraints?
+- **Concurrency**: Multiple vehicles arriving/exiting simultaneously.
+- **Capacity**: Limited spots per floor and type (Compact, Large, Motorcycle).
+- **Scalability**: Extensible for new vehicle types or pricing strategies.
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Park Vehicle
+**Actor**: Customer / System
+**Flow**:
+1. Vehicle arrives at the entry gate.
+2. System identifies vehicle type (Car, Truck, Motorcycle).
+3. System checks for the nearest available spot of that type.
+4. If full, display "Full".
+5. If available, system occupies the spot and generates a `Ticket` with `ticketId` and `entryTime`.
+6. Gate opens.
+
+### UC2: Exit & Pay
+**Actor**: Customer / System
+**Flow**:
+1. Customer arrives at the exit gate with `Ticket`.
+2. System reads the ticket and calculates duration (Current Time - Entry Time).
+3. System calculates fee using the current `PricingStrategy`.
+4. Customer pays the amount.
+5. System releases the spot (marks it free).
+6. Gate opens.
+
+---
+
+## Phase 3: Class Diagram
+
+### Step 1: Core Entities
+- **ParkingLot**: Singleton manager.
+- **Level**: Represents a floor.
+- **ParkingSpot**: An individual slot.
+- **Vehicle**: Abstract base class (Car, Truck, Motorcycle).
+- **Ticket**: Proof of entry.
+- **PricingStrategy**: Logic for fee calculation.
+
+### Step 2: Relationships
+- `ParkingLot` **has-many** `Level` (Composition).
+- `Level` **has-many** `ParkingSpot` (Composition).
+- `ParkingSpot` **has-a** `Vehicle` (Association/Aggregation).
+- `Ticket` **references** `ParkingSpot` and `Vehicle`.
+- `Vehicle` is a **base class** for `Car`, `Truck`, `Motorcycle` (Inheritance).
+
+### UML Diagram
 
 ```mermaid
 classDiagram
@@ -64,20 +122,27 @@ classDiagram
     Ticket --> ParkingSpot
 ```
 
-## Flow Chart: Park Vehicle
+---
 
-```mermaid
-flowchart TD
-    A[Vehicle Arrives] --> B[Entrance Gate]
-    B --> C{Is Full?}
-    C -- Yes --> D[Reject Vehicle]
-    C -- No --> E[Find Nearest Spot]
-    E --> F[Occupy Spot]
-    F --> G[Generate Ticket]
-    G --> H[Open Gate]
-```
+## Phase 4: Design Patterns
 
-## Java Implementation
+### 1. Singleton Pattern
+- **Description**: Ensures a class has only one instance and provides a global point of access to it.
+- **Why used**: The `ParkingLot` system needs a central point of control for managing shared resources (spots, levels) to prevent conflicting assignments and ensure consistent state across the system.
+
+### 2. Factory Pattern
+- **Description**: A creational pattern that provides an interface for creating objects in a superclass, but allows subclasses to alter the type of objects that will be created.
+- **Why used**: Encapsulates the logic of creating different `Vehicle` types (`Car`, `Truck`, `Motorcycle`). Allows adding new vehicle types without modifying client code.
+
+### 3. Strategy Pattern
+- **Description**: Defines a family of algorithms, encapsulates each one, and makes them interchangeable. Strategy lets the algorithm vary independently from clients that use it.
+- **Why used**: Pricing logic matches this perfectly (`HourlyStrategy`, `FlatRateStrategy`). We can swap pricing models dynamically (e.g., weekend rates) without changing the `ParkingLot` class.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Java Implementation
 
 ```java
 import java.util.*;
@@ -225,7 +290,7 @@ class ParkingLot {
     }
 }
 
-// 7. Client
+// 7. Client Code
 public class ParkingSystem {
     public static void main(String[] args) throws InterruptedException {
         ParkingLot lot = ParkingLot.getInstance();
@@ -244,13 +309,30 @@ public class ParkingSystem {
 }
 ```
 
-## Interview Q&A
+---
 
-**Q: "How to handle concurrency?"**
-- A: "Use `synchronized` on `occupy()`/`free()` methods in `ParkingSpot`. For high throughput, use `ConcurrentHashMap` or a distributed lock (Redis) if running multiple instances."
+## Phase 6: Discussion
 
-**Q: "How to find the nearest spot?"**
-- A: "Use a Min-Heap or Sorted Set (TreeSet) to store available spots, ordered by distance from entrance. Allocator picks `heap.poll()`."
+### Concurrency
+**Q: How do we handle multiple entrances?**
+- Use `synchronized` methods for critical sections like `occupy()`.
+- For higher scale, use finer-grained locking (e.g., lock per `Level` or use `ConcurrentHashMap` for spot tracking).
 
-**Q: "Pricing flexibility?"**
-- A: "Use Strategy Pattern. `PricingStrategy` interface with implementations like `HourlyStrategy`, `FlatRateStrategy`. Inject strategy into ParkingLot."
+### Extensibility
+**Q: How to add electric vehicle charging?**
+- Create a `ElectricSpot` extending `ParkingSpot`.
+- Add `Chargeable` interface to `ElectricCar`.
+
+### Pricing Flexibility
+**Q: How to implement dynamic pricing?**
+- Use the **Strategy Pattern**. Pass a `PricingStrategy` (e.g., `WeekendStrategy`, `HourlyStrategy`) to the calculator method.
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `ParkingSpot` manages state, `Ticket` manages session, `Level` finds spots. Separation is clear.
+- **O (Open/Closed)**: New `Vehicle` types can be added by extending `Vehicle` class without modifying existing logic significantly.
+- **L (Liskov Substitution)**: `Car`, `Truck` can be substituted for `Vehicle`.
+- **I (Interface Segregation)**: Interfaces (like `PricingStrategy` if implemented) should be focused.
+- **D (Dependency Inversion)**: High-level modules should depend on abstractions (e.g., `Vehicle`) rather than concrete classes.
