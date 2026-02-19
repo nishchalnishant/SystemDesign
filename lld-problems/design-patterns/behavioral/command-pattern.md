@@ -1,13 +1,13 @@
-# Command Pattern
+# Command
 
-* Command Pattern encapsulates a request as an object, allowing for more flexible and dynamic command handling. In the upcoming sections, we’ll dive deeper into how the Command Pattern works and how it can be applied in real-world scenarios.
+* Command Pattern encapsulates a request as an object, allowing for more flexible and dynamic command handling. In the upcoming sections
 * turns a request into a separate object, allowing you to decouple the code that issues the request from the code that performs it.
 * **Formal Definition**
-  * encapsulates a request as an object, allowing for parameterization of clients with different requests, queuing of requests, and logging of the requests.&#x20;
+  * encapsulates a request as an object, allowing for parameterization of clients with different requests, queuing of requests, and logging of the requests.
   * It lets you add features like undo, redo, logging, and dynamic command execution without changing the core business logic.
   * This allows you to execute commands at a later time, in a flexible manner, without having to interact directly with the request's execution details.
 * **Real-Life Analogy**
-  * Think of a remote control used to turn on or off the lights or an air conditioner (AC). When you press a button to turn on the lights or adjust the temperature, you don’t need to understand how the internal circuits work or how the AC receives the signal.&#x20;
+  * Think of a remote control used to turn on or off the lights or an air conditioner (AC). When you press a button to turn on the lights or adjust the temperature, you don’t need to understand how the internal circuits work or how the AC receives the signal.
   * You just press the "On" or "Off" button, and the remote control takes care of sending the command.
   * Similarly, the Command Pattern decouples the sender of a request (the remote control) from the receiver (the light or AC), providing flexibility and simplicity in handling commands.
   * **Four Key Components**
@@ -15,7 +15,7 @@
     * Invoker – Asks the command to execute the request.
     * Command – Defines a binding between a receiver object and an action.
     * Receiver – Knows how to perform the actions to satisfy a request.
-* ### Understanding the Problem
+* #### Understanding the Problem
   * Let's say we're building a simple remote control system where devices like lights and air conditioner can be turned on and off. Here's a naive implementation of the code:
 
 ```java
@@ -109,31 +109,29 @@ public class Main {
 }
 ```
 
-
-
 While the implementation works, it suffers from some significant issues.
 
 * **Issues in the Code**
   * 1\. Tight Coupling:
-    * The `NaiveRemoteControl` class directly calls methods on the `Light` and `AC` classes.&#x20;
-    * If additional devices need to be added in the future, changes will be required in the remote control class.&#x20;
+    * The `NaiveRemoteControl` class directly calls methods on the `Light` and `AC` classes.
+    * If additional devices need to be added in the future, changes will be required in the remote control class.
     * This violates the open/closed principle, where classes should be open for extension but closed for modification.
   * 2\. Lack of Flexibility:
-    * The commands are hardcoded in the remote control class.&#x20;
+    * The commands are hardcoded in the remote control class.
     * If new actions or different command sequences are required, modifying the remote control code is necessary, leading to potential maintenance challenges.
   * 3\. Undo Functionality:
-    * The `pressUndo` method is tightly coupled with the commands.&#x20;
+    * The `pressUndo` method is tightly coupled with the commands.
     * This makes it difficult to add more complex undo functionality, especially when dealing with multiple actions or a variety of devices.
   * 4\. Hardcoded Commands:
     * The remote control class directly defines commands like `pressLightOn`, `pressACOn`, etc.
-    * This makes the system rigid and difficult to modify.&#x20;
+    * This makes the system rigid and difficult to modify.
     * Adding new actions or commands would require changing the remote control code, leading to challenges in maintaining or extending the system.
   * 5\. Maintaining Command History:
-    * The original approach doesn’t have a centralized mechanism to track previously executed commands.&#x20;
+    * The original approach doesn’t have a centralized mechanism to track previously executed commands.
     * This leads to difficulties in implementing features like undo, where the last action needs to be reversed efficiently.
 * The Solution
-  * The issues in the previous implementation can be addressed by using the Command Pattern.&#x20;
-  * By applying this pattern, it becomes easier to encapsulate requests as objects, allowing for flexible and reusable command handling.&#x20;
+  * The issues in the previous implementation can be addressed by using the Command Pattern.
+  * By applying this pattern, it becomes easier to encapsulate requests as objects, allowing for flexible and reusable command handling.
   * The command pattern decouples the request sender (Invoker) from the receiver (Light/AC) and provides a unified way to handle multiple commands and actions.
 
 ```java
@@ -438,4 +436,4 @@ classDiagram
 * Requires Careful Design for Undo/Redo\
   Implementing undo/redo functionality correctly requires careful design and additional effort, especially for complex command chains.
 
-<figure><img src="../../../../.gitbook/assets/image (6).png" alt=""><figcaption></figcaption></figure>
+<figure><img src="../../../.gitbook/assets/image (6).png" alt=""><figcaption></figcaption></figure>
