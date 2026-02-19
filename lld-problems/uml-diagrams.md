@@ -30,7 +30,7 @@ Now if there are multiple classes we can interlink them to make a suitable worki
 
 We have following relation ships --
 
-* **Composition** --
+* <mark style="color:$danger;">**Composition**</mark> <mark style="color:$danger;"></mark><mark style="color:$danger;">--</mark>
   * Composition is a stronger form of aggregation, indicating a more significant ownership or dependency relationship.
   * In composition, the part class cannot exist independently of the whole class.
   * ex — Imagine a digital contact book application. The contact book is the whole, and each contact entry is a part. Each contact entry is fully owned and managed by the contact book. If the contact book is deleted or destroyed, all associated contact entries are also removed.
@@ -44,18 +44,18 @@ We have following relation ships --
 * **Generalisation (Inheritance)**
   * Inheritance represents an "is-a" relationship between classes, where one class (the subclass or child) inherits the properties and behaviours of another class (the superclass or parent).
   * ex — In the example of bank accounts, we can use generalisation to represent different types of accounts such as current accounts, savings accounts, and credit accounts.
-* **Aggregation**
+* <mark style="color:$danger;">**Aggregation**</mark>
   * Aggregation is a specialised form of association that represents a "whole-part" relationship.
   * It denotes a stronger relationship where one class (the whole) contains or is composed of another class (the part).
   * Aggregation is represented by a diamond shape on the side of the whole class. In this kind of relationship, the child class can exist independently of its parent class.
   * ex — The company can be considered as the whole, while the employees are the parts.
   * Employees belong to the company, and the company can have multiple employees. However, if the company ceases to exist, the employees can still exist independently
-* **Association**
+* <mark style="color:$danger;">**Association**</mark>
   * An association represents a bi-directional relationship between two classes. It indicates that instances of one class are connected to instances of another class.
   * Associations are typically depicted as a solid line connecting the classes, with optional arrows indicating the direction of the relationship.
   * ex — Let's consider a simple system for managing a library. In this system, we have two main entities: `Book` and `Library`.
   * Each `Library` contains multiple `Books`, and each `Book` belongs to a specific `Library`. This relationship between `Library` and `Book` represents an association.
-* **Dependency** **Relationship**
+* <mark style="color:$danger;">**Dependency**</mark> <mark style="color:$danger;">**Relationship**</mark>
   * A dependency exists between two classes when one class relies on another, but the relationship is not as strong as association or inheritance.
   * It represents a more loosely coupled connection between classes.
   *   Let's consider a scenario where a Person depends on a Book.
@@ -64,7 +64,7 @@ We have following relation ships --
       * **Book Class:** Represents a book that contains content to be read by a person. The Book class is independent and can exist without the Person class.
 
       > The Person class depends on the Book class because it requires access to a book to read its content. However, the Book class does not depend on the Person class; it can exist independently and does not rely on the Person class for its functionality.
-* **Realisation (Interface Implementation)**
+* <mark style="color:$danger;">**Realisation (Interface Implementation)**</mark>
   * Realisation indicates that a class implements the features of an interface. It is often used in cases where a class realizes the operations defined by an interface.
   *   Let's consider the scenario where a "Person" and a "Corporation" both realizing an "Owner" interface.
 
@@ -86,16 +86,14 @@ Here’s a comprehensive UML Class Diagram Cheat Sheet with definitions, symbols
 
 "Links-To" Relationship
 
-* Association is a structural relationship where <mark style="color:blue;">objects of one class are connected to objects of another class.</mark>&#x20;
-* It <mark style="color:blue;">indicates that one object knows about or navigates to another.</mark> It can be uni-directional (A knows B) or bi-directional (A and B know each other).
-* Strength: Weak to Medium.
-* Lifecycle: The objects have their own independent lifecycles. There is no ownership involved.
-* UML Representation: A solid line connecting two classes. An open arrow (`------->`) is used to show the direction of navigation.
-
-Java Implementation:
-
-* Mechanism: <mark style="color:blue;">Define a field (instance variable) in the class.</mark>
-* Best Practice: <mark style="color:blue;">Use an Interface for the field type to keep the classes loosely coupled.</mark>
+* Association is a structural relationship where <mark style="color:$success;">objects of one class are connected to objects of another class.</mark>&#x20;
+* It <mark style="color:$success;">indicates that one object knows about or navigates to another.</mark> It can be uni-directional (A knows B) or bi-directional (A and B know each other).
+  * Strength: Weak to Medium.
+  * Lifecycle: The objects have their own independent lifecycles. There is no ownership involved.
+  * UML Representation: A solid line connecting two classes. An open arrow (`------->`) is used to show the direction of navigation.
+* Java Implementation:
+  * Mechanism: <mark style="color:$success;">Define a field (instance variable) in the class.</mark>
+  * Best Practice: <mark style="color:$success;">Use an Interface for the field type to keep the classes loosely coupled.</mark>
 
 Java
 
@@ -130,22 +128,17 @@ class Employee {
 
 ### <mark style="color:$danger;">2. Aggregation (HAS-A Weak)</mark>
 
-"Has-A" (Weak) Relationship
+<mark style="color:$success;">"Has-A" (Weak) Relationship</mark>
 
-Aggregation is a specialised form of Association.&#x20;
-
-It r<mark style="color:blue;">epresents a "Whole-Part" relationship where the part can exist independently of the whole.</mark>&#x20;
-
-If the <mark style="color:blue;">container (parent) is destroyed, the parts (children) are</mark> <mark style="color:blue;"></mark>_<mark style="color:blue;">not</mark>_ <mark style="color:blue;"></mark><mark style="color:blue;">destroyed.</mark>
-
-* Strength: Medium.
-* Lifecycle: Independent. The Child is created outside and passed into the Parent.
-* UML Representation: A solid line with an empty diamond (`<>`) on the side of the "Whole" (Container).
-
-Java Implementation:
-
-* Mechanism: Constructor Injection. The external object is passed as a parameter to the constructor (or a setter method) and stored in a field.
-* Key Logic: <mark style="color:blue;">Do not use</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`new`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">inside the constructor to create the part</mark>.
+* Aggregation is a specialised form of Association.&#x20;
+* It <mark style="color:$success;">r</mark><mark style="color:$success;">epresents a "Whole-Part" relationship where the part can exist independently of the whole.</mark>&#x20;
+* If the <mark style="color:$success;">container (parent) is destroyed, the parts (children) are</mark> <mark style="color:$success;"></mark>_<mark style="color:$success;">not</mark>_ <mark style="color:$success;"></mark><mark style="color:$success;">destroyed.</mark>
+  * Strength: Medium.
+  * Lifecycle: Independent. The <mark style="color:$success;">Child is created outside and passed into the Parent.</mark>
+  * UML Representation: A solid line with an empty diamond (`<>`) on the side of the "Whole" (Container).
+* Java Implementation:
+  * Mechanism: <mark style="color:$success;">Constructor Injection.</mark> The <mark style="color:$success;">external object is passed as a parameter to the constructor (or a setter method) and stored in a field.</mark>
+  * Key Logic: <mark style="color:$success;">Do not use</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`new`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">inside the constructor to create the part</mark><mark style="color:$success;">.</mark>
 
 Java
 
@@ -185,19 +178,16 @@ public class Main {
 
 "Has-A" (Strong) Relationship
 
-Composition is a <mark style="color:blue;">restricted form of Aggregation.</mark> It r<mark style="color:blue;">epresents a "Whole-Part" relationship where the part CANNOT exist without the whole. If the container is destroyed, the parts are destroyed with it.</mark>
-
-* Strength: Strong.
-* Lifecycle: Dependent. The Child's lifecycle is managed strictly by the Parent.
-* UML Representation: A solid line with a filled diamond (`♦`) on the side of the "Whole" (Container).
-
-Java Implementation:
-
-* Mechanism:&#x20;
-  * Instantiation inside the Constructor.&#x20;
-  * The parent class uses the `new` keyword to create the child object.
-* Best Practice:&#x20;
-  * <mark style="color:blue;">Make the field</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`final`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">to enforce that the relationship</mark> cannot be changed.
+* Composition is a <mark style="color:blue;">restricted form of Aggregation.</mark> It r<mark style="color:blue;">epresents a "Whole-Part" relationship where the part CANNOT exist without the whole. If the container is destroyed, the parts are destroyed with it.</mark>
+  * Strength: Strong.
+  * Lifecycle: Dependent. <mark style="color:$success;">The Child's lifecycle is managed strictly by the Parent.</mark>
+  * UML Representation: A solid line with a filled diamond (`♦`) on the side of the "Whole" (Container).
+* Java Implementation:
+  * Mechanism:&#x20;
+    * <mark style="color:$success;">Instantiation inside the Constructor.</mark>&#x20;
+    * The <mark style="color:$success;">parent class uses the</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`new`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">keyword to create the child object.</mark>
+  * Best Practice:&#x20;
+    * <mark style="color:$success;">Make the field</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`final`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">to enforce that the relationship</mark> <mark style="color:$success;">cannot be changed.</mark>
 
 Java
 
@@ -227,16 +217,13 @@ class Car {
 
 "Is-A" Relationship
 
-Inheritance (or Generalization) allows a child class to acquire the properties and methods of a parent class. It is the strongest form of coupling between classes.
-
-* Strength: Very Strong (Static/Compile-time).
-* Lifecycle: The Child _is_ the Parent; they share the same lifecycle.
-* UML Representation: A solid line with a closed, empty triangle (`△`) pointing to the Parent class.
-
-Java Implementation:
-
-* Mechanism<mark style="color:blue;">: The</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`extends`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">keyword.</mark>
-* Best Practice: Use Abstract Classes for the parent if you want to provide a common template but force specific behavior implementation in children.
+* Inheritance (or Generalization) <mark style="color:$success;">allows a child class to acquire the properties and methods of a parent class.</mark> It is the <mark style="color:$success;">strongest form of coupling between classes.</mark>
+  * Strength: Very Strong (Static/Compile-time).
+  * Lifecycle: The Child _is_ the Parent; they share the same lifecycle.
+  * UML Representation: A solid line with a closed, empty triangle (`△`) pointing to the Parent class.
+* Java Implementation:
+  * Mechanism<mark style="color:blue;">:</mark> <mark style="color:$success;">The</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`extends`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">keyword.</mark>
+  * Best Practice: <mark style="color:$success;">Use Abstract Classes for the parent if you want to provide a common template but force specific behavior implementation in children.</mark>
 
 Java
 
@@ -269,16 +256,15 @@ class SavingsAccount extends BankAccount {
 
 "Can-Do" Relationship
 
-Realisation is the relationship between a class and an interface. The class "realizes" (makes real) the behavior defined by the interface. It is about capability, not state.
-
-* Strength: Strong (Contractual).
-* Lifecycle: N/A (Interfaces have no state).
-* UML Representation: A dashed line with a closed, empty triangle (`- - △`) pointing to the Interface.
-
-Java Implementation:
-
-* Mechanism: <mark style="color:blue;">The</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`implements`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">keyword.</mark>
-* Best Practice: <mark style="color:blue;">Use Interfaces to define capabilities</mark> (e.g., `Runnable`, `Serializable`, `Flyable`) that unrelated classes can share.
+* Realisation is the <mark style="color:$success;">relationship between a class and an interface.</mark>&#x20;
+* The <mark style="color:$success;">class "realizes" (makes real) the behavior defined by the interface.</mark>&#x20;
+* It is about capability, not state.
+  * Strength: Strong (Contractual).
+  * Lifecycle: N/A (Interfaces have no state).
+  * UML Representation: A dashed line with a closed, empty triangle (`- - △`) pointing to the Interface.
+* Java Implementation:
+  * Mechanism: <mark style="color:$success;">The</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`implements`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">keyword.</mark>
+  * Best Practice: <mark style="color:$success;">Use Interfaces to define capabilities</mark> (e.g., `Runnable`, `Serializable`, `Flyable`) that unrelated classes can share.
 
 Java
 
@@ -309,16 +295,13 @@ class EmployeeSalary implements Payable {
 
 "Uses-A" Relationship
 
-Dependency is the <mark style="color:blue;">weakest relationship.</mark> It exists when one class temporarily uses another class to perform a specific task. The dependent class does not store the other class as a field.
-
-* Strength: Very Weak (Temporary).
-* Lifecycle: The object is usually created and destroyed within the scope of a single method.
-* UML Representation: A dashed line with an open arrow (`- - ->`) pointing to the used class.
-
-Java Implementation:
-
-* Mechanism: Method Parameter. Pass the object into the method where it is needed.
-* Best Practice: Pass an Interface type as the parameter to allow the method to "use" any implementation of that dependency.
+* Dependency is the <mark style="color:blue;">weakest relationship.</mark> It exists when one class temporarily uses another class to perform a specific task. The dependent class does not store the other class as a field.
+  * Strength: V<mark style="color:$success;">ery Weak (Temporary).</mark>
+  * Lifecycle: The object is <mark style="color:$success;">usually created and destroyed within the scope of a single method.</mark>
+  * UML Representation: A dashed line with an open arrow (`- - ->`) pointing to the used class.
+* Java Implementation:
+  * Mechanism: Method Parameter. <mark style="color:$success;">Pass the object into the method where it is needed.</mark>
+  * Best Practice: <mark style="color:$success;">Pass an Interface type as the parameter to allow the method to "use"</mark> any implementation of that dependency.
 
 Java
 
@@ -345,33 +328,24 @@ class Calculator {
 
 ### Summary Table
 
-| **Relationship** | **Keyword/Concept** | **Coupling** | **Implementation Pattern**         |
-| ---------------- | ------------------- | ------------ | ---------------------------------- |
-| 1. Association   | Links-To            | Weak         | Instance Field (Interface)         |
-| 2. Aggregation   | Has-A (Shared)      | Medium       | Constructor Injection (Pass it in) |
-| 3. Composition   | Has-A (Owned)       | Strong       | `new` inside Constructor           |
-| 4. Inheritance   | Is-A                | Very Strong  | `extends`                          |
-| 5. Realization   | Can-Do              | Strong       | `implements`                       |
-| 6. Dependency    | Uses-A              | Very Weak    | Method Parameter                   |
+<table data-header-hidden><thead><tr><th width="139.078125"></th><th width="171.76171875"></th><th width="135.09375"></th><th></th></tr></thead><tbody><tr><td><strong>Relationship</strong></td><td><strong>Keyword/Concept</strong></td><td><strong>Coupling</strong></td><td><strong>Implementation Pattern</strong></td></tr><tr><td>Association</td><td>Links-To</td><td>Weak</td><td>Instance Field (Interface)</td></tr><tr><td>Aggregation</td><td>Has-A (Shared)</td><td>Medium</td><td>Constructor Injection (Pass it in)</td></tr><tr><td>Composition</td><td>Has-A (Owned)</td><td>Strong</td><td><code>new</code> inside Constructor</td></tr><tr><td>Inheritance</td><td>Is-A</td><td>Very Strong</td><td><code>extends</code></td></tr><tr><td>Realisation</td><td>Can-Do</td><td>Strong</td><td><code>implements</code></td></tr><tr><td>Dependency</td><td>Uses-A</td><td>Very Weak</td><td>Method Parameter</td></tr></tbody></table>
 
 ***
 
-## Four pillar of OOPs
+## <mark style="color:purple;">Four pillar of OOPs</mark>
 
 ***
 
 ### <mark style="color:red;">1. Abstraction (The Concept)</mark>
 
-Abstraction involves <mark style="color:blue;">hiding the implementation details and showing only the functionality to the user.</mark> It lets you focus on _what_ an object does instead of _how_ it does it.
-
-* Goal: <mark style="color:blue;">Reduce complexity and isolate impact of changes.</mark>
+* Abstraction involves <mark style="color:$success;">hiding the implementation details and showing only the functionality to the user.</mark>&#x20;
+* It lets you focus on _what_ an object does instead of _how_ it does it.
+* Goal: <mark style="color:$success;">Reduce complexity and isolate impact of changes.</mark>
 * UML Representation:
-  * <mark style="color:blue;">Abstract Class:</mark> Name is often italicized or labeled `{abstract}`.
-  * <mark style="color:blue;">Interface</mark>: Labeled `<<interface>>`.
-
-Java Implementation:
-
-* You can achieve abstraction <mark style="color:blue;">using Abstract Classes (0-100% abstraction) or Interfaces (100% abstraction).</mark>
+  * <mark style="color:$success;">Abstract Class:</mark> Name is often italicized or labeled `{abstract}`.
+  * <mark style="color:$success;">Interface</mark>: Labeled `<<interface>>`.
+* Java Implementation:
+  * You can achieve abstraction <mark style="color:$success;">using Abstract Classes (0-100% abstraction)</mark> <mark style="color:blue;">or</mark> <mark style="color:$success;">Interfaces (100% abstraction).</mark>
 
 #### <mark style="color:yellow;">**Method 1: Abstract Class (Partial Abstraction)**</mark>
 
@@ -423,19 +397,17 @@ class TV implements RemoteControl {
 
 "The Shield"
 
-Encapsulation is the <mark style="color:blue;">practice of bundling data</mark> <mark style="color:blue;">(variables) and methods (functions) into a single unit (class)</mark> and restricting direct access to some of an object's components. It is often called "Data Hiding."
-
+* Encapsulation is the <mark style="color:$success;">practice of bundling data</mark> <mark style="color:$success;">(variables) and methods (functions) into a single unit (class)</mark> and restricting direct access to some of an object's components.&#x20;
+* It is <mark style="color:$success;">often called "Data Hiding."</mark>
 * Goal: Protect data from unauthorised or invalid modification.
 * UML Representation:
-  * <mark style="color:blue;">Private (</mark><mark style="color:blue;">`-`</mark><mark style="color:blue;">):</mark> Variables are marked with a minus sign.
-  * <mark style="color:blue;">Public (</mark><mark style="color:blue;">`+`</mark><mark style="color:blue;">):</mark> Methods are marked with a plus sign.
-
-Java Implementation:
-
-* Keywords: <mark style="color:blue;">`private`</mark><mark style="color:blue;">,</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`public`</mark><mark style="color:blue;">,</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`protected`</mark><mark style="color:blue;">.</mark>
-* Mechanism:
-  1. Mark <mark style="color:blue;">class variables as</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`private`</mark><mark style="color:blue;">.</mark>
-  2. Provide <mark style="color:blue;">`public`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">Getter and Setter methods to access and update the value.</mark>
+  * <mark style="color:$success;">Private (</mark><mark style="color:$success;">`-`</mark><mark style="color:$success;">):</mark> Variables are marked with a minus sign.
+  * <mark style="color:$success;">Public (</mark><mark style="color:$success;">`+`</mark><mark style="color:$success;">):</mark> Methods are marked with a plus sign.
+* Java Implementation:
+  * Keywords: <mark style="color:$success;">`private`</mark><mark style="color:$success;">,</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`public`</mark><mark style="color:$success;">,</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`protected`</mark><mark style="color:$success;">.</mark>
+  * Mechanism:
+    1. Mark <mark style="color:$success;">class variables as</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`private`</mark><mark style="color:$success;">.</mark>
+    2. Provide <mark style="color:$success;">`public`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">Getter and Setter methods to access and update the value.</mark>
 
 Java
 
@@ -471,17 +443,18 @@ class BankAccount {
 
 ### <mark style="color:red;">3. Inheritance (Blueprint Copy)</mark>
 
-Inheritance <mark style="color:blue;">allows a new class (Subclass/Child) to acquire the properties and behaviours of an existing class (Superclass/Parent).</mark>&#x20;
+* Inheritance <mark style="color:$success;">a</mark><mark style="color:$success;">llows a new class (Subclass/Child) to acquire the properties and behaviours of an existing class (Superclass/Parent).</mark>&#x20;
 
-It promotes code reusability and <mark style="color:blue;">establishes an "Is-A" relationship.</mark>
+It promotes code reusability and <mark style="color:$success;">establishes an "Is-A" relationship.</mark>
 
-* Goal: <mark style="color:blue;">Stop rewriting code that already exists.</mark>
-* UML Representation: A solid line with a closed, <mark style="color:blue;">empty triangle (</mark><mark style="color:blue;">`△`</mark><mark style="color:blue;">) pointing to the Parent class.</mark>
+* Goal: <mark style="color:$success;">Stop rewriting code that already exists.</mark>
+* UML Representation: A solid line with a closed, <mark style="color:$success;">empty triangle (</mark><mark style="color:$success;">`△`</mark><mark style="color:$success;">) pointing to the Parent class.</mark>
 
 Java Implementation:
 
-* Keyword: `extends`.
-* Mechanism: The <mark style="color:blue;">child class automatically gets all</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`public`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">and</mark> <mark style="color:blue;"></mark><mark style="color:blue;">`protected`</mark> <mark style="color:blue;"></mark><mark style="color:blue;">fields/methods of the parent.</mark> It can also add its own.
+* Keyword<mark style="color:$success;">:</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`extends`</mark><mark style="color:$success;">.</mark>
+* Mechanism: The <mark style="color:$success;">child class automatically gets all</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`public`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">and</mark> <mark style="color:$success;"></mark><mark style="color:$success;">`protected`</mark> <mark style="color:$success;"></mark><mark style="color:$success;">fields/methods of the parent.</mark>&#x20;
+* It can also add its own.
 
 Java
 
@@ -518,14 +491,14 @@ public class Main {
 
 ### <mark style="color:$danger;">4. Polymorphism (Many Forms)</mark>
 
-Polymorphism <mark style="color:yellow;">allows objects to be treated as instances of their parent class rather than their actual class.</mark> It enables a single interface to control different underlying forms <mark style="color:blue;">(</mark>data types).
-
-* Goal: Flexibility. One method call can behave differently depending on the object it is called on.
-* UML Representation: Often depicted via Inheritance (`extends`) or Realization (`implements`) arrows, showing multiple children overriding a parent method.
+* Polymorphism <mark style="color:$success;">allows objects to be treated as instances of their parent class rather than their actual class.</mark>&#x20;
+* It enables a single interface to control different underlying forms <mark style="color:blue;">(</mark>data types).
+  * Goal: Flexibility. One method call can behave differently depending on the object it is called on.
+  * UML Representation: Often depicted via Inheritance (`extends`) or Realization (`implements`) arrows, showing multiple children overriding a parent method.
 
 Java Implementation:
 
-There are two types of Polymorphism in Java:
+* There are two types of Polymorphism in Java:
 
 <mark style="color:yellow;">**A. Compile-Time Polymorphism (Method Overloading)**</mark>
 
