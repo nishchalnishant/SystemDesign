@@ -72,6 +72,39 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Image {
+        <<interface>>
+        +display()
+    }
+
+    class RealImage {
+        -String filename
+        +RealImage(String filename)
+        +display()
+        -loadFromDisk()
+    }
+
+    class ProxyImage {
+        -String filename
+        -RealImage realImage
+        +ProxyImage(String filename)
+        +display()
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Image <|.. RealImage
+    Image <|.. ProxyImage
+    ProxyImage o-- RealImage : controls access
+    Main ..> Image : uses
+```
+
 ## Variations
 1.  **Virtual Proxy**: Lazy loading (above).
 2.  **Protection Proxy**: Access control (e.g., Only "Admin" can call `delete`).

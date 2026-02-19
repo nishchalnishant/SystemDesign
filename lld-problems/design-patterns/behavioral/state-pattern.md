@@ -113,3 +113,51 @@ public class Main {
     }
 }
 ```
+
+### Class Diagram
+
+```mermaid
+classDiagram
+    class State {
+        <<interface>>
+        +insertCoin()
+        +pressButton()
+        +dispense()
+    }
+
+    class VendingMachine {
+        -State idleState
+        -State hasCoinState
+        -State currentState
+        +setState(State state)
+        +insertCoin()
+        +pressButton()
+        +getIdleState() State
+        +getHasCoinState() State
+    }
+
+    class IdleState {
+        -VendingMachine machine
+        +insertCoin()
+        +pressButton()
+        +dispense()
+    }
+
+    class HasCoinState {
+        -VendingMachine machine
+        +insertCoin()
+        +pressButton()
+        +dispense()
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    State <|.. IdleState
+    State <|.. HasCoinState
+    VendingMachine o-- State
+    IdleState o-- VendingMachine
+    HasCoinState o-- VendingMachine
+    Main ..> VendingMachine : uses
+```

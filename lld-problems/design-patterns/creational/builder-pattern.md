@@ -178,6 +178,39 @@ BurgerMeal loadedBurger = new BurgerMeal.BurgerBuilder("multigrain", "chicken")
     .build();
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class BurgerMeal {
+        -String bunType
+        -String patty
+        -boolean hasCheese
+        -List~String~ toppings
+        -String side
+        -String drink
+        -BurgerMeal(BurgerBuilder builder)
+    }
+
+    class BurgerBuilder {
+        -String bunType
+        -String patty
+        -boolean hasCheese
+        -List~String~ toppings
+        -String side
+        -String drink
+        +BurgerBuilder(String bunType, String patty)
+        +withCheese(boolean hasCheese)
+        +withToppings(List<String> toppings)
+        +withSide(String side)
+        +withDrink(String drink)
+        +build() BurgerMeal
+    }
+
+    BurgerMeal *-- BurgerBuilder : contains
+    BurgerBuilder ..> BurgerMeal : builds
+```
+
 * **Understanding the Code**
   * Private Constructor The constructor of `BurgerMeal` is made private so that object creation is restricted to the `Builder` only.
   * Nested Static `BurgerBuilder` Class\

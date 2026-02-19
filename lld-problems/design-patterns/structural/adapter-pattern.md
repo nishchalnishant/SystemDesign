@@ -59,6 +59,39 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class PaymentGateway {
+        <<interface>>
+        +pay(String orderId, double amount)
+    }
+
+    class PayUGateway {
+        +pay(String orderId, double amount)
+    }
+
+    class RazorpayAPI {
+        +makePayment(String invoiceId, double amount)
+    }
+
+    class RazorpayAdapter {
+        -RazorpayAPI api
+        +pay(String orderId, double amount)
+    }
+
+    class Main {
+        +processPayment(PaymentGateway gateway)
+        +main(String[] args)
+    }
+
+    PaymentGateway <|.. PayUGateway
+    PaymentGateway <|.. RazorpayAdapter
+    RazorpayAdapter o-- RazorpayAPI : adapts
+    Main ..> PaymentGateway : uses
+```
+
 ## When to use?
 *   Integrating existing classes/libraries that don't match your interface.
 *   Legacy code migration.

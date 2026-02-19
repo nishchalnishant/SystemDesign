@@ -214,6 +214,44 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class CartItem {
+        <<interface>>
+        +getPrice() double
+        +display(String indent)
+    }
+
+    class Product {
+        -String name
+        -double price
+        +Product(String name, double price)
+        +getPrice() double
+        +display(String indent)
+    }
+
+    class ProductBundle {
+        -String bundleName
+        -List~CartItem~ items
+        +ProductBundle(String bundleName)
+        +addItem(CartItem item)
+        +getPrice() double
+        +display(String indent)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    CartItem <|.. Product
+    CartItem <|.. ProductBundle
+    ProductBundle o-- CartItem : contains
+    Main ..> CartItem : uses
+    Main ..> ProductBundle : uses
+```
+
 * **Working of Refactored Code**
   * `CartItem` interface defines the common methods for both products and bundles.
   * `Product` and `ProductBundle` classes implement the `CartItem` interface.

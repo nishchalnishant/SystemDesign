@@ -302,6 +302,78 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Command {
+        <<interface>>
+        +execute()
+        +undo()
+    }
+
+    class Light {
+        +on()
+        +off()
+    }
+
+    class AC {
+        +on()
+        +off()
+    }
+
+    class LightOnCommand {
+        -Light light
+        +execute()
+        +undo()
+    }
+
+    class LightOffCommand {
+        -Light light
+        +execute()
+        +undo()
+    }
+
+    class AConCommand {
+        -AC ac
+        +execute()
+        +undo()
+    }
+
+    class ACOffCommand {
+        -AC ac
+        +execute()
+        +undo()
+    }
+
+    class RemoteControl {
+        -Command[] buttons
+        -List~Command~ commandHistory
+        +setCommand(int slot, Command command)
+        +pressButton(int slot)
+        +pressUndo()
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Command <|.. LightOnCommand
+    Command <|.. LightOffCommand
+    Command <|.. AConCommand
+    Command <|.. ACOffCommand
+
+    LightOnCommand o-- Light
+    LightOffCommand o-- Light
+    AConCommand o-- AC
+    ACOffCommand o-- AC
+
+    RemoteControl o-- Command
+    Main ..> RemoteControl : uses
+    Main ..> Light : uses
+    Main ..> AC : uses
+```
+
 * how the Command Pattern resolves the above discussed issues:
 
 | Issue                           | How Command Pattern Resolves the Issue                                                                                                                                                                            |

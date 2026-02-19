@@ -94,6 +94,41 @@ cart.setPaymentStrategy(new PayPalStrategy("user@example.com"));
 cart.checkout(200);
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class PaymentStrategy {
+        <<interface>>
+        +pay(int amount)
+    }
+
+    class ShoppingCart {
+        -PaymentStrategy paymentStrategy
+        +setPaymentStrategy(PaymentStrategy strategy)
+        +checkout(int amount)
+    }
+
+    class CreditCardStrategy {
+        -String cardNumber
+        +pay(int amount)
+    }
+
+    class PayPalStrategy {
+        -String email
+        +pay(int amount)
+    }
+
+    class CryptoStrategy {
+        +pay(int amount)
+    }
+
+    PaymentStrategy <|.. CreditCardStrategy
+    PaymentStrategy <|.. PayPalStrategy
+    PaymentStrategy <|.. CryptoStrategy
+    ShoppingCart o-- PaymentStrategy
+```
+
 ---
 
 ## Real-World Examples

@@ -241,6 +241,77 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Item {
+        <<interface>>
+        +accept(ItemVisitor visitor)
+    }
+
+    class PhysicalProduct {
+        -String name
+        -double weight
+        +getName() String
+        +getWeight() double
+        +accept(ItemVisitor visitor)
+    }
+
+    class DigitalProduct {
+        -String name
+        -int downloadSizeInMB
+        +getName() String
+        +getDownloadSizeInMB() int
+        +accept(ItemVisitor visitor)
+    }
+
+    class GiftCard {
+        -String code
+        -int amount
+        +getCode() String
+        +getAmount() int
+        +accept(ItemVisitor visitor)
+    }
+
+    class ItemVisitor {
+        <<interface>>
+        +visit(PhysicalProduct item)
+        +visit(DigitalProduct item)
+        +visit(GiftCard item)
+    }
+
+    class InvoiceVisitor {
+        +visit(PhysicalProduct item)
+        +visit(DigitalProduct item)
+        +visit(GiftCard item)
+    }
+
+    class ShippingCostVisitor {
+        +visit(PhysicalProduct item)
+        +visit(DigitalProduct item)
+        +visit(GiftCard item)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Item <|.. PhysicalProduct
+    Item <|.. DigitalProduct
+    Item <|.. GiftCard
+
+    ItemVisitor <|.. InvoiceVisitor
+    ItemVisitor <|.. ShippingCostVisitor
+
+    Item ..> ItemVisitor : accepts
+    PhysicalProduct ..> ItemVisitor : uses
+    DigitalProduct ..> ItemVisitor : uses
+    GiftCard ..> ItemVisitor : uses
+    Main ..> Item : uses
+    Main ..> ItemVisitor : uses
+```
+
 
 
 | Issue                                                    | How it is Solved                                                                                                                                                                                                                                                                                           |

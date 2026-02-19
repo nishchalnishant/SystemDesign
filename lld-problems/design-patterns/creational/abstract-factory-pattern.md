@@ -229,6 +229,97 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class PaymentGateway {
+        <<interface>>
+        +processPayment(double amount)
+    }
+
+    class Invoice {
+        <<interface>>
+        +generateInvoice()
+    }
+
+    class RegionFactory {
+        <<interface>>
+        +createPaymentGateway(String gatewayType) PaymentGateway
+        +createInvoice() Invoice
+    }
+
+    class RazorpayGateway {
+        +processPayment(double amount)
+    }
+
+    class PayUGateway {
+        +processPayment(double amount)
+    }
+
+    class GSTInvoice {
+        +generateInvoice()
+    }
+
+    class PayPalGateway {
+        +processPayment(double amount)
+    }
+
+    class StripeGateway {
+        +processPayment(double amount)
+    }
+
+    class USInvoice {
+        +generateInvoice()
+    }
+
+    class IndiaFactory {
+        +createPaymentGateway(String gatewayType) PaymentGateway
+        +createInvoice() Invoice
+    }
+
+    class USFactory {
+        +createPaymentGateway(String gatewayType) PaymentGateway
+        +createInvoice() Invoice
+    }
+
+    class CheckoutService {
+        -PaymentGateway paymentGateway
+        -Invoice invoice
+        +completeOrder(double amount)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    PaymentGateway <|.. RazorpayGateway
+    PaymentGateway <|.. PayUGateway
+    PaymentGateway <|.. PayPalGateway
+    PaymentGateway <|.. StripeGateway
+
+    Invoice <|.. GSTInvoice
+    Invoice <|.. USInvoice
+
+    RegionFactory <|.. IndiaFactory
+    RegionFactory <|.. USFactory
+
+    IndiaFactory ..> RazorpayGateway : creates
+    IndiaFactory ..> PayUGateway : creates
+    IndiaFactory ..> GSTInvoice : creates
+
+    USFactory ..> PayPalGateway : creates
+    USFactory ..> StripeGateway : creates
+    USFactory ..> USInvoice : creates
+
+    CheckoutService --> PaymentGateway
+    CheckoutService --> Invoice
+    CheckoutService ..> RegionFactory : uses
+    Main ..> CheckoutService : uses
+    Main ..> IndiaFactory : uses
+    Main ..> USFactory : uses
+```
+
 *   **How This Code Fixes the Original Issues**
 
     * **Object creation logic was mixed with business logic:**\

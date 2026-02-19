@@ -151,6 +151,60 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class VideoQuality {
+        <<interface>>
+        +load(String title)
+    }
+
+    class SDQuality {
+        +load(String title)
+    }
+
+    class HDQuality {
+        +load(String title)
+    }
+
+    class UltraHDQuality {
+        +load(String title)
+    }
+
+    class VideoPlayer {
+        <<abstract>>
+        #VideoQuality quality
+        +VideoPlayer(VideoQuality quality)
+        +play(String title)*
+    }
+
+    class WebPlayer {
+        +WebPlayer(VideoQuality quality)
+        +play(String title)
+    }
+
+    class MobilePlayer {
+        +MobilePlayer(VideoQuality quality)
+        +play(String title)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    VideoQuality <|.. SDQuality
+    VideoQuality <|.. HDQuality
+    VideoQuality <|.. UltraHDQuality
+
+    VideoPlayer <|-- WebPlayer
+    VideoPlayer <|-- MobilePlayer
+
+    VideoPlayer o-- VideoQuality : has
+    Main ..> VideoPlayer : uses
+    Main ..> VideoQuality : uses
+```
+
 
 
 * **How Bridge Pattern Solves the Issue**

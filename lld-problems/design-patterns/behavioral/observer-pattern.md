@@ -106,6 +106,53 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class StockSubject {
+        <<interface>>
+        +registerObserver(StockObserver o)
+        +removeObserver(StockObserver o)
+        +notifyObservers()
+    }
+
+    class StockMarket {
+        -List~StockObserver~ observers
+        -String stockSymbol
+        -double price
+        +setPrice(String stockSymbol, double price)
+        +registerObserver(StockObserver o)
+        +removeObserver(StockObserver o)
+        +notifyObservers()
+    }
+
+    class StockObserver {
+        <<interface>>
+        +update(String stockSymbol, double price)
+    }
+
+    class MobileApp {
+        -String name
+        +update(String stockSymbol, double price)
+    }
+
+    class DisplayBoard {
+        +update(String stockSymbol, double price)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    StockSubject <|.. StockMarket
+    StockObserver <|.. MobileApp
+    StockObserver <|.. DisplayBoard
+    StockMarket o-- StockObserver
+    Main ..> StockMarket : uses
+    Main ..> StockObserver : uses
+```
+
 ---
 
 ## Output

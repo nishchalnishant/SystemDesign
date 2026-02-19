@@ -132,6 +132,24 @@ Connection conn = pool.getConnection();
 pool.releaseConnection(conn);
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class ConnectionPool {
+        -static volatile ConnectionPool instance
+        -List~Connection~ availableConnections
+        -List~Connection~ usedConnections
+        -static int MAX_POOL_SIZE
+        -ConnectionPool()
+        +getInstance()$ ConnectionPool
+        +getConnection() Connection
+        +releaseConnection(Connection connection)
+    }
+
+    ConnectionPool --> ConnectionPool : instance
+```
+
 ---
 
 ## Pros & Cons

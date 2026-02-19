@@ -59,3 +59,39 @@ public class Main {
     }
 }
 ```
+
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Amplifier {
+        +on()
+        +setVolume(int level)
+    }
+
+    class Projector {
+        +on()
+        +setInput(String src)
+    }
+
+    class Lights {
+        +dim(int level)
+    }
+
+    class HomeTheaterFacade {
+        -Amplifier amp
+        -Projector proj
+        -Lights lights
+        +HomeTheaterFacade()
+        +watchMovie(String movie)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    HomeTheaterFacade o-- Amplifier
+    HomeTheaterFacade o-- Projector
+    HomeTheaterFacade o-- Lights
+    Main ..> HomeTheaterFacade : uses
+```

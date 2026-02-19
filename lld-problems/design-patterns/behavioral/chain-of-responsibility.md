@@ -159,6 +159,45 @@ public class ChainOfResponsibilityDemo {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class SupportHandler {
+        <<abstract>>
+        #SupportHandler nextHandler
+        +setNextHandler(SupportHandler nextHandler)
+        +handleRequest(String requestType)*
+    }
+
+    class GeneralSupport {
+        +handleRequest(String requestType)
+    }
+
+    class BillingSupport {
+        +handleRequest(String requestType)
+    }
+
+    class TechnicalSupport {
+        +handleRequest(String requestType)
+    }
+
+    class DeliverySupport {
+        +handleRequest(String requestType)
+    }
+
+    class ChainOfResponsibilityDemo {
+        +main(String[] args)
+    }
+
+    SupportHandler <|-- GeneralSupport
+    SupportHandler <|-- BillingSupport
+    SupportHandler <|-- TechnicalSupport
+    SupportHandler <|-- DeliverySupport
+    SupportHandler o-- SupportHandler : nextHandler
+    ChainOfResponsibilityDemo ..> SupportHandler : uses
+```
+
 *   **How Chain of Responsibility Fixes the Previously Discussed Issues**
 
     | **Issue**                                  | **Solution in Refactored Code**                                                                                                                                               |

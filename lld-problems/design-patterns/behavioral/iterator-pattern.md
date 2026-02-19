@@ -289,6 +289,52 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Playlist {
+        <<interface>>
+        +createIterator() PlaylistIterator
+    }
+
+    class PlaylistIterator {
+        <<interface>>
+        +hasNext() boolean
+        +next() Video
+    }
+
+    class Video {
+        -String title
+        +getTitle() String
+    }
+
+    class YouTubePlaylistIterator {
+        -List~Video~ videos
+        -int position
+        +hasNext() boolean
+        +next() Video
+    }
+
+    class YouTubePlaylist {
+        -List~Video~ videos
+        +addVideo(Video video)
+        +createIterator() PlaylistIterator
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Playlist <|.. YouTubePlaylist
+    PlaylistIterator <|.. YouTubePlaylistIterator
+    YouTubePlaylistIterator o-- Video
+    YouTubePlaylist o-- Video
+    YouTubePlaylist ..> YouTubePlaylistIterator : creates
+    Main ..> Playlist : uses
+    Main ..> PlaylistIterator : uses
+```
+
 * **Key Improvements**
   * The `YouTubePlaylist` class no longer exposes its internal implementation of `Videos`.
   * The client does not manage or know about the internal structure.

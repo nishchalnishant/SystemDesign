@@ -74,6 +74,59 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Pizza {
+        <<interface>>
+        +getDesc() String
+        +getCost() double
+    }
+
+    class Margherita {
+        +getDesc() String
+        +getCost() double
+    }
+
+    class VegDelight {
+        +getDesc() String
+        +getCost() double
+    }
+
+    class PizzaDecorator {
+        <<abstract>>
+        #Pizza pizza
+        +PizzaDecorator(Pizza pizza)
+        +getDesc() String
+        +getCost() double
+    }
+
+    class ExtraCheese {
+        +ExtraCheese(Pizza pizza)
+        +getDesc() String
+        +getCost() double
+    }
+
+    class Olives {
+        +Olives(Pizza pizza)
+        +getDesc() String
+        +getCost() double
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Pizza <|.. Margherita
+    Pizza <|.. VegDelight
+    Pizza <|.. PizzaDecorator
+    PizzaDecorator <|-- ExtraCheese
+    PizzaDecorator <|-- Olives
+    PizzaDecorator o-- Pizza : decorates
+    Main ..> Pizza : uses
+```
+
 ## Why not Inheritance?
 Inheritance is static. You'd need `MargheritaWithCheese`, `MargheritaWithOlives`, `MargheritaWithCheeseAndOlives`... ($2^N$ classes).
 Decorator is dynamic composition.

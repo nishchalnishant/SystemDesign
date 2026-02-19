@@ -207,6 +207,42 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class NotificationSender {
+        <<abstract>>
+        +send(String to, String rawMessage)
+        #rateLimitCheck(String to)
+        #validateRecipient(String to)
+        #formatMessage(String message) String
+        #preSendAuditLog(String to, String formatted)
+        #composeMessage(String formattedMessage)* String
+        #sendMessage(String to, String message)*
+        #postSendAnalytics(String to)
+    }
+
+    class EmailNotification {
+        #composeMessage(String formattedMessage) String
+        #sendMessage(String to, String message)
+    }
+
+    class SMSNotification {
+        #composeMessage(String formattedMessage) String
+        #sendMessage(String to, String message)
+        #postSendAnalytics(String to)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    NotificationSender <|-- EmailNotification
+    NotificationSender <|-- SMSNotification
+    Main ..> NotificationSender : uses
+```
+
 * **Key Steps of Template Pattern Used in Above Code**
   * Template Method (Final Method in Base Class)
     * The `send()` method is the template method that defines the skeleton of the algorithm.&#x20;

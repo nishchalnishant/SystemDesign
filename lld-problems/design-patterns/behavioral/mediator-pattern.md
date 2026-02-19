@@ -178,6 +178,40 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class DocumentSessionMediator {
+        <<interface>>
+        +broadcastChange(String change, User sender)
+        +join(User user)
+    }
+
+    class CollaborativeDocument {
+        -List~User~ users
+        +join(User user)
+        +broadcastChange(String change, User sender)
+    }
+
+    class User {
+        -String name
+        -DocumentSessionMediator mediator
+        +makeChange(String change)
+        +receiveChange(String change, User sender)
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    DocumentSessionMediator <|.. CollaborativeDocument
+    User o-- DocumentSessionMediator
+    CollaborativeDocument o-- User
+    Main ..> CollaborativeDocument : uses
+    Main ..> User : uses
+```
+
 
 
 *   **Explanation of Changes**

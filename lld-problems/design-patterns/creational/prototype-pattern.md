@@ -156,6 +156,43 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Cloneable {
+        <<interface>>
+        +clone() EmailTemplate
+    }
+
+    class EmailTemplate {
+        #String subject
+        #String content
+        +clone() EmailTemplate
+        +setContent(String content)
+        +send(String to)
+    }
+
+    class WelcomeEmail {
+        +WelcomeEmail()
+    }
+
+    class EmailTemplateRegistry {
+        -Map~String, EmailTemplate~ templates
+        +getTemplate(String type)$ EmailTemplate
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Cloneable <|.. EmailTemplate
+    EmailTemplate <|-- WelcomeEmail
+    EmailTemplateRegistry o-- EmailTemplate : stores
+    Main ..> EmailTemplateRegistry : uses
+    Main ..> EmailTemplate : uses
+```
+
 *   **Benefits of Good Design**
 
     * **Implements clone():** Allows object copying instead of recreation.

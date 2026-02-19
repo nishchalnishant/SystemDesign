@@ -181,6 +181,48 @@ public class Main {
 }
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class TreeType {
+        -String name
+        -String color
+        -String texture
+        +TreeType(String name, String color, String texture)
+        +draw(int x, int y)
+    }
+
+    class Tree {
+        -int x
+        -int y
+        -TreeType treeType
+        +Tree(int x, int y, TreeType treeType)
+        +draw()
+    }
+
+    class TreeFactory {
+        -Map~String, TreeType~ treeTypeMap
+        +getTreeType(String name, String color, String texture)$ TreeType
+    }
+
+    class Forest {
+        -List~Tree~ trees
+        +plantTree(int x, int y, String name, String color, String texture)
+        +draw()
+    }
+
+    class Main {
+        +main(String[] args)
+    }
+
+    Tree o-- TreeType : has
+    TreeFactory o-- TreeType : manages
+    Forest --> Tree : contains
+    Forest ..> TreeFactory : uses
+    Main ..> Forest : uses
+```
+
 
 
 * **How Flyweight Pattern Solves the Issue**

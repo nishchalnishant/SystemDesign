@@ -99,6 +99,46 @@ Logistics logistics = new RoadLogistics();
 logistics.planDelivery(); // "Deliver by land..."
 ```
 
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Transport {
+        <<interface>>
+        +deliver()
+    }
+
+    class Truck {
+        +deliver()
+    }
+
+    class Ship {
+        +deliver()
+    }
+
+    class Logistics {
+        <<abstract>>
+        +planDelivery()
+        #createTransport()* Transport
+    }
+
+    class RoadLogistics {
+        #createTransport() Transport
+    }
+
+    class SeaLogistics {
+        #createTransport() Transport
+    }
+
+    Transport <|.. Truck
+    Transport <|.. Ship
+    Logistics <|-- RoadLogistics
+    Logistics <|-- SeaLogistics
+    RoadLogistics ..> Truck : creates
+    SeaLogistics ..> Ship : creates
+    Logistics ..> Transport : uses
+```
+
 **Pros:**  
 ✅ Follows Open/Closed Principle (add `AirLogistics` without changing existing code)  
 ✅ Single Responsibility (creation code separate)
