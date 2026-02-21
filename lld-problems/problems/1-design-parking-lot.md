@@ -184,6 +184,7 @@ class ParkingSpot {
     private SpotType type;
     private boolean isFree;
     private Vehicle vehicle;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public ParkingSpot(int id, SpotType type) {
         this.id = id;
@@ -191,17 +192,36 @@ class ParkingSpot {
         this.isFree = true;
     }
 
-    public boolean isFree() { return isFree; }
+    public boolean isFree() { 
+        lock.readLock().lock();
+        try {
+            return isFree; 
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
     public SpotType getType() { return type; }
 
-    public synchronized void occupy(Vehicle v) {
-        this.vehicle = v;
-        this.isFree = false;
+    public void occupy(Vehicle v) {
+        lock.writeLock().lock();
+        try {
+            if (!this.isFree) throw new IllegalStateException("Spot already occupied");
+            this.vehicle = v;
+            this.isFree = false;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
-    public synchronized void free() {
-        this.vehicle = null;
-        this.isFree = true;
+    public void free() {
+        lock.writeLock().lock();
+        try {
+            this.vehicle = null;
+            this.isFree = true;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 }
 
@@ -314,9 +334,9 @@ public class ParkingSystem {
 ## Phase 6: Discussion
 
 ### Concurrency
-**Q: How do we handle multiple entrances?**
-- Use `synchronized` methods for critical sections like `occupy()`.
-- For higher scale, use finer-grained locking (e.g., lock per `Level` or use `ConcurrentHashMap` for spot tracking).
+**Q: How do we handle multiple entrances simultaneously (SDE-3 Concept)?**
+- **Single Node**: Instead of using global `synchronized` blocks which create a bottleneck, use **`ReentrantReadWriteLock`**. Finding an available spot involves many READ operations, while actually parking involves a single WRITE operation. ReadWrite locks allow multiple concurrent readers but exclusive writers. For even higher throughput, use `ConcurrentHashMap` to track `freeSpots` per `SpotType`.
+- **Distributed System**: If the parking lot spans multiple nodes (e.g., massive airport parking managed by microservices), use **Distributed Locking** (e.g., Redis Redlock or ZooKeeper) on a specific spot before occupying it to prevent double-booking across servers.
 
 ### Extensibility
 **Q: How to add electric vehicle charging?**

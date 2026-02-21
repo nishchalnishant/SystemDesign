@@ -217,10 +217,13 @@ public class CommentService {
 
 ## Phase 6: Discussion
 
-### Tree Storage Strategies
-**Q: Why Materialized Path over Adjacency List?**
-- **Adjacency List (`parent_id`)**: Good for inserts, but fetching a whole tree requires Recursive CTEs (`WITH RECURSIVE`), which can be slow and memory-intensive for deep trees.
-- **Materialized Path**: Storing string path allows simple `ORDER BY path` to get DFS tree traversal order. Very fast for reads. downside is updating the tree (moving a subtree requires rewriting paths for all descendants).
+### Tree Storage Strategies (SDE-3 Concept)
+**Q: Why Materialized Path? What are the alternatives for Storing Trees in RDBMS?**
+- **Adjacency List (`parent_id`)**: Good for inserts, but fetching a whole tree requires Recursive CTEs (`WITH RECURSIVE`). Slow for deep trees ($O(N)$ depth queries).
+- **Materialized Path**: Storing string path allows simple `ORDER BY path` to get DFS tree traversal order. Fast reads. Downside: Moving a subtree requires rewriting paths for all descendants.
+- **Closure Table (SDE-3 Alternative)**: Store a separate table `CommentPaths (ancestor_id, descendant_id, depth)`. Every node maps to all its descendants. 
+  - *Pros:* Fully normalized, blazing fast to find all descendants of any comment at any depth. Moving subtrees is easier than Materialized Path.
+  - *Cons:* Storage overhead ($O(N^2)$ rows in the worst case of a straight line discussion). Best trade-off for Reddit-style systems where reads vastly outnumber writes.
 
 ### Scaling
 **Q: How to handle viral threads (100k+ comments)?**

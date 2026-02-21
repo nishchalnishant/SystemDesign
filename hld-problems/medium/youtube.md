@@ -234,10 +234,11 @@ video.m3u8 (master playlist)
 
 Client switches quality based on bandwidth
 
-#### Distributed Transcoding
+#### Distributed Transcoding (SDE-3 Deep Dive: DAG)
 - **Horizontal scaling**: 1000+ transcoding nodes
 - **Job queue**: Kafka partitioned by priority (high for verified creators)
 - **Optimization**: GPU-accelerated encoding (NVIDIA NVENC)
+- **DAG (Directed Acyclic Graph) Workflow**: A complex video goes through many processing steps: `[Inspect] -> [Watermark] -> [Transcode 1080p, Transcode 720p, Extract Audio] -> [Merge] -> [CDN Push]`. Using a DAG scheduler (like Apache Airflow or a custom engine) ensures these steps are executed in the correct dependency order across distributed workers, parallelizing independent tasks.
 
 ### 2. Video Streaming Architecture
 
@@ -456,6 +457,7 @@ cron.schedule("*/5 * * * *", this::flushCounters);
 - **CDN prefetching**: Warm cache proactively
 - **Read replicas**: Metadata DB scaled horizontally
 - **Rate limiting**: Prevent single video from overwhelming system
+- **SDE-3 Approach: Cache Stampede Prevention**: When a viral video expires from cache, millions of requests might hit the origin DB simultaneously. Use **Promise Caching** or **Mutex Locks (Redis SETNX)**: The first request gets the lock, fetches from DB, and updates cache. Other requests wait or are served stale data.
 - **Graceful degradation**: Serve lower quality if needed
 
 **Q: How to prevent duplicate uploads?**

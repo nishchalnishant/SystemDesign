@@ -95,11 +95,21 @@ CREATE TABLE notification_logs (
   - `High_Priority_Queue`: OTPs, Security Alerts (Dedicated Workers).
   - `Low_Priority_Queue`: Marketing, Monthly Statements.
 
-### 3. Deduplication
-- **Problem**: Client retries create duplicate notifications.
+### 3. Deduplication and Exactly-Once Semantics (SDE-3 Concept)
+- **Problem**: Client retries or network blips create duplicate notifications.
+- **Solution**: Idempotency Keys.
+  - The calling service generates a unique `idempotency_key` (UUID).
+  - Check a fast distributed cache (Redis) for the key. TTL = 10 mins to 24 hours.
+  - If exists -> Return 200 OK (already processed).
+  - If not exists -> Process message, add key to Redis, return 200 OK.
+  - **Note on Kafka:** Kafka provides "At-least-once" delivery by default. To prevent workers from sending duplicates when they crash before committing offsets, we *must* also check idempotency at the worker level before making the 3rd party API call.
+
+### 4. Failure Handling with Dead Letter Queues (DLQ)
+- **Problem**: What if an email address is permanently invalid or a message always crashes the worker (poison pill)?
 - **Solution**: 
-  - Store `checksum` or unique `request_id` in Redis (TTL 10 mins).
-  - Check Redis before enqueuing.
+  - If a message fails processing `N` times (e.g., 3 retries), move it to a **Dead Letter Queue (DLQ)**.
+  - Setup alerts on the DLQ size.
+  - Engineers can inspect the DLQ, fix the bug or data issue, and replay the messages back into the main queue.
 
 ### 4. Third-Party Integration (The "Hard" Part)
 - **Challenges**:
@@ -129,4 +139,4 @@ CREATE TABLE notification_logs (
 - A: "Implement a **Frequency Cap** in Redis (e.g., 'User X received 3 marketing emails today -> Drop 4th'). Critical alerts bypass this."
 
 **Q: "What if the worker crashes after sending to Twilio but before updating DB?"**
-- A: "Idempotency! Store `third_party_id` in DB. If worker restarts, check if we already have a success ID for this `notification_id`."
+- A: "Idempotency! Store `third_party_id` in DB. If worker restarts, check if we already have a success ID for this `notification_id` before retrying Twilio. If Twilio's API supports idempotency keys, pass our `notification_id` to them."

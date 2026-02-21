@@ -146,6 +146,11 @@ sequenceDiagram
 - User always connects to same gateway (via load balancer affinity)
 - Reduces session renegotiation overhead
 
+**SDE-3 Deep Dive: WebSockets vs SSE vs Long-Polling**
+- **WebSockets**: Bi-directional, persistent connection. Ideal for chat because users both send and receive high volumes of data rapidly with low overhead.
+- **Server-Sent Events (SSE)**: Uni-directional (Server -> Client). Good if the client mostly reads (like a stock ticker), but chat requires sending too.
+- **Long-Polling**: Client opens request, server holds it open until data is ready. High overhead (HTTP headers per message) and latency. Fallback only.
+
 ### 2. Message Delivery Flow
 
 ```mermaid
@@ -488,6 +493,7 @@ else:
 **Q: How to ensure message ordering in group chats?**
 - **Lamport timestamps**: Each message tagged with logical clock
 - **Server-assigned sequence**: Central sequencer per conversation
+- **SDE-3 Concept (CRDTs)**: Conflict-free Replicated Data Types can be used for distributed message ordering and resolving concurrent edits without locking.
 - **Trade-off**: Strict ordering vs throughput
 
 **Q: Handling message floods (spam)?**

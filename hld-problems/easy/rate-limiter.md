@@ -93,7 +93,45 @@ public class SlidingWindowLogRateLimiter {
 **Pros**: Accurate  
 **Cons**: Memory intensive (stores all request timestamps)
 
-### 3. Token Bucket (Most Common)
+### 3. Sliding Window Counter
+
+```java
+public class SlidingWindowCounterRateLimiter {
+    private int maxRequests;
+    private int windowSeconds;
+    private RedisClient redis;
+
+    public boolean allowRequest(String userId) {
+        long currentWindow = System.currentTimeMillis() / 1000 / windowSeconds;
+        long previousWindow = currentWindow - 1;
+        
+        String currentKey = "rate_limit:" + userId + ":" + currentWindow;
+        String prevKey = "rate_limit:" + userId + ":" + previousWindow;
+        
+        long currentCount = Long.parseLong(redis.getOrDefault(currentKey, "0"));
+        long prevCount = Long.parseLong(redis.getOrDefault(prevKey, "0"));
+        
+        // Calculate weighted count
+        long now = System.currentTimeMillis();
+        double currentWindowElapsedPos = (double) (now % (windowSeconds * 1000)) / (windowSeconds * 1000);
+        double overlapPercentage = 1.0 - currentWindowElapsedPos;
+        
+        long estimatedCount = (long) (prevCount * overlapPercentage) + currentCount;
+        
+        if (estimatedCount < maxRequests) {
+            redis.incr(currentKey);
+            redis.expire(currentKey, windowSeconds * 2);
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+**Pros**: Low memory footprint, smooths traffic efficiently.
+**Cons**: Assumes even distribution of requests in the previous window.
+
+### 4. Token Bucket (Most Common)
 
 ```java
 public class TokenBucketRateLimiter {
@@ -169,9 +207,41 @@ Headers:
 
 ## Distributed Rate Limiting
 
-**Challenge**: Multiple servers need shared state
+**Challenge**: Multiple servers need shared state and atomic operations to prevent race conditions.
 
-**Solution**: Redis Cluster
+### Atomicity and Concurrency (SDE-3 Focus)
+When scaling horizontally, `get-then-set` operations (like fetching tokens, checking, and updating) create race conditions. 
+
+**Solution 1: Redis Lua Scripts**
+Lua scripts execute atomically in Redis, preventing race conditions without needing distributed locks.
+
+```lua
+-- Token Bucket Lua Script
+local key = KEYS[1]
+local max_tokens = tonumber(ARGV[1])
+local refill_rate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4])
+
+local bucket = redis.call('HMGET', key, 'tokens', 'last_refill')
+local tokens = tonumber(bucket[1]) or max_tokens
+local last_refill = tonumber(bucket[2]) or now
+
+local elapsed = now - last_refill
+local tokens_to_add = math.floor(elapsed * refill_rate)
+tokens = math.min(max_tokens, tokens + tokens_to_add)
+
+if tokens >= requested then
+    redis.call('HMSET', key, 'tokens', tokens - requested, 'last_refill', now)
+    redis.call('EXPIRE', key, math.ceil(max_tokens / refill_rate))
+    return 1 -- Allowed
+else
+    return 0 -- Denied
+end
+```
+
+**Solution 2: Redis Cluster**
+Use hash tags `{#hash_key}` to ensure related keys route to the same Redis shard.
 ```
 Server 1 → Redis Node 1 (hash slot 0-5460)
 Server 2 → Redis Node 2 (hash slot 5461-10922)
@@ -182,12 +252,15 @@ Server 3 → Redis Node 3 (hash slot 10923-16383)
 
 **Common Questions:**
 - Q: "How would you rate limit across multiple datacenters?"
-- A: Global Redis cluster OR each datacenter has limits (80% of global)
+- A: Global Redis cluster OR each datacenter has local limits (e.g., 80% of global). Local limits are faster but may slightly exceed total global intent. Can use a hybrid: local Redis for fast checks, async sync to global Cassandra/Redis.
+- Q: "How does rate limiting differ for B2B vs B2C?"
+- A: B2B (API Keys) usually needs higher limits, strict adherence, and analytics. Token bucket is ideal. B2C (User/IP) needs DDOS protection, softer limits, and often uses simpler algorithms like fixed window at the edge (WAF).
 
 **Decision Matrix:**
 | Algorithm | Accuracy | Memory | Use Case |
 |-----------|----------|---------|----------|
-| Fixed Window | Low | Low | Simple, non-critical |
-| Sliding Log | High | High | Financial APIs |
-| Token Bucket | Medium | Medium | Most APIs (recommended) |
-| Leaky Bucket | High | Medium | Traffic shaping |
+| Fixed Window | Low (Burst edge) | Low | Simple, non-critical, Edge DoS protection |
+| Sliding Log | High | High | Financial APIs, Strict auditing |
+| Sliding Window Counter | High | Low | Low memory, smooth traffic |
+| Token Bucket | Medium | Medium | Most APIs (recommended), Allows bursts |
+| Leaky Bucket | High | Medium | Traffic shaping, Payment processing queues |

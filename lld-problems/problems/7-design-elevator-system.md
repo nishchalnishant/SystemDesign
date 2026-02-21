@@ -269,9 +269,13 @@ public class ElevatorDemo {
 - **SCAN**: Elevator moves all the way UP, then all the way DOWN. Efficient but suboptimal average wait.
 - **LOOK**: Similar to SCAN, but reverses direction as soon as there are no more requests in the current direction. **Preferred**.
 
-### Capacity
-**Q: How to handle max weight?**
-- A: "Add a `loadSensor` check before closing doors. If `currentWeight > MAX_WEIGHT`, trigger alarm and stay in `DOOR_OPEN` state."
+### Capacity & Safety (SDE-3 Concept)
+**Q: How to handle max weight realistically?**
+- A: "In real life, elevators don't track the *number* of people, algorithms track weight. Add a `WeightSensor` class (Observer pattern) that publishes `WeightExceededEvent`. When triggered, transition to an `OVERLOADED` state, trigger an alarm, and disable door close mechanisms until the event resolves. Software should fail-safe."
+
+### Thread Management (SDE-3 Concept)
+**Q: How do you handle multiple elevators moving concurrently?**
+- A: "Each `Elevator` should implement `Runnable` and run in its own thread, managed by a `ScheduledExecutorService`. The `Dispatcher` calculates the route, while the `Elevator` thread independently checks its `StopSet` and `State`, sleeping between floors to simulate travel time safely."
 
 ### Optimization
 **Q: How to handle Peak Hours (Morning Rush)?**

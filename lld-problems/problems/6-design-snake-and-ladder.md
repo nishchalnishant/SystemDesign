@@ -287,6 +287,13 @@ public class Game {
 **Q: Why Single Jump Class?**
 - A: "Polymorphism isn't strictly needed here. Snake and Ladder behavior is identical: `Move player from A to B`. The only difference is `A > B` vs `A < B`, which is data, not behavior. A single `Jump` class is simpler."
 
+### Validation (SDE-3 Concept)
+**Q: How do you prevent infinite loops (e.g., A ladder takes you to a snake that takes you back to the ladder)?**
+- A: "During `Board` initialization, perform **Cycle Detection** using a Directed Graph approach (DFS with recursion stack tracking). 
+  - Nodes: Board cells (1-100).
+  - Edges: Snakes and Ladders.
+  If a cycle exists in the jump graph, the board is invalid and an exception should be thrown."
+
 ### Extensibility
 **Q: How to add special squares (e.g., Skip Turn)?**
 - A: "Extend `Cell` to have a `CellType` or `Effect`. Or use **Chain of Responsibility** where the move passes through handlers like `SnakeHandler`, `LadderHandler`, `FreezeHandler`."

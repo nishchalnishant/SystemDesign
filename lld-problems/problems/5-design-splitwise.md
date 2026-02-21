@@ -268,12 +268,16 @@ public class SplitwiseDemo {
     6. Repeat until heaps are empty."
 
 ### Scalability
-**Q: How to handle millions of users?**
-- A: "Shard users by `UserID`. Since most expenses are within a `Group`, shard groups by `GroupID` and ensure all group data resides on the same shard to avoid cross-shard transactions."
+**Q: How to handle millions of users in different groups?**
+- A: "Use **Consistent Hashing** to shard the database. Since most expenses are within a `Group`, shard by `GroupID` and ensure all group data resides on the same DB shard to avoid expensive cross-shard transactions when adding expenses or settling up."
 
 ### Concurrency
 **Q: Handling race conditions (two people editing same expense)?**
-- A: "Use **Optimistic Locking** (versioning) on the Expense object. If version mismatch during save, prompt user to refresh."
+- A: "Use **Optimistic Locking** (versioning) on the Expense object. If version mismatch during save, prompt user to refresh. If high contention is expected, queue updates per group in Kafka and process them sequentially via a dedicated worker."
+
+### Financial Precision (SDE-3 Concept)
+**Q: How do you handle $100 split 3 ways ($33.33)? Who pays the extra $0.01?**
+- A: "Use `BigDecimal` for all calculations to prevent floating-point errors. For rounding remainders: calculate exact shares (`amount / participants`). Distribute the integer pennies evenly. If there's a remainder (e.g., $100 / 3 = $33.33 with $0.01 left over), distribute the remaining pennies randomly or give them to the payer."
 
 ---
 

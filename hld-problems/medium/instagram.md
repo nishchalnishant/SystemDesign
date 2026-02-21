@@ -201,13 +201,13 @@ sequenceDiagram
     participant Redis
     
     User->>Upload: Upload photo
-    Upload->>Upload: Generate postId
+    Upload->>Upload: Generate postId (Snowflake ID)
     Upload->>S3: Store original image
     S3-->>Upload: S3 URL
     Upload->>Queue: Publish image_process job
     Upload->>Queue: Publish feed_fanout job
     Upload-->>User: postId + "processing"
-    
+
     Queue->>ImageProc: Consume job
     ImageProc->>S3: Download original
     ImageProc->>ImageProc: Generate sizes:<br/>150x150 (thumb)<br/>640x640 (feed)<br/>1080x1080 (full)
@@ -229,6 +229,13 @@ sequenceDiagram
 **Compression:**
 - **JPEG**: 85% quality (balance size/quality)
 - **WebP**: For modern browsers (30% smaller)
+
+**SDE-3 Deep Dive: Primary ID Generation (Snowflake)**
+*   **Problem:** Instagram generates millions of posts. Auto-incrementing DB IDs don't scale globally across shards. UUIDs are 128-bit (too large) and random (breaks index locality in DB B-Trees).
+*   **Solution (Twitter Snowflake/Instagram Sharding ID):** A 64-bit integer ID that is time-sortable.
+    *   `41 bits`: Timestamp (milliseconds) - guarantees time ordering
+    *   `13 bits`: Logical Shard ID - determines DB shard for the post
+    *   `10 bits`: Sequence Number - prevents collision if multiple posts hit the same shard in the exact same millisecond.
 
 ### 2. Feed Generation Strategy
 

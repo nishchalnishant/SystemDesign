@@ -281,7 +281,11 @@ public class VendingMachineDemo {
 
 ### Hardware Integration
 **Q: How to handle exact change only?**
-- A: "The machine needs to track its own internal cash inventory. In `DispenseState`, check if internal cash can provide the change using a Greedy algorithm (DP for optimal)."
+- A: "The machine needs to track its own internal cash inventory. In `DispenseState`, check if internal cash can provide the change using a Greedy algorithm (DP or Knapsack for optimal coin combinations)."
+
+### Financial Precision (SDE-3 Concept)
+**Q: Why use `double` for price/balance? Is this safe?**
+- A: "In this simplified example, yes. However, in production, using `double` or `float` for currency leads to floating-point precision errors (e.g., `0.1 + 0.2 = 0.30000000000000004`). For financial applications, **always use `BigDecimal`** in Java (or store values as integers representing the smallest currency unit, like cents, i.e., $1.50 stored as `150`)."
 
 ---
 

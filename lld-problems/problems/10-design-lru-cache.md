@@ -202,9 +202,11 @@ public class LRUCache<K, V> {
 
 ## Phase 6: Discussion
 
-### Concurrency
-**Q: How to make this thread-safe?**
-- A: "The simple approach is `synchronized` methods (Coarse-grained locking). fast enough for many cases. For high concurrency, use `ConcurrentHashMap` for storage and a `ConcurrentLinkedQueue` or Striped Locking for the list, though maintaining strict LRU with concurrent updates is hard without global lock."
+### Concurrency (SDE-3 Concept)
+**Q: How to make this highly concurrent without a massive bottleneck?**
+- A: "The simple approach uses a global `synchronized` lock, which serializes all cache access. For high concurrency:
+  1. **Lock Striping (like `ConcurrentHashMap`)**: Create an array of `N` segment locks (e.g., 16). Hash the key to determine which segment it belongs to and only lock that segment. Each segment maintains its own independent `DoublyLinkedList` and LRU capacity ($Total Capacity / N$).
+  2. **Non-Blocking Algorithms**: Use atomic references and `compareAndSet`, though maintaining a strict LRU order becomes extremely complex without locking."
 
 ### Built-in Alternatives
 **Q: Does Java have this?**

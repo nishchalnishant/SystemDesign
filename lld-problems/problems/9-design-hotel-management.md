@@ -269,11 +269,12 @@ public class HotelDemo {
 
 ## Phase 6: Discussion
 
-### Concurrency & Isolation
-**Q: How to handle concurrency in a massive distributed system?**
-- A: "The Java `synchronized` only works on one machine. For distributed systems (multiple servers), rely on **Database Locking**."
-    - **Optimistic Locking**: Add `version` column to Booking/Room table. `WHERE id=? AND version=current_version`.
-    - **Pessimistic Locking**: `SELECT * FROM Rooms FOR UPDATE`.
+### Concurrency & Isolation (SDE-3 Concept)
+**Q: How to prevent double bookings in a distributed system where `synchronized` fails?**
+- A: "In a real-world scenario with multiple application instances, local JVM locks are insufficient."
+    - **Database Level (PostgreSQL EXCLUDE Constraint)**: The most robust way to prevent overlapping date ranges in a DB is using an Exclusion Constraint with GiST indexes: `ALTER TABLE bookings ADD CONSTRAINT no_double_booking EXCLUDE USING gist (room_id WITH =, date_range WITH &&);`. The DB guarantees no overlaps at the lowest level.
+    - **Distributed Lock (Redis Redlock)**: If using Redis as a caching/locking layer before hitting the DB, acquire a distributed lock on `room:{id}` with a timeout. If successful, check availability and book. If not, fail fast.
+    - **Optimistic Locking**: Add a `version` column to the `Room` table. `UPDATE Room SET version = 2 WHERE id = X AND version = 1`. If it returns 0 rows updated, someone else booked it first.
 
 ### Expiration
 **Q: How delay/expire unpaid bookings?**

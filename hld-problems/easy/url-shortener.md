@@ -155,9 +155,12 @@ Response: 201 Created
 ```http
 GET /{short_code}
 
-Response: 301 Moved Permanently
+Response: 301 Moved Permanently OR 302 Found
 Location: https://example.com/very/long/url
 ```
+*Note for Interviews: Discuss 301 vs 302.*
+*   **301 (Moved Permanently):** Browser caches the redirect. Reduces load on servers but prevents accurate analytics tracking.
+*   **302 (Found/Moved Temporarily):** Browser contacts our server for every click. Higher load but 100% accurate analytics. Use 302 if analytics is a functional requirement.
 
 **3. Get URL Info (Optional)**
 ```http
@@ -312,15 +315,16 @@ GSI: user_id-created_at-index
 1. Client → GET /abc1234
 2. Load Balancer → App Server
 3. App Server:
-   a. Check Redis cache: GET abc1234
-   b. If HIT (95% of requests):
+   a. Check Bloom Filter in-memory: If false, return 404 (Saves DB load for invalid URLs)
+   b. Check Redis cache: GET abc1234
+   c. If HIT (95% of requests):
       → Return long_url from cache (2ms latency)
-   c. If MISS (5%):
+   d. If MISS (5%):
       → Query PostgreSQL: SELECT long_url FROM urls WHERE short_code = 'abc1234'
       → Update cache: SET abc1234 → long_url (TTL: 24 hours)
       → Return long_url (50ms latency)
-4. Return HTTP 301 redirect to long_url
-5.(Async) Increment click_count (eventually consistent)
+4. Return HTTP 301/302 redirect to long_url
+5.(Async) Increment click_count via Kafka message queue to analytics service
 ```
 
 ---
@@ -429,12 +433,17 @@ result = db.query("SELECT * FROM urls WHERE short_code = ?", short_code)
 
 ---
 
-### 3. Caching Strategy
+### 3. Caching Strategy and Optimizations
 
 **Cache-Aside (Lazy Loading):**
 
 ```java
 public String getLongUrl(String shortCode) {
+    // 0. Check Bloom Filter
+    if (!bloomFilter.mightContain(shortCode)) {
+        throw new NotFoundException();
+    }
+
     // 1. Check cache
     String longUrl = redis.get("url:" + shortCode);
     if (longUrl != null) {
@@ -448,7 +457,9 @@ public String getLongUrl(String shortCode) {
     );
     
     // 3. Update cache
-    redis.setex("url:" + shortCode, 86400, longUrl);  // TTL: 24 hours
+    if (longUrl != null) {
+        redis.setex("url:" + shortCode, 86400, longUrl);  // TTL: 24 hours
+    }
     
     return longUrl;
 }
@@ -456,6 +467,10 @@ public String getLongUrl(String shortCode) {
 
 **Cache Eviction:** LRU (Least Recently Used)  
 **Cache Size:** 32 GB (covers 6M hot URLs)
+
+**SDE-3 Optimization: Bloom Filters**
+*   **Problem:** Malicious users might request millions of random/invalid short URLs, causing cache misses and hitting the DB.
+*   **Solution:** Place a Bloom Filter in front of the cache. Space-efficient probabilistic data structure. False positives are possible (will hit DB and return 404), false negatives are impossible.
 
 ---
 

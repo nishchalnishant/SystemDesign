@@ -190,8 +190,7 @@ CREATE TABLE pastes (
 - **CDN integration**: Direct CloudFront integration with S3
 
 ### 3. Caching Strategy
-
-**Redis Cache:**
+**Redis Cache Cluster:**
 ```java
 // Cache popular pastes (top 20%)
 public String getPasteContent(String shortKey, Timestamp expiresAt) {
@@ -212,6 +211,11 @@ public String getPasteContent(String shortKey, Timestamp expiresAt) {
 ```
 
 **Cache Eviction**: LRU (Least Recently Used)
+
+**SDE-3 Optimization: Consistent Hashing for Redis**
+As the cache grows, a single Redis instance isn't enough. We need a Redis cluster.
+*   **Problem:** If we add/remove Redis nodes and use `hash(key) % N`, almost all keys will map to new servers, causing a massive cache miss spike (Cache Thundering Herd) that could bring down the DB.
+*   **Solution:** Use **Consistent Hashing** (e.g., ring-based routing). When a node is added/removed, only `1/N` keys are remapped. Add "virtual nodes" to ensure even distribution across physical nodes of different capacities.
 
 ### 4. Expiration & Cleanup
 
@@ -241,6 +245,11 @@ for (Paste paste : expiredPastes) {
     db.delete(paste.getId());
 }
 ```
+
+**SDE-3 Optimization: Avoiding DB Scans for Cleanup**
+*   **Problem:** Running a `SELECT ... WHERE expires_at < NOW()` on a huge table is very slow, even with an index, and can cause DB CPU spikes.
+*   **Solution 1 (S3 Lifecycle Policies):** Since we store content in S3, use AWS S3 Object Expiration Lifecycle rules. When uploading, tag the object or put it in a folder corresponding to its expiry bucket (e.g., `1h/`, `1d/`). S3 deletes it automatically.
+*   **Solution 2 (Time-Series DB / Redis TTL):** Metadata can be stored in a DB that natively supports TTL (like DynamoDB TTL or Cassandra) rather than PostgreSQL. If using Postgres, use Table Partitioning by day/week and just `DROP PARTITION` for old data instead of row-level deletes.
 
 ---
 

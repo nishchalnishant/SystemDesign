@@ -303,9 +303,9 @@ public class TicTacToeGame {
 **Q: How to add Undo feature?**
 - A: "Use the **Command Pattern**. Encapsulate each move as a `Command` object with `execute()` and `undo()` methods. Store these commands in a stack. When `undo()` is called, pop the stack and reverse the move (set cell to null)."
 
-### AI Opponent
-**Q: How to implement a single player mode?**
-- A: "Create an `AIPlayer` class. Use the **Minimax Algorithm** (potentially with Alpha-Beta pruning) to determine the best move by simulating future game states."
+### AI Opponent (SDE-3 Concept)
+**Q: How to implement an unbeatable single-player mode?**
+- A: "Create an `AIPlayer` class. Use the **Minimax Algorithm** to determine the best move by simulating all possible future game states. Since Minimax explores the entire game tree ($O(b^d)$ where $b$ is branching factor and $d$ is depth), optimize it using **Alpha-Beta Pruning**. This eliminates branches that cannot possibly influence the final decision, drastically reducing the search space, especially crucial for larger $N \times N$ boards."
 
 ---
 

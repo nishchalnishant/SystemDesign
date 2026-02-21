@@ -268,6 +268,10 @@ sequenceDiagram
     end
 ```
 
+**SDE-3 Concept: Read Repair**
+*   **Problem:** Replicas diverge due to dropped updates or network partitions.
+*   **Solution (Read Repair):** When the coordinator performs a read across replicas and detects a version mismatch, it returns the newest data to the client *and simultaneously* sends an async update to the replicas holding stale data to synchronize them to the latest version. This repairs data lazily during read operations.
+
 ---
 
 ## Conflict Resolution
@@ -288,26 +292,26 @@ Read returns both:
 
 **Resolution Strategies:**
 1. **Last Write Wins (LWW)**: Use timestamp (simple, but loses data)
-2. **Client-side merge**: Return conflicts, let client decide
+2. **Client-side merge**: Return conflicts, let client decide (e.g., Amazon Shopping Cart merges items)
 3. **Application-defined**: Custom merge logic
 
-**Dynamo-style Vector Clocks:**
+**Dynamo-style Vector Clocks (SDE-3 Deep Dive):**
+A vector clock is a list of `(node, counter)` pairs. It tracks the causal history of an object.
 ```java
 public class VectorClock {
     private String value;
     private Map<String, Integer> vectorClock;
     
     // Example:
-    // {
-    //   "value": "Alice",
-    //   "vectorClock": {
-    //     "node_a": 5,
-    //     "node_b": 3,
-    //     "node_c": 7
-    //   }
-    // }
+    // D1: Node A writes -> [A:1]
+    // D2: Node A writes again -> [A:2]
+    // D3: Node B writes (descends from D2) -> [A:2, B:1]
+    // D4: Node C writes (descends from D2, parallel to D3) -> [A:2, C:1]
+    // D5: Client reads D3 & D4, resolves conflict, writes to A -> [A:3, B:1, C:1]
 }
 ```
+*   **Comparison Rule:** Clock X is an ancestor of Clock Y (no conflict) if for every node `i`, `X[i] <= Y[i]`.
+*   **Conflict:** If `X` has some elements strictly greater than `Y`, and `Y` has some elements strictly greater than `X`, then `X` and `Y` are concurrent and in conflict. Client application is responsible for merging them.
 
 ---
 
@@ -463,6 +467,10 @@ if (!localMerkleRoot.equals(replicaMerkleRoot)) {
     syncDiff(localTree, replicaTree);
 }
 ```
+
+**SDE-3 Concept: Anti-Entropy with Merkle Trees**
+*   **What it is:** A background process (anti-entropy) that constantly compares replicas to catch any inconsistencies that Hinted Handoff or Read Repair missed.
+*   **Why Merkle Trees (Hash Trees):** Transferring the entire dataset across the network to compare it is too expensive. A Merkle Tree hashes data hierarchically. If the root hashes match, the entire dataset matches. If they differ, the system can quickly traverse down the branches to pinpoint the exact keys that differ, transferring only the necessary hashes over the network instead of the actual data.
 
 ---
 
