@@ -4,15 +4,27 @@ Behavioral patterns are concerned with algorithms and the assignment of responsi
 
 ## Patterns in this Category
 
-### [Chain of Responsibility](./chain-of-responsibility.md)
-Passes requests along a chain of handlers, where each handler decides to process or pass it.
+### 
+
+### [Observer](./observer-pattern.md)
+Defines a subscription mechanism to notify multiple objects about events.
 * **Interview Examples:**
-  * Middleware in web frameworks (e.g., Express.js, Spring Security filters).
-  * Logging frameworks where a log goes through multiple filters before being written.
-  * Request approval workflows (Manager -> Director -> VP).
+  * Stock market ticker where multiple dashboards update when prices change.
+  * Event-driven systems (Pub/Sub like Kafka/RabbitMQ concepts).
+  * Model-View-Controller (MVC) where View observes Model changes.
 * **Java Implementation:**
-  * `abstract class` for the Handler (holds a reference to the `nextHandler`).
-  * `class` for each Concrete Handler implementing the processing logic.
+  * `interface` for the Observer (with an `update()` method).
+  * `interface` or `class` for the Subject maintaining a List of Observers.
+
+### [Strategy](./strategy-pattern.md)
+Defines a family of algorithms and makes them interchangeable.
+* **Interview Examples:**
+  * Payment Gateway (Credit Card, PayPal, UPI strategies calculating different fees/processes).
+  * Navigation map routing (Driving, Walking, Transit strategies).
+  * Sorting algorithms (QuickSort, MergeSort based on data size or type).
+* **Java Implementation:**
+  * `interface` for the Strategy algorithm.
+  * `class` for the Context holding a reference to a Strategy and delegating work to it.
 
 ### [Command](./command-pattern.md)
 Encapsulates a request as an object, allowing parameterization and queuing of requests.
@@ -23,6 +35,27 @@ Encapsulates a request as an object, allowing parameterization and queuing of re
 * **Java Implementation:**
   * `interface` for the Command (with an `execute()` method).
   * `class` for Concrete Commands storing a reference to the Receiver.
+
+### [State](./state-pattern.md)
+Allows an object to alter its behavior when its internal state changes.
+* **Interview Examples:**
+  * Vending Machine state transitions (HasCoin, NoCoin, Dispensing).
+  * Media Player (Play, Pause, Stop states).
+  * Document workflows (Draft, In-Review, Published).
+* **Java Implementation:**
+  * `interface` for the State defining behaviors.
+  * `class` for the Context holding a reference to the current State.
+
+
+### [Visitor](./visitor-pattern.md)
+Separates algorithms from the objects they operate on.
+* **Interview Examples:**
+  * Abstract Syntax Tree (AST) parsing in compilers.
+  * Exporting data from a complex object hierarchy (e.g., returning JSON/XML from a document structure).
+  * Processing tax calculations on different types of grocery items.
+* **Java Implementation:**
+  * `interface` for the Visitor (with overloaded `visit()` methods for each element type).
+  * `interface` for the Element (with an `accept(Visitor)` method).
 
 ### [Iterator](./iterator-pattern.md)
 Provides a way to access elements of a collection sequentially without exposing underlying representation.
@@ -43,36 +76,16 @@ Reduces coupling by making objects communicate through a mediator rather than di
   * `interface` for the Mediator.
   * `abstract class` or `class` for Colleagues holding a reference to the Mediator.
 
-### [Observer](./observer-pattern.md)
-Defines a subscription mechanism to notify multiple objects about events.
+[Chain of Responsibility](./chain-of-responsibility.md)
+Passes requests along a chain of handlers, where each handler decides to process or pass it.
 * **Interview Examples:**
-  * Stock market ticker where multiple dashboards update when prices change.
-  * Event-driven systems (Pub/Sub like Kafka/RabbitMQ concepts).
-  * Model-View-Controller (MVC) where View observes Model changes.
+  * Middleware in web frameworks (e.g., Express.js, Spring Security filters).
+  * Logging frameworks where a log goes through multiple filters before being written.
+  * Request approval workflows (Manager -> Director -> VP).
 * **Java Implementation:**
-  * `interface` for the Observer (with an `update()` method).
-  * `interface` or `class` for the Subject maintaining a List of Observers.
-
-### [State](./state-pattern.md)
-Allows an object to alter its behavior when its internal state changes.
-* **Interview Examples:**
-  * Vending Machine state transitions (HasCoin, NoCoin, Dispensing).
-  * Media Player (Play, Pause, Stop states).
-  * Document workflows (Draft, In-Review, Published).
-* **Java Implementation:**
-  * `interface` for the State defining behaviors.
-  * `class` for the Context holding a reference to the current State.
-
-### [Strategy](./strategy-pattern.md)
-Defines a family of algorithms and makes them interchangeable.
-* **Interview Examples:**
-  * Payment Gateway (Credit Card, PayPal, UPI strategies calculating different fees/processes).
-  * Navigation map routing (Driving, Walking, Transit strategies).
-  * Sorting algorithms (QuickSort, MergeSort based on data size or type).
-* **Java Implementation:**
-  * `interface` for the Strategy algorithm.
-  * `class` for the Context holding a reference to a Strategy and delegating work to it.
-
+  * `abstract class` for the Handler (holds a reference to the `nextHandler`).
+  * `class` for each Concrete Handler implementing the processing logic.
+  
 ### [Template Method](./template-method-pattern.md)
 Defines the skeleton of an algorithm, letting subclasses override specific steps.
 * **Interview Examples:**
@@ -82,15 +95,6 @@ Defines the skeleton of an algorithm, letting subclasses override specific steps
 * **Java Implementation:**
   * `abstract class` with a `final` template method and `abstract` primitive operation steps.
 
-### [Visitor](./visitor-pattern.md)
-Separates algorithms from the objects they operate on.
-* **Interview Examples:**
-  * Abstract Syntax Tree (AST) parsing in compilers.
-  * Exporting data from a complex object hierarchy (e.g., returning JSON/XML from a document structure).
-  * Processing tax calculations on different types of grocery items.
-* **Java Implementation:**
-  * `interface` for the Visitor (with overloaded `visit()` methods for each element type).
-  * `interface` for the Element (with an `accept(Visitor)` method).
 
 ---
 

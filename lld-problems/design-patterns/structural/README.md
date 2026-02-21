@@ -43,15 +43,6 @@ Adds new functionality to objects dynamically without altering their structure.
   * `interface` for the Component.
   * `abstract class` for the Decorator implementing Component and maintaining a reference to a wrapped Component.
 
-### [Facade](./facade-pattern.md)
-Provides a simplified interface to a complex subsystem.
-* **Interview Examples:**
-  * E-Commerce checkout service (a simple `placeOrder()` method hiding inventory checks, payment processing, and shipping subsystems).
-  * Smart Home app (a "Good Morning" button opening blinds, turning on AC, and brewing coffee).
-  * Video conversion library wrapper.
-* **Java Implementation:**
-  * `class` providing high-level methods that delegate to various complex subsystem classes.
-
 ### [Flyweight](./flyweight-pattern.md)
 Reduces memory usage by sharing common state among multiple objects.
 * **Interview Examples:**
@@ -61,6 +52,15 @@ Reduces memory usage by sharing common state among multiple objects.
 * **Java Implementation:**
   * `class` for the Flyweight containing intrinsic (shared) state.
   * `class` for a Factory that maintains a cache (e.g., a `HashMap`) of existing Flyweight instances.
+
+### [Facade](./facade-pattern.md)
+Provides a simplified interface to a complex subsystem.
+* **Interview Examples:**
+  * E-Commerce checkout service (a simple `placeOrder()` method hiding inventory checks, payment processing, and shipping subsystems).
+  * Smart Home app (a "Good Morning" button opening blinds, turning on AC, and brewing coffee).
+  * Video conversion library wrapper.
+* **Java Implementation:**
+  * `class` providing high-level methods that delegate to various complex subsystem classes.
 
 ### [Proxy](./proxy-pattern.md)
 Provides a surrogate or placeholder to control access to an object.
