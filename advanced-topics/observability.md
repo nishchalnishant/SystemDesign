@@ -537,3 +537,23 @@ Runbook:
 
 **Example Answer:**
 > "For this payment system, I'd track **SLIs** like transaction success rate (target: 99.99%) and latency (P99 < 500ms). Use **Prometheus** for metrics, **Jaeger** for distributed tracing to debug cross-service issues. Implement **structured logging** with trace IDs for correlation. Set up **alerts** on SLO violations, like success rate < 99.9% for 5 minutes. Maintain an **error budget**: if we burn through it, stop new features and focus on reliability."
+
+---
+
+## Senior Engineer Insights
+
+- **Design trade-offs**: More metrics and traces improve debuggability but add cost and noise. Define SLIs that reflect user impact (e.g. success rate, latency), not just internal metrics (e.g. CPU). SLOs should be achievable but strict enough to force investment in reliability.
+- **Cost**: High-cardinality metrics and long retention are expensive. Sample traces (e.g. 1% or tail-based for errors/slow); aggregate metrics; set retention policies. Use error budgets to decide when to invest in reliability vs features.
+- **Operational complexity**: Centralized logging and tracing require pipelines (agents, collectors, storage). Alert fatigue kills response; alert on symptoms (e.g. error rate) with runbooks; avoid alerting on every possible cause.
+- **Deployment**: Feature flags and canaries need observability (latency, errors by version). Correlate deployments with metric changes; use trace IDs across service boundaries for debugging.
+- **Resilience**: Observability itself must be resilient: buffers (queues) for log/trace ingestion so backpressure doesn’t kill the app; sampling under load so tracing doesn’t add significant latency.
+
+---
+
+## Quick Revision
+
+- **Three pillars**: Metrics (numbers over time), Logs (discrete events), Traces (request across services). Use all three; correlate with trace_id.
+- **SLI/SLO/SLA**: SLI = measurable indicator; SLO = target (internal); SLA = contract (external). SLO stricter than SLA; error budget = 1 − SLO.
+- **Golden signals**: Latency, Traffic, Errors, Saturation. Alert on symptoms (e.g. error rate high), not only causes (e.g. CPU high).
+- **Interview talking points**: “We track SLIs (success rate, P99 latency), set SLOs and error budgets. We use Prometheus for metrics, structured logs with trace_id, and Jaeger for tracing. We alert on SLO burn rate and have runbooks for common failures.”
+- **Common mistakes**: Too many alerts (fatigue); no error budget; tracing everything at 100% (cost); logging PII or secrets.

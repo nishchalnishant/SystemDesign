@@ -9,9 +9,9 @@
 3. **Tackle Hard**: Complex distributed systems, multi-region, consistency challenges
 
 **For Each Problem:**
-- Use [`hld-template.md`](file:///Users/nishchalnishant/Documents/GitHub/SystemDesign/5.%20Interview%20Templates/hld-template.md) for structured approach
-- Practice capacity estimation with [`capacity-estimation.md`](file:///Users/nishchalnishant/Documents/GitHub/SystemDesign/5.%20Interview%20Templates/capacity-estimation.md)
-- Reference [`trade-offs-cheat-sheet.md`](file:///Users/nishchalnishant/Documents/GitHub/SystemDesign/5.%20Interview%20Templates/trade-offs-cheat-sheet.md) for decisions
+- Use [hld-template.md](../interview-templates/hld-template.md) for structured approach
+- Practice capacity estimation with [capacity-estimation.md](../interview-templates/capacity-estimation.md)
+- Reference [trade-offs-cheat-sheet.md](../interview-templates/trade-offs-cheat-sheet.md) for decisions
 
 ---
 

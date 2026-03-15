@@ -575,3 +575,15 @@ Merge: Union, remove only if explicitly removed
 ---
 
 **For SDE-3 Interviews**: Be ready to discuss trade-offs between consistency, availability, and latency. Know when to use consensus (Raft), when to use eventual consistency, and how to handle conflicts.
+
+---
+
+## Quick Revision
+
+- **Consistency models**: Strong (linearizability) → sequential → causal → eventual. Strong = single-node semantics; eventual = high availability, stale reads possible.
+- **Consensus**: Raft (leader election + log replication); Paxos (equivalent, less intuitive). Used by etcd, Consul, ZooKeeper for coordination.
+- **Distributed transactions**: 2PC (blocking, not partition-tolerant); Saga (compensation, eventual consistency); Outbox (DB + message atomically).
+- **Time**: Lamport clocks (happens-before); vector clocks (causality); TrueTime (Spanner, bounded uncertainty).
+- **Conflict resolution**: LWW (timestamp); version vectors; CRDTs (merge without conflict).
+- **Interview talking points**: "For strong consistency we'd use a CP store (etcd/Raft); for scale and availability we'd use eventual consistency and handle conflicts with LWW or application merge. Cross-service we'd use Saga, not 2PC."
+- **Common mistakes**: Assuming 2PC is always the answer; ignoring replication lag when reading from replicas; using physical time for ordering across nodes without TrueTime-like guarantees.

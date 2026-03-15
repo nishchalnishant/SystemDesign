@@ -500,3 +500,24 @@ Read product
 
 **Example Answer:**
 > "For user profiles, I'd use **cache-aside** with Redis. On read, check cache first (sub-ms latency). On miss, query PostgreSQL, cache result with **1-hour TTL**. Use **LRU eviction** when cache is full. On user update, **invalidate cache** to prevent stale data. This balances simplicity, performance, and consistency."
+
+---
+
+## Senior Engineer Insights
+
+- **Design trade-offs**: Cache-aside is simple and resilient (cache down → DB); write-through gives consistency at the cost of write latency. Write-behind is fast but risks data loss—use only for non-critical or replayable data.
+- **Cost**: Memory (cache) is more expensive per GB than disk; size cache for hot working set (e.g. 80/20). CDN egress is often cheaper than origin egress; push popular assets to edge to reduce origin load and cost.
+- **Operational complexity**: Cache invalidation is hard; prefer TTL + versioned URLs where possible. Distributed cache adds cluster management and failure modes (e.g. split brain); use proven solutions (Redis Cluster, Memcached pools).
+- **Observability**: Monitor hit rate, miss rate, eviction rate, and latency (P99). Low hit rate → wrong keys or TTL; high eviction → undersized or hot key problem. Alert on cache unavailability and fallback to DB.
+- **Resilience**: Cache stampede on hot key miss → use single-flighter or probabilistic early expiry. Cache failure should degrade gracefully (slower, not broken); avoid cache-as-critical-path for correctness.
+
+---
+
+## Quick Revision
+
+- **Strategies**: Cache-aside (app loads on miss), read-through (cache loads on miss), write-through (write DB + cache), write-behind (write cache, async DB). Cache-aside most common; write-behind for high write throughput only when loss is acceptable.
+- **Invalidation**: TTL (simple, stale possible), event-based (delete/update on write), versioning (new key per version). "Two hard things: cache invalidation and naming things."
+- **Eviction**: LRU common; LFU for stable hot set; TTL for time-sensitive data.
+- **CDN**: Edge caches; push (you upload) vs pull (on first request); versioned URLs for immutable assets; purge for updates.
+- **Interview talking points**: "We use cache-aside with Redis; 1-hour TTL for user profiles; invalidate on update. We use LRU eviction. For static assets we use CDN with versioned URLs. If Redis is down we fall back to DB and accept higher latency."
+- **Common mistakes**: Caching without TTL or invalidation (stale forever); treating cache as source of truth; no fallback when cache is down; cache stampede on viral key.

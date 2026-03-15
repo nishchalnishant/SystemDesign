@@ -486,3 +486,27 @@ Client → Read from 2 nodes → Get latest value
 | **High Velocity Logs** | **Cassandra / ScyllaDB** | Write heavy (LSM Tree), Time series. |
 | **Real-time Leaderboard** | **Redis** | In-memory Sorted Sets. |
 | **Full Text Search** | **Elasticsearch** | Inverted Index. |
+
+---
+
+## Senior Engineer Insights
+
+- **Design trade-offs**: Choose SQL when you need ACID and complex queries; choose NoSQL when you need horizontal scale and can tolerate eventual consistency. Hybrid (polyglot persistence) is common: e.g. PostgreSQL for orders, Redis for session, Elasticsearch for search.
+- **Cost**: Managed DB (RDS, DynamoDB) reduces ops but can be costly at scale; self-managed gives control but requires expertise. Read replicas and caching reduce primary load and can delay expensive sharding.
+- **Operational complexity**: Replication and failover add ops (monitoring lag, failover drills). Sharding adds routing, resharding, and debugging across shards. Prefer replication + caching before sharding when reads are the bottleneck.
+- **Deployment**: Schema migrations on large tables need care (online DDL, blue-green). Index creation can block writes; do during low traffic or use CONCURRENTLY (PostgreSQL).
+- **Observability**: Track query latency (P99), replication lag, connection pool usage, slow query log. Alerts on lag and failover readiness.
+- **Resilience**: Primary failure → promote replica; use connection pooling and timeouts so one slow query doesn’t exhaust connections. For critical writes, consider sync replication (with latency cost).
+
+---
+
+## Quick Revision
+
+- **SQL vs NoSQL**: SQL = ACID, schema, JOINs; NoSQL = scale-out, flexible schema, eventual consistency. Use both where each fits (polyglot).
+- **CAP**: Partition tolerance required; choose CP (consistency) or AP (availability). PACELC: else (no partition) choose latency vs consistency.
+- **Replication**: Leader–follower (read scaling, HA); sync vs async (latency vs loss); leaderless = quorum (W + R > N).
+- **Sharding**: Hash (even, resharding costly), range (range queries, hotspots), directory (flexible, lookup cost). Cross-shard JOINs/transactions are hard.
+- **Indexes**: B-tree (read-heavy, range); LSM (write-heavy). Indexes speed reads, slow writes, use storage.
+- **Isolation**: Read committed (default in many DBs); serializable (strongest, slowest). Know dirty/non-repeatable/phantom reads.
+- **Interview talking points**: “We use PostgreSQL for orders (ACID); we add read replicas for reporting; we’d shard by order_id when we outgrow one primary. We use Redis for session and Elasticsearch for search.”
+- **Common mistakes**: Picking NoSQL “because scale” without access-pattern analysis; sharding too early; ignoring replication lag when reading from replicas.

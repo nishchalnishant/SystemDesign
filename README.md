@@ -12,11 +12,15 @@ This repository is optimized for **SDE-3 level interview preparation** (Senior/S
 ### What's New (v2.0)?
 
 - **Consolidated Content**: Merged duplicate topics from multiple sources  
-- **Advanced Topics**: Distributed systems, consensus protocols, consistency models  
+- **Advanced Topics**: Distributed systems, consensus protocols, consistency models, **idempotency/retry/backpressure**  
 - **Interview Templates**: Step-by-step HLD/LLD interview frameworks  
+- **SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md**: How to approach the interview (clarify → estimate → HLD → bottlenecks → trade-offs → deep dive → scaling/failure)  
+- **SYSTEM_DESIGN_REPO_AUDIT.md**: Full audit of repo coverage and recommended additions  
+- **Building Blocks**: Dedicated deep dives for load balancers, reverse proxy, CDN, caching, message brokers, service discovery, API gateway, distributed locks, rate limiting, sharding, replication  
+- **Scaling Strategies**: Horizontal vs vertical, DB scaling, replication, partitioning, caching, queues, async  
 - **Cheat Sheets**: Quick reference for capacity estimation & trade-offs  
-- **Enhanced Problems**: All 27 HLD problems with capacity estimation & scaling strategies  
-- **Production Focus**: Real-world examples, war stories, and operational insights
+- **Enhanced Problems**: HLD problems including **Search System**; capacity estimation & scaling strategies  
+- **Production Focus**: Real-world examples, Senior Engineer Insights, Quick Revision sections, and operational trade-offs
 
 ---
 
@@ -24,6 +28,8 @@ This repository is optimized for **SDE-3 level interview preparation** (Senior/S
 
 ```
 SystemDesign/
+├── SYSTEM_DESIGN_REPO_AUDIT.md        # Repo audit & recommended additions
+├── SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md # How to approach system design interviews
 ├── core-concepts/                     # Fundamental building blocks
 │   ├── fundamentals.md                # Complete basics (networking, protocols, caching, etc.)
 │   ├── databases.md                    # SQL vs NoSQL, ACID, CAP, replication, sharding
@@ -31,14 +37,18 @@ SystemDesign/
 │   ├── networking.md
 │   └── security.md
 │
+├── building-blocks/                    # Deep dives: LB, proxy, CDN, cache, brokers, discovery, gateway, locks, rate limit, sharding, replication
+│   └── README.md + individual docs
+├── scaling/                            # Scaling strategies (horizontal/vertical, DB, replication, caching, queues)
+│   ├── README.md
+│   └── scaling-strategies.md
 ├── advanced-topics/                    # SDE-3 level deep dives
 │   ├── distributed-systems.md          # Consistency models, consensus, time & ordering
-│   ├── consensus-protocols.md          # Raft, Paxos, Zab
-│   ├── distributed-transactions.md     # 2PC, Saga, Outbox patterns
+│   ├── distributed-concepts.md          # Idempotency, retry, backpressure
 │   ├── observability.md                # Metrics, tracing, SLI/SLO/SLA
 │   └── chaos-engineering.md
 │
-├── hld-problems/                       # 27 enhanced system design problems
+├── hld-problems/                       # System design problems (easy/medium/hard)
 │   ├── README.md                       # Problem catalog & difficulty ratings
 │   ├── easy/                           # URL Shortener, Pastebin, etc.
 │   ├── medium/                         # Twitter, Instagram, etc.
