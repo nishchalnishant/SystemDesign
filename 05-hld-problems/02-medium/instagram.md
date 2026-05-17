@@ -1,0 +1,597 @@
+# Design Instagram
+
+> **Difficulty**: Medium
+> **Topics**: Media Pipeline, Fan-out, CDN, Social Graph
+> **Time**: 60 minutes
+> **Companies**: Meta, Snap, Pinterest, TikTok
+
+---
+
+## Real-Life Analogy
+
+Instagram is Twitter but visual. The underlying feed mechanics — fan-out on write for regular users, fan-out on read for celebrities — are essentially identical to Twitter. But the photo upload is what makes Instagram uniquely hard.
+
+Imagine submitting a photo to a magazine. You don't just email them a JPEG. The photo goes through an editorial pipeline: resize for print vs. web vs. mobile, apply quality adjustments, generate thumbnail, tag for search, and route to the right printing system. Only after all of that is the photo "published." If any step in that pipeline fails, the photo either never appears or appears broken.
+
+The unique challenge for Instagram: **photo upload is a multi-step pipeline** (upload raw → compress → generate multiple sizes → push to CDN → save metadata to DB) that must be **atomic** (all steps succeed or the post doesn't exist) and **idempotent** (retrying a failed step doesn't create duplicates). At 50M posts/day, even a 0.1% failure rate means 50,000 failed uploads daily that users expect to retry.
+
+---
+
+## Why This Is Hard
+
+1. **Upload pipeline atomicity**: If S3 upload succeeds but DB write fails, the user has an orphaned image. If transcoding succeeds but fan-out fails, the post exists but followers never see it. You need compensating transactions or a saga pattern.
+2. **Storage scale**: 400 TB/day of media. That's not a "database problem" — it's a fundamentally different infrastructure problem (object storage, CDN, storage tiering).
+3. **Hot post handling**: A viral post with 10M likes in an hour. Naive design: 10M writes to a `like_count` column. This serializes all like updates through a single DB row — immediate bottleneck.
+4. **Feed generation for 100M DAU at 10 feeds/day** = 1 billion feed requests/day = ~11,500 reads/sec average, 34,500/sec peak. The fan-out + merge must be fast enough to be invisible to users.
+5. **Stories with 24-hour expiry**: 24-hour TTL at scale requires either active cleanup (expensive background jobs) or leveraging infrastructure-level expiry (S3 lifecycle policies).
+6. **Snowflake IDs for posts**: Auto-incrementing IDs don't work across shards. UUIDs are 128-bit and break B-tree index locality. Custom time-sortable IDs (Snowflake-style) are needed.
+
+---
+
+## Requirements
+
+### Functional Requirements
+1. **Upload photos/videos** (max 10 photos per post, 60s video)
+2. **Follow/Unfollow** users
+3. **News Feed** showing posts from followed users (chronological + algorithmic ranking)
+4. **Like, Comment, Share** posts
+5. **Stories** (24-hour temporary posts)
+6. **Direct Messaging** (text, photos, videos)
+7. **Search** users and hashtags
+8. **Explore page** with personalized recommendations
+
+### Non-Functional Requirements
+1. **High availability**: 99.95% uptime
+2. **Low latency**: < 200ms for feed load
+3. **Scalability**: 1 billion users, 100M DAU
+4. **Eventual consistency** acceptable for likes/comments
+5. **Global distribution**: Multi-region deployment
+
+---
+
+## Capacity Estimation
+
+### Traffic Estimates
+- **Daily Active Users (DAU)**: 100 million
+- **Posts uploaded/day**: 50 million (0.5 posts per DAU)
+- **Photos per post**: Average 3 photos
+- **Total photos/day**: 150 million
+- **Feed requests/user/day**: 10
+- **Total feed requests/day**: 1 billion
+
+### Storage Estimates
+- **Average photo size**: 2 MB (compressed)
+- **Average video size**: 20 MB (60s at 3 Mbps)
+- **Daily storage**:
+  - Photos: 150M × 2 MB = 300 TB/day
+  - Videos (10% of posts): 5M × 20 MB = 100 TB/day
+  - **Total**: 400 TB/day
+- **5-year storage**: 400 TB × 365 × 5 = **730 PB**
+
+### Bandwidth Estimates
+- **Upload**: 400 TB / 86400s = **4.6 GB/sec**
+- **Feed views**: 1B requests/day × 3 photos × 2 MB = 6 PB/day = **70 GB/sec**
+- **With CDN caching** (80% cache hit): **14 GB/sec** from origin
+
+---
+
+## API Design
+
+### 1. Upload Post
+```http
+POST /api/v1/posts
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+{
+  "caption": "Sunset at the beach",
+  "images": [<binary1>, <binary2>],
+  "location": {"lat": 37.7749, "lon": -122.4194},
+  "tags": ["#sunset", "#beach"]
+}
+
+Response: 202 Accepted  (not 201 — image processing is async)
+{
+  "postId": "abc123",
+  "status": "processing",
+  "estimatedReadyAt": "2026-02-08T10:00:30Z"
+}
+```
+
+Note: 202 Accepted is correct here — the post is queued for processing, not yet complete.
+
+### 2. Get Feed
+```http
+GET /api/v1/feed?limit=20&cursor=xyz
+
+Response: 200 OK
+{
+  "posts": [
+    {
+      "postId": "...",
+      "userId": "...",
+      "username": "john_doe",
+      "imageUrls": ["https://cdn.instagram.com/abc123_640.jpg"],
+      "caption": "...",
+      "likes": 1250,
+      "comments": 45,
+      "timestamp": "2024-02-09T10:00:00Z"
+    }
+  ],
+  "nextCursor": "abc"
+}
+```
+
+**Cursor-based vs. offset pagination:**
+Offset pagination (`?page=5`) breaks with new posts — inserting new items shifts everything, causing duplicates or gaps. Cursor-based pagination uses the last seen post ID as an anchor, unaffected by new inserts.
+
+### 3. Like/Unlike Post
+```http
+POST /api/v1/posts/{postId}/like
+DELETE /api/v1/posts/{postId}/like
+```
+
+### 4. Post Comment
+```http
+POST /api/v1/posts/{postId}/comments
+{
+  "text": "Beautiful shot!",
+  "mentionedUsers": ["@jane_doe"]
+}
+```
+
+---
+
+## High-Level Architecture
+
+```
+┌─────┐   ┌─────────┐   ┌──────┐
+│ iOS │   │ Android │   │  Web │
+└──┬──┘   └────┬────┘   └──┬───┘
+   └──────┬────┘            │
+          │  HTTPS          │
+          ▼                 │
+  ┌───────────────┐         │
+  │  CDN          │         │  (Static assets, media delivery)
+  │ (CloudFront)  │◄────────┘
+  └───────┬───────┘
+          │ Cache miss
+          ▼
+  ┌───────────────┐
+  │ Load Balancer │
+  └───────┬───────┘
+          │
+  ┌───────┼────────────┬──────────────┐
+  ▼       ▼            ▼              ▼
+Upload  Feed        Social Graph   Search
+Service Service     Service        Service
+  │       │            │
+  │       ▼            ▼
+  │   Redis Cache   Graph DB
+  │   (Timelines)   (Followers)
+  │
+  ▼
+  Kafka
+  │
+  ├──► Image Processor (resize, compress, thumbnail)
+  └──► Feed Fan-out Worker (push to follower caches)
+
+Storage:
+  ├── S3 (original + processed images)
+  ├── PostgreSQL (users, posts metadata)
+  ├── Cassandra (likes, comments - write-heavy)
+  └── Redis (timeline caches, hot counters)
+```
+
+---
+
+## Detailed Component Design
+
+### 1. Image Upload & Processing Pipeline
+
+**The critical design principle: separate upload acknowledgment from processing completion.**
+
+```
+Phase 1 (Synchronous, ~200ms):
+  Client uploads → API generates postId → Stores raw to S3 → Writes metadata (status=processing) → Returns 202
+
+Phase 2 (Asynchronous, ~30 seconds):
+  Image Processor consumes from Kafka:
+    → Download raw from S3
+    → Generate variants:
+        150×150 (thumbnail for profile grid)
+        640×640  (standard feed)
+        1080×1080 (full resolution)
+        1080×1920 (story format, 9:16)
+    → Compress:
+        JPEG 85% quality (balance size/quality)
+        WebP for modern browsers (30% smaller than JPEG)
+    → Upload all variants to CDN origin
+    → Update metadata: status=ready, cdn_urls=[...]
+
+Phase 3 (Asynchronous, concurrent with Phase 2):
+  Fan-out Worker consumes from Kafka:
+    → Fetch follower list from Graph DB
+    → For each follower with <1M followers: push postId to their Redis timeline
+    → For celebrity poster: skip fan-out (handled on read)
+```
+
+**Handling pipeline failures:**
+
+The pipeline must be idempotent — if any step fails and retries, it shouldn't create duplicate images or duplicate feed entries.
+
+```java
+// Idempotency: each processing step checks if already done
+public void processImage(String postId, String s3Key) {
+    // Check if already processed (idempotency guard)
+    Post post = db.getPost(postId);
+    if (post.getStatus() == PostStatus.READY) {
+        return;  // Already processed — idempotent retry
+    }
+
+    List<ImageVariant> variants = generateVariants(s3Key);
+    uploadVariantsToCDN(postId, variants);
+
+    // Atomic metadata update
+    db.updatePost(postId, PostStatus.READY, variants);
+    // If this DB write fails, Kafka message is not committed
+    // → Worker retries → idempotency guard at top prevents reprocessing
+}
+```
+
+### 2. Snowflake ID Generation for Posts
+
+**Why not auto-increment?**
+- Auto-increment requires a single sequence generator — doesn't scale across shards
+- Cross-shard inserts need coordination for unique IDs
+- Reveals business metrics (total post count) to external users
+
+**Instagram's Shard-Based ID:**
+
+```
+64-bit integer breakdown:
+├─ 41 bits: Timestamp (milliseconds since epoch) → time-sortable
+├─ 13 bits: Logical Shard ID → determines DB shard
+└─ 10 bits: Sequence Number → prevents collision within same shard + millisecond
+```
+
+```java
+public long generatePostId(int shardId) {
+    long timestamp = System.currentTimeMillis() - EPOCH_MS;  // 41 bits
+    long sequence = atomicCounter.getAndIncrement() & 0x3FF;  // 10 bits
+
+    return (timestamp << 23) | ((long)shardId << 10) | sequence;
+}
+```
+
+**Benefits:**
+- Time-sortable (ORDER BY post_id is equivalent to ORDER BY created_at)
+- Shard ID embedded in ID → router knows which shard to query without lookup
+- No central coordinator needed (each shard generates its own IDs)
+
+### 3. Feed Generation Strategy
+
+Same hybrid model as Twitter, adapted for Instagram:
+
+```java
+public Feed generateFeed(String userId) {
+    int followerCount = graphDb.getFollowerCount(userId);
+
+    if (followerCount > 1_000_000) {
+        // Celebrity: pull model — don't fanout, fetch on demand
+        return pullFeed(userId);
+    } else {
+        // Regular user: push model — pre-computed cache
+        return redis.get("feed:" + userId);
+    }
+}
+
+public Feed pullFeed(String userId) {
+    List<String> following = graphDb.getFollowing(userId, 200);
+    List<Post> posts = new ArrayList<>();
+
+    for (String followedUser : following) {
+        posts.addAll(postDb.getRecentPosts(followedUser, 10));
+    }
+
+    // Rank by ML model (not just chronological)
+    return rankingService.rank(posts, userId);
+}
+```
+
+**Ranking vs. Chronological:**
+Early Instagram was chronological. Algorithmic ranking (by engagement, interests, relationships) was added later. For system design interviews, start with chronological sorted sets in Redis, then mention ML-based ranking as an extension.
+
+### 4. Database Schema
+
+#### Users Table (PostgreSQL)
+```sql
+CREATE TABLE users (
+    user_id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(30) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    full_name VARCHAR(100),
+    bio TEXT,
+    profile_pic_url VARCHAR(500),
+    follower_count INT DEFAULT 0,   -- Denormalized for fast celebrity detection
+    created_at TIMESTAMP DEFAULT NOW(),
+    INDEX idx_username (username)
+);
+```
+
+#### Posts Table (Sharded by user_id)
+```sql
+CREATE TABLE posts (
+    post_id BIGINT PRIMARY KEY,     -- Snowflake ID (shard embedded)
+    user_id BIGINT NOT NULL,
+    caption TEXT,
+    location JSONB,
+    status VARCHAR(20) DEFAULT 'processing',  -- processing, ready, failed
+    created_at TIMESTAMP DEFAULT NOW(),
+    INDEX idx_user_created (user_id, created_at)
+);
+
+CREATE TABLE post_images (
+    image_id BIGSERIAL PRIMARY KEY,
+    post_id BIGINT REFERENCES posts(post_id),
+    variant VARCHAR(20),     -- thumbnail, feed, full, story
+    cdn_url VARCHAR(500),
+    width INT,
+    height INT,
+    format VARCHAR(10)       -- jpeg, webp
+);
+```
+
+#### Social Graph (PostgreSQL adjacency list — scalable for reads)
+```sql
+CREATE TABLE followers (
+    follower_id BIGINT NOT NULL,
+    followee_id BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (follower_id, followee_id),
+    INDEX idx_followee (followee_id)  -- "Who follows this person?" query
+);
+```
+
+**When to use a Graph DB (Neo4j)?**
+For simple follow/follower relationships, PostgreSQL with the adjacency list above is sufficient and operationally simpler. Graph DBs shine for multi-hop queries ("friends of friends") — not needed for basic feed generation.
+
+#### Likes (Cassandra — Write-Heavy)
+```sql
+CREATE TABLE likes (
+    post_id TEXT,
+    user_id BIGINT,
+    created_at TIMESTAMP,
+    PRIMARY KEY (post_id, user_id)   -- Prevents duplicate likes (PK constraint)
+);
+
+-- Like count (separate table for aggregation)
+CREATE TABLE like_counts (
+    post_id TEXT PRIMARY KEY,
+    count COUNTER
+);
+
+-- Increment count atomically
+UPDATE like_counts SET count = count + 1 WHERE post_id = 'abc123';
+```
+
+**Why Cassandra for likes?**
+A viral post gets 10M likes. That's 10M writes to one `post_id` partition. Cassandra's COUNTER type handles this without locking, using distributed increment with conflict-free merging.
+
+### 5. Timeline Cache (Redis)
+
+```java
+// Sorted set: score = post timestamp, member = post_id
+redis.zadd("feed:" + userId, postTimestamp, postId);
+
+// Retrieve feed (most recent first, top 20)
+List<String> postIds = redis.zrevrange("feed:" + userId, 0, 19);
+
+// Fetch full post data in batch (N+1 query avoided)
+List<Post> posts = db.batchGetPosts(postIds);
+
+// TTL: 7 days
+redis.expire("feed:" + userId, 604800);
+```
+
+**Memory optimization:**
+- Store only post IDs in Redis (not full post data)
+- Fetch full post metadata in a single batch DB query
+- Cache hot post metadata separately: `post:{postId}` → JSON blob, 1 hour TTL
+
+### 6. Hot Post Handling (Viral Posts)
+
+**Problem:** Viral post with 10M likes/hour. Cassandra COUNTER type serializes increments — becomes a bottleneck at extreme scale.
+
+**Solution: Write-Behind Cache**
+
+```java
+// Buffer likes in Redis (fast, in-memory increment)
+redis.incr("likes:" + postId);
+redis.sadd("likers:" + postId, userId);  // For deduplication
+
+// Batch flush to Cassandra every 10 seconds (background worker)
+for (String postId : redis.scanKeys("likes:*")) {
+    long count = redis.get("likes:" + postId);
+    cassandra.execute(
+        "UPDATE like_counts SET count = count + ? WHERE post_id = ?",
+        count, postId
+    );
+    redis.delete("likes:" + postId);
+}
+```
+
+This reduces Cassandra write pressure from 10M/hour to ~360 batched writes/hour for that post.
+
+---
+
+## Scalability Strategies
+
+### 1. Database Sharding
+
+```
+Posts sharded by user_id (not post_id):
+  Reason: Most queries are "get posts by user X" — co-locating a user's posts
+          on one shard avoids scatter-gather.
+
+Shard key: user_id % 16
+  Shard 0: user_ids where user_id % 16 = 0
+  ...
+  Shard 15: user_ids where user_id % 16 = 15
+
+Cross-shard fan-out: Acceptable — followers table on each shard,
+                    fan-out workers query the right post shard per followee
+```
+
+### 2. CDN Strategy
+
+```
+200+ PoPs globally
+
+Cache hierarchy:
+  Edge PoP (1-50ms from user)
+    → Regional Cache (50-100ms)
+      → S3 Origin
+
+Cache headers:
+  Post images: Cache-Control: max-age=86400, immutable
+  (Images never change once uploaded — immutable is a strong hint to CDN)
+
+Image optimization by device:
+  Modern browser → WebP (30% smaller)
+  iOS/Android → HEIC or JPEG depending on OS version
+  Slow connection → Downgrade to lower resolution variant
+```
+
+### 3. Stories (24-Hour Expiry)
+
+```java
+// Upload story to S3 with lifecycle tag
+s3.putObject(bucket, "stories/user123/story456.mp4", videoData,
+    ObjectMetadata.withTag("expires", "24h"));
+
+// S3 Lifecycle Policy:
+// objects tagged "expires: 24h" in prefix "stories/" → delete after 1 day
+
+// Track active stories in Redis sorted set (score = expiry timestamp)
+redis.zadd("active_stories:" + userId, expiryTimestamp, storyId);
+redis.expireat("active_stories:" + userId, expiryTimestamp);
+
+// Query active stories for a user's following list
+// (Client filters by Redis TTL, S3 object exists check as fallback)
+```
+
+### 4. Hashtag Search (Elasticsearch)
+
+```json
+{
+  "mappings": {
+    "properties": {
+      "hashtag": {"type": "keyword"},
+      "post_id": {"type": "keyword"},
+      "created_at": {"type": "date"},
+      "likes": {"type": "integer"}
+    }
+  }
+}
+```
+
+Elasticsearch index updated asynchronously (Kafka consumer writes to ES). Eventual consistency on search is acceptable (new posts appear in search within seconds).
+
+---
+
+## Advanced Features
+
+### 1. Explore Page Ranking
+
+```java
+// Composite relevance score for ranking candidates
+score = (
+    0.3 * text_similarity(post.caption, user.interests) +
+    0.4 * engagement_rate(post) +               // likes/impressions
+    0.2 * recency_score(post.created_at) +      // decay function
+    0.1 * creator_authority(post.user_id)        // follower count signal
+)
+```
+
+Two-stage ranking:
+1. **Candidate generation**: Retrieve top 1,000 candidates (collaborative filtering, content-based)
+2. **Re-ranking**: Apply ML model to score and sort the 1,000 candidates, return top 50
+
+### 2. Duplicate Upload Detection
+
+```
+Problem: User retries a failed upload → duplicate post
+Solution: Perceptual hash (pHash) of uploaded image
+  → Compute pHash client-side before upload
+  → Include in upload request
+  → Server checks against recent uploads by same user (last 24h)
+  → If match found: return existing postId (idempotent)
+```
+
+---
+
+## Trade-offs
+
+| Aspect | Choice | Trade-off |
+|--------|--------|-----------|
+| **Feed Generation** | Hybrid (push + pull) | Complexity vs. performance for all user types |
+| **Like Storage** | Cassandra COUNTER | Eventual consistency vs. write throughput |
+| **Image Storage** | S3 + CDN | $0.023/GB vs. $0.10+/GB for DB; CDN integration |
+| **Post ID** | Snowflake (shard-embedded) | No central coordinator vs. shard ID reveals sharding |
+| **Graph Storage** | PostgreSQL adjacency list | Simplicity vs. Graph DB query power |
+| **Story expiry** | S3 lifecycle policy | Zero cleanup cost vs. PostgreSQL TTL complexity |
+
+---
+
+## Failure Scenarios
+
+### Upload Pipeline Failure
+
+If transcoding fails mid-pipeline:
+- Kafka offset not committed → automatic retry
+- Idempotency guard prevents re-processing completed steps
+- After 3 retries: post status = `failed`, user notified via push notification
+- Raw file preserved in S3 for manual recovery
+
+### Fan-out Service Outage
+
+- Kafka retains messages for 7 days
+- When fan-out service recovers, it catches up from last committed offset
+- Users see feeds populated in reverse order (newest first) as workers process backlog
+- Acceptable SLA: eventual consistency — feed fully populated within minutes
+
+---
+
+## Interview Discussion Points
+
+**Q: How to handle celebrity users with 100M followers?**
+- Pull-based feed for celebrities — never fan-out to 100M Redis keys
+- Separate queue for celebrity tweet ingestion with priority workers
+- Followers see celebrity posts within seconds (eventual consistency acceptable)
+
+**Q: Preventing duplicate photo uploads?**
+- Perceptual hashing (pHash): Generate hash of image content
+- Compare with existing hashes in bloom filter for fast rejection
+- Full comparison for bloom filter positives to eliminate false positives
+- Trade-off: Some near-duplicate photos missed vs. significant computation to detect all
+
+**Q: Optimizing feed load time?**
+- **Prefetch**: Pre-load next page while user scrolls (speculative loading)
+- **Progressive rendering**: Render blurry thumbnail first, replace with full image on load
+- **Cursor-based pagination**: Avoid offset pagination which breaks with new inserts
+- **Connection-aware quality**: Detect bandwidth, serve 360p on slow connections instead of 1080p
+
+---
+
+## Interview Questions Asked
+
+### Meta
+1. **"Design the Instagram feed for 1 billion users."** → Tests hybrid fan-out understanding; key answer: fan-out on write for normal users (< 10K followers), fan-out on read for celebrities; Redis stores pre-computed feed lists per user.
+
+### Common Follow-ups
+1. **"How does Meta actually implement the feed — why pull for high-follow accounts?"** → Tests real-world systems knowledge; writing to 100M Redis keys per post is O(100M) — instead, celebrity posts are fetched at read time and merged in memory with the pre-computed feed.
+2. **"How do you deduplicate photos?"** → Tests content hashing; perceptual hash (pHash) on upload → check Bloom filter → full hash comparison on positives; trade-off is false positives vs. compute cost.
+3. **"How do you handle CDN invalidation for deleted photos?"** → Tests cache invalidation; send purge request to CDN (e.g., CloudFront Invalidation API); short TTL (e.g., 60s) on image responses limits stale window; deleted photo ID added to a deny-list checked at CDN edge.
+4. **"What are the architectural differences between Stories and Feed?"** → Tests product-to-engineering translation; Stories are ephemeral (24h TTL in object store), single-viewer ordered, no ranking needed; Feed is persistent, ranked by ML, fan-out required.
+5. **"How do you count likes at scale?"** → Tests approximate counting; buffer increments in Redis (`INCR likes:{post_id}`), flush to DB every N seconds; use HyperLogLog for unique-liker counts to avoid storing every user ID.

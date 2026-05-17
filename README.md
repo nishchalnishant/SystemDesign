@@ -1,26 +1,23 @@
-# System Design - SDE-3 Interview Preparation Guide
+# System Design — SDE-3 Interview Preparation
 
-> **Comprehensive, streamlined system design guide for senior/staff engineer interviews**  
-> Consolidating best practices, advanced patterns, and real-world implementations
+Consolidated system design guide for senior/staff engineer interviews. No fluff, no duplicates. Covers HLD, LLD, distributed systems, and interview execution.
 
 ---
 
-## About This Repository
+## What's in This Repo
 
-This repository is optimized for **SDE-3 level interview preparation** (Senior/Staff Software Engineer). It consolidates system design concepts, eliminates duplicate content, and provides in-depth insights with production-level trade-offs.
-
-### What's New (v2.0)?
-
-- **Consolidated Content**: Merged duplicate topics from multiple sources  
-- **Advanced Topics**: Distributed systems, consensus protocols, consistency models, **idempotency/retry/backpressure**  
-- **Interview Templates**: Step-by-step HLD/LLD interview frameworks  
-- **SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md**: How to approach the interview (clarify → estimate → HLD → bottlenecks → trade-offs → deep dive → scaling/failure)  
-- **SYSTEM_DESIGN_REPO_AUDIT.md**: Full audit of repo coverage and recommended additions  
-- **Building Blocks**: Dedicated deep dives for load balancers, reverse proxy, CDN, caching, message brokers, service discovery, API gateway, distributed locks, rate limiting, sharding, replication  
-- **Scaling Strategies**: Horizontal vs vertical, DB scaling, replication, partitioning, caching, queues, async  
-- **Cheat Sheets**: Quick reference for capacity estimation & trade-offs  
-- **Enhanced Problems**: HLD problems including **Search System**; capacity estimation & scaling strategies  
-- **Production Focus**: Real-world examples, Senior Engineer Insights, Quick Revision sections, and operational trade-offs
+| Category | Count | Location |
+|----------|-------|----------|
+| HLD Problems (Easy) | 9 | `05-hld-problems/01-easy/` |
+| HLD Problems (Medium) | 6 | `05-hld-problems/02-medium/` |
+| HLD Problems (Hard) | 12 | `05-hld-problems/03-hard/` |
+| LLD Problems | 23 | `06-lld/05-problems/` |
+| Design Patterns | 16 | `06-lld/03-design-patterns/` |
+| System Design Patterns | 5 | `09-patterns/` |
+| Interview Templates | 4 | `07-interview-templates/` |
+| Building Blocks | 13 | `02-building-blocks/` |
+| Advanced Topics | 6+ | `04-advanced-topics/` |
+| Reference / Cheat Sheets | 5 | `08-reference/` |
 
 ---
 
@@ -28,332 +25,309 @@ This repository is optimized for **SDE-3 level interview preparation** (Senior/S
 
 ```
 SystemDesign/
-├── SYSTEM_DESIGN_REPO_AUDIT.md        # Repo audit & recommended additions
-├── SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md # How to approach system design interviews
-├── core-concepts/                     # Fundamental building blocks
-│   ├── fundamentals.md                # Complete basics (networking, protocols, caching, etc.)
-│   ├── databases.md                    # SQL vs NoSQL, ACID, CAP, replication, sharding
+├── SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md  # Interview execution: clarify → estimate → HLD → trade-offs → deep dive
+│
+├── 01-foundations/
+│   ├── fundamentals.md                   # Networking, protocols, caching, availability, scalability
+│   ├── databases.md                      # SQL vs NoSQL, ACID, CAP theorem, replication, sharding
 │   ├── caching-cdn.md
 │   ├── networking.md
 │   └── security.md
 │
-├── building-blocks/                    # Deep dives: LB, proxy, CDN, cache, brokers, discovery, gateway, locks, rate limit, sharding, replication
-│   └── README.md + individual docs
-├── scaling/                            # Scaling strategies (horizontal/vertical, DB, replication, caching, queues)
-│   ├── README.md
-│   └── scaling-strategies.md
-├── advanced-topics/                    # SDE-3 level deep dives
-│   ├── distributed-systems.md          # Consistency models, consensus, time & ordering
+├── 02-building-blocks/                      # Deep dives on individual components
+│   ├── load-balancers.md
+│   ├── reverse-proxy.md
+│   ├── cdn.md
+│   ├── caching-layer.md
+│   ├── message-brokers.md
+│   ├── service-discovery.md
+│   ├── api-gateway.md
+│   ├── distributed-locks.md
+│   ├── rate-limiting.md
+│   ├── sharding.md
+│   ├── replication.md
+│   ├── bloom-filter.md
+│   └── architecture-composition.md
+│
+├── 03-scaling/
+│   └── scaling-strategies.md            # Horizontal/vertical, DB scaling, queues, async
+│
+├── 04-advanced-topics/
+│   ├── distributed-systems.md           # Consistency models, Lamport/Vector clocks, CRDTs
 │   ├── distributed-concepts.md          # Idempotency, retry, backpressure
-│   ├── observability.md                # Metrics, tracing, SLI/SLO/SLA
+│   ├── microservices.md                 # Microservices patterns, trade-offs, Kubernetes
+│   ├── event-driven-architecture.md     # EDA, Kafka, event sourcing, CQRS, outbox pattern
+│   ├── observability.md                 # Metrics, distributed tracing, SLI/SLO/SLA
 │   └── chaos-engineering.md
 │
-├── hld-problems/                       # System design problems (easy/medium/hard)
-│   ├── README.md                       # Problem catalog & difficulty ratings
-│   ├── easy/                           # URL Shortener, Pastebin, etc.
-│   ├── medium/                         # Twitter, Instagram, etc.
-│   └── hard/                           # Uber, Netflix, Distributed Message Queue
+├── 05-hld-problems/
+│   ├── 01-easy/                         # URL Shortener, Pastebin, Rate Limiter, Key-Value Store, Web Crawler, Autocomplete, Unique ID Generator, Booking System, Leaderboard
+│   ├── 02-medium/                       # Twitter, Instagram, YouTube, WhatsApp, Notification Service, E-Commerce Platform
+│   └── 03-hard/                         # Chat System, Distributed Cache, Kafka, Payment, Ride-Sharing, Google Drive, Search, Ad Click Aggregator, Google Maps, LLM Chat, RAG System, Stock Exchange
 │
-├── lld-problems/                       # Low-level design & patterns
-│   ├── design-patterns/
-│   ├── SOLID-principles/
-│   ├── concurrency/
-│   └── problems/
+├── 06-lld/
+│   ├── 01-oop-fundamentals/
+│   ├── 02-solid-principles/
+│   ├── 03-design-patterns/              # 01-creational, 02-structural, 03-behavioral (16 patterns)
+│   ├── 04-concurrency/
+│   └── 05-problems/                     # 23 LLD problems (Parking Lot → Version Control)
 │
-├── interview-templates/                # Frameworks for interviews
-│   ├── hld-template.md                 # 45-60 min HLD interview guide
-│   ├── lld-template.md                 # LLD approach checklist
-│   ├── capacity-estimation.md          # QPS, storage, bandwidth calculations
-│   └── trade-offs-cheat-sheet.md       # SQL vs NoSQL, sync vs async, etc.
+├── 07-interview-templates/
+│   ├── hld-template.md                  # 45-60 min HLD interview guide (7 phases)
+│   ├── lld-template.md
+│   ├── capacity-estimation.md           # QPS, storage, bandwidth formulas
+│   └── trade-offs-cheat-sheet.md        # SQL vs NoSQL, sync vs async, etc.
 │
-└── reference/                          # Quick reference materials
-    ├── numbers-to-know.md              # Latency, throughput, cost estimates
-    ├── ml-system-design.md
-    └── book-summaries/
+└── 08-reference/
+    ├── numbers-to-know.md               # Latency, throughput, cost estimates
+    ├── ml-system-design.md              # Feature stores, training pipelines, model monitoring
+    └── book-summaries/                  # DDIA, Head First Java, Head First OOA&D
 ```
-
----
-
-## Learning Paths
-
-### Path 1: Beginner to Intermediate (4-6 weeks)
-
-**Goal**: Build strong foundation in system design concepts
-
-**Week 1-2: Core Concepts**
-- [ ] Read `core-concepts/fundamentals.md`
-  - Networking: IP, DNS, TCP/UDP, HTTP/HTTPS
-  - Load balancing, caching, CDN
-  - Availability, scalability, reliability
-- [ ] Read `core-concepts/databases.md`
-  - SQL vs NoSQL decision matrix
-  - ACID vs BASE
-  - CAP theorem
-
-**Week 3-4: Practice Easy Problems**
-- [ ] URL Shortener (`hld-problems/easy/`)
-- [ ] Pastebin
-- [ ] Key-Value Store
-- Use `interview-templates/hld-template.md` for structured approach
-
-**Week 5-6: Intermediate Concepts**
-- [ ] Read `core-concepts/caching-cdn.md`
-- [ ] Practice medium problems:
-  - Twitter Timeline
-  - Instagram
-  - Notification Service
-
-**Resources:**
-- `interview-templates/capacity-estimation.md` for back-of-envelope calculations
-- `interview-templates/trade-offs-cheat-sheet.md` for decision-making
-
----
-
-### Path 2: SDE-3 Interview Preparation (6-8 weeks)
-
-**Goal**: Master advanced topics and complex system design
-
-**Week 1-2: Master Core Concepts**
-- [ ] Review all files in `core-concepts/`
-- [ ] Focus on trade-offs and production scenarios
-
-**Week 3-4: Advanced Distributed Systems**
-- [ ] `advanced-topics/distributed-systems.md`
-  - Consistency models (strong, eventual, causal)
-  - Lamport/Vector clocks
-  - CRDTs, conflict resolution
-- [ ] `advanced-topics/consensus-protocols.md`
-  - Raft consensus (step-by-step)
-  - Paxos algorithm
-  - When to use each
-
-**Week 5-6: Distributed Transactions & Patterns**
-- [ ] `advanced-topics/distributed-transactions.md`
-  - Two-Phase Commit (2PC)
-  - Saga pattern (choreography vs orchestration)
-  - Outbox pattern
-- [ ] Practice hard problems:
-  - Distributed Message Queue
-  - Payment System
-  - Stock Exchange
-
-**Week 7-8: Mock Interviews & Refinement**
-- [ ] Practice all 27 HLD problems
-- [ ] Use `interview-templates/hld-template.md` for every problem
-- [ ] Time yourself (45-60 min per problem)
-- [ ] Focus on:
-  - Capacity estimation (first 15 min)
-  - Trade-offs (SQL vs NoSQL, sync vs async)
-  - Scaling strategies
-  - Failure scenarios
-
-**Key Files for SDE-3:**
-1. `interview-templates/capacity-estimation.md` → Master QPS, storage, bandwidth calculations
-2. `interview-templates/trade-offs-cheat-sheet.md` → Decision matrices for all major choices
-3. `advanced-topics/distributed-systems.md` → Understand consistency vs availability deeply
-4. `reference/numbers-to-know.md` → Memorize latency numbers
-
----
-
-### Path 3: Staff/Principal Engineer (Advanced)
-
-**Goal**: Deep expertise in distributed systems and production operations
-
-**Focus Areas:**
-- [ ] `advanced-topics/observability.md`
-  - Distributed tracing (Jaeger, Zipkin)
-  - SLI/SLO/SLA definitions with math
-  - Alert fatigue prevention
-- [ ] `advanced-topics/chaos-engineering.md`
-  - Resilience patterns
-  - Production testing strategies
-- [ ] Advanced problem variants:
-  - Multi-region active-active
-  - Cross-datacenter consensus
-  - Handling network partitions
-
----
-
-## Interview Preparation Checklist
-
-### Before the Interview
-
-- [ ] Review `interview-templates/hld-template.md` (know the 7 phases)
-- [ ] Memorize numbers from `reference/numbers-to-know.md`
-  - 1M requests/day ≈ 12 QPS
-  - L1 cache: 0.5ns, RAM: 100ns, SSD: 150μs
-  - 99.9% availability = 8.76 hours downtime/year
-- [ ] Practice capacity estimation (use `5 Interview Templates/capacity-estimation.md`)
-- [ ] Review trade-offs (use `interview-templates/trade-offs-cheat-sheet.md`)
-
-### During the Interview
-
-**Phase 1 (0-10 min): Requirements**
-- [ ] Clarify functional requirements (top 3-5 features)
-- [ ] Define non-functional requirements (PASS-R: Performance, Availability, Scalability, Security, Reliability)
-- [ ] Agree on scale (DAU, QPS, storage)
-
-**Phase 2 (10-15 min): Capacity Estimation**
-- [ ] Calculate QPS (writes, reads)
-- [ ] Estimate storage (per record × total records × replication)
-- [ ] Bandwidth (QPS × response size)
-
-**Phase 3 (15-25 min): Design**
-- [ ] API design (REST endpoints)
-- [ ] Database schema
-- [ ] High-level architecture diagram
-
-**Phase 4 (25-55 min): Deep Dives**
-- [ ] Scaling strategies
-- [ ] Caching approach
-- [ ] Failure scenarios
-- [ ] Trade-offs (SQL vs NoSQL, sync vs async, etc.)
-
-**Phase 5 (55-60 min): Wrap-up**
-- [ ] Summars design
-- [ ] Mention future enhancements
-- [ ] Q&A
-
----
-
-## Key Principles for SDE-3 Interviews
-
-### 1. Always Discuss Trade-offs
-
-Don't just say "I'd use Redis for caching." Say:
-> "I'd use Redis for caching because:
-> - Sub-millisecond latency (critical for our 100ms SLA)
-> - Rich data structures (sorted sets for leaderboards)
-> - Limited storage (use LRU eviction)
-> - Not durable (persist to DB as source of truth)"
-
-### 2. Think at Scale
-
-- Start simple, then scale
-- "For 1K users, single server works. At 1M users, we need..."
-- Use real numbers (capacity estimation)
-
-### 3. Production Mindset
-
-- Monitoring: "How do we know it's working?"
-- Failure scenarios: "What if the DB goes down?"
-- Operational complexity: "How hard is this to maintain?"
-
-### 4. Communication
-
-- Think out loud
-- Draw diagrams
-- Ask clarifying questions
-- Validate assumptions with interviewer
 
 ---
 
 ## Recommended Study Order
 
-1. **Start here**: `interview-templates/hld-template.md`
-2. **Learn basics**: `core-concepts/fundamentals.md`
-3. **Master databases**: `core-concepts/databases.md`
-4. **Practice estimation**: `interview-templates/capacity-estimation.md`
-5. **Learn trade-offs**: `interview-templates/trade-offs-cheat-sheet.md`
-6. **Advanced topics**: `advanced-topics/distributed-systems.md`
-7. **Practice problems**: `hld-problems/` (start easy → hard)
+This repo has two parallel tracks — HLD and LLD — that build on each other. Follow the order within each track; the tracks can overlap in time.
 
 ---
 
-## Migration from Old Structure
+### HLD Track
 
-If you're familiar with the old repository structure:
+**Phase 1 — Mental models (read once, then reference constantly)**
+1. `SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md` — the 7-phase interview structure; know this cold
+2. `01-foundations/fundamentals.md` — scalability, availability, consistency: the four axes every system is measured on
+3. `08-reference/numbers-to-know.md` — memorize these; rattling off latency numbers builds credibility instantly
+4. `07-interview-templates/capacity-estimation.md` — capacity math becomes muscle memory with 3-4 practice runs
 
-| Old Location | New Location |
-|--------------|--------------|
-| `system-design-hld+lld/hld/basics.md` | `core-concepts/fundamentals.md` |
-| `glossary.md` + `system-design-components.md` | `core-concepts/databases.md` |
-| `30-days-theory/` | **Removed** (content integrated into Core Concepts) |
-| `hld/notes/interview-process/` | `hld-problems/` |
-| `lld/lld-interview-guide.md` | `interview-templates/lld-template.md` |
+**Phase 2 — Foundations (each builds on the previous)**
+5. `01-foundations/networking.md` — TCP, HTTP, DNS; every system lives on a network
+6. `01-foundations/databases.md` — SQL vs. NoSQL, ACID, CAP; every system stores data
+7. `01-foundations/caching-cdn.md` — when to cache, when not to, what breaks when you do
+8. `01-foundations/security.md` — auth, encryption, OWASP top 10
 
-**What was removed:**
-- Duplicate content (glossary, repeated design patterns)
-- 30-days-theory (integrated into core concepts)
-- Scattered interview questions (now organized by difficulty)
+**Phase 3 — Building blocks (the Lego pieces you assemble into every system)**
+9. `02-building-blocks/load-balancers.md`
+10. `02-building-blocks/caching-layer.md` — Redis internals, eviction, cache-aside vs. write-through
+11. `02-building-blocks/message-brokers.md` — Kafka, SQS, pub-sub; required for any async problem
+12. `02-building-blocks/sharding.md` + `02-building-blocks/replication.md` — read these together
+13. `02-building-blocks/rate-limiting.md` — token bucket, sliding window
+14. `02-building-blocks/api-gateway.md` + `02-building-blocks/service-discovery.md`
+15. `03-scaling/scaling-strategies.md` — ties everything together
 
-**What was added:**
-- Advanced distributed systems topics
-- Interview templates with timing
-- Capacity estimation formulas
-- Trade-off decision matrices
-- Enhanced problem descriptions with capacity estimation
+**Phase 4 — HLD Problems (easy → medium → hard; timed at 45 min each)**
+
+| Order | Problem | Why do it here |
+|-------|---------|----------------|
+| 1 | `05-hld-problems/01-easy/url-shortener.md` | Introduces hashing, caching, DB sharding in isolation |
+| 2 | `05-hld-problems/01-easy/unique-id-generator.md` | Short but teaches Snowflake — referenced in every other problem |
+| 3 | `05-hld-problems/01-easy/rate-limiter.md` | Token bucket + Redis; applies directly to real interviews |
+| 4 | `05-hld-problems/01-easy/pastebin.md` | Object storage + CDN + TTL |
+| 5 | `05-hld-problems/01-easy/key-value-store.md` | Storage engine internals, replication |
+| 6 | `05-hld-problems/01-easy/autocomplete.md` | Trie, prefix caching, ranking |
+| 7 | `05-hld-problems/01-easy/web-crawler.md` | Distributed queues, dedup, politeness |
+| 8 | `05-hld-problems/02-medium/notification-service.md` | First async/fan-out problem |
+| 9 | `05-hld-problems/02-medium/instagram.md` | Photo storage, CDN, feed generation |
+| 10 | `05-hld-problems/02-medium/youtube.md` | Video encoding pipeline, chunked upload |
+| 11 | `05-hld-problems/02-medium/whatsapp.md` | WebSocket, presence, message ordering |
+| 12 | `05-hld-problems/02-medium/twitter-news-feed.md` | Fan-out at scale; push vs. pull |
+| 13 | `05-hld-problems/03-hard/distributed-cache.md` | Consistent hashing, eviction, cluster topology |
+| 14 | `05-hld-problems/03-hard/chat-system.md` | Real-time messaging, storage, offline delivery |
+| 15 | `05-hld-problems/03-hard/search-system.md` | Inverted index, ranking, crawl pipeline |
+| 16 | `05-hld-problems/03-hard/payment-system.md` | Idempotency, exactly-once, ledger design |
+| 17 | `05-hld-problems/03-hard/ride-sharing.md` | Geo-indexing, matching, real-time dispatch |
+| 18 | `05-hld-problems/03-hard/google-drive.md` | Chunking, dedup, sync protocol |
+| 19 | `05-hld-problems/03-hard/distributed-message-queue.md` | Kafka internals applied |
+| 20 | `05-hld-problems/03-hard/ad-click-aggregator.md` | High-volume ingestion, Lambda vs Kappa, dedup |
+| 21 | `05-hld-problems/03-hard/google-maps.md` | Geo-indexing, graph routing, ETA at scale |
+| 22 | `05-hld-problems/03-hard/stock-exchange.md` | Matching engine, order book, low-latency |
+| 23 | `05-hld-problems/03-hard/llm-chat-system.md` | Streaming inference, context window, cost control |
+| 24 | `05-hld-problems/03-hard/rag-system.md` | Vector embeddings, semantic search, retrieval grounding |
+
+**Phase 5 — Advanced (SDE-3 / Staff level differentiators)**
+20. `04-advanced-topics/distributed-systems.md` — consistency models, linearizability, Raft/Paxos
+21. `04-advanced-topics/distributed-concepts.md` — idempotency, retry strategies, backpressure
+22. `04-advanced-topics/event-driven-architecture.md` — CQRS, event sourcing, outbox pattern
+23. `04-advanced-topics/microservices.md` — service mesh, sagas, operational complexity
+24. `04-advanced-topics/observability.md` — SLI/SLO/SLA, distributed tracing, on-call readiness
+25. `04-advanced-topics/chaos-engineering.md` — game days, failure injection
+
+**Internals (study alongside the problem that uses the technology)**
+- `04-advanced-topics/internals/kafka-internals.md` — alongside distributed-message-queue.md
+- `04-advanced-topics/internals/redis-internals.md` — alongside distributed-cache.md
+- `04-advanced-topics/internals/cassandra-internals.md` — alongside any write-heavy problem
+- `04-advanced-topics/internals/postgresql-internals.md` — alongside any RDBMS-heavy problem
 
 ---
 
-## How to Use This Repository
+### LLD Track
 
-### For Interview Preparation
+The LLD track has a strict dependency order. Each layer depends on the previous one.
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/SystemDesign.git
-cd SystemDesign
+**Layer 1 — OOP fundamentals (2–3 days)**
+- `06-lld/01-oop-fundamentals/four-pillars.md` — encapsulation, inheritance, polymorphism, abstraction; start here
+- `06-lld/01-oop-fundamentals/introduction.md` — what OOP is and why it exists
+- `06-lld/01-oop-fundamentals/principles.md` — IS-A vs. HAS-A, composition vs. inheritance
 
-# Start with interview template
-cat "interview-templates/hld-template.md"
+**Layer 2 — SOLID principles (1 week)**
+Read these in order — each principle solves a problem introduced by ignoring the previous one.
+- Single Responsibility → Open/Closed → Liskov Substitution → Interface Segregation → Dependency Inversion
 
-# Practice a problem using the template
-# Example: Design URL Shortener
-open "hld-problems/easy/url-shortener.md"
+**Layer 3 — Design patterns (1–2 weeks)**
+Don't read all 16 at once. Group by what you're about to build:
+- Creational: Singleton (before Parking Lot), Factory (before any multi-type system), Builder (before complex object construction)
+- Behavioral: Observer (before any event-driven problem), Strategy (before any algorithm-swap problem), State (before Vending Machine, Elevator)
+- Structural: Decorator (before Logger, Rate Limiter), Composite (before file systems, coupon chains)
 
-# Reference cheat sheets during practice
-open "interview-templates/capacity-estimation.md"
-open "interview-templates/trade-offs-cheat-sheet.md"
-```
+**Layer 4 — LLD Problems (Tier 1 → Tier 2 → Tier 3)**
 
-### For Learning
+| Tier | Problems | Why this order |
+|------|----------|----------------|
+| Tier 1 (must solve 3+ times) | Parking Lot, Rate Limiter, Vending Machine, Tic-Tac-Toe, Splitwise | Cover Singleton, Strategy, State, Factory |
+| Tier 2 (understand class diagram + key pattern) | Elevator, Snake & Ladder, Hotel Mgmt, LRU Cache, Comment System | Cover scheduling, game loops, date concurrency, doubly-linked list |
+| Tier 3 (read for specific algorithm) | Locker Service, S3, Search Engine, Version Control, Text Editor | Geo-hash, Composite, Trie, DAG, Gap Buffer |
 
-Follow the learning paths above based on your current level.
-
----
-
-## Contributing
-
-This repository is under active development. Contributions welcome!
-
-### To-Do List
-
-- [ ] Complete all 27 HLD problem enhancements (capacity estimation, scaling, failures)
-- [ ] Add LLD template with examples
-- [ ] Create observability.md
-- [ ] Add chaos-engineering.md
-- [ ] Create practice roadmap (30-day, 60-day plans)
-- [ ] Add mermaid diagrams for architecture visualizations
+**Concurrency (study before Tier 2)**
+- `06-lld/04-concurrency/producer-consumer.md`
+- `06-lld/04-concurrency/thread-safe-singleton.md`
 
 ---
 
-## Additional Resources
+### Interview templates (use from Day 1, not Day N)
 
-### Books
-- "Designing Data-Intensive Applications" by Martin Kleppmann
-- "System Design Interview" by Alex Xu  
-- "Web Scalability for Startup Engineers" by Artur Ejsmont
+- `07-interview-templates/hld-template.md` — your 45-60 min interview script; use it on every problem you practice
+- `07-interview-templates/lld-template.md` — requirements → use cases → class diagram → patterns
+- `07-interview-templates/trade-offs-cheat-sheet.md` — decision matrices for every fork: SQL vs. NoSQL, sync vs. async, push vs. pull
 
-### Online
+---
+
+## Week-by-Week Schedule
+
+### SDE-3 Interview Prep (8 weeks)
+
+Run HLD and LLD tracks in parallel. HLD requires more time; LLD can be done in shorter focused sessions.
+
+**Week 1 — Mental models + interview framework**
+- `SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md`
+- `07-interview-templates/hld-template.md` + `07-interview-templates/capacity-estimation.md`
+- `01-foundations/fundamentals.md` + `08-reference/numbers-to-know.md`
+- LLD: `06-lld/01-oop-fundamentals/four-pillars.md` + `principles.md`
+
+**Week 2 — Foundations deep**
+- `01-foundations/databases.md` + `01-foundations/networking.md`
+- `01-foundations/caching-cdn.md` + `01-foundations/security.md`
+- All of `02-building-blocks/` (read as a block — they reference each other)
+- LLD: All 5 SOLID principles in order
+
+**Week 3 — Easy HLD (all 7, timed at 45 min each)**
+- URL Shortener → Unique ID Generator → Rate Limiter → Pastebin → Key-Value Store → Autocomplete → Web Crawler
+- LLD: Singleton, Factory, Strategy patterns + solve Parking Lot 3 times from scratch
+
+**Week 4 — Medium HLD**
+- Notification Service → Instagram → YouTube → WhatsApp → Twitter News Feed
+- LLD: State, Observer patterns + solve Vending Machine + Tic-Tac-Toe
+
+**Week 5 — Hard HLD (Part 1)**
+- Distributed Cache + Chat System + Search System
+- `04-advanced-topics/distributed-systems.md`
+- LLD: Decorator, Composite, Chain of Responsibility + solve Rate Limiter LLD + LRU Cache
+
+**Week 6 — Hard HLD (Part 2) + Distributed Systems**
+- Payment System + Ride Sharing + Google Drive + Distributed Message Queue
+- `04-advanced-topics/distributed-concepts.md` (idempotency, retry — critical for Payment System)
+- `04-advanced-topics/event-driven-architecture.md`
+- LLD: solve Splitwise + Elevator System
+
+**Week 7 — Advanced Topics + Internals**
+- `04-advanced-topics/microservices.md` + `04-advanced-topics/observability.md`
+- `04-advanced-topics/internals/kafka-internals.md` + `04-advanced-topics/internals/redis-internals.md`
+- LLD: solve 3-4 Tier 2 problems (Hotel, Comment System, Locker Service)
+
+**Week 8 — Advanced hard problems + mock interviews**
+- `05-hld-problems/03-hard/ad-click-aggregator.md` + `05-hld-problems/03-hard/stock-exchange.md` — data pipeline and low-latency systems
+- `05-hld-problems/03-hard/google-maps.md` — geo-indexing at scale
+- `05-hld-problems/03-hard/llm-chat-system.md` + `05-hld-problems/03-hard/rag-system.md` — AI system design (increasingly common at SDE-3)
+- `04-advanced-topics/chaos-engineering.md`
+- LLD: attempt 1-2 Tier 3 problems (S3, Version Control)
+- Final review: `07-interview-templates/trade-offs-cheat-sheet.md`
+- Re-solve 4 HLD problems end-to-end without notes (pick weakest ones)
+
+---
+
+## Interview Execution Checklist
+
+### Before the interview
+- [ ] Know the 7 HLD phases from `07-interview-templates/hld-template.md`
+- [ ] Memorize key numbers: 1M req/day ≈ 12 QPS, L1 cache 0.5ns, RAM 100ns, SSD 150μs
+- [ ] Know 99.9% = 8.76 hrs downtime/year, 99.99% = 52 min/year
+
+### During the interview
+
+**Phase 1 (0-10 min): Requirements**
+- [ ] Clarify functional requirements (top 3-5 features only)
+- [ ] Define non-functional requirements: PASS-R (Performance, Availability, Scalability, Security, Reliability)
+- [ ] Agree on scale — DAU, QPS, storage order of magnitude
+
+**Phase 2 (10-15 min): Capacity Estimation**
+- [ ] Writes QPS, reads QPS (estimate read:write ratio)
+- [ ] Storage: bytes per record × total records × replication factor
+- [ ] Bandwidth: QPS × avg response size
+
+**Phase 3 (15-25 min): API + Schema + HLD**
+- [ ] 2-3 REST endpoints
+- [ ] Core DB schema (3-4 tables/collections)
+- [ ] High-level component diagram
+
+**Phase 4 (25-55 min): Deep Dives**
+- [ ] Scale the bottleneck (DB, service, cache)
+- [ ] Caching strategy (what, where, eviction policy)
+- [ ] Failure scenarios (what if DB is down, network partition)
+- [ ] Trade-offs — explain every choice with "because X, at the cost of Y"
+
+**Phase 5 (55-60 min): Wrap-up**
+- [ ] Summarize design in 3 sentences
+- [ ] Mention one enhancement you'd add with more time
+
+---
+
+## Key Principles
+
+### 1. Trade-offs over answers
+
+Don't say: "I'd use Redis."
+Say: "Redis gives sub-millisecond latency and rich data structures like sorted sets for leaderboards. The trade-off is limited storage — we'd use LRU eviction and keep the DB as source of truth."
+
+### 2. Scale progressively
+
+"At 1K users a single server works. At 1M users we need horizontal scaling + read replicas. At 10M we need sharding."
+
+### 3. Production mindset
+
+Every design decision needs: monitoring ("how do we know it's working?"), failure handling ("what if X goes down?"), and operational complexity ("how hard is this to maintain?").
+
+### 4. Own the conversation
+
+Drive through the phases. Don't wait for the interviewer to ask — ask yourself: "Should I go deeper on the DB choice or the caching layer?" Then pick one and explain why.
+
+---
+
+## Key Files for SDE-3 Interviews
+
+| File | Purpose |
+|------|---------|
+| `07-interview-templates/hld-template.md` | Master this — it's your interview script |
+| `07-interview-templates/capacity-estimation.md` | Practice until estimation is automatic |
+| `07-interview-templates/trade-offs-cheat-sheet.md` | Decision matrices for SQL vs NoSQL, sync vs async |
+| `08-reference/numbers-to-know.md` | Latency numbers — memorize the orders of magnitude |
+| `04-advanced-topics/distributed-systems.md` | Consistency models, consensus — SDE-3 differentiators |
+| `04-advanced-topics/microservices.md` | When to use microservices and the operational cost |
+| `04-advanced-topics/event-driven-architecture.md` | Kafka, event sourcing, CQRS — appears in many hard problems |
+
+---
+
+## Resources
+
+- "Designing Data-Intensive Applications" — Martin Kleppmann (read chapters 1, 5, 7, 9)
+- "System Design Interview" Vol 1 & 2 — Alex Xu
 - [High Scalability Blog](http://highscalability.com/)
 - [AWS Architecture Center](https://aws.amazon.com/architecture/)
-- [Google Cloud Architecture Center](https://cloud.google.com/architecture)
-
-### Related Repositories
-- [System Design Primer](https://github.com/donnemartin/system-design-primer)
-- [Awesome System Design](https://github.com/madd86/awesome-system-design)
-
----
-
-## License
-
-MIT License - Feel free to use this for your interview preparation and share with others!
-
----
-
-## Star This Repository
-
-If you find this helpful, please star ⭐ the repository and share with others preparing for senior-level interviews!
-
-**Good luck with your interviews!**
