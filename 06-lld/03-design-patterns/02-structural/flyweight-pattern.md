@@ -1,5 +1,93 @@
 # Flyweight Pattern
 
+## Question
+
+You are building a 2D forest game. You create 1,000,000 `Tree` objects. Each tree has: `type` (Oak, Pine, Birch), `texture` (50KB image), `color`, `x`, `y`. How much memory does this use? What is wrong with creating a distinct object per tree?
+
+Try to reason through the memory math before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class Tree {
+    private String type;
+    private byte[] texture; // 50KB per tree
+    private String color;
+    private int x;
+    private int y;
+
+    public Tree(String type, byte[] texture, String color, int x, int y) {
+        this.type    = type;
+        this.texture = texture; // separate copy per instance
+        this.color   = color;
+        this.x       = x;
+        this.y       = y;
+    }
+}
+
+// Creating 1,000,000 trees:
+for (int i = 0; i < 1_000_000; i++) {
+    trees.add(new Tree("Oak", loadTexture("oak.png"), "green", rand(), rand()));
+}
+// Memory: 1,000,000 × 50KB = 50GB — system crash
+```
+
+**What breaks**:
+1. **Identical data duplicated per instance**: All Oak trees have the same `texture` and `color`. Each of 1M trees allocates its own 50KB copy.
+2. **Memory exhaustion**: 1M × 50KB = 50GB just for textures.
+3. **GC pressure**: 1M large objects constantly stress the garbage collector.
+
+**Key insight**: There are only 3 tree types, but 1,000,000 trees. The type, texture, and color are **intrinsic** (shared, immutable). Only `x` and `y` are **extrinsic** (unique per instance).
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **share the invariant state across instances; keep only the unique state per object**.
+
+Step 1 — extract the shared (intrinsic) state into a separate `TreeType` object:
+```java
+class TreeType {
+    private String type;
+    private byte[] texture; // loaded once, shared by all trees of this type
+    private String color;
+
+    public TreeType(String type, byte[] texture, String color) { ... }
+
+    public void draw(int x, int y) {
+        // render this tree type at the given coordinates
+    }
+}
+```
+
+Step 2 — a factory ensures each type is created only once:
+```java
+class TreeFactory {
+    private static Map<String, TreeType> cache = new HashMap<>();
+
+    public static TreeType getTreeType(String type, byte[] texture, String color) {
+        return cache.computeIfAbsent(type, k -> new TreeType(type, texture, color));
+    }
+}
+```
+
+Step 3 — the `Tree` object holds only extrinsic state (unique position) and a reference to the shared `TreeType`:
+```java
+class Tree {
+    private int x, y;
+    private TreeType type; // shared reference — not a copy
+
+    public Tree(int x, int y, TreeType type) { this.x = x; this.y = y; this.type = type; }
+    public void draw() { type.draw(x, y); }
+}
+```
+
+Memory: 3 `TreeType` objects × 50KB = 150KB (shared). 1M `Tree` objects × 8 bytes (x, y + reference) = ~8MB. Total: ~8MB vs 50GB.
+
+---
+
 ## Real-Life Analogy
 
 You are building a video game with a forest of **1 million trees**.

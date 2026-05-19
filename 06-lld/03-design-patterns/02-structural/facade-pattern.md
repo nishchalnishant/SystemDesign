@@ -1,5 +1,80 @@
 # Facade Pattern
 
+## Question
+
+To place an order, a client must: validate inventory, charge the payment, generate an invoice, send a shipping notification, and update the loyalty points. Each of these is a separate service. Write the client code that calls all five services to place one order.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The client knows and orchestrates every subsystem:
+
+```java
+// In the client (e.g., an HTTP controller):
+public void placeOrder(Order order, User user) {
+    if (!inventoryService.isAvailable(order.getProductId(), order.getQty())) {
+        throw new OutOfStockException();
+    }
+    inventoryService.reserve(order.getProductId(), order.getQty());
+
+    PaymentResult result = paymentService.charge(user.getPaymentMethod(), order.getTotal());
+    if (!result.isSuccess()) throw new PaymentFailedException();
+
+    String invoiceId = invoiceService.generate(order, user);
+
+    shippingService.scheduleDelivery(order, user.getAddress());
+
+    loyaltyService.addPoints(user.getId(), order.getTotal());
+}
+```
+
+**What breaks**:
+1. **Client is tightly coupled to 5 subsystems**: The HTTP controller must import `InventoryService`, `PaymentService`, `InvoiceService`, `ShippingService`, `LoyaltyService`.
+2. **SRP violation**: The controller knows the orchestration sequence. If the sequence changes (e.g., loyalty points before invoice), you edit the controller.
+3. **Duplication**: Every entry point (web, mobile, batch job) that places orders must repeat this sequence.
+4. **Untestable**: Testing an order requires constructing or mocking all 5 services in every test.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **the client should call one method; the orchestration sequence lives behind a single entry point**.
+
+Step 1 — create a `Facade` class that knows all the subsystems and the correct sequence:
+```java
+class OrderFacade {
+    private InventoryService inventoryService;
+    private PaymentService paymentService;
+    private InvoiceService invoiceService;
+    private ShippingService shippingService;
+    private LoyaltyService loyaltyService;
+
+    public OrderFacade(/* inject all services */) { ... }
+
+    public void placeOrder(Order order, User user) {
+        // full orchestration lives here, not in the controller
+        inventoryService.reserve(order.getProductId(), order.getQty());
+        paymentService.charge(user.getPaymentMethod(), order.getTotal());
+        invoiceService.generate(order, user);
+        shippingService.scheduleDelivery(order, user.getAddress());
+        loyaltyService.addPoints(user.getId(), order.getTotal());
+    }
+}
+```
+
+Step 2 — the client calls one method:
+```java
+// In the HTTP controller (and the mobile controller, and the batch job):
+orderFacade.placeOrder(order, user);
+```
+
+The controller now imports only `OrderFacade`. The subsystems are hidden. Changing the sequence means editing one class.
+
+---
+
 > **Type**: Structural
 > **Purpose**: Provides a simplified interface to a complex subsystem, hiding the complexity behind a single entry point.
 

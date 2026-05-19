@@ -4,6 +4,22 @@
 
 ---
 
+## What Breaks Without This Pattern?
+
+A payment service saves a `PaymentCompleted` record to PostgreSQL, then calls `kafka.produce("payment_completed")`. On a Tuesday morning, the Kafka broker is briefly unavailable. The DB write committed, the event was never published. The Order Service never hears about it — the order stays in PENDING forever. The user's card was charged, but their order never ships.
+
+Flipping the order makes it worse: publish first, then save to DB. The event fires, the Order Service starts fulfillment. Then the DB write fails. Now you have an order being shipped for a payment that doesn't exist in your records.
+
+**Why the naive fix fails**
+
+The obvious fix is a transaction that wraps both operations. But a database transaction and a Kafka produce cannot participate in the same ACID transaction — they are separate systems with no shared transaction coordinator. Any wrapper you build is just 2PC in disguise, with the same coordinator-crash problem.
+
+**The pattern as the minimal fix**
+
+Write the event into your own database — the same database transaction as the business record. One local ACID transaction, always atomic. A separate process (CDC via Debezium, or a polling relay) reads the `outbox` table and publishes to Kafka. The relay can retry safely because the event is durable in the DB. Consumers must be idempotent (they may see the event more than once on retry). That is the entire pattern: local write + relay + idempotent consumer.
+
+---
+
 ## The Problem
 
 You need to do two things:

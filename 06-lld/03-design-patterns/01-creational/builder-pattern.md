@@ -1,5 +1,97 @@
 # Builder Pattern
 
+## Question
+
+You are building a `User` object that has: `name` (required), `email` (required), `age` (optional), `address` (optional), `phoneNumber` (optional), `profilePicture` (optional). Write the constructor for this class.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The first approach — a constructor with all fields:
+
+```java
+class User {
+    public User(String name, String email, int age, 
+                String address, String phone, String picture) { ... }
+}
+
+// Caller:
+User u = new User("Alice", "alice@x.com", 0, null, null, null);
+//                                         ^^  ^^^^  ^^^^  ^^^^
+//                  what do these nulls mean? which is phone vs address?
+```
+
+Or the telescoping constructor approach:
+```java
+User u1 = new User("Alice", "alice@x.com");
+User u2 = new User("Alice", "alice@x.com", 30);
+User u3 = new User("Alice", "alice@x.com", 30, "123 Main St");
+// Need a separate constructor for every combination of optional fields
+```
+
+**What breaks**:
+1. **Unreadable callsites**: `new User("Alice", "x@x.com", 0, null, null, null)` — what is the 5th `null`?
+2. **Constructor explosion**: N optional fields → up to 2^N combinations you might need to support.
+3. **Invalid state**: Nothing stops `new User(null, null, -5, ...)` — the object is invalid from birth.
+4. **No immutability**: Setters let callers mutate after construction.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **separate the step-by-step configuration from the final construction**.
+
+Step 1 — make the outer class constructor private, require only mandatory fields:
+```java
+class User {
+    private final String name;   // required
+    private final String email;  // required
+    private final int age;       // optional
+    private final String phone;  // optional
+
+    private User(Builder b) {
+        this.name  = b.name;
+        this.email = b.email;
+        this.age   = b.age;
+        this.phone = b.phone;
+    }
+}
+```
+
+Step 2 — inner `Builder` class holds the state during configuration:
+```java
+static class Builder {
+    private final String name;   // required → constructor param
+    private final String email;  // required → constructor param
+    private int age;
+    private String phone;
+
+    public Builder(String name, String email) {
+        this.name = name; this.email = email;
+    }
+
+    public Builder age(int a)      { this.age = a; return this; }
+    public Builder phone(String p) { this.phone = p; return this; }
+
+    public User build() { return new User(this); }
+}
+```
+
+Step 3 — callsite is now readable and validated:
+```java
+User u = new User.Builder("Alice", "alice@x.com")
+    .age(30)
+    .phone("555-1234")
+    .build();
+```
+
+That's the entire pattern — a fluent inner builder that returns `this` for chaining, and a `build()` that calls the private outer constructor.
+
+---
+
 > **Purpose**: Separates the construction of a complex object from its representation, allowing step-by-step creation with full control over which parts are set.
 
 > **Analogy**: Building a custom PC. You specify: CPU=i9, RAM=32GB, Storage=1TB NVMe. The builder assembles it step by step. You don't call `new Computer(i9, 32, 1000, true, false, null, ...)` and try to remember what the 7th argument means.

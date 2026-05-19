@@ -4,6 +4,80 @@
 > **Topics**: Object-Oriented Design, Singleton, Factory Pattern, Strategy Pattern
 > **Key Concepts**: Managing shared resources, pricing logic, concurrency.
 
+---
+
+## What Breaks Without This Design?
+
+Imagine a single `ParkingSystem` God class:
+
+```java
+class ParkingSystem {
+    private int[][] spots; // [floor][spotIndex], 0=free 1=occupied
+    private Map<String, int[]> tickets; // ticketId → [floor, spot]
+    private String pricingType = "HOURLY";
+
+    public String parkCar(String licensePlate, String vehicleType) {
+        // scan every floor and every spot to find a free one
+        for (int f = 0; f < spots.length; f++) {
+            for (int s = 0; s < spots[f].length; s++) {
+                if (spots[f][s] == 0) {
+                    spots[f][s] = 1;
+                    String ticketId = UUID.randomUUID().toString();
+                    tickets.put(ticketId, new int[]{f, s});
+                    return ticketId;
+                }
+            }
+        }
+        return null;
+    }
+
+    public double exitCar(String ticketId) {
+        int[] location = tickets.remove(ticketId);
+        spots[location[0]][location[1]] = 0;
+        if (pricingType.equals("HOURLY")) { /* ... */ }
+        else if (pricingType.equals("FLAT")) { /* ... */ }
+        return 0;
+    }
+}
+```
+
+**Concrete failures**:
+1. **No vehicle type awareness**: `spots` is a flat 2D int array — it cannot distinguish motorcycle spots from car bays. A truck would be assigned a motorcycle slot.
+2. **Race condition on `spots[f][s]`**: Two threads call `parkCar` simultaneously. Both read `spots[1][3] == 0`, both write `spots[1][3] = 1`, both generate different tickets for the same physical spot — double booking.
+3. **Pricing change requires code edit**: Switching from hourly to weekend flat rate means editing `exitCar()`. Adding a third pricing model adds another `else if`.
+4. **Multiple instances of `ParkingSystem` compile silently**: Two service instances run with separate `spots` arrays. Spot assignments conflict.
+5. **Untestable spot assignment**: You cannot test the "nearest spot" algorithm without constructing the entire `spots` array and all pricing logic in the same object.
+
+---
+
+## Derive the Class Structure
+
+Start from the God class and apply one forcing function at a time:
+
+**Force 1 — Vehicle types need different spots**: A `Car` cannot fit in a motorcycle slot. The integer `0/1` in the array cannot encode type. Extract `ParkingSpot` with a `SpotType` field. Now each spot knows what it can hold.
+
+**Force 2 — Nearest spot requires iteration over a floor's spots in order**: Iterating `spots[floor][0..n]` is now a method on the floor, not on the system. Extract `Level` that owns `List<ParkingSpot>` and exposes `findAvailableSpot(VehicleType)`.
+
+**Force 3 — Concurrent double-booking**: Two threads can both pass the `isFree()` check before either marks the spot occupied. Move the lock to `ParkingSpot` itself — `occupy()` holds a write lock and checks `!isFree` atomically.
+
+**Force 4 — Pricing must be swappable**: Adding a new pricing model requires editing `exitCar()`. Extract `PricingStrategy` interface. `ParkingLot` holds a reference to it and delegates. Swapping strategy means one constructor call, not one `else if`.
+
+**Force 5 — Only one lot may exist**: Multiple instantiation corrupts spot tracking. Make `ParkingLot` a Singleton.
+
+**Result** — the class split that these forces produce:
+```
+God class → ParkingLot (Singleton, orchestration only)
+          → Level (floor-level spot management)
+          → ParkingSpot (atomic occupy/free + type matching)
+          → Vehicle hierarchy (type encoding)
+          → Ticket (session: spot reference + entry time)
+          → PricingStrategy (fee algorithm, swappable)
+```
+
+Each class now has one reason to change. The rest of the phases below document the canonical form.
+
+---
+
 ## Real-Life Analogy
 
 **A multi-storey parking garage at a shopping mall.**

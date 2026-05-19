@@ -1,5 +1,96 @@
 # Visitor Pattern
 
+## Question
+
+You have a hierarchy: `Item` (interface), `Food`, `Electronics`, `Clothing`. You need to: (1) calculate tax for each type (different rates), (2) calculate shipping cost for each type (different logic). Where do you put these two operations?
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+Option A — add methods to each class:
+```java
+interface Item {
+    double calculateTax();
+    double calculateShipping();
+}
+
+class Food implements Item {
+    public double calculateTax()      { return price * 0.05; }
+    public double calculateShipping() { return weight * 0.5; }
+}
+// ... same for Electronics, Clothing
+```
+
+Adding a 3rd operation (e.g., `calculateInsurance()`) means editing `Item`, `Food`, `Electronics`, `Clothing` — all four files.
+
+Option B — centralise with `instanceof`:
+```java
+class TaxCalculator {
+    public double calculate(Item item) {
+        if (item instanceof Food)        return ((Food) item).getPrice() * 0.05;
+        else if (item instanceof Electronics) return ((Electronics) item).getPrice() * 0.18;
+        else if (item instanceof Clothing)    return ((Clothing) item).getPrice() * 0.12;
+        throw new IllegalArgumentException("Unknown item type");
+    }
+}
+```
+
+**What breaks**:
+1. **OCP violation (Option A)**: New operations require editing every class in the hierarchy.
+2. **Fragile casting (Option B)**: `instanceof` chains break at runtime when a new `Item` subtype is added without updating the calculator.
+3. **Operations are scattered (Option A)** or **type knowledge leaks into the operation (Option B)**.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **add new operations without touching the item hierarchy; let the type dispatch happen at compile time, not runtime**.
+
+Step 1 — define a `Visitor` interface with one overload per concrete type:
+```java
+interface ItemVisitor {
+    double visit(Food food);
+    double visit(Electronics electronics);
+    double visit(Clothing clothing);
+}
+```
+
+Step 2 — each `Item` accepts a visitor, calling the correct overload (this is **double dispatch** — type resolved at compile time):
+```java
+interface Item {
+    double accept(ItemVisitor visitor);
+}
+
+class Food implements Item {
+    public double accept(ItemVisitor v) { return v.visit(this); } // calls visit(Food)
+}
+class Electronics implements Item {
+    public double accept(ItemVisitor v) { return v.visit(this); } // calls visit(Electronics)
+}
+```
+
+Step 3 — each operation is a separate `Visitor` class:
+```java
+class TaxVisitor implements ItemVisitor {
+    public double visit(Food f)        { return f.getPrice() * 0.05; }
+    public double visit(Electronics e) { return e.getPrice() * 0.18; }
+    public double visit(Clothing c)    { return c.getPrice() * 0.12; }
+}
+
+class ShippingVisitor implements ItemVisitor {
+    public double visit(Food f)        { return f.getWeight() * 0.5; }
+    public double visit(Electronics e) { return 15.0; }  // flat rate
+    public double visit(Clothing c)    { return c.getWeight() * 0.3; }
+}
+```
+
+Adding `InsuranceVisitor` is one new class. Adding `Jewelry` to the hierarchy requires updating every `Visitor` — that is an explicit trade-off: operations are easy to add, types are harder to add.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Add new operations to existing class hierarchies without modifying the classes themselves. Move the operation logic into a separate "visitor" class.
 

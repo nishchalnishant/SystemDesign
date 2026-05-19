@@ -6,6 +6,82 @@
 
 ---
 
+## What Breaks Without This Design?
+
+```java
+class VendingMachine {
+    private String state = "IDLE"; // "IDLE", "SELECTED", "DISPENSING"
+    private String selectedItem;
+    private double balance;
+    private Map<String, Integer> inventory = new HashMap<>();
+    private Map<String, Double> prices = new HashMap<>();
+
+    public void insertCoin(double amount) {
+        if (state.equals("IDLE") || state.equals("SELECTED")) {
+            balance += amount;
+            if (state.equals("SELECTED") && balance >= prices.get(selectedItem)) {
+                state = "DISPENSING";
+                dispense();
+            }
+        } else {
+            System.out.println("Cannot insert coin now");
+        }
+    }
+
+    public void selectItem(String item) {
+        if (state.equals("IDLE")) {
+            if (inventory.getOrDefault(item, 0) > 0) {
+                selectedItem = item;
+                state = "SELECTED";
+            }
+        } else {
+            System.out.println("Select item only in IDLE state");
+        }
+    }
+
+    private void dispense() {
+        inventory.put(selectedItem, inventory.get(selectedItem) - 1);
+        double change = balance - prices.get(selectedItem);
+        balance = 0;
+        selectedItem = null;
+        state = "IDLE";
+        System.out.println("Dispensed. Change: $" + change);
+    }
+}
+```
+
+**Concrete failures**:
+1. **O(S × A) branching**: Every method has `if (state.equals("X"))` branches. 4 states × 5 actions = 20 branches across 5 methods. Adding `MAINTENANCE` state requires editing every method.
+2. **String-based state is not type-safe**: Typo `"DISPENCING"` compiles and fails silently at runtime. No compiler catches invalid state names.
+3. **Illegal transitions are not structurally prevented**: Nothing stops calling `dispense()` directly while in `IDLE`. Only a runtime string check catches it — and only if the developer remembered to add it.
+4. **State logic is scattered**: The behavior for `SELECTED` state is split between `insertCoin()`, `selectItem()`, and `dispense()`. To understand how `SELECTED` behaves, you must read all methods.
+5. **No `BigDecimal` for currency**: `double balance += amount` introduces floating-point errors. `0.1 + 0.2 != 0.3` — critical for money.
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — State-dependent behavior must be grouped, not scattered**: Every action (insertCoin, selectItem, dispense, cancel) behaves differently per state. Extract `VendingMachineState` interface with all action methods. Each state class implements only its valid behavior; invalid actions print an error or throw. The machine holds `currentState` and delegates every call to it.
+
+**Force 2 — State transitions must be explicit**: `IdleState.selectItem()` calls `machine.setState(machine.getSelectedState())`. The transition is visible in the state class that owns it — not buried in an `if/else` chain in the main class.
+
+**Force 3 — Inventory and pricing belong together per slot**: A slot code `A1` maps to a product, a price, and a count. Extract `Slot` (or `Product`) with `name`, `price` (BigDecimal), `quantity`. `VendingMachine` holds `Map<String, Slot>`.
+
+**Force 4 — `BigDecimal` for all money**: `double` is wrong for money. `balance` and `price` are `BigDecimal`. `insertCoin` accepts `BigDecimal amount`.
+
+**Force 5 — Adding `MAINTENANCE` state must not touch existing states**: A new `MaintenanceState` implements `VendingMachineState` — all action methods reject requests with an appropriate message. Existing `IdleState`, `SelectedState`, `DispensingState` are untouched.
+
+**Result** — the class split these forces produce:
+```
+God class → VendingMachine (holds currentState, inventory Map<slotCode, Slot>, balance)
+          → VendingMachineState (interface: insertCoin, selectItem, dispense, cancel)
+             → IdleState, ProductSelectedState, DispensingState, OutOfOrderState
+          → Slot / Product (name, price: BigDecimal, quantity)
+          → ChangeCalculator (computes exact change, handles edge cases)
+```
+
+---
+
 ## Opening Analogy
 
 Stand in front of a real vending machine. Before you touch it, it is idle — buttons do nothing except item selection. After you pick an item, it waits for money. While it is dispensing, pressing any button is ignored. If it runs out of a product, it shows "sold out" for that slot. The machine behaves *completely differently* depending on which mode it is in. That is the core insight: the vending machine is not a bag of if/else branches — it is a State Machine. Each state owns its own behavior, and illegal transitions are rejected by the state itself, not by a central controller.

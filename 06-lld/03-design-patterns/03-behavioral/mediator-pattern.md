@@ -1,5 +1,102 @@
 # Mediator Pattern
 
+## Question
+
+A collaborative document editor has users `Alice`, `Bob`, and `Charlie`. When Alice types, Bob and Charlie must see the change. When Bob types, Alice and Charlie must see it. Write the `User.type(String text)` method that propagates changes to all other users.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class User {
+    private String name;
+    private List<User> peers = new ArrayList<>(); // direct references to all others
+
+    public void addPeer(User u) { peers.add(u); }
+
+    public void type(String text) {
+        System.out.println(name + " typed: " + text);
+        for (User peer : peers) {
+            peer.receiveUpdate(name, text); // direct call to each peer
+        }
+    }
+
+    public void receiveUpdate(String from, String text) { ... }
+}
+
+// Setup:
+alice.addPeer(bob);
+alice.addPeer(charlie);
+bob.addPeer(alice);
+bob.addPeer(charlie);
+charlie.addPeer(alice);
+charlie.addPeer(bob);
+// N users = N*(N-1) peer references
+```
+
+**What breaks**:
+1. **O(N²) connections**: Each user holds direct references to all others. 10 users = 90 peer links.
+2. **Tight coupling**: `User` must import `User` to hold peer references — circular dependency; each user is coupled to every other.
+3. **Fragile add/remove**: Adding a 4th user `Dave` requires updating every existing user's peer list.
+4. **SRP violation**: `User` manages its own content AND routes messages to peers.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **users must not hold references to each other — communication routes through a single coordinator**.
+
+Step 1 — extract a `Mediator` interface:
+```java
+interface DocumentMediator {
+    void broadcastChange(User sender, String text);
+    void addUser(User u);
+}
+```
+
+Step 2 — each `User` only holds a reference to the mediator:
+```java
+class User {
+    private String name;
+    private DocumentMediator mediator;
+
+    public User(String name, DocumentMediator mediator) {
+        this.name = name;
+        this.mediator = mediator;
+    }
+
+    public void type(String text) {
+        mediator.broadcastChange(this, text); // send to mediator, not to peers
+    }
+
+    public void receiveUpdate(String from, String text) {
+        System.out.println(name + " sees: " + from + " → " + text);
+    }
+}
+```
+
+Step 3 — the mediator owns the routing:
+```java
+class CollaborativeDocument implements DocumentMediator {
+    private List<User> users = new ArrayList<>();
+
+    public void addUser(User u)    { users.add(u); }
+
+    public void broadcastChange(User sender, String text) {
+        for (User u : users) {
+            if (u != sender) u.receiveUpdate(sender.getName(), text);
+        }
+    }
+}
+```
+
+Adding `Dave` is now: `mediator.addUser(dave)`. No existing user changes. N users = N mediator references, not N² peer links.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Centralize complex communication between objects into a single mediator object. Objects no longer communicate directly — they communicate only through the mediator.
 

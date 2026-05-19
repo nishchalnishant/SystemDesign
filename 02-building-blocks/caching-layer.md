@@ -4,15 +4,15 @@
 
 ---
 
-## 1. Concept Overview
+## 1. Why Caching Exists
 
-A **caching layer** sits between the application and the primary data store (e.g. database). It holds a subset of data in fast storage (RAM) so that repeated reads are served without hitting the DB.
+**Question**: Your user profile API makes a SELECT on every request. Profiles change once a week. You have 1M active users and 100k req/s. Your PostgreSQL can handle ~10k complex queries/second at acceptable latency. The math doesn't work — what do you do?
 
-**Why it exists**: Databases are slower and more expensive per operation than memory. Caching hot data reduces latency and DB load, enabling higher throughput and better user experience.
+**Physical constraint**: RAM access is ~100ns. A disk seek (even SSD) is ~100µs — 1,000× slower. A database query involves parsing, planning, disk I/O, and network — often 1–10ms. Serving 100k req/s at 5ms average means 500 concurrent queries — well beyond a single DB node's capacity for non-trivial workloads. There is no vertical scaling path that makes a disk as fast as RAM.
 
-**Real-life analogy — the chef's mise en place**: In a professional kitchen, mise en place ("everything in its place") is the prep work done before service. Instead of running to the walk-in refrigerator every time they need diced onions, the chef pre-chops a full bowl of onions and keeps it at the station. The walk-in refrigerator is the database — it has everything, but it's across the kitchen and takes time. The mise en place at the station is the cache — a small, fast subset of what the walk-in holds, positioned where it's needed.
+**Minimal solution**: Add an in-process HashMap. Populate it on first request, never expire it. Works until: the map grows to exhaust JVM heap, deploys wipe it cold (thundering herd on restart), multiple app instances have different cached states, and you can never serve fresh data after an update.
 
-When the prep bowl runs dry (cache miss), the chef walks to the walk-in, grabs more onions, chops them, and restocks the station (populate cache from DB). The next hundred orders never touch the walk-in for onions.
+**Production generalization**: A shared external cache (Redis) sits between all app instances and the database. It has a bounded size with an eviction policy, TTL-based expiry for freshness control, and explicit invalidation on writes. When Redis is unavailable, the app falls back to the database — degraded performance, not total failure.
 
 ---
 
@@ -25,7 +25,7 @@ When the prep bowl runs dry (cache miss), the chef walks to the walk-in, grabs m
 - **Write-through**: Writes go to DB and cache together; cache always consistent with DB.
 - **Write-behind**: Writes go to cache first; DB updated asynchronously (higher performance, risk of loss).
 
-**Pattern analogies (back to the kitchen)**:
+**Pattern analogies (the chef's mise en place)**:
 
 - **Cache-aside**: The chef personally checks the prep bowl. If it's empty, they go to the walk-in, grab ingredients, and restock the bowl. The chef is the app — it controls the bowl directly. Most common pattern in software because it degrades gracefully: if the cache is down, the chef just goes to the walk-in every time (higher latency but correct).
 

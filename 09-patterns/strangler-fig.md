@@ -4,6 +4,26 @@
 
 ---
 
+## What Breaks Without This Pattern?
+
+A 500K-line Rails monolith serves 5M users. The checkout module needs to scale independently for Black Friday — but it can't, because it shares a process with the user profile module, the email service, and the admin panel. Scaling means scaling everything, at 10x cost. Deploying a fix to checkout means deploying the entire monolith — a 45-minute deploy window with risk to every feature.
+
+**Why the naive fix fails**
+
+The obvious answer is a full rewrite: start fresh in microservices. In practice:
+- The rewrite takes 12–18 months. Business feature development pauses or duplicates across both systems.
+- You must maintain feature parity with the running monolith, which keeps changing during the rewrite.
+- At go-live, you switch 100% of traffic at once. Any missed edge case causes a production incident.
+- Most big-bang rewrites are cancelled or rolled back before completion.
+
+The core invariant the big-bang rewrite violates: **you cannot safely validate a replacement system without real traffic, but you cannot take real traffic risk on an unvalidated system.**
+
+**The pattern as the minimal fix**
+
+Add a routing layer (reverse proxy or API gateway) in front of the monolith without changing any code. Route one feature's traffic to a new service — the monolith still handles everything else. Validate the new service with production traffic. Extract the next feature. The monolith shrinks incrementally; each extraction is independently deployable and independently reversible. No freeze, no big-bang, no dual-maintenance explosion.
+
+---
+
 ## The Problem
 
 You have a monolith that has grown too large to extend safely. Full rewrite is risky — it requires running two systems in parallel for 12–18 months while feature parity is rebuilt from scratch. Most big-bang rewrites fail or get cancelled.

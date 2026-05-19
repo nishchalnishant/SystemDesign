@@ -28,6 +28,26 @@ The "city" is your distributed cache. The key insight: you don't want to move ev
 
 ---
 
+## What Breaks Without This System?
+
+Without a cache, every read hits the database. At 10M reads/sec, even a well-tuned PostgreSQL cluster maxes out around 100K–200K reads/sec per node — you'd need 50–100 DB nodes just to serve reads, each with full replication overhead. More critically, a single viral event (celebrity post, flash sale) generates millions of reads for the same few rows per second, creating a thundering herd that melts the DB regardless of scale. Cache absorbs the 95%+ read ratio so the database only handles the writes and cold misses.
+
+---
+
+## Derive the Architecture
+
+**1 server, in-memory hash map**: Application stores key→value in a single Redis instance. GET/SET at ~1ms latency, ~100K ops/sec. Works for a startup. Breaks when: dataset exceeds 256 GB RAM on one machine (e.g., 10B keys × 1 KB = 10 TB). Fix: shard data across multiple nodes.
+
+**Naive sharding, hash(key) % N**: Distribute keys across N nodes by modulo hash. Works at 10 TB across 40 nodes. Breaks when: adding a 41st node causes hash(key) % 41 to remap ~98% of all keys — the entire cache cold-starts simultaneously, sending a thundering herd to the database. Fix: consistent hashing so only ~1/N keys move when a node is added.
+
+**Consistent hashing ring, N nodes**: Each node occupies a position on a 2^64 hash ring; a key routes to the next clockwise node. Adding one node moves only ~1/N keys. Works at arbitrary horizontal scale. Breaks when: a node fails — its slots go dark and every cache miss for those keys hits the database at once. Fix: replicate each master to a standby replica with automatic promotion on failure.
+
+**Master-replica pairs per shard**: Each shard has 1 master + 1 replica (async replication). On master failure, replica is promoted in ~1–2 seconds. Handles node failures without data unavailability. Breaks when: a single key receives 1M req/sec (viral content) — the one node owning that key saturates at ~100K ops/sec regardless of cluster size. Fix: replicate hot keys to multiple nodes; clients read from a random replica among them.
+
+**Hot-key replication + local L1 cache**: Write hot keys to N nodes; application maintains a short-TTL in-process cache (L1) for the hottest few hundred keys. This brings hot-key reads to <1ms with zero network I/O. Breaks when: a network partition splits the cluster — a minority master can still accept writes, causing split-brain divergence. Fix: minority partitions must go read-only; quorum of masters required to elect a new leader (Redis Cluster's gossip + majority voting).
+
+---
+
 ## Why This Is Hard
 
 1. **Key redistribution on resize**: A naive `hash(key) % N` approach breaks when you add a node — every key maps to a different server, causing a thundering herd to the database as the cache cold-starts. Consistent hashing solves this by moving only ~1/N keys.

@@ -30,6 +30,26 @@ Think of your chat gateway as a dispatcher at a massive phone exchange. When Use
 
 ---
 
+## What Breaks Without This System?
+
+Without persistent WebSocket connections and a message routing layer, clients must poll for new messages over HTTP. At 2B users polling every second = 2B req/sec — no web infrastructure can sustain that. Even at 5-second intervals, that's 400M req/sec of pure overhead producing no messages for the vast majority of requests. Without durable offline storage, a message sent to a user who is offline simply disappears — recipients miss messages every time they lose connectivity, which is the core failure mode of SMS and makes the product unreliable as a communication tool.
+
+---
+
+## Derive the Architecture
+
+**1 server, HTTP polling**: Clients poll `GET /messages?since=last_seen_id` every second. Server queries DB for new messages. Works for 100 users. Breaks when: 1M users × 1 req/sec = 1M req/sec on a server that handles ~10K HTTP req/sec — 99% of requests are wasted (no new messages). Fix: replace polling with a persistent connection that the server pushes to.
+
+**Single server, WebSocket connections**: Each client holds a persistent WebSocket connection. Server pushes messages directly to the connected socket. Eliminates polling. A single Node.js server handles ~50K concurrent WebSocket connections. Breaks when: 200M concurrent users ÷ 50K/server = 4,000 gateway servers — to route A's message to B, the sender's server must know which of the 4,000 servers B is connected to. Fix: maintain a connection registry (user_id → server_id) in Redis, looked up on every message send.
+
+**Connection registry in Redis**: On connect, write `user_id → gateway_server_id` to Redis (TTL = session lifetime). On message send: (1) look up B's server_id in Redis, (2) forward message to that server via internal channel, (3) that server pushes to B's WebSocket. Handles 200M concurrent connections across 4K gateways. Breaks when: User B is offline — the registry lookup fails, the message has nowhere to go and is dropped. Fix: if B is offline, persist the message to a durable message store keyed by B's user_id; deliver in order when B reconnects.
+
+**Durable offline message store**: Messages written to Cassandra partitioned by (recipient_user_id, conversation_id). On reconnect, client fetches undelivered messages ordered by sequence number. Handles offline delivery with no message loss. Breaks when: User A sends "Hello" and "How are you?" in quick succession — the two messages may arrive at the server in different orders due to network jitter, and Cassandra inserts may be timestamped identically (clock skew). Fix: assign a monotonic sequence number per conversation on the server side (not client timestamp) before inserting.
+
+**Server-side sequence numbers per conversation**: A sequence counter (Redis INCR or DB auto-increment) assigns monotonically increasing IDs per conversation. Clients display messages in sequence order, not arrival order. Out-of-order delivery is corrected at render time. Breaks when: a 1:1 message to a 256-member group requires delivering to all 256 members individually — at 100B messages/day with average group size 10, fan-out = 1T delivery operations/day. Fan-out for a 256-member group with all members online = 256 WebSocket pushes + 256 DB writes per message. Fix: async fan-out via a message queue — one write to the queue triggers worker pool to handle the 256 deliveries without blocking the sender.
+
+---
+
 ## Why This Is Hard
 
 1. **Connection scale**: A single server handles ~50K WebSocket connections. At 2B users with ~10% concurrency, you need tens of thousands of gateway machines — and you must know which user is on which machine in real time.

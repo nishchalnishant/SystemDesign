@@ -7,13 +7,32 @@
 
 ---
 
-## Real-Life Analogy
+## What Breaks Without This System
 
-Picture a nightclub bouncer with a clicker counter. The venue holds 1,000 people max per night. After that, nobody gets in, no matter how nicely they ask. The bouncer doesn't care who you are — when the counter hits 1,000, the door closes.
+Without rate limiting, any single client can saturate your API. A script sending 10,000 requests/second to `POST /login` costs you nothing to receive but exhausts your database connection pool in seconds. Every legitimate user gets 503 errors. This is not a hypothetical: it is exactly what happened to GitHub in 2018, when a distributed credential-stuffing attack generated millions of login attempts against unauthenticated endpoints.
 
-For per-user limits, it's more like drink tickets: each person gets 100 drink tickets for the evening. When they're out, they wait until midnight when the bar resets and they get a fresh stack. The bouncer (rate limiter) checks the ticket count before letting any drink through.
+The physical constraint: your backend can process X requests per second. Any client that exceeds a fair share of X must be throttled without adding meaningful latency (< 1ms) to the remaining clients.
 
-Now scale that to a million users hitting your API simultaneously — you need an automated bouncer that checks ticket counts in microseconds, works across hundreds of servers, and can't be fooled by people switching doors (servers).
+---
+
+## Derive the Architecture
+
+**Start with 1 server + in-memory counter:**
+One app server, one HashMap: `userId -> count`. On each request, increment the counter; if it exceeds the limit, return 429. Latency added: < 0.1ms (RAM lookup).
+
+**What breaks when you add a second app server?**
+User A sends 50 requests to Server 1 and 50 requests to Server 2. Each server's local counter reads 50 — both servers allow all requests. The user effectively gets 2× the intended limit. The fix: move counter state out of each server into a shared Redis instance.
+
+**What breaks with Redis at 8.4M checks/sec (10M users × 1,000 req/hr ÷ 3,600)?**
+A single Redis node handles ~1M commands/sec. At 8.4M checks/sec you need a Redis Cluster. Use hash tags `{userId}` to pin each user's key to one shard — this avoids cross-shard coordination for the atomic increment.
+
+**What breaks with a naive `GET count → check → INCR`?**
+Two servers read count=99 simultaneously, both decide "allow," both write 100. The limit is violated by exactly 1. Fix: Redis Lua script executes the entire read-check-write atomically in a single Redis command — no race window.
+
+**What breaks with fixed-window counting?**
+User sends 100 requests at 12:00:59 (window 1) and 100 at 12:01:01 (window 2). Both windows show 100 — no violation detected, but 200 requests fired in 2 seconds. Fix: sliding window counter interpolates the previous window's count based on elapsed time, eliminating the boundary burst for O(1) memory.
+
+**Resulting architecture:** API Gateway checks Redis Cluster (Lua script for atomic token-bucket decrement). Redis Cluster sharded by `{userId}`. For multi-region: local Redis per DC for sub-1ms latency, with configurable global budget splits per region.
 
 ---
 

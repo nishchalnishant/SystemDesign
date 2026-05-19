@@ -1,5 +1,93 @@
 # Proxy Pattern
 
+## Question
+
+You have a `HeavyReportGenerator` that loads 500MB of data on construction and takes 3 seconds to initialize. Most users open the app but never actually run a report. Also, some users should not be allowed to run reports at all. How do you handle both problems without modifying `HeavyReportGenerator`?
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+Eager initialization wastes resources:
+```java
+class ReportService {
+    private HeavyReportGenerator generator;
+
+    public ReportService() {
+        generator = new HeavyReportGenerator(); // 3 seconds, 500MB — on every startup
+    }
+
+    public void generateReport(User user) {
+        generator.generate();
+    }
+}
+```
+
+Access control added inline violates SRP:
+```java
+public void generateReport(User user) {
+    if (!user.hasRole("ADMIN")) throw new SecurityException("Denied");
+    generator.generate();  // now ReportService mixes generation + authorization
+}
+```
+
+**What breaks**:
+1. **Eager load cost**: Every user pays the 3-second init cost even if they never use the feature.
+2. **SRP violation**: `ReportService` now knows authorization rules. Every new rule requires editing `ReportService`.
+3. **Cannot unit-test generator logic without auth logic activating**, and vice versa.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **intercept the call before it reaches the real object — without the caller knowing**.
+
+Step 1 — define the interface both the real object and proxy implement:
+```java
+interface ReportGenerator {
+    void generate();
+}
+```
+
+Step 2a — **Virtual Proxy** (lazy init): defer construction until first use:
+```java
+class LazyReportProxy implements ReportGenerator {
+    private HeavyReportGenerator real;
+
+    public void generate() {
+        if (real == null) real = new HeavyReportGenerator(); // init on first call only
+        real.generate();
+    }
+}
+```
+
+Step 2b — **Protection Proxy** (access control): check permissions before delegating:
+```java
+class SecureReportProxy implements ReportGenerator {
+    private HeavyReportGenerator real = new HeavyReportGenerator();
+    private User currentUser;
+
+    public SecureReportProxy(User user) { this.currentUser = user; }
+
+    public void generate() {
+        if (!currentUser.hasRole("ADMIN")) throw new SecurityException("Denied");
+        real.generate();
+    }
+}
+```
+
+Step 3 — the client holds `ReportGenerator` (the interface), never the concrete class:
+```java
+ReportGenerator generator = new LazyReportProxy();
+generator.generate(); // real object created here, not at startup
+```
+
+`HeavyReportGenerator` is never modified. The proxy is transparent to the caller.
+
+---
+
 > **Type**: Structural
 > **Purpose**: Provides a placeholder or surrogate for another object to control access to it — adding lazy loading, access control, logging, or caching without modifying the real object.
 

@@ -1,5 +1,58 @@
 # Producer-Consumer Pattern
 
+## Question
+
+Two threads share a fixed-size `ArrayList<Task> buffer`. Thread A adds tasks to the buffer as fast as it can. Thread B reads and processes tasks from the buffer. Both run concurrently, no synchronization. What happens?
+
+Try to identify every failure mode before reading on.
+
+---
+
+## Race Conditions Without Synchronization
+
+```java
+List<Task> buffer = new ArrayList<>(); // shared, unsynchronized
+
+// Thread A — Producer:
+while (true) {
+    buffer.add(generate()); // no check on size
+}
+
+// Thread B — Consumer:
+while (true) {
+    if (!buffer.isEmpty()) {
+        Task t = buffer.remove(0); // concurrent modification
+        process(t);
+    }
+}
+```
+
+**Concrete failures**:
+
+1. **`ConcurrentModificationException`**: Thread B calls `buffer.isEmpty()` → returns false → Thread A also calls `buffer.add()` mid-structural-modification → `ArrayList`'s internal array is being resized → Thread B's `remove(0)` reads a partially-updated array → exception.
+
+2. **Lost tasks**: Thread B sees `isEmpty() == false`, then Thread A removes the only element before Thread B calls `remove(0)` → `IndexOutOfBoundsException` or Thread B processes stale data.
+
+3. **Buffer overflow**: Producer adds faster than consumer processes. With no size check on `buffer.add()`, `ArrayList` grows unboundedly → heap exhaustion → `OutOfMemoryError`.
+
+4. **Busy-wait**: Consumer loops on `isEmpty()` at 100% CPU even when the buffer is empty — a spinning poll.
+
+**Root constraints derived from these failures**:
+- **Atomicity**: `isEmpty()` + `remove(0)` must be a single atomic operation.
+- **Blocking on empty**: Consumer must sleep (not spin) when buffer is empty, and wake when producer adds.
+- **Blocking on full**: Producer must sleep when buffer is at capacity, and wake when consumer removes.
+
+---
+
+## Derive the Fix
+
+`BlockingQueue` encodes all three constraints atomically:
+- `put()` blocks when full (no size check needed)
+- `take()` blocks when empty (no busy-wait needed)
+- Both operations are thread-safe internally
+
+---
+
 > **Problem**: Coordinate a producer thread generating data and a consumer thread processing it, ensuring they don't overfill buffer or read from empty buffer.
 
 ## The Challenge

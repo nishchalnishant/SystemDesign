@@ -2,7 +2,13 @@
 
 ## What Are Microservices?
 
-A microservices architecture structures an application as a collection of small, independently deployable services, each responsible for a single business capability and owning its data.
+**Question**: Your monolith has 200 engineers committing to the same repo. Deployments take 45 minutes and happen twice a week because they require coordination across 30 teams. A bug in the recommendations module causes a deploy rollback that also rolls back a critical payment fix. The search team wants to rewrite their module in Go but the entire codebase is Java. The checkout service needs to scale to 10× during Black Friday but scaling the monolith means scaling the admin portal too. What structural change makes all of these problems go away?
+
+**Physical constraint**: A single process has one deployment unit, one scaling unit, and one failure domain. Any team that shares that process is coupled to every other team's code, release schedule, and failure modes. There is no way to give Team A independent deployability while Teams A and B share the same JVM process — independent deployability requires independent processes.
+
+**Minimal solution**: Split into two services. This works until you need inter-service calls (network latency replaces in-process method calls), shared data (which service owns it?), and debugging across service boundaries (where is the error?). You've created distributed systems problems you didn't have before.
+
+**Production generalization**: Microservices is the trade of monolith problems (deployment coupling, scaling coupling, team coupling) for distributed systems problems (network failures, consistency, observability). The trade is only worth it when the monolith pain is real and your team has the operational maturity to manage the distributed complexity. Every pattern below exists to manage one specific distributed systems problem that microservices creates.
 
 **Analogy:** A restaurant that used to have one chef do everything (monolith) now has specialized stations — grill, salad, dessert, drinks. Each station operates independently. The grill chef doesn't care what the dessert station is doing. They communicate through the expediter (API gateway). If the salad station is overwhelmed, you add another salad chef without touching the grill station. If dessert is broken, the rest of the kitchen keeps running.
 
@@ -38,6 +44,14 @@ Martin Fowler coined this: microservices add a significant overhead of operation
 
 ### 1. API Gateway
 
+**Question**: You have 12 microservices. A mobile client needs data from 4 of them to render a single screen. It makes 4 parallel API calls. Each call crosses the mobile network (~50ms RTT). Total: 200ms minimum just in network time, plus battery drain and error handling complexity on the client. The client also needs to know the IP or hostname of all 4 services. When you add service 13, you update every client. What sits in front of all services to fix this?
+
+**Physical constraint**: Every network hop from a mobile device adds 30–100ms RTT (cellular) or 5–20ms (WiFi). Four separate calls from mobile = 4× the latency cost. A datacenter-internal call is ~1ms RTT — 30–100× cheaper. An aggregation layer inside the DC can make the 4 internal calls in parallel and return one response to the client.
+
+**Minimal solution**: Clients call each service directly. Breaks at: N services require clients to know N addresses, auth logic duplicates across all services, and one mobile screen with 4 service calls has 4× the failure surface.
+
+**Production generalization**: The API Gateway is a single entry point that absorbs all the cross-cutting concerns (auth, rate limiting, TLS termination, routing) once, centrally. The BFF (Backend For Frontend) pattern extends this further: a dedicated gateway per client type, so mobile gets an aggregated endpoint optimized for its payload and the web client gets a different one.
+
 A single entry point for all clients. The gateway handles:
 - **Routing** — forwards requests to the correct service
 - **Authentication/Authorization** — validates JWTs before forwarding
@@ -70,6 +84,14 @@ public RouteLocator routeLocator(RouteLocatorBuilder builder) {
 ---
 
 ### 2. Service Discovery
+
+**Question**: You deploy 10 instances of the Order Service in Kubernetes. Each instance gets a different ephemeral IP. The Payment Service needs to call the Order Service. You hardcode the IP of one instance. That instance gets restarted during a rolling deploy — its IP changes. The Payment Service is now calling a dead address. How do you call a service whose IP changes constantly?
+
+**Physical constraint**: Container IPs are assigned dynamically and change on every restart, reschedule, or scale event. With Kubernetes spinning up and down pods continuously, a hardcoded IP has a half-life of hours. You cannot use IP addresses as stable service identifiers in a containerized environment.
+
+**Minimal solution**: Give each service a fixed hostname in `/etc/hosts`. Breaks when: services scale horizontally (one hostname, one IP — no load balancing), when services move between nodes, or in multi-cluster setups.
+
+**Production generalization**: A service registry (Kubernetes DNS, Consul, Eureka) decouples "name" from "IP." Services register themselves on startup with their current IP. Callers look up the name and get a current, healthy IP back. The registry is the stable address; the underlying IPs are an implementation detail.
 
 Services don't have fixed IPs (containers start/stop). Service discovery solves this.
 
@@ -104,6 +126,14 @@ public class OrderService {
 ---
 
 ### 3. Circuit Breaker
+
+**Question**: The Payment Service is responding in 30 seconds instead of 300ms. Each Order Service thread waits 30 seconds for a response. You have a thread pool of 200 threads. At normal load (100 req/sec) with 300ms response time, you use 30 threads. With 30-second responses, each new request holds a thread for 30 seconds — at 100 req/sec you exhaust all 200 threads in 2 seconds. Now your Order Service is also "down" even though only Payment is slow. How do you prevent a slow dependency from taking down your healthy service?
+
+**Physical constraint**: Thread pools are finite. A thread blocked on a network call is a thread not available for any other work. At a per-thread memory cost of ~1MB and typical JVM heap constraints, you cannot have more than a few thousand threads per process. One slow downstream with a long timeout can exhaust your entire thread budget faster than your load balancer can drain the old connections.
+
+**Minimal solution**: Set a 1-second timeout on all downstream calls. Better — but now you're failing fast for 1 second per call. At 100 req/sec during a Payment outage, you're still making 100 calls/sec to a broken service. You're wasting 100 network round-trips per second to learn the same thing you already knew: Payment is down.
+
+**Production generalization**: After N consecutive failures, stop making the call entirely (open the circuit). Return the fallback immediately — no network cost. After a cooldown, let one probe request through to check recovery (half-open). This converts "100 calls/sec to a broken service" into "0 calls/sec for 10 seconds, then 1 probe."
 
 When a downstream service is failing, keep calling it? No — fail fast and provide a fallback.
 
@@ -147,6 +177,14 @@ resilience4j:
 
 ### 4. Saga Pattern
 
+**Question**: Checkout requires: reserve inventory (Inventory Service), charge card (Payment Service), create order (Order Service). These are three separate databases. 2PC would work but the coordinator becomes a SPOF and blocks all three services when it crashes. What is the alternative that handles failures without locking?
+
+**Physical constraint**: Each service owns its database. A database transaction only locks rows within one database — crossing a database boundary breaks ACID. The only cross-service operation that doesn't require a distributed lock is a local operation followed by a message that triggers the next local operation. The saga pattern exploits this: each step is a local transaction; the sequence is coordinated via events, not locks.
+
+**Minimal solution**: Call the three services sequentially and if any fails, call the ones that already succeeded to undo. This is a saga with manual compensation logic — functional but fragile if the "undo" call also fails.
+
+**Production generalization**: A saga formalizes this into a sequence of (forward transaction, compensating transaction) pairs. Each compensating transaction must be idempotent (safe to call multiple times) and can always succeed (no blocking on external systems). The orchestration vs. choreography choice determines whether a central coordinator drives the steps (easier to reason about) or each service reacts to events from the previous step (looser coupling, harder to observe).
+
 Distributed transactions without 2PC. A saga is a sequence of local transactions, each publishing an event or message to trigger the next step.
 
 **Two implementations:**
@@ -175,6 +213,14 @@ If step fails → Orchestrator calls compensating transactions in reverse
 ---
 
 ### 5. Sidecar Pattern
+
+**Question**: You have 30 microservices. Every service needs mTLS for encryption, distributed tracing headers, and Prometheus metrics. You could add this to each service — but that is 30 implementations, 30 places to update when the tracing library changes, and 30 services that now contain infrastructure code mixed with business logic. How do you add these cross-cutting concerns to every service without modifying any service?
+
+**Physical constraint**: You cannot inspect or intercept network traffic from outside the process without a proxy. But if the proxy runs in the same Linux network namespace as the service (same pod), it can intercept all inbound and outbound traffic transparently — the service sends a plain HTTP call and the proxy upgrades it to mTLS before it leaves the pod.
+
+**Minimal solution**: Shared library that every service imports. Breaks at: every language needs its own implementation, library upgrades require redeploying all services simultaneously, and business code is polluted with infrastructure concerns.
+
+**Production generalization**: The sidecar proxy runs as a separate container in the same pod, sharing the network namespace. The service process never knows the sidecar exists — it sends and receives plain traffic. The sidecar intercepts everything: adds TLS, injects trace headers, emits metrics. This is the foundation of a service mesh (Istio, Linkerd): uniform observability and security across all services with zero per-service implementation cost.
 
 A helper container deployed alongside the main service container in the same pod.
 
@@ -233,6 +279,14 @@ Cost: eventual consistency, harder to debug, requires idempotent consumers
 ---
 
 ## Data Management: Database per Service
+
+**Question**: The Order Service and User Service share a Postgres database. The Order team needs to add a nullable column to the `users` table for order preferences. The User team is running a migration that holds a table lock for 30 seconds. The Order team's deploy fails because the User team's migration is blocking their query. Both teams are blocked by the other's schema. How do you give each team full ownership of their schema without impacting the other?
+
+**Physical constraint**: A database enforces a schema. Any process that connects to the database is constrained by that schema. Two services sharing a database are therefore sharing a schema — a deployment constraint is identical to a code dependency. Independent deployability requires independent schema ownership, which requires separate database instances (or at minimum separate schemas with enforced access controls).
+
+**Minimal solution**: Give each service its own schema in the same database cluster. Reduces interference but doesn't eliminate it: a runaway query from one service can exhaust connection pool or IOPS, affecting the other. Shared infrastructure = shared failure domain.
+
+**Production generalization**: Database-per-service is the logical endpoint: each service has its own database instance, managed independently. Cross-service queries become API calls or event-driven denormalized read models. The cost is no cross-service JOINs — the benefit is true deployment independence and independent scaling.
 
 Each microservice owns its data. No shared database.
 

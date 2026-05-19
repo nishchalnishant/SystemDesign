@@ -1,5 +1,83 @@
 # Decorator Pattern
 
+## Question
+
+You have a `Pizza` class with a `getCost()` method. Pizzas can have toppings: cheese (+$1), mushrooms (+$1.50), olives (+$0.75). Any combination is valid. Model this using inheritance.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The subclass-for-every-combination approach:
+
+```java
+class CheesePizza extends Pizza { ... }
+class MushroomPizza extends Pizza { ... }
+class OlivePizza extends Pizza { ... }
+class CheeseMushroomPizza extends Pizza { ... }
+class CheeseOlivePizza extends Pizza { ... }
+class MushroomOlivePizza extends Pizza { ... }
+class CheeseMushroomOlivePizza extends Pizza { ... }
+// 3 toppings → 7 classes. 4 toppings → 15 classes. N toppings → 2^N - 1 classes.
+```
+
+**What breaks**:
+1. **Class explosion**: N toppings = 2^N subclasses. Adding "jalapeño" doubles the class count.
+2. **Static composition**: The combination (cheese + mushroom) is hardcoded at compile time. You cannot build combinations at runtime based on user input.
+3. **SRP violation**: `CheeseMushroomPizza` knows about the pricing of both cheese and mushrooms.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **wrap behavior dynamically at runtime, not statically at compile time**.
+
+Step 1 — ensure every pizza and every topping share the same interface:
+```java
+interface Pizza {
+    double getCost();
+    String getDescription();
+}
+
+class PlainPizza implements Pizza {
+    public double getCost()        { return 5.0; }
+    public String getDescription() { return "Plain pizza"; }
+}
+```
+
+Step 2 — a decorator wraps a `Pizza`, adds its cost, and delegates everything else to the wrapped object:
+```java
+abstract class ToppingDecorator implements Pizza {
+    protected Pizza pizza;
+    public ToppingDecorator(Pizza pizza) { this.pizza = pizza; }
+}
+
+class CheeseTopping extends ToppingDecorator {
+    public CheeseTopping(Pizza pizza) { super(pizza); }
+    public double getCost()        { return pizza.getCost() + 1.0; }
+    public String getDescription() { return pizza.getDescription() + ", Cheese"; }
+}
+
+class MushroomTopping extends ToppingDecorator {
+    public MushroomTopping(Pizza pizza) { super(pizza); }
+    public double getCost()        { return pizza.getCost() + 1.5; }
+    public String getDescription() { return pizza.getDescription() + ", Mushroom"; }
+}
+```
+
+Step 3 — compose at runtime by nesting wrappers:
+```java
+Pizza order = new CheeseTopping(new MushroomTopping(new PlainPizza()));
+// cost = 5.0 + 1.5 + 1.0 = 7.5
+// description = "Plain pizza, Mushroom, Cheese"
+```
+
+Adding jalapeño is one new `JalapenoTopping` class. Zero changes to existing classes.
+
+---
+
 > **Type**: Structural
 > **Purpose**: Dynamically adds behavior to an object without altering its structure or creating a class explosion through inheritance.
 

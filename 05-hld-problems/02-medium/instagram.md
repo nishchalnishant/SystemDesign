@@ -7,6 +7,52 @@
 
 ---
 
+## What Breaks Without This System?
+
+A user posts a photo on a naive system: the image is stored in the app server's local filesystem, the post is saved to MySQL, and the feed is computed on read by joining `posts` and `follows` tables. At 100M DAU with 50M posts/day:
+
+- **Storage**: 400TB/day of photo/video data on local filesystems — servers run out of disk in hours. Photos on server A are inaccessible when load balancer routes to server B.
+- **Feed read**: "Show me posts from 500 people I follow" requires a join across 50M posts against a 1B-row `follows` table, every single feed load. At 100M DAU × 5 feed refreshes/day = 500M joins/day. The DB collapses.
+- **Media serving**: every photo request hits the origin server. At 100M users × 20 photo views/day = 2B requests/day = 23K requests/sec to origin. The app server spends 95% of its time serving static bytes.
+- **Celebrity posts**: Kylie Jenner posts. 150M followers each need this post in their feed. If computed on read, 150M users each trigger a join. If pushed on write (fan-out), you have 150M write operations to execute in seconds.
+
+Without a designed system: disk fills up, feeds are stale by hours, media is unavailable, and celebrity posts crash the infrastructure.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single server**
+Store photos on disk, posts in MySQL, compute feed on read. Breaks at ~10K DAU when disk and join latency become visible.
+
+**Step 2 — Separate media from metadata**
+Photos are immutable blobs — the canonical tool is object storage (S3). `POST /upload` saves the image to S3, stores the S3 key in the `posts` table. All servers share the same S3 — no more locality problem. Serve media via CDN (CloudFront): users get photos from edge nodes 10–30ms away, not the origin.
+
+**Step 3 — The upload pipeline**
+Synchronous (user waits for): upload raw image to S3, create post record in DB with `status=PROCESSING`. Return success immediately.
+Asynchronous (background): transcode to multiple resolutions (thumbnail/320px/1080px/original), generate blurhash placeholder, extract EXIF data, run content moderation. When complete, update post `status=PUBLISHED`.
+This ensures the user sees "upload complete" in <2 seconds even for large videos, while processing continues in the background.
+
+**Step 4 — Feed generation: the fan-out problem**
+On every post, you need to deliver it to all followers' feeds. Two extreme approaches:
+- Fan-out on write (push): when a post is created, write it to every follower's feed cache immediately. Feed reads are instant (pre-built). Write amplification: 1 post × 1M followers = 1M writes.
+- Fan-out on read (pull): when a user opens their feed, fetch recent posts from everyone they follow. No write amplification. Read is expensive: join 500 followees × their recent posts.
+
+**The threshold that forces a hybrid**: 1M followers. For regular users (< 1M followers), fan-out on write is fine — 1 post × avg 500 followers = 500 writes, trivial. For celebrities (> 1M followers), fan-out on write is 1 post × 150M writes = too slow (would take hours at 100K writes/sec). Celebrity posts are excluded from write fan-out; instead, they're fetched on read and merged into the pre-built feed.
+
+**Step 5 — Feed storage**
+Each user's feed is a Redis sorted set: `feed:{user_id}` → sorted by timestamp, entries are post IDs. Keep the last 1,000 posts. On feed load: `ZREVRANGE feed:{user_id} 0 49` returns 50 post IDs in <1ms. Then batch-fetch post details from a posts cache or DB. For users with a cold/empty feed cache, fall back to a DB query.
+
+**Step 6 — Likes and engagement at scale**
+At 100M DAU × 50 likes/day = 5B writes/day = 58K writes/sec. A normalized `likes` table with one row per like at 58K writes/sec exceeds single-DB capacity.
+- Use Cassandra COUNTER columns (`likes_count COUNTER`) for write-heavy like counts — Cassandra is write-optimized, eventually consistent, and horizontally scalable.
+- For "did I like this post?": Bloom filter per post (probabilistic, fast) or a Redis Set `liked:{post_id}` for hot posts.
+
+**Step 7 — IDs**
+Can't use auto-increment across a distributed system. Use Snowflake IDs with an embedded shard ID — IDs are globally unique, time-sortable, and generated locally without coordination. Instagram's variant: a PostgreSQL function that generates 64-bit IDs with epoch-relative timestamp + shard ID + sequence, allowing any shard to generate unique IDs independently.
+
+---
+
 ## Real-Life Analogy
 
 Instagram is Twitter but visual. The underlying feed mechanics — fan-out on write for regular users, fan-out on read for celebrities — are essentially identical to Twitter. But the photo upload is what makes Instagram uniquely hard.

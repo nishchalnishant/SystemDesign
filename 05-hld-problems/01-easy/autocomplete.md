@@ -7,6 +7,49 @@
 
 ---
 
+## What Breaks Without This System?
+
+A user types "java" in a search box and waits. The backend queries Elasticsearch with a full-text search for every keystroke. At 100K concurrent users each typing at ~2 characters/second, that's 200K Elasticsearch queries/second — each with a 50–200ms round trip. The search bar feels laggy: responses arrive 300ms after each keystroke. Users stop using search. Conversion drops.
+
+Without autocomplete specifically: users must know the exact query to type. Typos return zero results. Users give up. At Google scale, removing autocomplete would increase "zero result" searches by an estimated 20%+ and reduce session engagement roughly 2x — because users need guided completion to find what they're actually looking for.
+
+The failure mode without a designed system: either the backend is overloaded by per-keystroke queries, or the latency is too high to feel interactive (<100ms is the threshold for "instant" UX), or suggestion quality degrades because there's no precomputed ranking.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Naive: query the DB on every keystroke**
+`SELECT DISTINCT query FROM searches WHERE query LIKE 'java%' ORDER BY frequency DESC LIMIT 10`
+At low volume this works. Problems at scale:
+- `LIKE 'java%'` requires a table scan (or at best an index scan) on a table with billions of rows.
+- Called on every keystroke — 100K users typing = hundreds of thousands of DB queries/sec.
+- Personalization and freshness require joins and recent-data lookups, making queries slower.
+
+**Step 2 — What structure is purpose-built for prefix lookups?**
+A Trie: each node represents one character; walking from root to node "j→a→v→a" arrives at the node for prefix "java". At each node, precompute the top-K (e.g., top-5) suggestions by frequency/score. Prefix lookup is O(length of prefix) — independent of total vocabulary size. For a 100M-entry vocabulary this is O(4) for "java", not O(100M).
+
+**Step 3 — Where does the Trie live?**
+- In-process (each API server): 30GB trie for 100M prefixes. Not feasible in application memory.
+- Dedicated Trie service: one or more servers hold the full trie in RAM, serve prefix queries via gRPC. A single 256GB machine holds multiple language tries. Consistent hashing routes by language prefix.
+- Redis (simplified): store `prefix → JSON top-5` as string keys. Works for the top-N prefixes; doesn't work for long-tail prefixes not pre-indexed.
+
+**Step 4 — How is the Trie built/updated?**
+- Batch pipeline (Spark, daily): aggregate query logs, compute frequency per query, rebuild the full trie, push to serving nodes. Latency: trends from 24 hours ago.
+- Streaming layer (Flink, near-realtime): process query events, update prefix frequency counters. Periodically update the serving trie (every 10–30 minutes). Latency: ~minutes.
+- Both: batch for full rebuild (quality), streaming for freshness on trending queries.
+
+**Step 5 — Caching tiers to handle 100K QPS**
+The top 20% of prefixes ("th", "the", "how", "wh") account for 80%+ of queries. Cache aggressively:
+1. In-process LRU cache per API server (1M entries, ~500MB): handles top prefixes at microsecond latency.
+2. Redis cluster: shared cache across all servers for the broader hot prefix set.
+3. CDN (for browser): prefixes typed the same way by millions of users can be edge-cached. `GET /suggest?q=java` is a cacheable GET request.
+
+**Step 6 — Personalization overlay**
+The base trie returns global top suggestions. A thin personalization layer re-ranks: boost queries the user has searched before, boost queries from user's locale. Done client-side (from a per-user history cache) or server-side as a re-ranking step after trie lookup. Never block the trie response on personalization — add it as a fast overlay.
+
+---
+
 ## Real-Life Analogy
 
 Picture a well-organized bookstore with an experienced clerk. When you walk to the "S" section and start saying "Sal-", the clerk immediately offers "Salinger? Sales? Salami?" without pausing to think. They are not searching from scratch — they have already spent years mentally grouping inventory by section, then by shelf, then by the first three letters. The answer is pre-sorted in their head before you finish the word. That is exactly how a production autocomplete system works: by the time your query arrives, the top completions for every prefix have already been computed, ranked, and cached. The query path does almost no computation — it is a lookup.

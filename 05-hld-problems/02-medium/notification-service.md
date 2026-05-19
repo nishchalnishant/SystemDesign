@@ -7,6 +7,48 @@
 
 ---
 
+## What Breaks Without This System?
+
+Uber needs to send a push notification when a driver accepts a ride. Without a dedicated notification service, the Order Service calls the FCM API directly in the HTTP request handler — synchronously. FCM is occasionally slow (2–5 seconds). Every ride acceptance request blocks a thread for 2–5 seconds waiting for FCM. At peak (10K ride acceptances/sec), all thread pool slots are occupied waiting for FCM. The Order Service stops responding to new requests. A notification delivery slowdown has taken down ride matching.
+
+The other failure: Airbnb sends a booking confirmation email, an SMS, and a push notification. Without a unified notification service, each product team calls email/SMS/push APIs directly. There's no retry on failure — if the SMS gateway times out, the SMS is silently dropped. There's no rate limiting — 1M marketing emails blast out at once, exhausting the SendGrid rate limit and delaying transactional (booking-critical) emails by hours. There's no DND/quiet hours logic — users get notifications at 3am. There's no deduplication — a bug causes the same notification to be sent 3 times.
+
+Without a notification service: delivery reliability is untested, priority is undefined (marketing and transactional notifications compete equally), and every product team reimplements the same retry/dedup/rate-limit logic differently.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Direct API call in the request handler**
+`POST /orders → order saved → FCM.send() → response`. Breaks: FCM latency in the critical path, no retry on FCM failure, no rate limiting.
+
+**Step 2 — Move notifications off the critical path**
+Publish a `notification_requested` event to Kafka after the business operation completes. The notification service consumes from Kafka and handles delivery. The original service responds immediately — notification delivery is fully async. FCM timeouts no longer affect the Order Service.
+
+**Step 3 — What forces priority separation?**
+"Your driver arrived" (time-critical, user waiting) must not be delayed by a batch of "Your weekly summary" emails being processed ahead of it. A single Kafka topic processes messages in FIFO order — one slow batch job starves real-time notifications.
+
+Solution: separate topics per priority tier:
+- `notifications.critical` (OTP, fraud alerts): consumed first, dedicated consumers, smallest batch size.
+- `notifications.transactional` (order confirmations, ride receipts): standard latency.
+- `notifications.marketing` (promotions, digests): processed during off-peak hours, large batch sizes allowed.
+
+**Step 4 — Channel routing and fan-out**
+One `notification_requested` event may need to send push + email + SMS. The notification service reads user preferences (opted-in channels, DND settings, locale) and fans out to channel-specific workers. Each channel (FCM, APNs, SendGrid, Twilio) has its own consumer group with channel-specific retry and rate-limit logic.
+
+**Step 5 — Reliability: what happens when FCM fails?**
+- Retry with exponential backoff: `delay = min(2^attempt * 100ms, 30s) + jitter`.
+- DLQ (Dead Letter Queue): after N retries, move to DLQ. Ops team can inspect, replay, or drop.
+- Circuit breaker: if FCM failure rate exceeds 50% in 60 seconds, stop sending to FCM (fail fast) and alert. Prevents retry storms from amplifying the outage.
+
+**Step 6 — Deduplication (idempotency)**
+The same event may be processed twice (Kafka at-least-once delivery). Without dedup, the user gets the same notification twice. Fix: store `notification_id` (derived from event key) in Redis with TTL=24h. Before sending, check `SETNX notification:{id}`. If key already exists, skip. If not, set the key and proceed.
+
+**Step 7 — DND and delivery windows**
+User preferences: quiet hours (11pm–8am), preferred channel, opt-out per notification type. The notification service reads preferences before dispatching. Critical notifications (OTP, fraud) bypass DND. Marketing notifications are queued and released at the start of the user's morning window.
+
+---
+
 ## Real-Life Analogy
 
 Think of a postal service that handles three types of mail: telegrams (SMS), express packages (push notifications), and regular letters (email). When a business drops off a shipment at the post office, the postal service decides how to route each piece, ensures priority telegrams go out today while bulk marketing flyers go out whenever capacity allows, and tracks delivery confirmation.

@@ -29,6 +29,26 @@ At Google's scale: the "book" has a trillion pages, new pages are added every se
 
 ---
 
+## What Breaks Without This System?
+
+Without a pre-built inverted index, answering "python tutorial" means scanning every document's full text on every query — O(N) linear scan across billions of documents. At 10K QPS, that's 10K × billions of comparisons per second: physically impossible in real time. Ranking also breaks without pre-computed signals (PageRank, click-through rate) — you can't re-crawl the web's link graph per query. The result is no search product at any meaningful scale.
+
+---
+
+## Derive the Architecture
+
+**1 server, in-memory inverted index**: Build a map from term → list of doc IDs. Query looks up each term, intersects posting lists, returns doc IDs. Works for ~1M documents in ~10 GB RAM. Latency < 10ms. Breaks when: 1B documents × 10 bytes/term entry × 20 terms/doc ≈ 200 GB — exceeds single-machine RAM. Fix: write index to disk in sorted posting-list files (like Lucene segments).
+
+**Disk-backed single-node index**: Posting lists stored as compressed sorted arrays on SSD. Random I/O per query term lookup. Works for 100M documents. Handles ~100 QPS before disk I/O saturates (~500 MB/s SSD throughput). Breaks when: full index is 1 TB — a 5-term query reads 5 posting lists = ~50 MB of I/O per query at 100 QPS = 5 GB/s, far exceeding SSD throughput. Fix: shard the index across many nodes; fan out each query in parallel.
+
+**Sharded index, fan-out architecture**: Split the document corpus across S shards; each shard holds 1/S of the documents and their posting lists. A query broadcasts to all S shards in parallel, each returns its top-K results, and a merger node re-ranks the merged top-K globally. 100 shards × 100 QPS = 10K parallel shard reads, each needing only ~0.5 MB I/O. Handles 1B documents at 10K QPS. Breaks when: one slow shard (disk stall, GC pause) delays the entire query — the merge must wait for the last shard. Fix: replicate each shard; if one replica is slow, query a second replica.
+
+**Replicated shards**: Each shard has R replicas; queries are load-balanced across replicas. Straggler mitigation: hedge requests — after 50ms, re-issue to another replica and take whichever responds first. Handles 100K QPS at sub-200ms P99. Breaks when: index goes stale within hours — crawled content isn't reflected for days. Fix: separate real-time indexing pipeline from the full crawl; new/changed documents flow through a stream processor (Kafka → index update service) and are searchable within minutes.
+
+**Dual-pipeline indexing (batch + stream)**: Batch pipeline rebuilds the full index offline (weekly/daily); stream pipeline applies incremental updates in real time (minutes freshness). Breaks when: ranking is purely term-frequency BM25 — quality is poor. Adding neural re-ranking (BERT) on the full result set is too expensive (~200ms per document). Fix: two-phase ranking — BM25 retrieves top 1000 candidates cheaply (<50ms), then a re-ranker scores only those 1000 with a smaller distilled model (~50ms), returning top 10.
+
+---
+
 ## Why This Is Hard
 
 1. **Index size at petabyte scale**: A web-scale inverted index is petabytes of data. It cannot fit on one machine or even one rack. You must shard the index, which means a single query fans out to dozens of shards in parallel — and you must merge and rank results from all shards before returning anything.

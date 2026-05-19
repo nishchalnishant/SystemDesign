@@ -4,6 +4,18 @@
 
 ---
 
+## Why a Reverse Proxy Exists
+
+**Question**: You run 3 identical app server instances for redundancy. Your app handles HTTPS. That means each of the 3 servers needs: a TLS certificate, TLS termination code, certificate renewal logic, and the private key stored securely. When the certificate expires, you rotate it on all 3 servers simultaneously or face a split-second mismatch window. Now you add a 4th server. And a 5th. How do you avoid managing TLS on every individual backend?
+
+**Physical constraint**: TLS termination requires the server to hold the private key, perform asymmetric decryption for the handshake (~1ms of CPU per new connection), and manage cipher negotiation. Distributing these responsibilities across N app servers means N copies of the private key, N renewal schedules, and N places where a misconfiguration or expired cert breaks user traffic. The private key exposure surface grows with N.
+
+**Minimal solution**: Terminate TLS on exactly one machine in front of all app servers. That machine holds one private key, performs one set of cert renewals, and forwards decrypted traffic to backends over a private network where TLS overhead is unnecessary. One cert renewal touches one machine.
+
+**Production generalization**: A reverse proxy centralizes all client-facing concerns — TLS, routing, caching, compression, header manipulation — so app servers can focus purely on business logic. The proxy also hides backend topology (clients see one IP, not the IPs of individual instances), absorbs SSL handshake CPU, serves static assets directly from disk (no app server involvement), and becomes the natural place to add load balancing, rate limiting, and caching as requirements grow.
+
+---
+
 ## 1. Concept Overview
 
 A **reverse proxy** receives requests from clients and forwards them to backend servers. Unlike a forward proxy (client-side), the client does not know it is talking to a proxy; the proxy represents one or more backends.

@@ -20,6 +20,14 @@
 
 ## Why Caching Exists
 
+**Question**: Your homepage loads user profile data on every page render. The profile changes once a week on average. At 100,000 page views per hour, you run 100,000 identical `SELECT * FROM users WHERE id = ?` queries per hour for the same set of popular users. Each query takes 5ms. That's 500,000ms of database compute per hour — just for reads that return the same result 99.9% of the time. What's the minimal change that eliminates most of that work?
+
+**Physical constraint**: A relational database query takes 1–20ms (network + query parsing + disk I/O + result serialization). RAM access takes ~100ns. The same data retrieved from RAM is 10,000–200,000× faster than from a database over the network. The only reason to go to the database is if you don't have the data already, or if it may have changed since you last fetched it. The question is always: how often does this data change relative to how often it's read?
+
+**Minimal solution**: Store the query result in a local hash map in your application process, keyed by user ID. On a hit, return from RAM in microseconds. On a miss, query the DB and populate the map. Invalidate the entry when the user updates their profile. This works until: multiple app server instances each have their own map (cache is not shared), and the map grows unboundedly until the process runs out of memory.
+
+**Production generalization**: A shared distributed cache (Redis) solves both problems — all app instances read from one cache, and you set TTLs to bound memory growth. The caching decision framework, invalidation strategies, and failure modes derive from this same fundamental tradeoff: the faster store has a copy, the copy may become stale, and you must decide how to keep it fresh.
+
 The fundamental insight behind every cache ever built is simple: **retrieving the same data repeatedly from the original source is wasteful when that data hasn't changed.**
 
 Think about how your brain works. You don't re-read the dictionary every time you want to use a word — you hold a working vocabulary in memory. When someone asks for your phone number, you don't look it up in a contacts app; it's in working memory. When you need an obscure fact, you might actually open a book. That three-tier model — working memory (fast, small), long-term memory (slower, larger), reference books (slowest, complete) — maps almost exactly to CPU registers / RAM / disk in a computer, and to in-process cache / Redis / database in a distributed system.

@@ -1,5 +1,77 @@
 # Observer Pattern
 
+## Question
+
+A `StockMarket` class holds the current price of a stock. A `PriceAlert`, a `Chart`, and a `NewsFeed` all need to update when the stock price changes. Write the code inside `StockMarket.setPrice()` that tells all three components about the change.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The direct approach — `StockMarket` calls each component explicitly:
+
+```java
+class StockMarket {
+    private double price;
+    private PriceAlert alert;
+    private Chart chart;
+    private NewsFeed feed;
+
+    public void setPrice(double price) {
+        this.price = price;
+        alert.onPriceChanged(price);  // hardcoded dependency
+        chart.onPriceChanged(price);  // hardcoded dependency
+        feed.onPriceChanged(price);   // hardcoded dependency
+    }
+}
+```
+
+**What breaks**:
+1. **Tight coupling**: `StockMarket` must import and know about `PriceAlert`, `Chart`, and `NewsFeed`. It can't compile without them.
+2. **OCP violation**: Adding a 4th subscriber (e.g., `MobileNotification`) means editing `StockMarket.setPrice()`.
+3. **SRP violation**: `StockMarket` manages stock prices AND knows the notification routing table.
+4. **Untestable**: You cannot test price changes without constructing all three dependent objects.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **`StockMarket` must not know who is listening**.
+
+Step 1 — extract a common interface all subscribers implement:
+```java
+interface Observer {
+    void onPriceChanged(double price);
+}
+```
+
+Step 2 — `StockMarket` holds a list of `Observer`, never concrete types:
+```java
+class StockMarket {
+    private List<Observer> observers = new ArrayList<>();
+    private double price;
+
+    public void addObserver(Observer o)    { observers.add(o); }
+    public void removeObserver(Observer o) { observers.remove(o); }
+}
+```
+
+Step 3 — on state change, iterate the list:
+```java
+public void setPrice(double price) {
+    this.price = price;
+    for (Observer o : observers) {
+        o.onPriceChanged(price);
+    }
+}
+```
+
+Adding `MobileNotification` is now: implement `Observer`, call `market.addObserver(new MobileNotification())`. Zero edits to `StockMarket`. That is the pattern.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Define a one-to-many dependency so that when one object changes state, all its dependents are notified and updated automatically.
 

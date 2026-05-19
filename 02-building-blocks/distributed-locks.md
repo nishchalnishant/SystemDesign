@@ -4,6 +4,18 @@
 
 ---
 
+## Why Distributed Locks Exist
+
+**Question**: Your system runs a scheduled job every night at midnight: generate and email the daily report. You've scaled to 3 app servers for redundancy. At midnight, all 3 servers see the cron trigger. All 3 start generating the report. All 3 send the email. Users receive 3 identical emails. You add a `synchronized` block in Java. Does that fix it?
+
+**Physical constraint**: A Java `synchronized` block uses the JVM's monitor on a specific object in heap memory. That memory is local to one JVM process on one machine. Three app servers on three separate machines have three separate heaps with three separate monitors. `synchronized` on one machine has zero effect on the other two — there is no shared memory across process boundaries. Any mutual exclusion mechanism that relies on in-process primitives (locks, semaphores, mutexes) cannot work across a distributed system.
+
+**Minimal solution**: Use a shared external store that all nodes can reach: `SET lock:daily-report unique-token NX PX 60000` in Redis. `NX` means "only set if the key does not already exist." Only the first node to execute this atomically wins and proceeds; the other two see failure and skip. The `PX 60000` (60 second TTL) ensures the lock is released even if the winner crashes mid-job.
+
+**Production generalization**: The minimal Redis solution works for most cases but has edge cases around clock skew, network partitions, and the gap between TTL expiry and the holder still executing (a process pauses in GC for longer than the TTL, loses the lock, and another holder acquires it — now both think they hold it). Fencing tokens (monotonically increasing numbers returned by the lock store) let the guarded resource reject operations from stale lock holders. For critical resources requiring strong safety guarantees, use ZooKeeper or etcd — both are CP systems that use quorum to prevent two nodes from simultaneously believing they hold a lock.
+
+---
+
 ## The Coffee Shop Bathroom Key Analogy
 
 A coffee shop has one unisex bathroom and one physical key hanging by the counter. When you take the key, you have exclusive access. Everyone else waits. When you're done, you return the key. There is no ambiguity: if you have the key, you have the lock.

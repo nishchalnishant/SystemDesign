@@ -23,6 +23,26 @@ And scale this to 1 billion users, exabytes of data, uploading 2 petabytes per d
 
 ---
 
+## What Breaks Without This System?
+
+Without chunked uploads and a metadata layer, a user uploading a 15 GB file over a flaky mobile connection must restart the entire upload on any network interruption — unacceptable UX and bandwidth waste at scale. Without deduplication, 1B users storing common files (OS installers, shared templates) means storing the same bytes billions of times: petabytes of redundant storage cost. Without a sync protocol, every device polls the server for changes — at 1B users × multiple devices each, even 1-second polling intervals generate billions of wasted requests per second.
+
+---
+
+## Derive the Architecture
+
+**1 server, single file upload**: Client POSTs entire file; server writes to local disk. Works for a single user with small files. Breaks when: a 15 GB upload on a 1 Mbps connection takes 33 hours — any disconnection loses all progress. Fix: split file into chunks (4 MB each), upload each chunk independently, track which chunks landed.
+
+**Chunked upload, 1 server**: Client splits file into 4 MB chunks, uploads each with a chunk index. Server reassembles when all chunks arrive. Resumable: on reconnect, client asks which chunks are missing. Works for a few hundred concurrent uploads. Breaks when: 1 TB of daily uploads saturate a single server's disk I/O (~500 MB/s = 43 GB/min max). Fix: store chunks in object storage (S3-equivalent) where each chunk is an object addressed by its SHA-256 hash. Server becomes a thin metadata layer.
+
+**Object storage for chunks + metadata DB**: Each chunk stored as `chunks/{sha256}`. Two users uploading the same file store it once (content-addressed dedup). Metadata DB stores `files(user_id, name, chunk_list, version)`. Upload throughput scales with object storage horizontally. Breaks when: a file is edited on Device A while Device B is offline — when B reconnects, two version forks exist with no resolution. Fix: version all files; on conflict, create a "conflict copy" visible to the user.
+
+**Versioned metadata + conflict copies**: Each save creates a new version record. On sync, the client sends its base version; server detects if the base diverges from HEAD and returns a conflict. Client presents both versions. Breaks when: 1B users × multiple devices each must be notified of file changes. HTTP polling at 1-second intervals = billions of requests/sec. Fix: long-polling or WebSocket push — each device holds an open connection to a notification service; file changes emit events to relevant device connections.
+
+**Push notification for sync**: Notification service (fan-out based on file watchers) pushes change events to connected devices. Devices fetch only the changed metadata delta. Handles real-time sync at scale. Breaks when: metadata DB storing exabytes of file/folder records for 1B users becomes a single-shard bottleneck — even with indexes, cross-user queries (shared folders) require joining across shard boundaries. Fix: shard metadata by user_id for owned files; maintain a separate shared-folder table keyed by folder_id for cross-user access patterns.
+
+---
+
 ## Why This Is Hard
 
 1. **Chunked uploads and deduplication**: Large files must be split into chunks and reassembled. The same chunk appearing in two different files (e.g., a shared template) should be stored only once. This requires content-addressed storage (SHA-256 per chunk), which has privacy implications — you can detect if someone uploaded a file you also have, without seeing the content.

@@ -7,15 +7,53 @@
 
 ---
 
-## Problem Statement
+## What Breaks Without This System
 
-Design a payment processing system that:
-- Handles credit card payments
-- Ensures no double-charging
-- Maintains accurate account balances
-- Supports refunds and chargebacks
-- Provides transaction history
-- Integrates with external payment gateways (Visa, MasterCard)
+Your e-commerce site processes payments with a simple flow: call Stripe's API, and on success, write to your orders table. You deploy on a Friday. At 11:48 PM, a network blip causes a timeout: Stripe charged the card, but the HTTP response never arrived. Your retry logic fires. Stripe charges the card again. The customer's order table shows one order; their bank shows two charges. You discover it Monday morning — after 200 customers emailed. Refunding all the duplicates takes three days of manual work and costs you $50K in trust.
+
+That's the easy failure. The harder one: your checkout service writes `order = PAID` to the orders DB, then crashes before writing to the inventory DB. Now the customer has a "PAID" order for an item that was never decremented from stock. When another customer buys the same item and it ships, you have two customers with confirmed orders for one physical item. No single database transaction spanned both writes — because orders and inventory are on different shards, different services, different databases. Rollback is impossible after the fact.
+
+Money movement is the most correctness-sensitive operation in software. Every failure mode — crash between writes, network timeout, duplicate retry, partition-split balances — has real financial and legal consequences.
+
+---
+
+## Derive the Architecture
+
+**Start with synchronous Stripe call + DB write in a transaction:**
+```
+BEGIN TRANSACTION;
+  charge = stripe.charge(card, amount)  -- external API, not in transaction scope
+  INSERT INTO orders (status='PAID')    -- DB write, in transaction scope
+COMMIT;
+```
+
+**What breaks when Stripe times out?** The HTTP call to Stripe hangs for 30 seconds, then times out. Your code rolls back the transaction. But did Stripe charge the card or not? You don't know. If you retry, you might double-charge. If you don't, you might lose a legitimate payment. **Fix: idempotency keys.** Before calling Stripe, generate `idempotency_key = UUID()` and store it in your DB (in the same transaction as creating a `PENDING` order). Pass the key to Stripe. On timeout + retry, Stripe uses the key to deduplicate — the same key returns the same result. Your DB already has the PENDING order, so you just poll Stripe for the outcome.
+
+**What breaks when your server crashes after Stripe succeeds but before the DB write?** `idempotency_key` is in your DB as `status=PENDING`. The customer's next request (or a background reconciliation job) retries with the same key. Stripe returns "already charged, here's the charge ID." Your DB updates to `PAID`. **Fix: explicit payment state machine** (PENDING → PROCESSING → PAID/FAILED/REFUNDED). Every state transition is a DB write. The idempotency key + state machine together ensure that any crash leaves the system in a recoverable state — there's always a PENDING record that can be reconciled.
+
+**What breaks when user account (Shard 1) and merchant account (Shard 2) must both update atomically?** A single `BEGIN/COMMIT` cannot span two databases. 2-Phase Commit (2PC) with an external coordinator works but adds 2 round-trips (prepare + commit) and is blocked if the coordinator crashes between phases — the transaction hangs indefinitely. **Fix: Saga pattern + double-entry bookkeeping.** Model every payment as a series of compensating steps: debit user (Shard 1) → credit merchant (Shard 2). If the credit fails, fire a compensating transaction to refund the debit. Double-entry bookkeeping ensures the ledger always balances: every debit has a corresponding credit. No money is ever "in transit" without a corresponding ledger entry.
+
+**What breaks with a shared mutable balance column?** 10K concurrent payments per second all run `UPDATE accounts SET balance = balance - amount WHERE id = user_id`. Row-level locking serializes these — throughput: ~1K TPS per account, and a hotspot account (e.g., a popular merchant receiving thousands of payments) becomes a bottleneck. **Fix: append-only ledger** (immutable credit/debit rows) instead of mutable balance. Balance = `SUM(amount) WHERE account_id = X`. Appends don't conflict; balance reads use a materialized view updated asynchronously. This is how Stripe, Coinbase, and all financial systems work — the ledger is never mutated.
+
+**What breaks when PCI auditors ask "show me every state change for transaction T"?** A mutable `orders` table has no history. **Fix: event sourcing for the payment domain.** Every state transition is stored as an immutable event: `PaymentInitiated`, `CardCharged`, `OrderFulfilled`, `RefundIssued`. Current state is derived by replaying events. Audit log is the data model, not a side effect.
+
+**Resulting architecture:**
+
+```
+Client → Payment Service
+       → generate idempotency_key, write PENDING order (PostgreSQL, same transaction)
+       → call Stripe (with idempotency_key)
+       → on success: write PaymentInitiated event, update order to PROCESSING
+       → Saga Orchestrator:
+           Step 1: debit user account (Shard 1) → write DebitLedgerEntry
+           Step 2: credit merchant account (Shard 2) → write CreditLedgerEntry
+           If Step 2 fails: compensating transaction → CreditLedgerEntry (reversal) on Shard 1
+       → on saga complete: update order to PAID, emit OrderPaid event
+
+Reconciliation Job (runs every 5 min):
+  SELECT * FROM orders WHERE status='PENDING' AND created_at < NOW() - 10min
+  → poll Stripe for each → resolve to PAID or FAILED
+```
 
 ---
 

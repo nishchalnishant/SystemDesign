@@ -27,6 +27,26 @@ At exchange scale: this simple matching logic runs at 1 million "auctions" per s
 
 ---
 
+## What Breaks Without This System?
+
+Without a purpose-built matching engine, using a standard relational database to match orders (SELECT the best bid, SELECT the best ask, INSERT a trade, UPDATE both orders) runs 4 SQL operations per match at ~5ms each = ~20ms per trade — 50 trades/sec maximum. At 1M orders/sec that's a 20,000× throughput gap. More critically, without strict price-time priority enforced at microsecond granularity, algorithmic traders can exploit ordering unfairness to front-run other participants, which is both a business failure and a regulatory violation.
+
+---
+
+## Derive the Architecture
+
+**1 server, SQL order book**: Orders stored in `orders(ticker, side, price, quantity, timestamp)`. Match by querying `SELECT * FROM orders WHERE side='BUY' ORDER BY price DESC, timestamp ASC LIMIT 1`. Works for a demo. Breaks when: 1K orders/sec × 5ms SQL roundtrip = 5 seconds of latency per order — unacceptable. Query plans change as the table grows; no guarantee of microsecond ordering. Fix: move the order book entirely into memory as a sorted data structure.
+
+**In-memory order book, 1 process**: Each ticker has two priority queues in RAM — bids (max-heap by price, then timestamp) and asks (min-heap). Match check is O(1) peek. 1M orders/sec with microsecond match latency. Works on a single thread (no locking). Breaks when: multiple threads try to update the same ticker's order book concurrently — locking introduces 10–100μs contention delays per match. Fix: single-threaded sequential processing — one thread owns one order book, no locks needed.
+
+**Single-threaded matching engine (LMAX Disruptor)**: All orders for a ticker pass through a ring buffer (LMAX Disruptor) to a single matching thread. The thread processes orders strictly in sequence — zero lock contention. Throughput: 6M ops/sec on commodity hardware. Breaks when: every processed order must be durably persisted (regulatory requirement) — writing to disk per order at 1M/sec = 1 GB/sec disk I/O, which exceeds a single HDD (150 MB/s) and strains even NVMe SSDs. Fix: write-ahead log (WAL) that batches 1,000 orders per fsync — reduces disk I/O 1000× while preserving durability.
+
+**WAL with batched fsyncs**: Orders written to an append-only WAL with fsync every 1ms (batching ~1K orders). Trade executions also journaled before ACKing traders. Durable with <1ms added latency overhead. Breaks when: every trade must be broadcast to millions of market data subscribers — unicast TCP to 1M subscribers × 1M trades/sec = 1,000 TB/sec, physically impossible. Fix: multicast UDP — one packet goes to a multicast group, all subscribers in that group receive it with one network transmission.
+
+**Multicast UDP for market data**: Market data feed (order book updates, last trade price, volume) published via UDP multicast. Subscribers join the multicast group; a single packet reaches all of them with one send. Handles millions of subscribers at <100μs dissemination latency. Breaks when: the matching engine is a single process on one machine — if it crashes, the exchange halts. Dual hardware with active/standby replication required for exchange-grade availability. Fix: replicate all WAL entries synchronously to a standby matching engine; promote standby within milliseconds on primary failure.
+
+---
+
 ## Why This Is Hard
 
 1. **Throughput vs latency paradox**: 1M orders/sec is high throughput. Sub-millisecond latency is ultra-low. Standard databases (PostgreSQL → ~1K writes/sec, 10ms latency) cannot handle either requirement. You need purpose-built in-memory order books with lock-free data structures.

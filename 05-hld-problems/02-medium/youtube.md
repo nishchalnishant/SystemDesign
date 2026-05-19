@@ -7,13 +7,50 @@
 
 ---
 
-## Real-Life Analogy
+## What Breaks Without This System
 
-Think of a video rental store with 2 billion customers and 800 million titles.
+A startup builds a video platform: users upload MP4s, the server copies them to S3 as-is, and the video tag in the HTML points directly to the S3 URL. It works for 1,000 users.
 
-The challenge isn't the store itself — it's the logistics. When a filmmaker drops off a new movie, the store has to make 8 copies in different formats (VHS, DVD, Blu-ray, 4K) before putting them on the shelf. That conversion takes hours. In the meantime, customers who try to rent it see "processing." Once ready, the same physical disc needs to be simultaneously in every branch worldwide, because customers won't wait for shipping from the central warehouse. And the store needs to recommend titles you didn't ask for — which requires knowing that the 50 million people who watched "Inception" also tended to rent "Interstellar" next.
+At scale, three things break in sequence. First, a user on a 3G connection tries to stream a 1080p file at 8 Mbps; their phone buffers every 4 seconds because their link supports only 2 Mbps. The server has no lower-bitrate version to offer. **Video start abandonment: 40%** (industry stat: 53% of mobile users abandon streams that buffer more than 3 seconds).
 
-Now make the store run on a budget where storing 23 exabytes of inventory for 5 years is a real line item, and you need < 200ms before the movie starts playing. That's YouTube.
+Second, a music video goes viral — 5M concurrent viewers, each pulling 4 Mbps from S3 us-east-1. That's 5M × 4 Mbps = **20 Tbps egress** from a single S3 region. S3 charges ~$0.09/GB for egress; 20 Tbps × 3,600 sec = 72,000 TB/hr = **$6.5M per hour** in data transfer costs. Also, S3 is not a CDN: latency from Singapore to us-east-1 is 200ms per TCP roundtrip, making adaptive streaming unusable.
+
+Third, "Despacito" reaches 8 billion views. Every view increments `UPDATE videos SET view_count = view_count + 1 WHERE id = 12345`. At peak 100K concurrent viewers that's 100K writes/sec to a single row — a database write hotspot that locks and serializes, causing cascading timeouts across all video metadata queries.
+
+---
+
+## Derive the Architecture
+
+**Start with raw upload → S3 → serve directly.** Works at low traffic with high-bandwidth clients.
+
+**What breaks for mobile/low-bandwidth users?** A single 1080p file at 8 Mbps is unplayable on 3G (2 Mbps). The server must pre-transcode every upload into multiple resolutions: 240p (0.3 Mbps), 360p (0.7 Mbps), 480p (1 Mbps), 720p (2.5 Mbps), 1080p (8 Mbps), 1440p (16 Mbps), 4K (45 Mbps). Plus each resolution is segmented into 2-second HLS chunks so the client can switch bitrate mid-stream (Adaptive Bitrate / ABR). **Fix: transcoding pipeline.** Raw upload → S3 (raw) → DAG of transcoding jobs (one per resolution, parallelized) → S3 (processed HLS chunks). A 10-minute 1080p video = ~600 HLS chunks per resolution × 6 resolutions = 3,600 files per upload. Transcoding is compute-heavy: 1 hour of raw video takes ~30 min on a c5.4xlarge. Use a job queue (Kafka or SQS) with auto-scaling transcoding workers.
+
+**What breaks when the transcoding pipeline fails mid-way?** A worker crashes after transcoding 3 of 6 resolutions. The partially-transcoded video looks "ready" in the DB. **Fix: idempotent DAG with status tracking.** Each resolution is a separate job with its own `status` (pending/running/done/failed). The video is only marked `available` once all jobs complete. Failed jobs are retried up to 3 times with exponential backoff. The raw file on S3 is the source of truth — never deleted.
+
+**What breaks when 5M users stream simultaneously from one region?** Origin S3 egress costs and latency are prohibitive (20 Tbps, 200ms RTT to distant regions). **Fix: CDN.** The video streaming API returns a CDN-signed URL, not an S3 URL. The CDN (CloudFront/Akamai) caches HLS chunks at edge PoPs. First viewer in Singapore fetches from origin once; the next 1M viewers in that region hit the CDN cache. Cache TTL for HLS chunks: indefinite (chunks are immutable, keyed by content hash). The manifest file (`.m3u8`) has a short TTL (60s) to allow chunk rotation. **CDN offload: ~99% of bandwidth.** Origin only handles the initial cache miss per PoP.
+
+**What breaks on cache stampede for viral content?** A video goes viral. Its CDN cache entry expires across 500 edge nodes simultaneously (or a new PoP has no cache). 500 × N requests all forward to origin at the same moment. **Fix: SETNX mutex per chunk key.** One request acquires the lock and fetches from origin; the rest wait (or serve slightly stale content). Also: for videos with >10K views/hour, CDN TTL is extended to never-expire (chunks are immutable anyway). Only the manifest needs refresh.
+
+**What breaks with 100K concurrent viewers on a single video updating view count?** 100K `UPDATE view_count += 1` per second against one row serializes on row lock. P99 DB write: 500ms. **Fix: Redis view count buffer.** Increment `INCR view:{videoId}` in Redis (O(1), no lock). A background job (`VIEW_FLUSH_INTERVAL = 30s`) reads all keys and batch-updates the DB: `UPDATE videos SET view_count = view_count + delta`. View counts are approximate (±30s lag) — acceptable and industry standard (YouTube acknowledges this explicitly).
+
+**What breaks with video search using DB full-text?** PostgreSQL `tsvector` can handle ~10K queries/sec on a single node. At 174K search QPS with ranking by relevance + recency + view count, it falls over. **Fix: Elasticsearch.** Video metadata (title, description, tags, channel) is indexed in ES on upload. ES uses BM25 scoring + custom boosting for recency/popularity. The dual-write problem (PostgreSQL + ES) is solved via CDC: Debezium reads PostgreSQL WAL and publishes metadata changes to Kafka → ES consumer updates the index asynchronously. Max lag: ~1 second.
+
+**Resulting architecture:**
+
+```
+Upload: Client → Upload Service → S3 (raw) → Kafka → Transcoding Workers (auto-scaled)
+                                                     → S3 (HLS chunks per resolution)
+                                                     → PostgreSQL (video metadata, status=available)
+                                                     → Elasticsearch (search index via CDC)
+
+Stream: Client → Streaming API → CDN-signed URL (manifest .m3u8)
+               CDN Edge ←→ Origin (S3 HLS chunks, cache miss only)
+               Adaptive Bitrate: client selects chunk quality based on bandwidth
+
+View Count: Client → View Service → Redis INCR → batch flush to PostgreSQL every 30s
+
+Search: Client → Search Service → Elasticsearch
+```
 
 ---
 

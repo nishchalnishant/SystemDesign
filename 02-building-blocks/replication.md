@@ -4,25 +4,15 @@
 
 ---
 
-## The Newspaper Publisher Analogy
+## 1. Why Replication Exists
 
-A newspaper has one editor (the leader) who writes and edits articles. Multiple printing presses (followers/replicas) print copies of each edition. Readers can pick up a copy from any press, but all edits go through the editor's desk.
+**Question**: Your database primary handles all reads and writes. It goes down for 10 minutes. What is your revenue impact? Now: your primary is healthy but 500,000 users are hammering it with read queries for a product catalog that changes once per hour. Reads are at 95% CPU while writes queue up. Which hardware upgrade solves this?
 
-- **Sync replication**: The editor waits for confirmation from all printing presses before marking the edition done. Slow, but nothing is ever lost — even if a press catches fire immediately after, all others already have the full edition.
-- **Async replication**: The editor sends off the copy and starts on the next article without waiting. Fast, but if a press crashes before printing, that edition is lost on that press.
-- **Multi-leader**: Two editors in different cities — New York and London — both accepting edits. They send each other their changes, but sometimes both edited the same paragraph. Now you have a conflict resolution problem, like a Git merge conflict.
-- **Quorum**: The magazine has 5 printing presses. Write quorum W=3: the editor needs 3 presses to confirm before the edition is "written." Read quorum R=3: a reader needs to check 3 presses. Because W + R > N (3+3 > 5), at least one press in any read set must have the latest edition — so readers always see the most recent write.
+**Physical constraint**: A single disk can only serve so many concurrent I/O operations — SSDs top out at ~100k IOPS under random reads. A single CPU executing query plans saturates. Network between your datacenter and users adds 1–100ms per RTT depending on geography. No vertical upgrade escapes these limits: one machine can only absorb so many parallel reads before queueing.
 
-**Why it exists**: A single copy is a single point of failure and a read bottleneck. Replication addresses both.
+**Minimal solution**: Take a nightly pg_dump backup. Restore on failure. Works until: 8 hours of data is lost in the gap, restore takes 30 minutes, and reads still all hit the same single machine during normal operation.
 
----
-
-## 1. Concept Overview
-
-**Replication** keeps multiple copies of data (replicas) in sync. It provides:
-- **High availability**: If one node fails, others can serve traffic.
-- **Read scaling**: Distribute reads across replicas.
-- **Durability**: Data survives single-node (or single-datacenter) failure.
+**Production generalization**: Streaming replication keeps one or more follower nodes continuously in sync with the leader. On leader failure, a follower is promoted in seconds (not 30 minutes). Read queries are distributed across followers, offloading the primary entirely. The tradeoff is replication lag: followers may be milliseconds to seconds behind, which matters when a user reads their own just-written data.
 
 ---
 
@@ -38,7 +28,7 @@ A newspaper has one editor (the leader) who writes and edits articles. Multiple 
 
 ### Sync vs Async Replication
 
-The editor analogy: sync means the newspaper doesn't go to print until all presses confirm receipt. One slow press holds up the entire evening edition. Async means the editor fires off the copy and keeps working — the presses catch up when they can, but a press crash between send and print loses that edition permanently.
+The newspaper analogy: sync means the newspaper doesn't go to print until all presses confirm receipt. One slow press holds up the entire evening edition. Async means the editor fires off the copy and keeps working — the presses catch up when they can, but a press crash between send and print loses that edition permanently.
 
 | Mode | How | Pros | Cons |
 |------|-----|------|------|
@@ -59,6 +49,10 @@ Async replicas are eventually consistent. If a user writes and immediately reads
   Reads ──▶ Follower 1 / Follower 2 (stale reads possible)
   Reads ──▶ Leader (for read-your-writes consistency)
 ```
+
+### Quorum (Leaderless)
+
+A magazine with 5 printing presses. Write quorum W=3: the editor needs 3 presses to confirm before the edition is "written." Read quorum R=3: a reader needs to check 3 presses. Because W + R > N (3+3 > 5), at least one press in any read set must have the latest edition — so readers always see the most recent write.
 
 ---
 

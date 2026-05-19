@@ -6,6 +6,26 @@
 
 ## Part 1: CQRS (Command Query Responsibility Segregation)
 
+### What Breaks Without CQRS?
+
+An order management system has a single `Order` model backed by a normalized relational schema. Writes need strict validation and ACID consistency. Reads need denormalized data: the order list page joins `orders`, `users`, `order_items`, `products`, and `shipping` — a 5-table join running against the same database that's processing writes.
+
+At 50K reads/sec and 5K writes/sec, adding a read replica helps, but the joins are still expensive. To speed up reads you denormalize — but now your write code must maintain that denormalized state, adding complexity and consistency bugs. To add a new read projection (say, a dashboard), you either add another expensive query or another denormalized table, both of which tangle into the write path.
+
+**Why the naive fix fails**
+
+A single model tries to be optimal for two contradictory goals simultaneously:
+- Writes want normalized, validated, consistent data. Changing structure is dangerous.
+- Reads want precomputed, denormalized, flexibly shaped data. Changing structure is free.
+
+Indexing and caching can buy time but can't resolve the fundamental tension: the same code path handles both concerns, so every optimization for one degrades the other.
+
+**The pattern as the minimal fix**
+
+Separate the write path (Commands) from the read path (Queries) at the application layer. The Command side validates and persists to the write model. The read model is a separate projection, optimized purely for query patterns — denormalized, possibly in a different database, updated asynchronously from write events. You can evolve each independently.
+
+---
+
 ### The Problem CQRS Solves
 
 A single model trying to be optimal for both reads and writes is optimized for neither.
@@ -157,6 +177,24 @@ public class OrderQueryHandler {
 ---
 
 ## Part 2: Event Sourcing
+
+### What Breaks Without Event Sourcing?
+
+A fraud detection team investigates a disputed transaction. The `orders` table says `status=REFUNDED, total=0`. What was the original total? When did it change? Who changed it? The database has no answer — it only stores current state. The audit trail was an afterthought, added as a separate `order_history` table that devs sometimes forget to write to. It's incomplete.
+
+The payments team wants to replay all events from the past 30 days through a new fraud model. Impossible — the raw events were never stored; only derived state remains.
+
+A bug introduced on May 5 incorrectly applied discounts. Which orders were affected? You'd need to look at application logs and cross-reference the DB, hoping logs weren't rotated. You can't re-derive the correct state from what you have.
+
+**Why the naive fix fails**
+
+Adding audit tables, change data capture, or update timestamps treats the symptom. The root problem is that current-state storage actively destroys the information needed to reconstruct history. You can add logging, but it's separate from the data model — it can be bypassed, dropped, or diverge from actual DB state. You can never rewind the DB to an arbitrary past point.
+
+**The pattern as the minimal fix**
+
+Never update or delete records. Append only: every state change is a new event record — `OrderPlaced`, `PaymentProcessed`, `OrderShipped`, `OrderRefunded`. Current state is derived by replaying events from the beginning (or from a snapshot). The event log is the source of truth; the current-state view is a projection, always re-derivable. Debugging, auditing, and temporal queries become trivial because the full history is always present.
+
+---
 
 ### The Problem Event Sourcing Solves
 

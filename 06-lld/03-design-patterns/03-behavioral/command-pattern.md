@@ -1,5 +1,94 @@
 # Command Pattern
 
+## Question
+
+You are building a `RemoteControl` that can operate a `Light` (on/off) and a `Fan` (on/off). Write the `pressButton(String device, String action)` method. Now add undo. Now support macros (press one button to run a sequence of actions).
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class RemoteControl {
+    private Light light;
+    private Fan fan;
+    private String lastAction;  // for undo
+
+    public void pressButton(String device, String action) {
+        if (device.equals("LIGHT") && action.equals("ON")) {
+            light.turnOn();
+            lastAction = "LIGHT_ON";
+        } else if (device.equals("LIGHT") && action.equals("OFF")) {
+            light.turnOff();
+            lastAction = "LIGHT_OFF";
+        } else if (device.equals("FAN") && action.equals("ON")) {
+            fan.start();
+            lastAction = "FAN_ON";
+        }
+        // adding AC requires editing this method
+    }
+
+    public void undo() {
+        if (lastAction.equals("LIGHT_ON"))  light.turnOff();
+        else if (lastAction.equals("LIGHT_OFF")) light.turnOn();
+        else if (lastAction.equals("FAN_ON"))    fan.stop();
+        // undo logic must mirror every branch above
+    }
+}
+```
+
+**What breaks**:
+1. **OCP violation**: Adding a new device (`AirConditioner`) requires editing both `pressButton` and `undo`.
+2. **Undo is a parallel copy**: The undo logic is a mirror of the execute logic — every addition doubles the maintenance cost.
+3. **No macro support**: Executing a sequence requires a new list-of-strings parameter and yet more branches.
+4. **Tight coupling**: `RemoteControl` must import `Light`, `Fan`, and every future device.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **encapsulate each action as an object so it can be stored, undone, and composed into sequences**.
+
+Step 1 — extract an interface with `execute()` and `undo()`:
+```java
+interface Command {
+    void execute();
+    void undo();
+}
+```
+
+Step 2 — each action is its own class:
+```java
+class LightOnCommand implements Command {
+    private Light light;
+    public LightOnCommand(Light l) { this.light = l; }
+    public void execute() { light.turnOn(); }
+    public void undo()    { light.turnOff(); }
+}
+```
+
+Step 3 — `RemoteControl` holds a `Command` (and a stack for undo), never a concrete device:
+```java
+class RemoteControl {
+    private Deque<Command> history = new ArrayDeque<>();
+
+    public void pressButton(Command cmd) {
+        cmd.execute();
+        history.push(cmd);
+    }
+
+    public void undo() {
+        if (!history.isEmpty()) history.pop().undo();
+    }
+}
+```
+
+Macro is now trivial: create a `MacroCommand(List<Command>)` that calls `execute()` on each. Adding `AirConditioner` is one new `Command` class — `RemoteControl` is untouched.
+
+---
+
 ## Real-Life Analogy
 
 **A restaurant order ticket.**

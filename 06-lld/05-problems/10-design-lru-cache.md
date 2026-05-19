@@ -4,6 +4,84 @@
 > **Topics**: Data Structures, Doubly Linked List, HashMap
 > **Key Concepts**: O(1) Get/Put, Eviction Policy, Generics.
 
+---
+
+## What Breaks Without This Design?
+
+**Option A — Use only a `HashMap`**:
+
+```java
+class LRUCache {
+    private final int capacity;
+    private final Map<Integer, Integer> map = new HashMap<>();
+
+    public int get(int key) {
+        return map.getOrDefault(key, -1);
+    }
+
+    public void put(int key, int value) {
+        if (map.size() >= capacity && !map.containsKey(key)) {
+            // Which key do we evict? HashMap has no order — we cannot know
+            // which key was used least recently. We'd have to scan all keys.
+            Integer lruKey = ???; // O(N) scan — and even then, no usage order is tracked
+            map.remove(lruKey);
+        }
+        map.put(key, value);
+    }
+}
+```
+
+**Failure**: `HashMap` has no insertion or access order. You cannot identify the least recently used key without an external data structure. Any attempt to evict requires O(N) scanning the entire map.
+
+**Option B — Use only a `LinkedList` (ordered by recency)**:
+
+```java
+class LRUCache {
+    private final LinkedList<int[]> list = new LinkedList<>(); // [key, value] pairs in LRU order
+
+    public int get(int key) {
+        for (int[] entry : list) {        // O(N) scan to find key
+            if (entry[0] == key) {
+                list.remove(entry);        // O(N) removal
+                list.addFirst(entry);      // move to front
+                return entry[1];
+            }
+        }
+        return -1;
+    }
+}
+```
+
+**Failure**: Finding a key requires O(N) linear scan. The cache is O(N) per operation — useless at scale.
+
+**Root cause**: No single data structure provides both O(1) lookup by key AND O(1) ordering updates.
+
+---
+
+## Derive the Class Structure
+
+Start from the requirements and apply one forcing function at a time:
+
+**Force 1 — O(1) lookup by key**: Must find an entry instantly given a key. Only a hash-based structure provides this. Introduce a `HashMap<K, Node>`.
+
+**Force 2 — O(1) move-to-front on access**: When any key is accessed, it becomes MRU. We need to remove a node from its current position and insert it at the head — both in O(1). A singly linked list needs O(N) to find the predecessor for removal. A doubly linked list stores both `prev` and `next`, making arbitrary removal O(1). Introduce `Node<K,V>` with `prev` and `next`.
+
+**Force 3 — O(1) eviction of LRU**: The least recently used node is always the tail. With a doubly linked list, `tail.prev` gives the LRU node directly. `remove(tail.prev)` is O(1). But to remove it from the `HashMap` too, we need its key — so `Node` must store `key` (not just `value`).
+
+**Force 4 — Eliminate null checks on head/tail operations**: Inserting after head and removing the node before tail both require checking for null when the list is empty or has one element. Introduce dummy sentinel nodes (`head`, `tail`): real nodes always live between them. Now `head.next` is always MRU and `tail.prev` is always LRU, even with 0 or 1 real nodes.
+
+**Result** — the class split these forces produce:
+```
+No abstraction needed → LRUCache (single class)
+                      → Node (stores key + value + prev + next)
+                      → HashMap<K, Node> (O(1) key lookup, embedded in LRUCache)
+                      → DLL with dummy head/tail (O(1) ordering, embedded in LRUCache)
+```
+
+The `Node` storing `key` is the non-obvious design decision: it exists solely so eviction (`map.remove(lruKey)`) can happen in O(1) without any reverse lookup.
+
+---
+
 ## Real-Life Analogy
 
 **A surgeon's instrument tray.**

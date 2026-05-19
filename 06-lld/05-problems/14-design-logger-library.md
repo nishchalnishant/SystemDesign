@@ -6,6 +6,62 @@
 
 ---
 
+## What Breaks Without This Design?
+
+```java
+class Logger {
+    public static void log(String level, String message) {
+        if (level.equals("DEBUG") || level.equals("INFO") 
+            || level.equals("WARN") || level.equals("ERROR")) {
+            // write to console
+            System.out.println("[" + level + "] " + message);
+        }
+        if (level.equals("WARN") || level.equals("ERROR")) {
+            // write to file
+            try (FileWriter fw = new FileWriter("app.log", true)) {
+                fw.write("[" + level + "] " + message + "\n");
+            } catch (IOException e) { e.printStackTrace(); }
+        }
+        if (level.equals("ERROR")) {
+            // write to DB
+            DB.execute("INSERT INTO logs VALUES ('" + level + "', '" + message + "')");
+        }
+    }
+}
+```
+
+**Concrete failures**:
+1. **`log()` blocks the calling thread on I/O**: The DB write is synchronous. In a high-throughput service, every `logger.error()` call holds the caller's thread for the duration of a DB round-trip (~5ms). At 10,000 req/sec, this is 50 seconds of wasted thread-time per second.
+2. **OCP violation**: Adding a new sink (Splunk, Datadog) requires editing `log()`. The routing table (`ERROR` → file + DB) is hardcoded.
+3. **SRP violation**: `Logger.log()` knows the routing rules AND the write implementation for every sink.
+4. **Multiple `Logger` instances compile silently**: Two components instantiate `Logger` and log to different file handles. File output is interleaved or duplicated.
+5. **Level filtering is centralized and rigid**: All `INFO` logs always go to console. Making `INFO` go to file in production requires editing the method.
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — Logging must not block the caller**: I/O (file, DB, network) is slow. The caller should never wait for a write. Decouple: the `log()` method enqueues to a `BlockingQueue<LogRecord>`; a single background thread drains the queue and dispatches to sinks. The caller's thread returns immediately after the enqueue.
+
+**Force 2 — Sinks and their level thresholds vary independently**: `ConsoleHandler` handles `INFO+`, `FileHandler` handles `WARN+`, `DBHandler` handles `ERROR` only. Each handler is a link in a chain — it checks its minimum level, handles if eligible, and passes down. Extract `LogHandler` abstract class with `setNext()` and `handle(LogRecord)`. Each sink is a subclass.
+
+**Force 3 — `LogRecord` must carry context**: The raw string is insufficient — you need level, timestamp, thread name, and message for structured logging. Extract `LogRecord` (immutable value object).
+
+**Force 4 — One global logger instance**: Multiple instances would produce duplicate log entries and split the `BlockingQueue`. Make `Logger` a Singleton.
+
+**Force 5 — Adding a new sink must not touch existing code**: A new `SplunkHandler` implementing `LogHandler` plugs into the chain without editing `Logger` or existing handlers.
+
+**Result** — the class split these forces produce:
+```
+God class → Logger (Singleton, BlockingQueue, background dispatcher thread)
+          → LogRecord (level, message, timestamp, thread — immutable)
+          → LogLevel (enum: DEBUG < INFO < WARN < ERROR, with compareTo)
+          → LogHandler (abstract: minLevel, next, handle(LogRecord))
+             → ConsoleHandler, FileHandler, DatabaseHandler, RemoteHandler
+```
+
+---
+
 ## Real-Life Analogy
 
 Think of the **black box flight recorder** on an airplane. It captures everything: routine sensor data, pilot communications, warnings, and critical failures. It writes to multiple destinations: the cockpit display (console), the flight data recorder (file), and sometimes a live telemetry stream to ground control (remote sink). Critically, it operates **asynchronously** — the logging system never pauses the plane's flight computer waiting for a write to finish.

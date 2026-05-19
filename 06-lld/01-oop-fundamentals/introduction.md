@@ -1,18 +1,38 @@
 # OOP Introduction
 
-Think of software as a city. Early programs were like a single room: everything piled in one place. As systems grew, that room became unmanageable — changing one thing broke something unrelated, and no one could find anything.
+**Question**: You have a 5,000-line program in one file. You need to add a feature. Where do you start? How do you make sure your addition doesn't break the ten things it touches?
 
-Object-oriented programming is city planning for code. Instead of one room, you build **buildings** — each with a clear purpose, its own internal organization, and well-defined entrances and exits. A hospital does not need to know how the power grid works. A bank does not need to know how the hospital schedules surgeries. They communicate through interfaces: "send electricity here," "process this payment." The internals stay hidden.
+That question — "how do I change one thing without breaking everything else?" — is the reason OOP exists.
 
-Each building is a **class**. Each tenant inside — a specific bank branch, a specific hospital — is an **object**. Objects have their own data (state) and their own behavior (methods). They collaborate through contracts, not by reaching into each other's walls and rewiring things directly.
+---
 
-This model gives you three things that matter at scale:
+## The Problem Without Structure
 
-- **Containment**: a change inside one building does not collapse the others.
-- **Reuse**: if you have a good hospital design, you build more hospitals from the same blueprint.
-- **Extension**: you can add a new wing to the hospital without tearing down and rebuilding it from scratch.
+Early programs were a single room: everything piled in one place. Global variables, functions calling other functions in arbitrary order, no clear ownership of data. This works until the program grows. Then:
 
-OOP is not magic — it is a discipline. A badly designed city of tangled, interdependent buildings is worse than a small, well-organized room. The four pillars (Encapsulation, Abstraction, Inheritance, Polymorphism) are the zoning rules that keep the city functional as it grows.
+- Changing a variable in function A breaks function B, which you forgot also reads it.
+- Adding a feature requires understanding the entire program — no piece can be changed in isolation.
+- Testing one part requires running all parts.
+
+The core constraint is **tight coupling**: everything depends on everything. The cost of changing anything grows with program size.
+
+## The Minimal Fix
+
+Group related data and behavior together. Put the data a function needs right next to that function. Now a change to "bank account balance logic" only touches the bank account code — not the logging code, not the UI code.
+
+This grouping is a **class**. An instantiated class is an **object**.
+
+## The Full Structure
+
+Object-oriented programming extends this minimal fix into a discipline:
+
+- **Containment**: a change inside one object does not propagate to others unless the object's public contract changes.
+- **Reuse**: a good class design can be instantiated many times, or subclassed to share structure.
+- **Extension**: add a new type (a new payment method, a new shape) by adding a class — without touching existing classes.
+
+Think of software as a city. Each **building** (class) has a clear purpose, its own internals, and well-defined entrances. A hospital does not need to know how the power grid works. They communicate through interfaces: "send electricity here." The internals stay hidden.
+
+OOP is not magic — it is a discipline. A badly designed city of tangled, interdependent buildings is worse than a small, well-organized room. The four pillars — Encapsulation, Abstraction, Inheritance, Polymorphism — are the zoning rules that keep the city functional as it grows.
 
 ---
 

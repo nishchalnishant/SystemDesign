@@ -4,6 +4,18 @@
 
 ---
 
+## Why Bloom Filters Exist
+
+**Question**: A web crawler has already visited 1 billion URLs. Before fetching a new URL, it must check whether it's been visited before. Option A: store all 1 billion URLs in a hash set in memory. At 50 bytes per URL average, that's 50 GB of RAM just for deduplication. A machine with 64 GB of RAM has almost no headroom left. Option B: store them in a database and query on each URL. At 5ms per lookup and 10,000 URLs/sec to check, that's 50 seconds of DB query time per second — impossible. Is there a way to answer "have I seen this URL?" in microseconds, using 1–2 GB instead of 50 GB, if you can tolerate occasionally saying "yes" when the answer is actually "no"?
+
+**Physical constraint**: A hash set mapping URL strings to their presence requires storing the strings themselves (or a full-length hash with zero collision probability, which requires as many bits as the string). At 50 bytes per URL, 1 billion URLs is irreducibly 50 GB. RAM at ~$5/GB makes this an expensive dedicated machine. The question is: can you trade a small, controlled probability of error for a 40× reduction in memory?
+
+**Minimal solution**: Instead of storing the full URL, map each URL to `k` bit positions in a compact bit array using `k` hash functions. Set those bits to 1 on insert. On lookup, check those same `k` bit positions — if any is 0, the URL was definitely never inserted. If all are 1, it was probably inserted (but a false positive is possible: those bits may have been set by other URLs). The bit array for 1 billion URLs with 1% false positive rate is ~1.2 GB — a 40× reduction.
+
+**Production generalization**: Bloom filters are a lookup pre-filter: they eliminate the "definitely not present" case cheaply, forwarding only "probably present" cases to the expensive authoritative check (database, disk, network). The false positive rate is mathematically controlled by the bit array size and number of hash functions, and can be tuned to whatever the use case tolerates. Used in Cassandra (skip SSTables that don't contain a key), Google Chrome (malicious URL detection), and cache stampede prevention (reject lookups for keys that have never been set).
+
+---
+
 ## What Is a Bloom Filter?
 
 A Bloom filter is a bit array of `m` bits, all initially set to `0`, combined with `k` independent hash functions. It can tell you definitively when an element is **NOT** in a set, and probabilistically when it **might be**.

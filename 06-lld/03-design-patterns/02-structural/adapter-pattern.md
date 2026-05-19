@@ -1,5 +1,88 @@
 # Adapter Pattern
 
+## Question
+
+Your `CheckoutService` calls `paymentGateway.charge(amount, currency)`. You just switched payment providers from an internal gateway to Razorpay. Razorpay's SDK exposes `razorpayClient.initiatePayment(RazorpayRequest request)`. You cannot change `CheckoutService`, and you cannot change Razorpay's SDK. How do you make them work together?
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The instinct is to modify the call site:
+
+```java
+class CheckoutService {
+    // Old code: paymentGateway.charge(amount, currency)
+    // New code — now we must know Razorpay's API:
+    public void checkout(Order order) {
+        RazorpayRequest req = new RazorpayRequest();
+        req.setAmount(order.getAmount() * 100); // Razorpay wants paise, not rupees
+        req.setCurrencyCode(order.getCurrency().toUpperCase());
+        razorpayClient.initiatePayment(req);
+    }
+}
+```
+
+**What breaks**:
+1. **SRP violation**: `CheckoutService` now contains Razorpay-specific translation logic (paise conversion, field mapping).
+2. **Coupling**: `CheckoutService` directly imports Razorpay's SDK. Switching to Stripe means rewriting `CheckoutService` again.
+3. **Untestable**: You cannot mock `razorpayClient` without testing `CheckoutService`'s Razorpay-specific translation code too.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **`CheckoutService` must call the interface it already knows; translation is someone else's problem**.
+
+Step 1 — define (or keep) the interface `CheckoutService` expects:
+```java
+interface PaymentGateway {
+    void charge(double amount, String currency);
+}
+```
+
+Step 2 — write an adapter that implements the expected interface but internally calls the incompatible library:
+```java
+class RazorpayAdapter implements PaymentGateway {
+    private RazorpayClient razorpayClient;
+
+    public RazorpayAdapter(RazorpayClient client) {
+        this.razorpayClient = client;
+    }
+
+    @Override
+    public void charge(double amount, String currency) {
+        // Translation happens here, not in CheckoutService
+        RazorpayRequest req = new RazorpayRequest();
+        req.setAmount((int)(amount * 100)); // rupees → paise
+        req.setCurrencyCode(currency.toUpperCase());
+        razorpayClient.initiatePayment(req);
+    }
+}
+```
+
+Step 3 — `CheckoutService` receives `PaymentGateway` via injection; it never knows Razorpay exists:
+```java
+class CheckoutService {
+    private final PaymentGateway gateway;
+
+    public CheckoutService(PaymentGateway gateway) { this.gateway = gateway; }
+
+    public void checkout(Order order) {
+        gateway.charge(order.getAmount(), order.getCurrency()); // unchanged
+    }
+}
+
+// Wiring:
+CheckoutService service = new CheckoutService(new RazorpayAdapter(new RazorpayClient()));
+```
+
+Switching to Stripe is now: write `StripeAdapter implements PaymentGateway`. `CheckoutService` is untouched.
+
+---
+
 > **Type**: Structural
 > **Purpose**: Allows objects with incompatible interfaces to collaborate. Acts as a wrapper/translator between two sides.
 

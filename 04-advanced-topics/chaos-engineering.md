@@ -15,6 +15,14 @@
 
 ## What is Chaos Engineering?
 
+**Question**: You have circuit breakers, retries, fallbacks, and health checks. Your architecture diagram says the system is resilient. You have never actually killed a database replica in production. You have never actually dropped 5% of network packets on your payment service. How do you know the circuit breaker actually trips at the right threshold? How do you know the fallback actually serves cached data instead of returning an error? You have a theory of resilience. How do you convert it into evidence?
+
+**Physical constraint**: Software systems degrade in ways that cannot be fully simulated in staging or unit tests. Staging has different traffic patterns, different network topology, and different load profiles than production. A circuit breaker configured to trip at 50% failure rate in a staging environment with 10 req/sec will behave differently under 50,000 req/sec in production where thread pool dynamics, GC pressure, and connection pool exhaustion interact. The only way to know how a system behaves under failure is to introduce failure into it.
+
+**Minimal solution**: Trust your code review and unit tests. Breaks at: unit tests do not test the interaction between a misconfigured client library timeout and an overloaded downstream. Code review cannot catch the case where two correctly-implemented services interact incorrectly under failure conditions. Integration tests in staging don't reproduce the timing and load characteristics that reveal race conditions in failover logic.
+
+**Production generalization**: Chaos engineering is the discipline of designing controlled failure experiments, injecting them into a live system, and measuring whether the system's actual behavior matches your hypotheses. It converts "I believe this is resilient" into "I have evidence this is resilient under these specific failure conditions." The key word is *controlled*: defined hypothesis, defined blast radius, automatic stop conditions, rollback plan.
+
 **Chaos Engineering** is the discipline of experimenting on a system in order to build confidence in the system's capability to withstand turbulent conditions in production.
 
 **Goal**: Identify weaknesses *before* they manifest in customer-facing outages.
@@ -33,6 +41,14 @@
 
 ## Principles
 
+**Question**: Before you break anything, what must you define — otherwise the experiment is just random destruction?
+
+**Physical constraint**: Without a baseline, you cannot tell if the system got worse during an experiment. Without a hypothesis, you have no way to interpret what you observe. Without a stop condition, a failed experiment can cause a real customer outage. The scientific method is not bureaucracy — it is the minimum structure required to distinguish "the system handled this failure" from "the system failed but we didn't notice."
+
+**Minimal solution**: Just kill a server and watch what happens. Breaks at: you don't know if what you're observing is normal variance or failure-caused degradation; you don't know when to stop; you don't have a hypothesis to confirm or refute.
+
+**Production generalization**: The five steps below are the minimum viable experiment structure. Steps 1–2 happen before anything breaks. Step 5 converts observations into system improvements — without it, you have a fire drill, not engineering.
+
 1.  **Start with Steady State**: Define "normal" behavior (e.g., < 1% error rate).
 2.  **Hypothesize**: "If we kill one replica, latency will increase by < 10%".
 3.  **Inject Fault**: Kill the replica.
@@ -42,6 +58,14 @@
 ---
 
 ## Fault Injection Types
+
+**Question**: Hardware doesn't just fail — it fails in specific ways. A disk doesn't randomly "break"; it either fills up, has high seek latency, or corrupts writes. A network doesn't just "go away"; it adds latency, drops packets, or routes to the wrong host. If you don't test the actual failure modes your hardware exhibits, your resilience tests are testing imaginary failures. What are the real failure classes?
+
+**Physical constraint**: Each layer of the stack has its own failure vocabulary. Disk: full (4ms seek degrades to 50ms+, or ENOSPC). Memory: OOM killer starts terminating processes (not graceful shutdown). Network: packets are delayed (adding 50–500ms), dropped (creating timeout failures), or reordered (breaking stateful protocols). Clocks: drift ±200ms/day, creating incorrect ordering in distributed systems. Each of these has different observable symptoms and requires a different resilience pattern.
+
+**Minimal solution**: Test crash-stop failures only (kill -9 a process). Breaks at: the majority of real production failures are not crash-stop. Slow network, full disk, and clock skew are all more common than hard crashes in mature systems — and harder to detect because they don't produce obvious error signals.
+
+**Production generalization**: Match your fault injection to the failure modes your infrastructure actually exhibits. Cloud VMs have different failure characteristics than bare metal. Network partitions are more common than node crashes in AWS. The fault taxonomy below maps each fault type to the resilience pattern it validates.
 
 ### 1. Resource Exhaustion
 - **CPU Spike**: Run `stress-ng` to hit 100% CPU.
@@ -62,6 +86,14 @@
 ---
 
 ## Resilience Patterns
+
+**Question**: Chaos engineering reveals a failure mode: when the Recommendations Service goes slow, the entire homepage API times out after 30 seconds, and all 200 thread-pool threads are consumed within 4 seconds. Which pattern fixes this, and why does adding more threads not solve the problem?
+
+**Physical constraint**: Adding threads delays the problem by a constant factor but does not fix it. If 200 threads fill in 4 seconds, 400 threads fill in 8 seconds — the outcome is the same, just delayed. The root cause is that threads are a shared resource between all downstream calls. A fast path (user data) and a slow path (recommendations) compete for the same pool. Isolation — not more threads — is the fix.
+
+**Minimal solution**: Increase the thread pool size and the timeout. Breaks at: you have now delayed your own OOM event and given a slow downstream more time to consume your threads. A 30-second timeout with 400 threads at 100 req/sec means 400 threads × 30 seconds = 12,000 thread-seconds of capacity consumed by one slow dependency.
+
+**Production generalization**: Isolate failure domains. Give each downstream service its own thread pool (bulkhead). Stop calling failing services entirely after a failure threshold (circuit breaker). Make calls with strict timeouts so a slow downstream fails fast rather than slowly. Accept degraded functionality (serve cached recommendations) rather than failing the entire request.
 
 When Chaos reveals a weakness, use these patterns to fix it.
 
@@ -89,6 +121,14 @@ When Chaos reveals a weakness, use these patterns to fix it.
 ---
 
 ## Game Days
+
+**Question**: Your chaos experiments run automatically in CI and staging. But a Redis cluster failover test revealed a 5-minute degradation in staging — you aren't sure if the same would happen in production with real traffic patterns, real connection pool sizes, and real downstream dependencies. How do you validate resilience in production without causing a real customer-facing incident?
+
+**Physical constraint**: Production behavior emerges from the interaction of real traffic load, real data volumes, real connection counts, and real dependency response times. Staging cannot fully replicate this because traffic patterns are different (no real users), data volumes are smaller (faster queries), and infrastructure is smaller (different connection pool saturation points). Some failure modes only appear at production scale.
+
+**Minimal solution**: Never test in production — only use staging. Breaks at: the Redis failover bug only appears because of a specific interaction between the client library's topology-refresh interval and the connection pool exhaustion pattern under real load. Staging didn't reproduce it.
+
+**Production generalization**: A Game Day is a controlled production experiment with defined scope, defined stop conditions, a dedicated observer monitoring metrics in real time, and a rollback plan executed if the stop condition is triggered. The blast radius is minimized by starting with a single region, a single AZ, or a single cluster — and expanding scope only after each level passes.
 
 **Structured Chaos Event**:
 1.  **Preparation**: Pick a date. Select a "Master of Disaster".

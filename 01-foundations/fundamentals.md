@@ -6,11 +6,13 @@ This is the entry point. Read this first, then follow the study path at the bott
 
 ## What Is System Design?
 
-System design is the process of deciding *how* to build something before you build it — choosing the right components, the right data stores, the right communication patterns, and the right tradeoffs for the problem you're solving. It is architecture before code.
+**Question**: You've written an app that works perfectly for 100 users. Now you need it to work for 10 million. You can't rewrite it from scratch — you're in production. What breaks first, and how do you know what to fix before it breaks?
 
-Think of it like planning a city. You wouldn't just start laying roads randomly — you'd decide where the highways go, where the power grid connects, how water is distributed, and how emergency services reach any neighborhood within minutes. Every decision has cascading consequences. Build the highway in the wrong place and you've created a bottleneck that the city will live with for decades. System design is that same planning exercise, but for software.
+**Physical constraint**: Every component in a computer system has a hard ceiling: a single CPU core executes ~3 billion cycles per second, a single disk can sustain ~100–200 MB/s sequential throughput (or ~100–200 IOPS random), a single machine has at most a few hundred GB of RAM, and a single network card is bounded by bandwidth and the speed of light. These are not engineering failures — they are physics. When your user count grows, you will eventually exceed one of these ceilings, and the system will fail in a way that is invisible until it isn't.
 
-Why does it matter in practice? Because Facebook, Google, and Uber didn't get to planetary scale by accident. The decisions made in the first 18 months of a system's life — how data is partitioned, whether the architecture is monolithic or service-oriented, what consistency guarantees the database provides — are extraordinarily expensive to undo. Getting these right, or at least understanding the tradeoffs you're accepting, is the whole game.
+**Minimal solution**: Put everything on one big machine. Vertical scaling (faster CPU, more RAM, bigger disk) works until you hit the hardware ceiling — which is a real, finite number. At some point, no single machine can be purchased that handles the load.
+
+**Production generalization**: System design is the discipline of deciding, before you hit those ceilings, which components to distribute across multiple machines, how they communicate, what data each owns, and what guarantees each provides. The decisions made early — how data is partitioned, whether the architecture is monolithic or service-oriented, what consistency guarantees the database provides — are extraordinarily expensive to undo later. Getting these right, or at least understanding the tradeoffs you're accepting, is the whole game.
 
 ---
 
@@ -20,19 +22,43 @@ Every production system lives and dies on four axes. When you're designing a sys
 
 ### Scalability
 
-Can the system handle 10× the current load? Scalability means the system's capacity grows in proportion to resources added. Think of a highway: you can add more lanes (horizontal scaling), or upgrade single lanes to move faster (vertical scaling). Netflix scales horizontally — when traffic spikes during a new show release, it spins up thousands of additional servers within minutes rather than hoping one giant machine can absorb the load.
+**Question**: Your service handles 1,000 requests/sec today. Your marketing team announces a campaign that will drive 10,000 requests/sec tomorrow. You have 12 hours. What do you do?
+
+**Physical constraint**: A single application server process can handle roughly 100–1,000 requests/sec depending on work per request. Beyond that, the CPU is saturated, or the thread pool is exhausted, or the database connection pool is full. Adding more work to the same machine doesn't help — it just adds queuing latency.
+
+**Minimal solution**: Add a second server behind a load balancer. This doubles capacity. It works until: the database behind both servers becomes the bottleneck (one DB, two app servers hammering it), or the servers need shared state (sessions, caches) that doesn't exist on both machines.
+
+**Production generalization**: Horizontal scaling — adding more identical nodes — is the standard answer. Netflix spins up thousands of additional servers within minutes during a traffic spike. The hard part is making the application stateless (so any server can handle any request) and making the data layer scale independently (read replicas, sharding, caches). Scalability means capacity grows in proportion to resources added — both compute and data tier.
 
 ### Availability
 
-Is the system up when users need it? Availability is measured in "nines" — 99.9% means ~8.76 hours of downtime per year; 99.99% means ~52 minutes. Think of a hospital: even at 3am, the lights stay on and the ER is staffed. Achieving high availability means eliminating single points of failure, deploying across multiple regions, and building systems that degrade gracefully rather than crashing completely.
+**Question**: Your primary database server crashes at 2am. How long until users notice, and how long until service is restored? If those numbers are hours, is that acceptable?
+
+**Physical constraint**: Hardware fails. Hard drives fail at ~1% per year; a cluster of 1,000 disks loses one per month. Network switches fail. Power supplies fail. Even well-maintained cloud VMs are restarted for host maintenance. Any single machine that your system depends on will eventually be unavailable.
+
+**Minimal solution**: Deploy one server. When it fails, restart it. Mean time to recovery (MTTR) is the time to detect + diagnose + restart, typically 5–30 minutes. For most consumer-facing systems, 30 minutes of monthly downtime (99.93% uptime) is below acceptable.
+
+**Production generalization**: Eliminate single points of failure. Replicate critical components (primary + standby DB, multiple app servers, redundant load balancers). Deploy across multiple availability zones so one datacenter failure doesn't take down the system. Build health checks and automated failover so recovery is seconds, not minutes. Availability is measured in "nines": 99.9% = 8.76 hours downtime/year; 99.99% = 52 minutes/year. Each nine is roughly 10× harder to achieve than the previous.
 
 ### Consistency
 
-Do all users see the same data at the same time? A bank's ATM network must be strongly consistent — you can't withdraw money twice from two ATMs simultaneously. A social media like-count, on the other hand, can tolerate being slightly stale (eventually consistent). The tradeoff here is fundamental: stronger consistency requires coordination between nodes, which costs latency. This is the heart of the CAP theorem. → Deep dive: [Distributed Systems](../04-advanced-topics/distributed-systems.md)
+**Question**: A user updates their profile picture. Another user, in a different region, loads that profile 200 milliseconds later. Should they see the new picture or the old one? Does your answer change if this is a bank balance instead of a profile picture?
+
+**Physical constraint**: Network round-trip between datacenters is ~50–150ms. Writing to a database in us-east and reading from us-west within 50ms means the read happens before the write has had time to propagate. There is no way to propagate data faster than the speed of light across a continent.
+
+**Minimal solution**: Route all reads and writes to one node in one region. Every read sees the latest write because there's only one copy. This works until: that region goes down (availability fails), or the latency from far-away users is unacceptable (performance fails).
+
+**Production generalization**: Consistency is a spectrum, not a binary. Strong consistency (every read reflects the latest write) requires coordination, which costs latency. Eventual consistency (reads may be stale briefly) allows replicas to operate independently, which improves availability and latency. The right choice depends on domain: bank balances require strong consistency; social media like-counts tolerate eventual. This is the heart of the CAP theorem. → Deep dive: [Distributed Systems](../04-advanced-topics/distributed-systems.md)
 
 ### Performance (Latency & Throughput)
 
-How fast does the system respond, and how much work can it do per second? Google found that every 100ms of latency costs them 1% of revenue. Amazon found that 1 second of slowness reduced sales by 7%. Latency is how long a single request takes; throughput is how many requests per second the system can sustain. These often trade off against each other — batching improves throughput but hurts individual latency.
+**Question**: Your API returns in 50ms at P50, but in 2,000ms at P99. Half your users have a fine experience. One in a hundred users gets a two-second wait. Which number do you optimize, and why does the P99 exist at all?
+
+**Physical constraint**: Latency has irreducible floors: a disk seek takes ~4ms, a network round-trip within a datacenter takes ~0.5ms, a cross-continent round-trip takes ~150ms. Any operation that touches disk or crosses a network adds these floors to your response time. Ten sequential database queries each taking 5ms = 50ms of unavoidable latency.
+
+**Minimal solution**: Run every operation synchronously and sequentially. Latency = sum of all operation times. This is simple and correct. It breaks when any one operation is slow (a slow DB query bloats every response), and when you need high throughput (sequential processing caps at 1 request / total latency).
+
+**Production generalization**: Parallelism (execute independent operations concurrently) and caching (skip expensive operations entirely for repeat reads) are the two primary tools. Google found that every 100ms of latency costs 1% of revenue. Amazon found that 1 second of slowness reduced sales by 7%. Latency is how long a single request takes; throughput is how many requests per second the system can sustain. They often trade off: batching improves throughput but increases individual latency.
 
 ---
 
@@ -42,49 +68,97 @@ Every large-scale system is assembled from the same fundamental components. You 
 
 ### 1. Networking & Protocols
 
-Before any two services can communicate, they need a shared language. TCP/IP handles reliable delivery (think certified mail — every packet is acknowledged). HTTP/REST is the lingua franca of web APIs. gRPC is what Google and Uber use internally when performance matters and you control both ends. DNS is the phone book — it translates `google.com` into `142.250.80.46`. Understanding the OSI model tells you *where* in the stack a failure or bottleneck is occurring.
+**Question**: Service A calls Service B. The call times out. Is the problem in A's code, B's code, the network between them, DNS resolution, TLS negotiation, or B's database? You have to fix it in production in the next 10 minutes. How do you even start?
+
+**Physical constraint**: Every network call crosses multiple layers: application serialization, OS TCP stack, NIC, network switches, the remote NIC, remote OS TCP stack, and finally the remote application. A packet can be dropped at any layer. Latency accumulates at each layer. Without knowing which layer introduced the problem, debugging is guesswork.
+
+**Minimal solution**: Use the OSI model as a structured debugging ladder. Start at Layer 7 (application logs): is the service returning errors? Drop to Layer 4 (TCP): is connection establishment slow? Drop to Layer 3 (IP/routing): is there packet loss?
+
+**Production generalization**: TCP/IP handles reliable delivery — every packet is acknowledged and retransmitted if lost. HTTP/REST is the lingua franca of web APIs. gRPC is what Google and Uber use internally when performance matters and you control both ends. DNS translates `google.com` into `142.250.80.46`. Understanding which layer fails tells you which tool to reach for and which team to call.
 
 → Deep dive: [Networking](../01-foundations/networking.md)
 
 ### 2. Databases
 
-Your database is where state lives. Relational databases (PostgreSQL, MySQL) give you ACID guarantees, joins, and a decades-proven track record — Instagram's 2 billion users were served by PostgreSQL for years. NoSQL databases (Cassandra, DynamoDB, MongoDB) trade some query flexibility for horizontal scalability and schema flexibility — Uber uses Cassandra because it scales writes across data centers effortlessly. The wrong choice here is the hardest architectural mistake to undo.
+**Question**: You need to store 10 billion rows of user activity events. Each write must be fast (you have 500,000 events/second). Reads are always by user ID + time range. You never join this data with other tables. Should you use PostgreSQL or Cassandra? What breaks if you choose wrong?
+
+**Physical constraint**: A relational database enforces consistency across rows and tables by acquiring locks during writes. At high write throughput, those locks create contention. A single PostgreSQL primary can sustain roughly 10,000–50,000 simple writes/second; beyond that, you need to either shard or switch to a write-optimized store.
+
+**Minimal solution**: Use one relational database for everything. Simple, unified, well-understood. Works until write throughput exceeds what one primary can handle, or data volume exceeds what one disk can store.
+
+**Production generalization**: Relational databases (PostgreSQL, MySQL) give you ACID guarantees, joins, and a decades-proven track record. NoSQL databases (Cassandra, DynamoDB, MongoDB) trade query flexibility for horizontal scalability — Cassandra's LSM-tree storage accepts writes at 500,000/second across a cluster because it never updates in-place. The wrong choice here is the hardest architectural mistake to undo. Match the database to the access pattern, not the other way around.
 
 → Deep dive: [Databases](../01-foundations/databases.md)
 
 ### 3. Caching
 
-Caching is the simplest performance multiplier in system design. It's the coffee shop putting the most popular drinks on the counter rather than fetching everything from the back room. Redis sitting in front of a database can absorb 100,000 reads per second that would have hammered your DB. Twitter caches the home timelines of active users entirely in Redis — what would take a complex database query is served from memory in under 1ms. The hard problems are *what* to cache, *when* to invalidate it, and how to handle a cold cache after a restart.
+**Question**: Your database can do 10,000 reads/sec. Your app needs 500,000 reads/sec. You cannot afford 50 database replicas. What do you do?
+
+**Physical constraint**: RAM access is ~100ns. Disk access is ~4ms — 40,000× slower. A database query that reads from disk (even a warm buffer pool read) is orders of magnitude slower than reading from memory. If reads are idempotent and data changes slowly, you're paying 40,000× the cost on every repeat access unnecessarily.
+
+**Minimal solution**: Copy the result into RAM the first time. Return from RAM on all subsequent reads. This works until: data changes (stale reads), RAM fills up (eviction), or the process restarts (cold start).
+
+**Production generalization**: Cache-aside pattern + TTL for staleness control + LRU eviction for memory pressure + warm-up jobs for cold start. Redis is a RAM-backed hash map over a network — the network adds ~0.5ms but makes the cache shared across all app instances. Twitter caches the home timelines of active users entirely in Redis — what would take a complex database query is served from memory in under 1ms. The hard problems are *what* to cache, *when* to invalidate it, and how to handle a cold cache after a restart.
 
 → Deep dive: [Caching](../01-foundations/caching-cdn.md) | [Caching Layer (Building Block)](../02-building-blocks/caching-layer.md)
 
 ### 4. Content Delivery Networks (CDN)
 
-A CDN is a network of servers distributed globally that cache static content (images, videos, JS files) close to users. Think of it as regional warehouses for Amazon: instead of shipping everything from one central facility in Ohio, they pre-position popular products near major cities so delivery is fast. Without a CDN, a user in Singapore requesting a Netflix video stored in Virginia would experience 150ms of network latency on every byte. With a CDN, they hit a server 20ms away. Netflix delivers over 15% of global internet traffic, almost entirely through CDN.
+**Question**: You have 10 million users worldwide, all requesting the same 50MB JavaScript bundle every time they visit your site. Your origin server is in Virginia. A user in Tokyo gets ~150ms of latency on every byte. Bandwidth costs alone would bankrupt you. What do you do?
+
+**Physical constraint**: The speed of light means a round-trip from Tokyo to Virginia takes ~150ms regardless of how fast your servers are. This is a physics ceiling, not an engineering problem. You cannot optimize your way below the latency imposed by geographic distance.
+
+**Minimal solution**: Put a copy of static files in a server close to each major user population. A server in Tokyo can respond to Tokyo users in ~10ms. This works until: the copy is stale (the original changed), you have too many distinct pieces of content to store everywhere, or the file is dynamic/user-specific.
+
+**Production generalization**: A CDN is a globally distributed network of caching servers (edge nodes) that serve content from the location closest to the user. On the first request from a region, the edge fetches from your origin and caches the result. All subsequent requests from that region are served locally. Netflix delivers over 15% of global internet traffic almost entirely through CDN — it is economically impossible to serve that from a handful of origin data centers.
 
 → Deep dive: [CDN](../01-foundations/caching-cdn.md#cdn) | [CDN (Building Block)](../02-building-blocks/cdn.md)
 
 ### 5. Load Balancing
 
-A load balancer is the traffic cop at the entrance to your datacenter. When 10,000 requests per second arrive at your service, the load balancer distributes them across your fleet of servers so no single machine is overwhelmed. Without one, you have a single point of failure and a scaling ceiling. Google's load balancing infrastructure is one of the most sophisticated in the world — their Maglev system handles millions of packets per second with sub-millisecond decisions. The interesting design choices are the routing algorithm (round-robin vs. least-connections vs. consistent hashing) and how health checks work.
+**Question**: You have 10 servers, each capable of handling 1,000 requests/sec. That's 10,000 requests/sec total capacity. But every client connects to the same IP address — server 1. Servers 2–10 sit idle. How do you distribute the connections?
+
+**Physical constraint**: A server process has a bounded number of threads and file descriptors. Under TCP, each connection consumes a file descriptor (default OS limit ~65,536). Once saturated, new connections are refused regardless of whether other servers are available. There is no built-in mechanism for clients to self-distribute across a server fleet.
+
+**Minimal solution**: Put one machine in front of all servers that receives all connections and forwards each one to one backend. This is a load balancer. It solves the routing problem. It also becomes a single point of failure — if it dies, all traffic dies.
+
+**Production generalization**: Deploy redundant load balancers with failover. Use health checks to detect and stop routing to failed backends. Choose routing algorithm based on workload: round-robin for stateless services, least-connections for variable-duration requests, consistent hashing when requests for the same key should hit the same backend (e.g., caching affinity). Google's Maglev system handles millions of packets per second with sub-millisecond routing decisions.
 
 → Deep dive: [Load Balancers](../02-building-blocks/load-balancers.md)
 
 ### 6. Message Queues & Async Processing
 
-Some work doesn't need to happen right now. When you post a photo on Instagram, you don't want to wait while the system resizes it to 12 different resolutions before showing you a success screen. Instead, the photo is put on a queue, and background workers process it asynchronously. Message queues (Kafka, RabbitMQ, SQS) are the postal service of distributed systems — the sender drops a message and moves on; the receiver picks it up when ready. Kafka, used by LinkedIn, Uber, and Airbnb, can handle millions of messages per second with durability guarantees.
+**Question**: A user uploads a photo. Your system must: resize it to 12 resolutions, extract metadata, run it through a content moderation ML model, and notify followers. That work takes 8 seconds. The user is waiting at a loading spinner. How do you give them a response in under 200ms?
+
+**Physical constraint**: CPU-bound work (image resizing, ML inference) takes real wall-clock time proportional to the complexity of the computation. You cannot make 8 seconds of CPU work complete in 200ms on a single thread — the physics don't allow it. The user's request latency and the total processing latency are decoupled problems that need decoupled solutions.
+
+**Minimal solution**: Accept the upload, store the raw file, return a 202 Accepted immediately. Process everything else asynchronously in the background. The user gets a fast response; the work still happens. This breaks when: the background work fails silently, the background process crashes mid-work, or producers are generating work faster than workers can consume it.
+
+**Production generalization**: Message queues (Kafka, RabbitMQ, SQS) are a durable buffer between producers and consumers. The sender drops a message and moves on; the receiver picks it up when ready. Messages are persisted so a crashed worker can retry. Consumer lag is measurable so you can scale workers when producers outpace them. Kafka handles millions of messages per second with durability guarantees, used by LinkedIn, Uber, and Airbnb.
 
 → Deep dive: [Message Brokers](../02-building-blocks/message-brokers.md)
 
 ### 7. Sharding & Replication
 
-When a single database server can no longer hold all your data or handle all your reads, you scale out. Replication means copying data to multiple servers — reads can be spread across replicas (read replicas are how Instagram handled 1B users on Postgres). Sharding means splitting data across multiple servers so each server owns a subset — Uber shards its trip data by city, so the Sydney database doesn't need to know about New York trips. These two patterns are complementary and together form the backbone of every distributed storage system.
+**Question**: Your PostgreSQL primary is at 80% CPU handling read queries, and your dataset is 20TB — too large for one machine's disk. You cannot vertically scale further. You have two distinct problems: too many reads, and too much data. Are these the same problem? Do they have the same solution?
+
+**Physical constraint**: A single disk has a maximum I/O throughput (~500 MB/s SSD sequential). A single CPU can execute a finite number of query threads. A single machine has a maximum disk capacity. All three are hard physical ceilings, and they can be hit independently — a read-heavy workload may hit CPU before disk capacity, while a data-archival workload may hit disk before CPU.
+
+**Minimal solution**: For the read problem: make copies of the data on additional machines (replicas) and direct reads to them. This is replication. For the data volume problem: put different partitions of the data on different machines. This is sharding. These are distinct solutions to distinct constraints.
+
+**Production generalization**: Replication copies data to multiple servers — read replicas spread read load (how Instagram handled 1B users on Postgres). Sharding splits data across servers so each owns a subset — Uber shards trip data by city, so Sydney's database doesn't carry New York's rows. The two are complementary: you replicate each shard for availability, and you shard for capacity. Together they form the backbone of every distributed storage system.
 
 → Deep dive: [Sharding](../02-building-blocks/sharding.md) | [Replication](../02-building-blocks/replication.md)
 
 ### 8. Security
 
-Security isn't a feature you add at the end. Authentication answers "who are you?" — OAuth 2.0 and JWTs are the dominant patterns. Authorization answers "what are you allowed to do?" — RBAC and ACLs enforce it. Encryption protects data in transit (TLS) and at rest (AES-256). Rate limiting prevents abuse and DDoS attacks. The threat model for a payment system at Stripe is completely different from a social media platform, but both have non-negotiable baseline requirements.
+**Question**: An attacker sends your login endpoint 1 million requests per second, each with a different username/password combination harvested from a leaked credentials database. Your server happily processes each one. Within minutes, they've accessed thousands of real user accounts. Your code has no bugs. What went wrong?
+
+**Physical constraint**: A server cannot distinguish a malicious request from a legitimate one at the packet level — both are valid TCP connections with valid HTTP bodies. Without application-layer controls, every request is treated identically regardless of intent or volume. The application layer is the only place where business context (is this request pattern anomalous?) can be evaluated.
+
+**Minimal solution**: Accept every request and authenticate it against the database. This is correct for one user. At scale with an attacker, it exhausts DB connections, leaks account existence via timing differences, and provides no circuit breaker against credential stuffing.
+
+**Production generalization**: Authentication (who are you? — OAuth 2.0, JWTs) and authorization (what are you allowed to do? — RBAC, ACLs) are necessary but not sufficient. Rate limiting, IP blocking, CAPTCHA, and anomaly detection are the controls that make authentication resistant to automated attack. Encryption (TLS in transit, AES-256 at rest) ensures that breaching the network or disk doesn't expose data. The threat model for a payment system at Stripe is completely different from a social media platform, but both have non-negotiable baseline requirements.
 
 → Deep dive: [Security](../01-foundations/security.md)
 

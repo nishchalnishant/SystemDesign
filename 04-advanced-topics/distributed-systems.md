@@ -17,9 +17,13 @@
 
 ## Introduction to Distributed Systems
 
-A **distributed system** is a collection of independent computers that appears to its users as a single coherent system.
+**Question**: You have one server handling 10,000 req/sec. Traffic doubles every 6 months. In 2 years that's 160,000 req/sec. The fastest single server costs $500k, handles ~500,000 req/sec, and if it dies your entire product is down for hours. What is the only exit?
 
-### Why Distributed Systems?
+**Physical constraint**: Light travels 200,000 km/sec. New York to London = ~5,500 km = minimum 27ms one-way. You cannot make one machine serve users in both cities with <10ms latency. Geography alone forces distribution.
+
+**Minimal solution**: Put a second identical server behind a load balancer. This works until: the two servers disagree on data (consistency problem), the load balancer itself dies (SPOF), or both servers need to write to the same shared row (distributed transaction problem).
+
+**Production generalization**: Every hard problem in distributed systems — consensus, consistency models, distributed transactions, time and ordering — flows from this one decision to run on multiple machines. A **distributed system** is a collection of independent computers that appears to its users as a single coherent system. All the complexity is the price of that appearance.
 
 **Reasons to distribute:**
 - **Scalability**: Handle more load by adding machines
@@ -36,6 +40,14 @@ A **distributed system** is a collection of independent computers that appears t
 ---
 
 ## Consistency Models
+
+**Question**: You have two database replicas. A user updates their email on replica A. Half a second later, they hit the "save successful" page — which is served by replica B. Their old email is displayed. The user is angry. How do you prevent this without routing every read through the primary?
+
+**Physical constraint**: Replication between nodes in the same DC takes ~1ms (network RTT). Cross-region replication takes 50–150ms. Any replica that is not the primary is, by definition, some number of milliseconds behind. You cannot have zero replication lag and also have replicas — those two goals are physically incompatible.
+
+**Minimal solution**: Always read from the primary. Problem: primary becomes the bottleneck — you've added replicas but all reads still hit one node. You've paid the replication cost without getting the read-scale benefit.
+
+**Production generalization**: The consistency spectrum exists to let you trade staleness tolerance for read throughput. You pick the weakest consistency your application can tolerate, not the strongest. Each model below is a different answer to that trade-off.
 
 ### Strong Consistency (Linearizability)
 
@@ -188,7 +200,13 @@ Client B: READ(profile) → May see old value
 
 ## Consensus Protocols
 
-Consensus protocols allow distributed nodes to agree on a single value despite failures.
+**Question**: You have three database nodes. A network glitch causes Node A to stop hearing from the current leader. Node A declares itself a new leader and starts accepting writes. Meanwhile the old leader (still alive, just partitioned from A) also accepts writes. When the partition heals, you have two diverged logs. How do you prevent this without a human in the loop?
+
+**Physical constraint**: You cannot distinguish a dead node from a slow network. A node that stops responding may be crashed, or the packet may still be in transit. Any timeout you pick is a guess. If you make it too short, live nodes get incorrectly evicted. Too long, and failover takes forever. This ambiguity is why you need a protocol, not just a timeout.
+
+**Minimal solution**: "First one to time out becomes leader." This creates split-brain: two nodes both believe they are leader, both accept writes, data diverges. No recovery path without manual intervention.
+
+**Production generalization**: Consensus protocols solve split-brain by requiring a majority (quorum) to agree before any decision takes effect. With N nodes, a quorum is N/2 + 1. Two separate partitions cannot both have a majority simultaneously — so only one partition can make progress. The minority partition stalls rather than diverging.
 
 ### Raft Consensus
 
@@ -265,6 +283,14 @@ Followers: Apply command to state machine
 ---
 
 ## Distributed Transactions
+
+**Question**: An e-commerce checkout must (1) deduct inventory in the Inventory DB, (2) charge the card via the Payment DB, and (3) create the order record in the Order DB — three separate databases, owned by separate services. If step 2 succeeds but step 3 crashes, the card is charged but no order exists. How do you make all three happen atomically across services you don't control?
+
+**Physical constraint**: A local database transaction is atomic because one process controls both the lock and the commit. Across two machines, the moment you commit on machine A, machine B might crash before it commits. There is no way to make two independent commit operations happen at the exact same instant — the speed-of-light latency between them means there is always a window where they are in different states.
+
+**Minimal solution**: Just do the operations sequentially and hope nothing crashes. Breaks immediately: real systems crash mid-sequence constantly (deploys, GC pauses, network blips). You need a protocol that either completes all steps or rolls all of them back.
+
+**Production generalization**: Two approaches exist. 2PC gives you atomic commit at the cost of blocking during coordinator failure. The Saga pattern gives up atomicity in exchange for availability — each step is a local transaction, and if something fails you undo already-completed steps with compensating transactions. For most microservice systems, Saga is the right answer because services should be independently deployable and therefore should not share lock state.
 
 ### Two-Phase Commit (2PC)
 
@@ -397,6 +423,14 @@ Background Process:
 ---
 
 ## Time and Ordering
+
+**Question**: Node A writes x=1 at timestamp 10:00:00.100. Node B writes x=2 at timestamp 10:00:00.099 (its clock is 1ms behind). You sort by timestamp and conclude A's write happened first, so x=2 wins. But B's write was issued after A's — you just ordered them backwards. How do you establish causality without trusting any node's clock?
+
+**Physical constraint**: NTP synchronizes clocks to within ~1ms on a LAN, ~50ms on WAN. But clocks also drift between sync intervals — commodity server clocks drift ~200ms/day without correction. There is no shared physical clock across machines. Any system that uses timestamps for ordering is silently broken in the presence of clock skew.
+
+**Minimal solution**: Use wall-clock timestamps. Works fine in a single datacenter where clock skew is small enough to not matter for your SLA. Breaks when: two writes happen within the skew window (wrong order), or when a node's clock jumps backward after NTP correction (timestamps go backward mid-session).
+
+**Production generalization**: Logical clocks decouple "ordering" from "physical time." Lamport timestamps give you a total order that respects causality. Vector clocks go further and let you detect concurrent events (neither happened before the other). Google Spanner sidesteps the problem entirely by using GPS + atomic clocks to bound uncertainty to ~7ms, then explicitly waiting out that window before committing.
 
 ### The Problem with Time
 
@@ -547,6 +581,14 @@ Then: All future transactions will see this commit
 
 ## Conflict Resolution
 
+**Question**: Two users simultaneously update the same shopping cart from different devices — one adds an item, the other removes a different item. Both writes go to different replicas. When the replicas sync, whose version wins? If you pick one and discard the other, you silently lose data. If you block both writes until you get consensus, you've killed availability. What is the right model?
+
+**Physical constraint**: With replicas in different regions (50–150ms RTT), you cannot synchronize every write without adding 50–150ms of latency to every operation. For user-facing writes, that is unacceptable. So replicas accept writes independently and merge later — which guarantees conflicts will happen.
+
+**Minimal solution**: Last-write-wins: the write with the later timestamp survives. Fast and simple. Breaks at: concurrent writes within the clock-skew window get wrong ordering; data from the "losing" write is silently discarded (user loses their cart changes with no error).
+
+**Production generalization**: The right conflict strategy depends on the data type. LWW works when losing writes is acceptable (user profile photo). Version vectors work when you need to detect conflicts and surface them to the application. CRDTs are the cleanest solution: design your data structure so that any merge is mathematically correct — no conflicts possible by construction.
+
 ### Last-Write-Wins (LWW)
 
 **Strategy**: Most recent write (by timestamp) wins
@@ -650,6 +692,14 @@ public class GCounter {
 ---
 
 ## Distributed Coordination
+
+**Question**: You have 20 Kafka broker nodes. Each partition needs exactly one leader broker. When a broker dies, a new leader must be elected within seconds, without two brokers both believing they are the leader for the same partition. Every broker is a Java process on a different machine. How do you coordinate this without a human, and without every broker talking to every other broker?
+
+**Physical constraint**: With N services all needing to agree on shared state (who is leader, what is the current config), you need O(N²) coordination links if they all talk to each other. At N=20 that is 380 connections, each with its own failure mode. You need a smaller, more reliable coordination surface.
+
+**Minimal solution**: Elect one service as the "meta-leader" and have all others register with it. Breaks when that meta-leader crashes — you now need a way to elect the meta-leader, which is the original problem again (infinite recursion).
+
+**Production generalization**: ZooKeeper solves this by being a purpose-built, highly available coordination service backed by a consensus protocol (Zab, similar to Raft). You pay the cost of running a 3-or-5-node ZooKeeper ensemble once, and every distributed service in your stack can use it for leader election, locks, and config — amortizing the complexity across all consumers.
 
 ### Apache ZooKeeper
 

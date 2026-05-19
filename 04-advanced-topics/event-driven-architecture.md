@@ -2,7 +2,13 @@
 
 ## What Is EDA?
 
-Event-Driven Architecture (EDA) is a design paradigm where components communicate by producing and consuming events rather than calling each other directly.
+**Question**: When an order is placed, five things must happen: reserve inventory, charge the card, send a confirmation email, update analytics, and trigger the warehouse. You implement this as a sequential chain of synchronous calls in the Order Service. Now you need to add a sixth step (notify the fraud detection service). You have to modify and redeploy the Order Service. One of the five downstream services is slow — the entire chain takes 3 seconds. If the email service is down, the whole order fails. How do you add downstream reactions without modifying the source, and how do you make the chain failure-tolerant?
+
+**Physical constraint**: A synchronous call from A to B creates temporal coupling: A must wait for B to complete. If B is slow, A is slow. If B is down, A fails. With N downstream reactions, the total latency is the sum of all N response times — or one long serial chain. The source service (Order) is coupled to all N consumers and must know all their addresses. Adding consumer N+1 requires modifying the source.
+
+**Minimal solution**: Make all downstream calls async in the Order Service using a thread pool. Fire-and-forget. This removes latency coupling but creates: lost work if the thread pool is full, no retry on downstream failure, and you still have to modify the Order Service to add a new consumer.
+
+**Production generalization**: Publish an event to a durable broker. The source service's job ends after the publish. Each consumer subscribes independently. The broker retains messages so late-starting consumers catch up. Adding consumer N+1 requires deploying the new consumer — the source service is untouched. Failures in any one consumer don't affect others or the producer.
 
 **Analogy:** A sports stadium scoreboard. Every time a goal is scored (an event), the scoreboard system broadcasts it. Different consumers react differently to the same event: the live score display updates, the analytics system records possession stats, the replay system queues the clip, the mobile app sends push notifications. None of these consumers talk to each other. They all independently react to the same broadcast event. Adding a new consumer (e.g., a betting odds service) doesn't require changing the scorer or any other consumer.
 
@@ -44,6 +50,14 @@ A request to do something. Different from events — a command has one intended 
 
 ### Event Sourcing
 
+**Question**: A bank account shows a balance of $450. A customer disputes a transaction from 3 days ago. You look in the `accounts` table: `balance = 450`. That's all you have. You cannot tell the customer which transaction they're disputing or reconstruct the account state at any point in the past. The audit requirement says you must be able to. How do you store data so the entire history is always available, not just the current snapshot?
+
+**Physical constraint**: A mutable row in a database destroys history. Every UPDATE overwrites the previous value — that is the point of an UPDATE. If you need historical state, you need to store each state transition explicitly. Disk is cheap (~$0.10/GB/month); the events for one account over a year at 10 events/day × 365 days × 1KB/event = 3.6MB. Storing history is not a storage problem; it is an intentional design choice.
+
+**Minimal solution**: Add a transaction log table alongside the accounts table. Insert a row for every change. Works but: you now maintain two sources of truth (the row and the log) that can diverge, and you must keep them in sync with a transaction.
+
+**Production generalization**: Event sourcing eliminates the dual-write problem by making the event log the *only* source of truth. Current state is a derived projection of the event log, computed on demand (or cached as a snapshot). You get full history, temporal queries, and replay for free — at the cost of more complex reads.
+
 Instead of storing current state in a DB row, store the sequence of events that led to that state.
 
 ```
@@ -72,6 +86,14 @@ Current state is derived by replaying events. You get a complete audit log for f
 
 ### CQRS (Command Query Responsibility Segregation)
 
+**Question**: Your order write model stores: `order_id`, `user_id`, `product_ids[]`, `status`. An order list page needs: order date, user name, product names, product thumbnails, total price with discounts. Getting this requires JOINs across 4 tables and N+1 queries for product data. It's slow. If you add indices to speed up reads, you slow down writes. How do you make reads fast without hurting writes, when the shape of data you write is fundamentally different from what you read?
+
+**Physical constraint**: A normalized relational schema is optimized for writes (no redundancy, no anomalies). A read is optimized when data is pre-joined and denormalized (one row = one view). These two optimizations are in direct conflict. You cannot have both for the same table. The write shape and the read shape are structurally different things.
+
+**Minimal solution**: Add indexes until reads are fast enough. Breaks at: indexes slow writes proportionally (more indexes = more maintenance work per write), and the mismatch between write shape and read shape means even with indexes, the query requires joins that indexes can't eliminate.
+
+**Production generalization**: CQRS accepts that write and read models are different things. The write side stores normalized, consistent data. An event processor (async) derives the read model: denormalized, pre-joined, shaped exactly for the UI. Reads are fast because they query a purpose-built projection. Writes are fast because they touch only the write model. The cost is eventual consistency: the read model lags by milliseconds to seconds.
+
 Separate the write model (commands) from the read model (queries).
 
 ```
@@ -93,6 +115,14 @@ Read side:    Event Processor reads events → updates Read DB (denormalized, op
 **When NOT to use:** simple CRUD — CQRS adds complexity without benefit.
 
 ### Outbox Pattern
+
+**Question**: Your Order Service places an order: it writes a row to the `orders` table and publishes an `OrderPlaced` event to Kafka. You do the DB write first, then the Kafka publish. The DB write succeeds but the Kafka publish fails (broker briefly unreachable). The order exists in the database but no downstream service ever heard about it — inventory was never reserved, email was never sent. How do you make the DB write and the event publish atomic without a distributed transaction?
+
+**Physical constraint**: A local DB transaction is atomic because the database controls both the lock and the commit. Kafka and Postgres are two separate systems with no shared transaction coordinator. You cannot make a commit in Postgres and a publish to Kafka happen at exactly the same instant — one will always happen first, and a crash between them leaves them inconsistent.
+
+**Minimal solution**: Always publish to Kafka first, then write to DB. If DB fails after Kafka publish, you've published an event for an order that doesn't exist. Neither ordering eliminates the failure window.
+
+**Production generalization**: Write both the business record *and* the event in a single local transaction, to the same database. A background relay process (Debezium CDC or a polling relay) reads the outbox table and publishes to Kafka. If the relay crashes mid-publish, it retries — so consumers must be idempotent, but no events are lost.
 
 How do you atomically update the DB and publish an event? Two-phase commit? No.
 

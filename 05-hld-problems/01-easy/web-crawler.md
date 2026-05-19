@@ -7,6 +7,48 @@
 
 ---
 
+## What Breaks Without This System?
+
+A search engine needs to index the web. Without a crawler, its index is empty — no queries return results. More specifically: without a designed crawler, you write a naive recursive scraper. It fetches a page, extracts links, recursively fetches those. Within minutes it has visited `example.com` 400 times because it discovered the same URL via 400 different paths. It hammers `wikipedia.org` with 10K requests/second, gets IP-banned, and can never index Wikipedia again. It follows an infinite calendar URL (`/events?date=2026-01-01`, `/events?date=2026-01-02`...) for weeks without making progress on other sites. It downloads 2TB of near-duplicate content because it didn't canonicalize URLs (trailing slash, `http` vs `https`, query parameter order).
+
+The technical failures without a designed system:
+- No deduplication → infinite loops, wasted bandwidth, re-crawling already-indexed pages.
+- No politeness controls → IP bans from target servers.
+- No priority → the crawler never decides what to crawl next; it's DFS into a trap.
+- No distributed coordination → one machine can't crawl 5B URLs at 10K pages/sec.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single-threaded, naive**
+`fetch(seed_url)` → parse HTML → extract links → `fetch(each link)`. Breaks immediately: cycles, no deduplication, single-threaded throughput is ~1 page/sec.
+
+**Step 2 — What constraint forces distributed crawling?**
+Target: 10K pages/sec, 550TB per full crawl. A single server with a 1Gbps NIC maxes out at ~125MB/sec download. At average 100KB/page that's 1,250 pages/sec max, ignoring DNS, parsing, and storage overhead. You need 5,000+ crawler workers. Now you have a coordination problem: how do 5,000 workers avoid crawling the same URL?
+
+**Step 3 — URL deduplication at 5B URLs**
+Option A: DB lookup (`SELECT 1 FROM visited WHERE url = ?`). 5B rows, URL up to 2KB each → 10TB table, 50ms per lookup, 500K lookups/sec = unsustainable.
+Option B: Bloom filter. A 6GB in-memory Bloom filter with 3 hash functions gives <0.1% false positive rate for 5B URLs. Lookup is O(3) hash operations — nanoseconds. False positives mean we occasionally skip a valid unvisited URL — acceptable. No false negatives (never crawl a URL twice).
+
+**Step 4 — URL Frontier (the scheduling backbone)**
+A FIFO queue is not enough — it would drain `example.com`'s 1M internal links all at once, violating politeness (1 request per domain per second is the standard limit).
+
+Two-level structure:
+- Front queues: N priority queues (importance/PageRank score determines which queue a URL enters).
+- Back queues: one FIFO queue per domain. A URL for `cnn.com` goes to the `cnn.com` back queue. Crawlers pull from back queues, enforcing one request per domain per second with a per-domain timer.
+
+**Step 5 — Distributed coordination across 5,000 workers**
+Use consistent hashing: hash(domain) → worker ID. All URLs for `cnn.com` always go to worker #42, regardless of which worker discovered the URL. This eliminates coordination: no shared state needed for per-domain politeness — each worker owns a domain partition exclusively.
+
+**Step 6 — What remains as hard problems**
+- DNS: 10K pages/sec = 10K DNS lookups/sec. Default OS DNS is synchronous and ~100ms. Build a local async DNS cache with TTL respect — reuse resolved IPs for 5 minutes.
+- robots.txt: cache per domain, TTL 1 day. Never fetch a page before fetching and honoring its robots.txt.
+- Near-duplicate content: SimHash of page content; pages with Hamming distance < 3 are near-duplicates. Discard or merge.
+- Spider traps: URL length limit (>500 chars: skip), max URLs per domain per crawl, URL pattern detection (infinite calendar URLs).
+
+---
+
 ## Real-Life Analogy
 
 Imagine a city's postal sorting facility tasked with cataloging every address in the country.

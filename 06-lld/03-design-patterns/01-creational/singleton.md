@@ -1,5 +1,78 @@
 # Singleton Pattern
 
+## Question
+
+You are building a connection pool for a database. Every component in the application needs connections. Write the first version of a `ConnectionPool` class that any component can instantiate and use.
+
+Try this before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The obvious implementation:
+
+```java
+class ConnectionPool {
+    private List<Connection> connections;
+
+    public ConnectionPool() {
+        connections = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            connections.add(openNewConnection());
+        }
+    }
+
+    public Connection acquire() { ... }
+    public void release(Connection c) { ... }
+}
+
+// In ServiceA:
+ConnectionPool poolA = new ConnectionPool(); // opens 10 connections
+
+// In ServiceB:
+ConnectionPool poolB = new ConnectionPool(); // opens another 10 connections
+```
+
+**What breaks**:
+1. **Resource duplication**: 2 services = 20 open connections, all independent. The pool can't enforce a global limit.
+2. **Inconsistency**: `poolA.release(c)` returns `c` to `poolA`'s list. `ServiceB` never sees it — it's draining its own pool.
+3. **No shared state**: Any attempt to track "how many connections are active" is per-instance, not global.
+
+The real requirement isn't "create a connection pool" — it's "there must be exactly **one** pool, shared by everyone."
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **only one instance must ever exist**.
+
+Step 1 — block external construction:
+```java
+class ConnectionPool {
+    private ConnectionPool() { } // prevent new ConnectionPool()
+}
+```
+
+Step 2 — the class holds its own instance:
+```java
+class ConnectionPool {
+    private static ConnectionPool instance = new ConnectionPool();
+    private ConnectionPool() { }
+}
+```
+
+Step 3 — expose a global access point:
+```java
+public static ConnectionPool getInstance() {
+    return instance;
+}
+```
+
+That's the entire pattern. Everything below is refinements: lazy initialization, thread-safety under concurrency, preventing serialization bypass.
+
+---
+
 > **Purpose**: Ensure a class has only one instance and provide a global access point to it.
 
 > **Analogy**: The president of a country. There is exactly ONE president at any time. Everyone who wants to talk to "the president" gets the same person — no matter who asks or when.

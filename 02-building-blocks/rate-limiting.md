@@ -4,6 +4,18 @@
 
 ---
 
+## Why Rate Limiting Exists
+
+**Question**: A single malicious (or buggy) client sends 50,000 requests/sec to your API. Your service handles 10,000 req/sec total. What prevents this one client from taking down every other user?
+
+**Physical constraint**: Your API server has a fixed thread pool and connection limit. 50,000 concurrent TCP connections will exhaust file descriptors (default OS limit: 65,535). Even if each request is computationally cheap, the connection overhead alone starves legitimate traffic. At 100 bytes per request header, 50,000 req/sec is 5 MB/sec of header parsing before a single byte of your business logic runs.
+
+**Minimal solution**: Track request count per client IP in memory. If count exceeds threshold in the window, return 429. Works until: you have multiple app servers (each has its own in-process counter — a client spreads requests across N servers and gets N× the limit), or the server restarts (all counters reset to zero).
+
+**Production generalization**: Centralized counter in Redis with atomic INCR + TTL. All app servers share one counter. The algorithm choice (token bucket, sliding window, fixed window) determines how you handle bursts vs steady-state traffic and how much state you maintain per user.
+
+---
+
 ## The Nightclub Bouncer Analogy
 
 A nightclub bouncer stands at the door with a clicker counter. The algorithms map directly:

@@ -7,6 +7,50 @@
 
 ---
 
+## What Breaks Without This System?
+
+Before WhatsApp, international messaging cost $0.10–$0.25 per SMS. A family in Brazil messaging relatives in Portugal paid per message, switched off notifications to avoid charges, and missed messages entirely when roaming. Communication was economically gatekept.
+
+The technical failure without a designed messaging system:
+
+- **Polling approach**: client polls the server every 5 seconds — "any new messages?" 2B users × 12 polls/minute = 24B requests/minute = 400M requests/second to origin servers. Infeasible. Server infrastructure must support every user simultaneously even when nothing is happening.
+- **HTTP long-polling**: server holds connection open until a message arrives. Better than polling, but HTTP is stateless — no clean way to hold millions of connections open, and mobile networks tear down connections on sleep/background.
+- **No offline delivery**: if the recipient's device is offline when a message is sent, where does the message wait? Without a store-and-forward layer, the message is lost. Without retry + delivery receipt, the sender has no idea whether the message was received.
+- **No E2E encryption by default**: without it, the server operator can read all messages. Privacy is impossible to retrofit — it must be in the design from the start.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — The connection problem: HTTP vs WebSocket**
+HTTP is request-response: client initiates, server responds, connection closes. To push a message from server to client, you'd need the client to poll. At 2B users polling every 5 seconds = 400M requests/sec. WebSocket: client initiates a TCP connection upgrade, then the connection stays open. Server can push at any time. Cost: one persistent TCP connection per active user. At 2B users, you can't hold all connections on one server — you need a fleet of connection servers (chat servers).
+
+**Step 2 — The routing problem: how does a message get to the right connection?**
+User A (connected to Chat Server 7) sends a message to User B (connected to Chat Server 23). Chat Server 7 doesn't know where User B is connected. Solution: a routing layer that maps `user_id → chat_server_id`. When User B connects, it registers with a coordination service (ZooKeeper or a Redis hash). When Chat Server 7 needs to deliver to User B, it looks up the routing table, finds Chat Server 23, and forwards the message via internal gRPC. Chat Server 23 pushes over User B's WebSocket.
+
+**Step 3 — The offline delivery problem: store and forward**
+User B's phone is off. Chat Server 23 has no active WebSocket for User B. The message must be stored until User B comes online. Storage: Cassandra is purpose-built for this — write-heavy, append-only, time-ordered, horizontally scalable. Schema: `(conversation_id, message_timestamp, message_id) → message_payload`. When User B reconnects, the chat server fetches undelivered messages from Cassandra and pushes them in order.
+
+**Step 4 — Delivery receipts: the three-tick model (sent / delivered / read)**
+- Sent (one gray tick): message written to Cassandra server-side.
+- Delivered (two gray ticks): message pushed to recipient's device and acknowledged.
+- Read (two blue ticks): recipient opened the conversation.
+
+Each state transition sends an ACK event back to the sender's chat server, which updates the message state and pushes the tick update to the sender's device.
+
+**Step 5 — End-to-end encryption**
+Each client generates a key pair on install (Signal Protocol: Curve25519, AES-256, HMAC-SHA256). Public keys are registered with WhatsApp's key server. When A sends to B, A fetches B's public key, derives a shared session key, encrypts the message locally, sends the ciphertext. The server stores and routes opaque ciphertext — it cannot decrypt. The server only knows: sender, recipient, timestamp, and size.
+
+**Step 6 — Group messages**
+A group with 500 members: one message must be delivered to 500 devices. Two approaches:
+- Fan-out on write (server side): server delivers the message to all 500 members individually. 500 WebSocket pushes per message. Controlled fan-out, but 500x amplification.
+- Sender-key (WhatsApp's actual approach for groups): each member of the group holds a shared "sender key." A sends one encrypted message; each recipient decrypts using the sender key. One server write, client-side fan-out. Efficient for large groups.
+
+**Step 7 — Media messages**
+Audio/video/photo cannot go through the WebSocket stream (binary size, no retry semantics). Client uploads media to WhatsApp's CDN (blob storage), gets back a URL + encryption key. Sends a message containing the URL + encryption key (encrypted with Signal Protocol). Recipient downloads media from CDN directly; decrypts locally. Server never sees the media content.
+
+---
+
 ## Real-Life Analogy
 
 Two people having a private conversation in a phone booth. End-to-end encrypted means the phone company can hear nothing — only the two people in the booths can understand each other, even if someone taps the line. The phone company just routes the call.

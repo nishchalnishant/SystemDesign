@@ -7,13 +7,49 @@
 
 ---
 
-## Real-Life Analogy
+## What Breaks Without This System
 
-Think of a daily newspaper personalized for every subscriber. The printing press runs overnight, assembling each person's paper based on which writers they subscribe to. When you wake up, your paper is already waiting at the door — pre-assembled, fast to read.
+Your social network launches with a simple news feed: when a user opens the app, you query the database for every person they follow, fetch the latest tweets from each, merge-sort by timestamp, and return the first 20. It works perfectly with 10,000 users.
 
-That's fan-out on write. The catch: if a celebrity columnist publishes an article, you'd need to physically print 100 million copies of their piece — one for each subscriber's doorstep. That's the "celebrity problem." You can't pre-assemble papers for 100M subscribers every time Elon Musk tweets.
+At 500M DAU, each user follows 200 people on average. A single feed load requires 200 DB queries, returning ~50 tweets each, then merge-sorting 10,000 rows in memory. Feed load QPS: 60K views/sec × 200 queries = **12 million DB queries/second** — against a PostgreSQL cluster that can handle ~50K queries/sec. The database falls over instantly. P99 feed load time: 8 seconds instead of 200ms.
 
-The solution Twitter (and most large social networks) use: for regular users (< 10K followers), pre-print their section and push it to followers' mailboxes overnight. For celebrities (> 10K followers), don't pre-print — instead, when a subscriber opens their paper, the printing press quickly fetches the celebrity's latest articles and staples them in on-demand. The reader never notices the difference.
+You flip to the opposite approach: fan-out on write. Every tweet is pushed into each follower's Redis feed cache at write time. Feed reads become O(1) Redis `ZRANGE`. But Cristiano Ronaldo (600M followers) posts a tweet. Your Kafka fan-out workers need to write to 600M Redis keys in ~30 seconds (before the next tweet arrives). At 50µs per Redis write, that's 600M × 50µs = **8.3 hours** of Redis write time, serialized per tweet. The fan-out queue falls hours behind reality. Followers see stale feeds.
+
+Both extremes break. The system requires a hybrid model, and deriving it from the failure modes is the only way to understand why the 10K-follower threshold exists.
+
+---
+
+## Derive the Architecture
+
+**Start with fan-out on read (pull model):** On feed load, query DB for all followed users' tweets. Works at small scale.
+
+**What breaks at 60K feed views/sec?** Each view requires 200 DB queries → 12M QPS to the tweet DB. A sharded PostgreSQL cluster handles ~500K QPS total; 12M is 24× its capacity. P99 latency: seconds. **Fix: Redis feed cache.** Pre-compute each user's feed as a Redis Sorted Set (tweet_id by timestamp). `ZRANGE feed:{userId} 0 19 REV` = one Redis command instead of 200 DB queries.
+
+**What breaks when you need to populate those Redis caches?** On every tweet, fan out to all follower Redis keys. At 12K tweets/sec with average 200 followers: 12K × 200 = 2.4M Redis writes/sec. Redis Cluster handles ~5M commands/sec — manageable. Use a Kafka `fan-out` topic: tweet event → Kafka → fan-out workers → write to follower feed caches in parallel.
+
+**What breaks for a celebrity with 100M followers?** 1 tweet → 100M Redis writes. At 50µs per write, that's 5,000 CPU-seconds of work. Even with 100 fan-out workers in parallel, it takes 50 seconds. Cristiano Ronaldo tweets every few minutes; the queue never drains. **Fix: hybrid model with 10K follower threshold.** Users with < 10K followers use fan-out on write (their tweets are fanned out into follower caches immediately). Users with ≥ 10K followers ("celebrities") use fan-out on read: their tweets are NOT pre-pushed to followers' caches. Instead, at feed-read time, the Feed Service fetches the last 20 tweets from each followed celebrity directly (O(1) Redis lookup on the celebrity's own tweet list) and merges them with the pre-built cache for non-celebrity follows.
+
+**What breaks with merge at read time?** The Feed Service must merge celebrity tweets (fetched live) with the pre-built fan-out feed (from Redis cache). Merge-sorting two lists of 20 is trivial — O(40 log 40). The number of celebrities a user follows is small (most users follow < 10 celebrities). Total read-time work: fetch ~10 celebrity tweet lists + 1 ZRANGE on pre-built cache + merge = ~11 Redis commands. P99 feed load: ~5ms.
+
+**What breaks when a regular user posts their first tweet after being inactive?** The fan-out Kafka event fires asynchronously. The author queries their own feed immediately via read-your-own-writes. **Fix: write-through on the author's own cache** before enqueuing the fan-out event. The author sees their tweet instantly; followers see it within seconds as workers drain the queue.
+
+**Resulting architecture:**
+
+```
+Tweet POST → Tweet Service → Tweet DB (sharded by userId)
+                           → Kafka (fan-out topic)
+                           → author's own Redis feed cache (write-through, synchronous)
+
+Kafka fan-out workers:
+  if author.followerCount < 10K: write tweet to each follower's Redis feed:{userId} ZADD
+  if author.followerCount ≥ 10K: write tweet to celebrity's own tweet list only
+
+Feed GET → Feed Service
+         → ZRANGE feed:{userId} (pre-built cache from fan-out)
+         + for each celebrity followed: ZRANGE celebrity_tweets:{celebrityId} 0 19
+         → merge-sort in memory
+         → return top 20
+```
 
 ---
 

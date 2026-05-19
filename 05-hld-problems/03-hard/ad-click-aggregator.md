@@ -27,6 +27,26 @@ The challenge: 50 gates all scanning simultaneously, some people try to scan twi
 
 ---
 
+## What Breaks Without This System?
+
+Without a click aggregation pipeline, every advertiser dashboard query runs a `COUNT(*)` over billions of raw click rows in a transactional database — a multi-second full table scan that crushes OLTP performance and makes the database unavailable for writes. Duplicate clicks (network retries, mobile reconnects) get counted as valid clicks, overcharging advertisers and destroying trust. At 1M clicks/sec during peak events, a simple INSERT per click into a relational DB saturates at ~10K writes/sec — 99% of clicks are dropped.
+
+---
+
+## Derive the Architecture
+
+**1 server, INSERT per click into SQL**: Each click event writes a row to `clicks(ad_id, user_id, timestamp, country, device)`. Dashboard queries `COUNT(*)` per ad. Works for ~1K clicks/sec. Breaks when: 1M clicks/sec × 1 KB/row = 1 GB/sec write throughput — far beyond PostgreSQL's ~10 MB/sec sustained write capacity. Fix: don't write individual rows to SQL; ingest clicks into a write-optimized log first.
+
+**Kafka ingestion layer**: Clicks publish to Kafka topics partitioned by ad_id. Kafka handles 1M events/sec across 10+ brokers. Consumers read from Kafka asynchronously. Breaks when: a naive consumer doing `SELECT COUNT WHERE ad_id=X AND window=Y` per click is still O(clicks) per query and doesn't produce the real-time counts advertisers want. Fix: stream processor (Flink/Kafka Streams) aggregates counts in memory over time windows, emitting per-minute totals.
+
+**Stream aggregation with Flink**: Flink reads click events from Kafka, maintains in-memory counters per (ad_id, minute, country, device), and writes aggregated rows to a fast OLAP store every 30 seconds. Latency from click to dashboard: ~30–60 seconds. Handles 1M clicks/sec with 10 Flink workers. Breaks when: the same click arrives twice (mobile reconnect sends the click again) — the counter increments twice, overcharging the advertiser. Fix: deduplicate clicks within a 1-minute window before counting using a distributed bloom filter keyed by (user_id, ad_id, minute).
+
+**Bloom filter deduplication**: Each Flink worker holds a bloom filter for its partition's click events in the last 60 seconds. Duplicate clicks are filtered before hitting the counter with ~0.1% false-positive rate. Handles the duplicate problem at low memory cost. Breaks when: the stream aggregation (approximate, may miss late-arriving events from mobile devices that were offline for 10 minutes) diverges from the certified accurate batch count that advertisers are billed on. Fix: run a parallel batch pipeline (Spark over raw click logs in S3) that produces exact hourly/daily counts for billing.
+
+**Lambda architecture (stream + batch)**: Stream layer (Flink) serves real-time approximate counts for dashboards. Batch layer (Spark on S3 raw logs) produces exact counts for billing, reconciled hourly. Breaks when: a single hot ad_id receives 100K clicks/sec — all events land on one Kafka partition (same ad_id hash), saturating a single consumer thread. Fix: add a random suffix to the Kafka partition key during high-volume bursts (`ad_id + random(0..N)`) to spread writes; aggregate the N partial counters at read time.
+
+---
+
 ## Why This Is Hard
 
 1. **Exactly-once counting**: A click might arrive multiple times (network retry, mobile reconnect after losing signal). Counting it twice overcharges the advertiser. Deduplication at 1M events/sec requires distributed bloom filters or exactly-once idempotency windows.

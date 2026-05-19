@@ -28,6 +28,26 @@ The hard part: when you have 100 belts, 50 factories reading them, and a worker 
 
 ---
 
+## What Breaks Without This System?
+
+Without a message queue, every producer calls consumers directly over synchronous HTTP. When a downstream consumer is slow, the producer's thread pool exhausts waiting for responses — and the producer goes down too. One slow service cascades into a full outage. There is also no replay: if a consumer crashes mid-batch, the events it hadn't processed are gone forever with no way to reprocess them.
+
+---
+
+## Derive the Architecture
+
+**1 server, in-memory queue**: Producer pushes jobs to an in-memory list; consumer pops and processes. Works at ~1,000 msg/sec. Breaks when: the server restarts — all unprocessed messages vanish. Fix: acknowledge only after writing to disk.
+
+**Disk-backed single node**: Append each message to a log file before ACKing the producer. Survives restarts; consumer reads from last checkpointed offset. Works to ~10,000 msg/sec. Breaks when: a single rotating disk saturates at ~100 MB/s I/O, and a single 1 KB message stream at 10K/sec = 10 MB/s leaves no headroom for replicas or bursty traffic. Fix: partition the log across multiple disks and nodes so writes fan out in parallel.
+
+**Partitioned log, N brokers**: Each partition is an independent ordered log on one broker. 10 partitions across 10 brokers = 10× throughput. Handles 100K–1M msg/sec. Breaks when: the broker owning a partition dies — that partition is unavailable until manual recovery. Fix: replicate each partition to 2 additional brokers (leader + 2 followers = replication factor 3). Writes require acknowledgment from the in-sync replica (ISR) set before the offset advances.
+
+**Replicated partitions, ISR**: With RF=3, one broker failure is tolerated without message loss. Handles 1M msg/sec across 6+ brokers, 1 GB/sec ingress. Breaks when: multiple consumers in the same group need to process at different speeds — one slow consumer blocks the others from advancing the group's committed offset. Fix: assign each partition to exactly one consumer per group; add consumers up to partition count.
+
+**Consumer groups + coordinator**: A group coordinator broker tracks partition assignment and heartbeats. When a consumer joins or dies, it triggers a rebalance. Handles arbitrary consumer fleet scaling. Breaks when: the cluster metadata store (Zookeeper) becomes a single point of failure and a bottleneck at >50K partition operations. Fix: replace Zookeeper with KRaft (Kafka's built-in Raft consensus), eliminating the external dependency and dropping metadata latency from ~100ms to ~10ms.
+
+---
+
 ## Why This Is Hard
 
 1. **Delivery semantics**: "At-least-once" is easy — retry until the consumer ACKs. "Exactly-once" is fundamentally hard in distributed systems: the producer might retry a successful send (network timeout), and the consumer might process before crashing before committing its offset. Each scenario requires a different fix at a different layer.

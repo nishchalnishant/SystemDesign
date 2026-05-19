@@ -7,6 +7,59 @@
 
 ---
 
+## What Breaks Without This System?
+
+A developer needs to share 50KB of a stack trace with a colleague on Slack. Slack's message size limit is 4,000 characters — the trace is truncated. They try emailing it — the security gateway blocks plaintext attachments. They paste it into a Google Doc, share the link — their colleague doesn't have a Google account and gets an access request dialog. The simple act of sharing text across systems is broken by access controls, size limits, and platform coupling.
+
+At a larger scale: a CI/CD system generates 2MB build logs for every failed job. Without a paste service, logs are either truncated in the notification message, stored in a proprietary format that requires the CI login to view, or lost after 24 hours with no way to reference them in post-mortems.
+
+The core gap: no neutral, universally accessible, size-agnostic, linkable text storage.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single server**
+A Flask app with PostgreSQL: `POST /pastes` stores text in a `text` column, returns a short key. `GET /pastes/:key` reads it back. Works for low volume.
+
+**Step 2 — What breaks at 1M pastes/day?**
+- Storage: 1M pastes/day × 10KB avg = 10GB/day → 3.65TB/year. PostgreSQL `text` columns can hold this but storage cost and backup cost are high. Text is unstructured blob data — a relational DB is the wrong tool.
+- Read/write ratio: 10:1 reads to writes. The same DB handling both creates read pressure on the write path.
+- Large pastes: a 5MB paste in PostgreSQL blocks I/O for every concurrent query while it's being read.
+
+**Step 3 — Split the concerns**
+
+Store the paste **content** in S3 (object storage): unlimited size, cheap per-GB, CDN-compatible, lifecycle policies for TTL.
+Store the **metadata** (key, created_at, TTL, user_id, access_count) in PostgreSQL: fast key lookups, rich queries.
+
+```
+POST /pastes:
+  1. Generate a 6-character key (key generation service)
+  2. PUT content to S3 at key "pastes/{key}"
+  3. INSERT metadata row into PostgreSQL
+  4. Return short URL
+
+GET /pastes/:key:
+  1. Read metadata from Redis cache (cache hit → skip PostgreSQL)
+  2. If miss: read from PostgreSQL, populate cache
+  3. Redirect to S3 presigned URL (or stream from CDN)
+```
+
+**Step 4 — Key generation**
+Hash-based: SHA-256(content) → take first 6 base62 chars. Deterministic — identical content returns the same key (deduplication free). Collision probability negligible at 62^6 = 56B possible keys for 1M active pastes.
+Pool-based (alternative): pre-generate 1M keys, store in a Redis list, pop on demand. Avoids hashing latency and guarantees uniqueness without collision checking.
+
+**Step 5 — Expiry**
+- Lazy: check `expires_at` on read, return 404 if expired. Simple but leaves orphaned data in S3/DB.
+- Active: a daily cron queries `WHERE expires_at < NOW()`, deletes metadata rows, and calls `S3.deleteObjects()`.
+- S3 lifecycle rules: set an S3 object expiry tag at upload time — AWS deletes the object automatically. No cron needed for storage reclaim.
+
+**Step 6 — Scaling reads**
+- Cache hot pastes in Redis (top 10% of pastes get 90% of reads).
+- Serve content via CDN (CloudFront/Fastly) — S3 URLs route through CDN edge nodes, eliminating origin load for popular pastes entirely.
+
+---
+
 ## Real-Life Analogy
 
 Think of a whiteboard in a shared office. Someone writes a block of text on whiteboard #47. They walk up to a colleague and say "check whiteboard 47." The colleague goes, reads it, and walks away. The whiteboard gets erased at end of day unless someone specifically marks it "permanent."

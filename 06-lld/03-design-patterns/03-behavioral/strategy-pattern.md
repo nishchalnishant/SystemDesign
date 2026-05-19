@@ -1,5 +1,78 @@
 # Strategy Pattern
 
+## Question
+
+You have a `PaymentProcessor` class. It currently handles Stripe payments. Now you need to add PayPal. Then crypto. Then bank transfer. Where do you put the fourth payment method?
+
+Write the `PaymentProcessor.pay(amount)` method for all four types before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class PaymentProcessor {
+    public void pay(String type, double amount) {
+        if (type.equals("STRIPE")) {
+            // 20 lines of Stripe SDK setup and API calls
+        } else if (type.equals("PAYPAL")) {
+            // 20 lines of PayPal OAuth and API calls
+        } else if (type.equals("CRYPTO")) {
+            // 20 lines of wallet address resolution and broadcast
+        }
+        // 4th type: edit this method
+    }
+}
+```
+
+**What breaks**:
+1. **OCP violation**: Every new payment type requires editing `PaymentProcessor`. It is never closed for modification.
+2. **SRP violation**: `PaymentProcessor` contains the implementation details of every payment system it knows about.
+3. **Untestable in isolation**: You cannot test Stripe logic without the file containing PayPal and Crypto logic being compiled in.
+4. **Shared risk**: A bug introduced while adding PayPal can break the already-working Stripe path.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **the algorithm (how to pay) must be swappable without changing the class that uses it**.
+
+Step 1 — extract the varying part (the payment algorithm) behind an interface:
+```java
+interface PaymentStrategy {
+    void pay(double amount);
+}
+```
+
+Step 2 — each algorithm is its own class:
+```java
+class StripeStrategy implements PaymentStrategy {
+    public void pay(double amount) { /* Stripe logic */ }
+}
+class PayPalStrategy implements PaymentStrategy {
+    public void pay(double amount) { /* PayPal logic */ }
+}
+```
+
+Step 3 — the context holds a reference to the interface, not a concrete class:
+```java
+class PaymentProcessor {
+    private PaymentStrategy strategy;
+
+    public PaymentProcessor(PaymentStrategy strategy) {
+        this.strategy = strategy;
+    }
+
+    public void pay(double amount) {
+        strategy.pay(amount);   // delegates — no branching
+    }
+}
+```
+
+Adding the 4th payment type is now one new class, zero edits to `PaymentProcessor`. That is the pattern.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Define a family of algorithms, encapsulate each one, and make them interchangeable. Strategy lets the algorithm vary independently from the clients that use it.
 

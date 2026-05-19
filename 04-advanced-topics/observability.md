@@ -15,6 +15,14 @@
 
 ## What is Observability?
 
+**Question**: Users are complaining that checkout is slow — but only for some users, only on mobile, only between 6pm and 8pm. Your CPU dashboard shows green. Your error rate dashboard shows green. Your "checkout success rate" alert hasn't fired. The problem is real — your support queue proves it — but none of your existing dashboards show it. What is the difference between a system that can find this bug and one that cannot?
+
+**Physical constraint**: A running service is a black box. The only information you have about what happened inside it is what the service chose to emit: logs, metrics, or traces. You cannot attach a debugger to production. You cannot rewind time. Every question you will ever want to ask about a production incident must be answerable from the signals the system emits during normal operation — before the incident. If you didn't instrument it in advance, you cannot ask the question later.
+
+**Minimal solution**: "Is it up?" health check endpoint. Breaks immediately: a service can pass a health check while being slow for specific users on specific paths. A passing health check only tells you the process is alive — it says nothing about latency distribution, error rates by cohort, or which downstream dependency is the bottleneck.
+
+**Production generalization**: Observability is the ability to ask arbitrary questions about your system's internal state from its external outputs. Monitoring answers "is it broken in a way I anticipated?" Observability answers "why is it behaving this way?" — including failure modes you have never seen before. You build this by making the three pillars (metrics, logs, traces) rich enough to answer questions you haven't thought of yet.
+
 **Monitoring**: "Is the system up?"  
 **Observability**: "Why is the system behaving this way?"
 
@@ -27,6 +35,14 @@
 ---
 
 ## The Three Pillars
+
+**Question**: Latency P99 spiked from 150ms to 900ms at 7:03pm. You have metrics showing the spike. But you need to know *which* service caused it, *which* specific requests were slow, and *what* happened inside those requests. Your metrics tell you something is wrong; they don't tell you where. What other signals do you need?
+
+**Physical constraint**: A metric aggregates thousands of request outcomes into one number (a P99 or a rate). Aggregation destroys the details of individual requests. A log records individual events but produces gigabytes of data per hour — too expensive to store forever and too slow to scan for patterns. A trace records the journey of one specific request through multiple services — high fidelity but expensive at high volume. Each signal type is an information-density trade-off. You need all three because no single signal type answers all questions.
+
+**Minimal solution**: Logs only. You can answer "what happened in this specific request" but not "how many requests failed in the last hour" without a slow full-text scan. Metrics only. You can answer "is something broken" but not "which specific request failed and why." Either alone leaves questions unanswerable.
+
+**Production generalization**: The three pillars complement each other. You start with metrics (something is wrong), use traces to isolate which service and which request path (where is the latency?), then drill into logs for the specific error detail (what exactly went wrong?). The linkage between all three is the trace ID — a single identifier that appears in the metric labels, the trace spans, and the log lines for any one request.
 
 > **Analogy**: Think of a car's dashboard. **Metrics** are the speedometer and fuel gauge — they tell you the current numbers at a glance (how fast, how full). **Logs** are the car's event data recorder — a timestamped history of everything that happened (engine warning at 2:34pm, door opened at 2:35pm). **Traces** are the GPS route playback — you can replay exactly how a specific journey went, turn by turn, which roads were slow, where you got stuck. Together they answer: What are the numbers? What happened? How did this specific request travel through the system?
 
@@ -188,6 +204,14 @@ public class OrderService {
 ---
 
 ## SLI, SLO, SLA
+
+**Question**: Your service has 99.95% uptime. A major customer calls and says their SLA guarantees 99.9% uptime and they want a credit. You check your dashboard — it shows 99.95%. They are correct to claim the SLA. Why didn't your own dashboard warn you before it became a contractual problem?
+
+**Physical constraint**: Availability and latency degrade continuously — they don't flip from "fine" to "broken" instantaneously. By the time a customer notices a pattern and raises a ticket, the error budget has been slowly burning for days. You need a system that tracks budget consumption in real time and alerts before the threshold is breached, not after.
+
+**Minimal solution**: Alert when the service is completely down. Breaks at: partial degradation (10% elevated error rate for 3 hours) can breach an SLA without ever triggering a "service down" alert, because the service is never fully down.
+
+**Production generalization**: SLIs give you a measurable signal (the actual percentage). SLOs give you the internal target (stricter than the SLA so you have a buffer). Error budgets translate the SLO into a concrete resource — minutes of allowed downtime per month — that teams can reason about and spend or protect. The key insight: set SLO stricter than SLA, and alert on error budget burn rate (rate of consumption), not just threshold breaches.
 
 > **Analogy**: A pizza delivery service. The **SLI** is the actual measured delivery time for every order. The **SLO** is the internal operational goal: "95% of deliveries in under 30 minutes" — this is what the engineering team tracks and gets paged for. The **SLA** is the contract printed on the website: "If your pizza takes over 60 minutes, you get a refund." The SLO is stricter than the SLA so the team catches problems before customers do. SLI ≤ SLO ≤ SLA in terms of strictness.
 
@@ -400,6 +424,14 @@ if (response.getStatus() == 500 || durationMs > 1000) {
 ---
 
 ## Alerting Best Practices
+
+**Question**: Your team receives 150 alert emails per day. The on-call engineer has trained themselves to skim-delete most of them because 140 are noise (disk at 60%, cache hit rate dropped 1%). One alert in the middle of the flood is the real incident. It is missed for 45 minutes. How do you design an alert system where every alert that fires demands human attention, and no real incident goes unnoticed?
+
+**Physical constraint**: Human attention is finite. An on-call engineer can meaningfully triage ~10–20 alerts per shift before alert fatigue sets in. Above that threshold, the human response degrades to pattern-matching and skimming — which is how real incidents get missed. You cannot fix alert fatigue by asking humans to pay more attention. You fix it by reducing alerts to only those that require human action right now.
+
+**Minimal solution**: Alert on every metric that might possibly indicate a problem. Breaks immediately: this produces hundreds of alerts per day, most of which resolve themselves or are not actionable. The signal-to-noise ratio collapses.
+
+**Production generalization**: Alert on symptoms (user-facing error rate, SLO burn rate), not causes (CPU high, disk at 70%). Symptoms require human action. Causes may or may not matter depending on context — a CPU spike during a batch job is expected. Every alert must have a runbook: if you can't write the runbook (no clear action), the alert should not exist.
 
 > **Analogy**: A car alarm going off in a parking lot. After the first few times, everyone ignores it. The alarm lost all signal value because it fires for nothing — a gust of wind, a passing truck. The same happens with software alerts: too many low-signal alerts train engineers to ignore all alerts, including real incidents. The fix is to alert only on things a human must act on right now.
 

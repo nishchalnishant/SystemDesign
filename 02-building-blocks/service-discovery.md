@@ -4,6 +4,18 @@
 
 ---
 
+## Why Service Discovery Exists
+
+**Question**: Your Order Service needs to call the Payment Service. You hard-code the IP `10.0.1.45:8080` in the config. Three days later, a Kubernetes rolling deployment restarts the Payment Service pod — it comes up with IP `10.0.1.67:8080`. Your Order Service starts returning 500s. You update the config, redeploy, and 2 days later it happens again. At 50 microservices with multiple instances each, constantly changing on autoscale events and deploys, how do you stop playing whack-a-mole with IPs?
+
+**Physical constraint**: Container orchestrators (Kubernetes, ECS) assign ephemeral IPs to each container instance. An IP is valid only for the lifetime of that container — which may be minutes during a rolling deploy. There is no static IP to hard-code. The system must be able to answer "where is the Payment Service right now?" dynamically, and the answer must be consistent across all 10 nodes in your Order Service deployment simultaneously.
+
+**Minimal solution**: Maintain a shared registry: services write their `name → host:port` on startup, delete it on shutdown. Clients query the registry by name at call time. Works until: the registry itself goes down (all services lose the ability to find each other), or a service crashes without deregistering (registry still returns the dead instance until a TTL expires or a health check catches it).
+
+**Production generalization**: A production registry (Consul, etcd, Kubernetes Services + DNS) adds three things to the minimal solution: high availability (clustered registry with quorum), health checking (active probes remove unhealthy instances automatically), and client-side caching (clients cache the instance list with a short TTL so a brief registry outage doesn't immediately break all calls). Kubernetes abstracts this further — a `Service` object is a stable virtual IP backed by dynamic pod IPs, with kube-proxy handling the routing table updates.
+
+---
+
 ## The GPS / Google Maps Analogy
 
 When you want to get to a restaurant, you don't memorize its IP address (street address). You search by name, and Maps gives you the current location — even if the restaurant moved last week. If it shut down, Maps shows "permanently closed." Service discovery works the same way: services register their current `host:port` under a name, others look them up by name, and the registry marks unhealthy instances as unavailable.

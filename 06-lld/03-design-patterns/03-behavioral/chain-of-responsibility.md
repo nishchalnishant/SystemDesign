@@ -1,5 +1,91 @@
 # Chain of Responsibility
 
+## Question
+
+A customer support system has three tiers: a bot handles FAQs, a junior agent handles simple billing, and a senior agent handles escalations. Write `handleRequest(Request r)` that routes the request to the right tier.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class SupportSystem {
+    public void handleRequest(Request r) {
+        if (r.type == FAQ) {
+            bot.answer(r);
+        } else if (r.type == BILLING && r.complexity == LOW) {
+            juniorAgent.handle(r);
+        } else if (r.complexity == HIGH) {
+            seniorAgent.handle(r);
+        } else {
+            manager.escalate(r);
+        }
+    }
+}
+```
+
+**What breaks**:
+1. **OCP violation**: Adding a new tier (e.g., `TechSupport`) means editing `handleRequest`.
+2. **SRP violation**: `SupportSystem` must know the rules for every tier's decision boundary.
+3. **Routing logic and handling logic are mixed**: The condition that decides *who* handles is inseparable from the code that *calls* the handler.
+4. **Rigid order**: Reordering the chain requires rewriting conditions, not just reordering objects.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **each handler decides whether to handle or pass — the sender should not know the chain structure**.
+
+Step 1 — extract a `Handler` interface with `handle(Request)` and a `next` link:
+```java
+abstract class SupportHandler {
+    protected SupportHandler next;
+
+    public void setNext(SupportHandler next) { this.next = next; }
+
+    public abstract void handle(Request r);
+
+    protected void passToNext(Request r) {
+        if (next != null) next.handle(r);
+        else System.out.println("Unhandled: " + r);
+    }
+}
+```
+
+Step 2 — each tier is its own class that handles what it can, passes the rest:
+```java
+class BotHandler extends SupportHandler {
+    public void handle(Request r) {
+        if (r.type == FAQ) System.out.println("Bot: answered FAQ");
+        else passToNext(r);
+    }
+}
+
+class JuniorAgentHandler extends SupportHandler {
+    public void handle(Request r) {
+        if (r.complexity == LOW) System.out.println("Junior: handled");
+        else passToNext(r);
+    }
+}
+```
+
+Step 3 — wire the chain once at setup; the sender just calls the first link:
+```java
+SupportHandler bot    = new BotHandler();
+SupportHandler junior = new JuniorAgentHandler();
+SupportHandler senior = new SeniorAgentHandler();
+bot.setNext(junior);
+junior.setNext(senior);
+
+bot.handle(incomingRequest); // request propagates automatically
+```
+
+Adding `TechSupport` is now: create `TechSupportHandler`, insert it into the chain at the right position. Zero edits to existing handlers.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Pass a request along a chain of handlers. Each handler decides to process the request or pass it to the next handler in the chain.
 

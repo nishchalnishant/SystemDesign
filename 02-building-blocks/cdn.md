@@ -4,6 +4,18 @@
 
 ---
 
+## Why a CDN Exists
+
+**Question**: Your origin server is in us-east-1 (Virginia). A user in Mumbai loads your home page. The page has 50 static assets (images, JS, CSS). Each asset requires a round-trip to Virginia: ~180ms RTT × 50 assets = 9 seconds of pure network time, before any server processing. Even with HTTP/2 multiplexing, the single RTT to Virginia dominates. Your user in Mumbai experiences a 9-second blank screen. How do you serve content to global users at local-network speeds?
+
+**Physical constraint**: The speed of light in fiber optic cable is approximately 200,000 km/sec. Mumbai to Virginia is roughly 13,000 km. One way: 65ms. Round trip: 130ms. This is a physical constant — no amount of software optimization can make a round-trip to Virginia take less than 130ms from Mumbai. The only solution is to not go to Virginia — serve the content from a machine in Mumbai instead.
+
+**Minimal solution**: Deploy a caching server in Mumbai. On the first request for each asset, the Mumbai server fetches from Virginia and stores a local copy. Every subsequent request is served from Mumbai at ~5ms RTT. The origin sees only first-request cache-miss traffic. This is the pull model: cache on first demand.
+
+**Production generalization**: A CDN is a globally distributed network of pull-cache servers (edge nodes / PoPs) run by a third party (Cloudflare, CloudFront, Akamai, Fastly), so you don't manage the Mumbai server yourself. Anycast routing directs each user to the nearest PoP automatically. At scale (Netflix, YouTube), multi-tier CDNs add regional caches between the origin and edge — so even a cache miss at the Mumbai edge doesn't reach Virginia, only the nearest regional PoP (Singapore). CDN cache hit rates of 95–99% are achievable for static content, meaning your origin handles 1–5% of total traffic.
+
+---
+
 ## 1. Concept Overview
 
 A **CDN** is a network of edge servers (points of presence, PoPs) that cache and serve content. Users are directed to the nearest (or least-loaded) edge, so content is delivered with lower latency and less load on the origin.

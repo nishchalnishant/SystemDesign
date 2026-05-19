@@ -1,5 +1,83 @@
 # Prototype Pattern
 
+## Question
+
+Your system sends marketing emails. Each email has a fixed structure (HTML template, headers, sender info) but a different recipient and a small personalization block. You need to create 10,000 `EmailTemplate` objects per campaign. Write the construction code.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The obvious approach: construct each one from scratch.
+
+```java
+class EmailTemplate {
+    private String htmlBody;      // 50KB HTML loaded from disk
+    private Map<String,String> headers;  // parsed from config file
+    private String senderInfo;    // fetched from DB
+    private String recipient;
+    private String personalization;
+
+    public EmailTemplate(String recipient, String personalization) {
+        this.htmlBody    = FileLoader.load("template.html"); // disk I/O
+        this.headers     = ConfigParser.parse("email.cfg"); // file parse
+        this.senderInfo  = DB.query("SELECT sender FROM config"); // DB call
+        this.recipient   = recipient;
+        this.personalization = personalization;
+    }
+}
+
+// Sending to 10,000 users:
+for (String user : users) {
+    EmailTemplate t = new EmailTemplate(user, "Hi " + user); // 10,000 disk + DB calls
+}
+```
+
+**What breaks**:
+1. **Performance**: 10,000 disk reads and DB queries for data that never changes between emails.
+2. **Initialization cost is constant but paid every time**: The heavy work (loading HTML, parsing config) is identical for every instance.
+3. **No sharing of invariant state**: Each of 10,000 instances holds its own copy of the same 50KB HTML.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **do the expensive initialization once, then copy the result**.
+
+Step 1 — do the expensive initialization once and store it as a prototype:
+```java
+EmailTemplate prototype = new EmailTemplate(); // one disk read, one DB call
+```
+
+Step 2 — for each new instance, clone the prototype and only set what differs:
+```java
+EmailTemplate forAlice = prototype.clone();
+forAlice.setRecipient("alice@example.com");
+forAlice.setPersonalization("Hi Alice");
+```
+
+Step 3 — the `clone()` implementation must decide: shallow copy (share the 50KB HTML reference — fine if it's immutable) or deep copy (create independent mutable copies):
+```java
+class EmailTemplate implements Cloneable {
+    @Override
+    public EmailTemplate clone() {
+        try {
+            EmailTemplate copy = (EmailTemplate) super.clone(); // shallow
+            copy.headers = new HashMap<>(this.headers); // deep copy mutable field
+            return copy;
+        } catch (CloneNotSupportedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+```
+
+Now 10,000 emails = 1 expensive initialization + 10,000 cheap clones. That's the pattern.
+
+---
+
 > **Purpose**: Create new objects by cloning an existing object (the prototype) instead of constructing from scratch. Efficient when initialization is complex or costly.
 
 > **Analogy**: A Word document template. Instead of creating every new quarterly report from scratch — formatting, headers, fonts, structure — you clone the template and fill in the specific numbers. Same structure, different content.

@@ -6,6 +6,67 @@
 
 ---
 
+## What Breaks Without This Design?
+
+```java
+class TicTacToe {
+    private char[][] board = new char[3][3]; // '\0' = empty
+    private char currentPlayer = 'X';
+    private boolean gameOver = false;
+
+    public void makeMove(int row, int col) {
+        if (gameOver || board[row][col] != '\0') return;
+
+        board[row][col] = currentPlayer;
+
+        // Check win: scan entire board
+        for (int r = 0; r < 3; r++) {
+            if (board[r][0] == currentPlayer && board[r][1] == currentPlayer
+                && board[r][2] == currentPlayer) { gameOver = true; return; }
+        }
+        for (int c = 0; c < 3; c++) {
+            if (board[0][c] == currentPlayer && board[1][c] == currentPlayer
+                && board[2][c] == currentPlayer) { gameOver = true; return; }
+        }
+        if (board[0][0] == currentPlayer && board[1][1] == currentPlayer
+            && board[2][2] == currentPlayer) { gameOver = true; return; }
+
+        currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
+    }
+}
+```
+
+**Concrete failures**:
+1. **Hardcoded 3×3**: Changing to N×N requires rewriting every loop bound and the diagonal checks.
+2. **O(N²) win check**: Scanning the entire board on every move is unnecessary — only the row, column, and at most 2 diagonals affected by the last move need checking (O(N)).
+3. **No undo**: `board[row][col]` is modified in place with no history. Undo requires saving the board state before every move — but there is nowhere to store it.
+4. **AI player impossible to swap in**: The game loop is inside the same class. Swapping in an `AIPlayer` for `currentPlayer == 'O'` requires modifying the game controller logic — there is no `Player` abstraction.
+5. **`char` encodes piece type**: Using `'X'` and `'O'` as chars couples the display representation to the game logic. A `Player` object with a `piece` field separates these.
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — N×N board**: The board size is a constructor parameter. Win check scans only the affected row (N checks), affected column (N checks), and up to 2 diagonals (N checks each) = O(N). The board is a `char[][]` (or `Player[][]`) with N as the dimension.
+
+**Force 2 — Undo requires history**: Each move must be reversible. Wrap each move in a `MoveCommand(player, row, col)` with `execute()` (place piece) and `undo()` (clear cell). A `Deque<MoveCommand>` stack in the controller stores history. `undo()` pops and reverses.
+
+**Force 3 — Human and AI players need the same interface**: The game controller calls `player.makeMove(board)` without knowing if it is human or AI. Extract `Player` interface. `HumanPlayer` reads from input; `AIPlayer` runs Minimax. The controller's turn loop is unchanged.
+
+**Force 4 — Win detection belongs on the board, not the controller**: The controller should ask `board.checkWinner(lastRow, lastCol)` — not implement the win-scanning logic itself. Extract `Board` with `place(row, col, player)`, `checkWinner(row, col)`, `isFull()`.
+
+**Result** — the class split these forces produce:
+```
+God class → GameController (turn loop, delegates to Player + Board, holds undo stack)
+          → Board (N×N grid, place/checkWinner/isFull — O(N) win check)
+          → Player (interface: Piece getPiece(), int[] chooseMove(Board))
+             → HumanPlayer, AIPlayer (Minimax)
+          → MoveCommand (player, row, col — execute + undo)
+          → Piece (enum: X, O)
+```
+
+---
+
 ## Opening Analogy
 
 Think of a chess tournament referee. The referee needs to: track whose turn it is (turn management), declare a winner when a row/column/diagonal is complete (board evaluator), and support undoing an illegal move that was accidentally placed (Command pattern with undo). Now shrink the board to 3×3 and you have Tic-Tac-Toe. The structural problem is identical — managing state transitions, validating actions, and detecting terminal conditions.

@@ -31,6 +31,26 @@ The dispatcher analogy breaks down: no human dispatcher can handle this. The sys
 
 ---
 
+## What Breaks Without This System?
+
+Without real-time geospatial indexing and matching, finding the nearest driver means querying every driver's latitude/longitude stored in a relational table — a full table scan of 1M rows repeated 200K times/sec as drivers update their location. The DB melts at ~100K QPS, matching takes seconds instead of milliseconds, and race conditions cause the same driver to be double-booked across concurrent rider requests. The business fails: riders wait indefinitely and drivers never get assignments.
+
+---
+
+## Derive the Architecture
+
+**1 server, SQL with lat/long columns**: Store each driver's location in `drivers(id, lat, lng, status)`. On rider request, `SELECT * WHERE status='available' ORDER BY distance(lat,lng,rider_lat,rider_lng) LIMIT 5`. Works for 1K drivers. Breaks when: 1M drivers × 200K location updates/sec = 200K writes/sec → PostgreSQL saturates at ~10K writes/sec. Fix: move live driver locations out of SQL into an in-memory geospatial store.
+
+**Redis Geo + in-memory location store**: Driver location updates write to Redis `GEOADD drivers_live {lng} {lat} {driver_id}`. Nearby search uses `GEORADIUS` — O(log N + M) where M = results. Handles 200K writes/sec across a Redis cluster. Breaks when: 1M drivers in a small area (downtown Manhattan) means `GEORADIUS 2km` returns 10K candidates — ranking all 10K by ETA requires 10K map API calls per rider request at 500ms each. Fix: coarser geo-indexing to narrow candidates, then ETA only for top 10.
+
+**Geohash/QuadTree pre-segmentation**: Divide the city into Geohash cells (~150m × 150m at precision 7). Each cell maintains a small list of available drivers. A rider request queries 9 neighboring cells (3×3 grid) → typically 5–20 candidate drivers. ETA computed only for those candidates. Handles 1K ride requests/sec. Breaks when: two riders simultaneously match to the same nearest driver — without a lock, both get assigned. Fix: distributed lock (Redis `SET driver:{id} LOCK NX EX 10`) acquired before sending the driver offer.
+
+**Distributed locking for assignment**: Lock expires in 10 seconds (driver accept window). If driver declines or times out, lock releases and driver re-enters the pool. Eliminates double-booking. Handles the race condition at scale. Breaks when: a location update service node crashes with 10K driver connections — those drivers appear offline instantly, degrading supply visibility. Fix: decouple location ingestion from matching; use a separate Location Service writing to Redis, so a crash in one component doesn't cascade.
+
+**Dedicated services: Location, Matching, Trip**: Location Service ingests GPS at 200K/sec, writes to Redis Geo; Matching Service reads from Redis and manages locks; Trip Service owns the ride state machine (REQUESTED → ACCEPTED → IN_PROGRESS → COMPLETED) persisted in a relational DB for durability. Each scales independently. Breaks when: Trip Service writes at ~1K rides/sec overwhelm a single PostgreSQL writer as the business scales globally. Fix: shard trips by rider_id or region; each region's DB handles its own ride volume.
+
+---
+
 ## Why This Is Hard
 
 1. **Geospatial indexing at write-heavy scale**: 1M drivers × 1 update/4 seconds = 250K writes/second to a geo-indexed store. Standard SQL with lat/long columns cannot handle this. You need an index structure (Geohash, S2, QuadTree) that makes "find all drivers within 2km" O(log N) not O(N).

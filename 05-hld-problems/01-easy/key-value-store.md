@@ -7,17 +7,40 @@
 
 ---
 
-## Real-Life Analogy
+## What Breaks Without This System
 
-Think of a coat check room at a theater. You hand over your coat (value) and they give you a numbered ticket (key). Come back with the ticket and you get exactly your coat. The room has finite capacity. If the room is full, they can't take more coats. Old unclaimed coats get discarded after the show (TTL).
+Every microservice in your stack relies on a single-node key-value store: session tokens, feature flags, distributed locks, and rate-limit counters all live there. Traffic is 1M writes/sec on a node running PostgreSQL with a B-tree index. By month 3, disk I/O wait climbs to 80%: every write requires a random seek to the right B-tree page, and at 1M writes/sec that's 1M random disk seeks per second — mechanical disks max out at ~200 and even NVMe saturates around 600K IOPS under mixed workload. Latency spikes from 2ms to 400ms. Distributed locks start timing out. Feature flag reads fail. Half your services start returning 503s, not because of a code bug, but because the storage layer can't absorb sequential writes.
 
-Now scale that to a billion coats across a hundred coat-check rooms in different buildings, some of which occasionally lose power or get cut off from each other. The challenge:
-- **Which room holds your coat?** (partitioning/consistent hashing)
-- **What if your room is on fire?** (replication and failover)
-- **Two people both try to claim the same ticket at the same time** (conflict resolution)
-- **You want your coat back in under 10ms** (performance)
+Six months later you've solved I/O with an LSM-tree, but the dataset has grown to 1 billion keys at ~220 bytes each — 220 GB, saturating a single machine's RAM and spilling onto disk. Adding a second node with `hash(key) % 2` remaps 50% of all keys instantly: every cache is cold, the database gets hammered by a thundering herd, and your on-call engineer is manually redirecting traffic at 2 AM.
 
-This is the distributed key-value store problem.
+That is why this system needs to be designed carefully from the start.
+
+---
+
+## Derive the Architecture
+
+**Start with 1 node + B-tree storage** — a single server with an in-memory hash map flushed to a B-tree on disk. Works fine at 10K writes/sec.
+
+**What breaks at 1M writes/sec?** B-tree writes are random I/O: inserting a key means finding its sorted position on disk and writing in-place. NVMe at mixed read/write saturates around 600K IOPS; at 1M writes/sec plus 9M reads/sec, write latency climbs to 200–400ms. **Fix: LSM-tree.** All writes go to an in-memory MemTable (sorted), flushed to immutable SSTables sequentially. Write latency drops to <1ms because sequential writes are 10–100× faster than random writes. Read amplification is handled by Bloom filters per SSTable level (1% false positive rate, ~10 bits/key, costs 1.2 GB for 1B keys).
+
+**What breaks when you have 1 billion keys?** At 220 bytes/key, that's 220 GB — beyond a single machine's RAM and fast-disk budget. You need to shard. Simple `hash(key) % N` means adding one node remaps `(N-1)/N ≈ 50–67%` of all keys simultaneously, causing a cache-miss thundering herd. **Fix: consistent hashing with virtual nodes.** Each physical node owns 150 virtual nodes on a hash ring. Adding a node moves ~1/N of keys (not 50%). Each node knows the ring via gossip protocol — no central coordinator.
+
+**What breaks when a storage node crashes?** That node's key range is gone. Any GET that lands on its virtual nodes returns a miss or error. **Fix: replication factor RF=3.** Each key is stored on the 3 clockwise successor nodes on the ring. Coordinator node writes to all 3; with quorum W=2, R=2 (R+W > N=3), you can tolerate 1 node failure while maintaining consistency.
+
+**What breaks when two replicas accept writes to the same key during a partition?** Node A updates `user:99 → {"balance": 100}` and Node B updates the same key to `{"balance": 150}` while they're partitioned. When the partition heals, both values exist — last-write-wins (LWW) silently discards one. **Fix: vector clocks** track causal history per key: `[NodeA:2, NodeB:1]` vs `[NodeA:1, NodeB:2]`. If clocks diverge (true conflict), surface it to the client for semantic resolution. DynamoDB uses LWW by default with the option for vector clocks; Riak defaults to vector clocks.
+
+**What breaks when a node is temporarily down during a write?** With strict quorum, W=2 out of 3 replicas must acknowledge — if 2 replicas are up, the write succeeds. But the 3rd replica is now stale. **Fix: sloppy quorum + hinted handoff.** Accept the write on any available node, store a hint that it should be forwarded to the original replica once it recovers. This trades strong consistency for availability during transient failures (AP choice on the CAP spectrum).
+
+**Resulting architecture:**
+
+```
+Client → Request Router (consistent hashing ring, gossip-maintained)
+       → Coordinator Node
+       → Storage Nodes (LSM-tree: MemTable + WAL + SSTables + Bloom filters)
+                      × RF=3 replicas, quorum R=2/W=2
+                      + hinted handoff for transient failures
+                      + vector clocks for conflict detection
+```
 
 ---
 

@@ -27,6 +27,26 @@ At scale: imagine 1 million journalists all asking questions simultaneously, eac
 
 ---
 
+## What Breaks Without This System?
+
+Without an inference serving layer with request batching and KV-cache management, each user request gets its own dedicated GPU for the full duration of generation — at 10M DAU × 5 requests/day, peak concurrency is ~50K simultaneous requests, each tying up a full A100 GPU ($3/hr). That's $150K/hr in raw GPU cost just for compute allocation, before factoring in model loading latency. Without streaming, users stare at a blank screen for 10–30 seconds waiting for a full response — the product feels broken compared to alternatives that stream incrementally.
+
+---
+
+## Derive the Architecture
+
+**1 GPU, synchronous inference**: User sends prompt → model runs full forward pass → returns complete response. Works for ~5 concurrent users on a 7B parameter model. Time to first token: 10–30 seconds. Breaks when: 50 concurrent users → each waits for 49 others to finish before their request starts. Queue depth at 50K QPS = minutes of wait. Fix: stream tokens as they are generated so users see output immediately, and batch multiple requests together onto one GPU.
+
+**Token streaming + single GPU**: Server-Sent Events (SSE) stream each token as it is generated (~50 tokens/sec on A100 for 7B model). User sees first token in <500ms. Still limited to ~5–10 concurrent requests on one GPU before VRAM fills with KV-cache (one 128K-context request = ~16 GB KV-cache on a 7B model). Breaks when: 10M DAU creates peak demand for thousands of concurrent GPU slots. Fix: horizontal GPU fleet with a load balancer that routes requests to available GPU workers.
+
+**GPU cluster with load balancer**: 100 A100 GPUs, each serving 10 concurrent requests via continuous batching = 1,000 concurrent requests. Handles ~50K QPS at 50 tokens/response average. Breaks when: simple load balancing ignores KV-cache locality — a user's turn 2 request lands on a different GPU than turn 1, so the KV-cache for turn 1 tokens must be recomputed from scratch (adds 200–500ms per turn). Fix: session affinity — route all turns in the same conversation to the same GPU worker so the KV-cache is reused.
+
+**Session-affinity routing**: Consistent hash on conversation_id routes all messages in a session to the same GPU instance. KV-cache reuse cuts per-token latency by 50–80% for multi-turn conversations. Breaks when: the GPU instance for a session crashes — all in-flight KV-cache is lost, session affinity fails, and the re-routed request must cold-start. Fix: store conversation history in a fast external store (Redis); on re-route, replay the last N turns to rebuild KV-cache from the new worker.
+
+**Persistent conversation history + GPU fleet**: Conversation turns stored in Redis (hot, last 24h) and S3/DB (cold, long-term). On GPU reassignment, the new worker fetches the last 10 turns from Redis and re-warms KV-cache in ~200ms. Breaks when: context window fills (128K token limit) for users with very long conversations. Fix: context management service summarizes old turns, evicting the least-relevant earlier turns while keeping the summary + recent turns within the window limit.
+
+---
+
 ## Why This Is Hard
 
 1. **GPU is the bottleneck**: LLM inference is compute-bound on GPUs. A single A100 GPU can serve ~10-50 concurrent requests depending on model size. With 10M DAU and average 5 requests/user/day, peak QPS = ~50K. You need thousands of GPUs and intelligent request routing.

@@ -4,6 +4,18 @@
 
 ---
 
+## Why an API Gateway Exists
+
+**Question**: You have 20 microservices. Each service team independently implements: JWT verification, rate limiting, request logging, CORS headers, and SSL termination. Three months later, the security team changes the JWT signing algorithm. How many services need to be updated? How do you ensure they all deploy the change simultaneously with no window where old and new algorithms are both accepted?
+
+**Physical constraint**: Cross-cutting concerns — auth, rate limiting, observability, SSL — have no natural home in a service-per-function microservices architecture. Each service needs them, but implementing them identically across 20 services written by 10 teams in 3 languages means 20 copies of the same logic drifting apart over time. Network calls between services and clients add RTT per hop: ~1ms same-DC. Adding one shared hop (the gateway) costs 1ms but saves 20 services from each implementing their own auth, which often costs 5ms of DB lookup per service.
+
+**Minimal solution**: One reverse proxy in front of all services: validate the JWT, then forward the request. All services share one JWT validation implementation. Breaks when you need rate limiting, routing logic, protocol translation, circuit breaking — the list of cross-cutting concerns grows until the proxy becomes complex enough to need its own framework.
+
+**Production generalization**: An API gateway is a reverse proxy with standardized plugins for every cross-cutting concern. It terminates TLS, validates auth, enforces rate limits, routes to backends by path/host, translates protocols (REST→gRPC), and emits metrics — all before a single byte reaches your business logic. Services are simpler; policy is centralized; clients see one stable API surface regardless of how the backend is decomposed.
+
+---
+
 ## The Hotel Concierge Analogy
 
 At a 5-star hotel, every guest request goes through the concierge desk. They verify your room key (authentication), route you to the right service — restaurant, spa, room service (routing), tell you "I'm sorry, the spa is fully booked today" (rate limiting), log every request in the concierge log (observability), and communicate in whichever language you need (protocol translation). The kitchen, spa, and housekeeping never deal with guests directly — they only receive well-formed, pre-approved requests from the concierge.

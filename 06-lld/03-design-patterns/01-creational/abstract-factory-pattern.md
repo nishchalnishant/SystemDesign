@@ -1,5 +1,96 @@
 # Abstract Factory Pattern
 
+## Question
+
+Your e-commerce platform is launching in India and the US. India uses UPI and Rupee invoices; the US uses Credit Card and Dollar invoices. A `CheckoutService` needs to create a `PaymentProcessor` and an `InvoiceGenerator`. How do you write `CheckoutService` so it works correctly in both regions?
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The instinct is to branch on region:
+
+```java
+class CheckoutService {
+    private String region;
+
+    public void checkout(Order order) {
+        PaymentProcessor processor;
+        InvoiceGenerator invoice;
+
+        if (region.equals("IN")) {
+            processor = new UPIProcessor();
+            invoice   = new RupeeInvoice();
+        } else if (region.equals("US")) {
+            processor = new CreditCardProcessor();
+            invoice   = new DollarInvoice();
+        }
+
+        processor.process(order);
+        invoice.generate(order);
+    }
+}
+```
+
+**What breaks**:
+1. **OCP violation**: Adding "EU" (SEPA + Euro invoice) means editing `CheckoutService`.
+2. **Mismatched families**: Nothing prevents `new UPIProcessor()` paired with `new DollarInvoice()` — a bug that compiles silently.
+3. **Scattered creation**: `CheckoutService` must know every concrete class in every region.
+4. **Untestable**: Can't inject a test family without modifying the service.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **group the related objects (payment + invoice) behind a single factory, and the service only talks to the factory**.
+
+Step 1 — extract interfaces for the product types:
+```java
+interface PaymentProcessor { void process(Order o); }
+interface InvoiceGenerator  { void generate(Order o); }
+```
+
+Step 2 — define the factory interface that creates a matched family:
+```java
+interface RegionFactory {
+    PaymentProcessor createPaymentProcessor();
+    InvoiceGenerator createInvoiceGenerator();
+}
+```
+
+Step 3 — one concrete factory per region, each wiring the correct pair:
+```java
+class IndiaFactory implements RegionFactory {
+    public PaymentProcessor createPaymentProcessor() { return new UPIProcessor(); }
+    public InvoiceGenerator createInvoiceGenerator()  { return new RupeeInvoice(); }
+}
+
+class USFactory implements RegionFactory {
+    public PaymentProcessor createPaymentProcessor() { return new CreditCardProcessor(); }
+    public InvoiceGenerator createInvoiceGenerator()  { return new DollarInvoice(); }
+}
+```
+
+Step 4 — `CheckoutService` depends only on the `RegionFactory` interface:
+```java
+class CheckoutService {
+    private final RegionFactory factory;
+
+    public CheckoutService(RegionFactory factory) { this.factory = factory; }
+
+    public void checkout(Order order) {
+        factory.createPaymentProcessor().process(order);
+        factory.createInvoiceGenerator().generate(order);
+    }
+}
+```
+
+Adding EU is now: one new `EUFactory` class, zero changes to `CheckoutService`.
+
+---
+
 > **Purpose**: Provides an interface for creating families of related or dependent objects without specifying their concrete classes.
 
 > **Analogy**: IKEA vs Ashley Furniture. Both make chairs, tables, and sofas — but from different families (modern vs traditional). An abstract factory gives you a matched set. You don't mix an IKEA chair with an Ashley table and hope they look right together.

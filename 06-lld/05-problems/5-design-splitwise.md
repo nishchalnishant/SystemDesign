@@ -4,6 +4,77 @@
 > **Topics**: Strategy Pattern, Graph Simplification, Observer Pattern
 > **Key Concepts**: Managing debts, different split types (Equal, Exact, Percent).
 
+---
+
+## What Breaks Without This Design?
+
+```java
+class Splitwise {
+    // One God class with all data and logic
+    private Map<String, Map<String, Double>> balances = new HashMap<>();
+    // balances[userA][userB] = amount A owes B
+
+    public void addExpense(String payer, List<String> participants,
+                           double amount, String splitType, double[] values) {
+        if (splitType.equals("EQUAL")) {
+            double share = amount / participants.size();
+            for (String p : participants) {
+                if (!p.equals(payer)) {
+                    // update nested map
+                    balances.computeIfAbsent(p, k -> new HashMap<>())
+                            .merge(payer, share, Double::sum);
+                }
+            }
+        } else if (splitType.equals("EXACT")) {
+            for (int i = 0; i < participants.size(); i++) {
+                if (!participants.get(i).equals(payer)) {
+                    balances.computeIfAbsent(participants.get(i), k -> new HashMap<>())
+                            .merge(payer, values[i], Double::sum);
+                }
+            }
+        } else if (splitType.equals("PERCENT")) {
+            // validate sum of percentages == 100 inline in this method
+            double total = 0;
+            for (double v : values) total += v;
+            if (Math.abs(total - 100) > 0.01) throw new IllegalArgumentException("Bad %");
+            // split logic inline...
+        }
+        // Adding a 4th split type requires editing this method
+    }
+}
+```
+
+**Concrete failures**:
+1. **OCP violation**: Every new split type (e.g., shares-based) requires editing `addExpense()`. The validation and distribution logic for every type lives in one method.
+2. **Validation is inline**: The "percentages must sum to 100" check is buried inside `addExpense`. It cannot be tested independently or reused.
+3. **No `Expense` entity**: There is no record of what was paid, by whom, when. Balance simplification and audit trail are impossible.
+4. **Circular debt not handled**: `balances[A][B] = 30` and `balances[B][A] = 50` are two separate entries. Net balance is not computed — you need to scan both directions to find "B owes A $20 net."
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — Split calculation varies by type**: Equal, Exact, and Percent require different algorithms to compute each participant's share. Extract `SplitStrategy` interface with `calculateShares(amount, participants, values)`. Each split type is its own strategy class. Validation moves into the strategy (percent strategy validates sum == 100 in its own `validate()` method).
+
+**Force 2 — Expenses need an audit trail**: Without an `Expense` entity, you cannot show "who paid what when." Introduce `Expense` (payer, amount, participants, strategy, timestamp).
+
+**Force 3 — Balance is a derived view, not primary data**: The nested `Map<String, Map<String, Double>>` stores redundant data. A cleaner model: store `Expense` objects; derive balances by summing over expenses. Or store a single `balances[userA][userB]` updated on each expense (simpler for real-time reads).
+
+**Force 4 — Simplify debts is a separate algorithm**: The graph simplification (min transactions to settle) is complex enough to be its own class. It reads the balance map and produces a payment plan. If it lives in `Splitwise`, that class grows unboundedly.
+
+**Result** — the class split these forces produce:
+```
+God class → SplitwiseService (orchestration: add expense, update balances)
+          → Expense (entity: payer, amount, split, timestamp)
+          → SplitStrategy (interface: validate + calculateShares)
+             → EqualSplit, ExactSplit, PercentSplit
+          → BalanceSheet (per-user balance map, net balance query)
+          → DebtSimplifier (graph algorithm: min transactions)
+          → Group (collection of users + their shared expenses)
+```
+
+---
+
 ## Real-Life Analogy
 
 **A group of friends on a trip who take turns paying for things.**

@@ -7,6 +7,48 @@
 
 ---
 
+## What Breaks Without This System?
+
+An e-commerce platform uses `AUTO_INCREMENT` primary keys in a single PostgreSQL instance. At 50M orders/day it shards the database across 8 nodes — each node's `AUTO_INCREMENT` now produces overlapping IDs. `ORDER_ID=1` exists in 3 different shards pointing to 3 different orders. Joins are broken. Deduplication is broken. Every downstream service that stores an `order_id` is storing an ambiguous value.
+
+The simpler failure: a recommendation engine generates UUID v4 for every event — random 128-bit identifiers. They're globally unique, but when you range-scan events by time in Cassandra, UUIDs scatter randomly across the cluster because they're not sortable by insertion time. Reading "all events in the last hour" requires a full cluster scan instead of a range read.
+
+Without a designed ID system: either IDs collide across shards, or they're random and unsortable, or they require a centralized counter that becomes the bottleneck for every write.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single server (trivial)**
+`AUTO_INCREMENT` in one DB. Works until the DB is the write bottleneck or you need sharding.
+
+**Step 2 — What breaks at scale?**
+- Sharding: `AUTO_INCREMENT` per node → ID collisions across shards.
+- Multi-datacenter: coordinating a global sequence counter adds a cross-DC round trip to every write.
+- Time-ordering: `AUTO_INCREMENT` is monotonic but not time-correlated — you can't infer creation time from an ID.
+- High throughput: a central ticket server (single DB generating IDs) is a bottleneck above ~50K writes/sec and a SPOF.
+
+**Step 3 — What constraints does the solution need?**
+1. Globally unique — no collisions across any node, any datacenter.
+2. Sortable by time — range queries and pagination work without a separate timestamp column.
+3. Decentralized — no single point of failure or coordination bottleneck.
+4. High throughput — at least 4,096 IDs/ms per machine without coordination.
+
+**Step 4 — Derive Snowflake from the constraints**
+- 64-bit integer (fits in a `BIGINT`, compatible with existing tooling).
+- Embed time: 41 bits of milliseconds since epoch → ~69.7 years of range, time-sortable by default.
+- Embed machine identity: 10 bits → 1,024 unique machine IDs, no coordination at generation time.
+- Sequence within one millisecond: 12 bits → 4,096 IDs per millisecond per machine before the ms ticks over.
+- Layout: `[1 unused][41-bit ms timestamp][10-bit machine ID][12-bit sequence]`
+- At 10 machines, peak: 10 × 4,096,000 = ~41M IDs/sec. No network call, no lock contention across machines.
+
+**Step 5 — Remaining problems**
+- Clock skew: if a machine's clock goes backward, you'd generate duplicate timestamps. Fix: refuse to generate IDs until the clock catches up (`waitNextMillis()`).
+- Machine ID assignment: who allocates the 10-bit machine ID? Use ZooKeeper/etcd on startup to claim a unique slot. On death and restart, reclaim the same slot or claim a new one.
+- Epoch: hard-coded. Twitter used 2010-11-04. You pick your own epoch to maximize timestamp range for your deployment start date.
+
+---
+
 ## Real-Life Analogy
 
 Think of a regional post office network where every branch has its own rubber stamp.

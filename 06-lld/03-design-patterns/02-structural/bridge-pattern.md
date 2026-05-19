@@ -1,5 +1,80 @@
 # Bridge Pattern
 
+## Question
+
+You are building a video player that must run on Web, Mobile, and SmartTV. It must support SD, HD, and 4K quality. Model this with inheritance: `WebSDPlayer`, `WebHDPlayer`, `Web4KPlayer`, `MobileSDPlayer`, `MobileHDPlayer`... How many classes do you need? What happens when you add a fourth platform?
+
+Try to count before reading on.
+
+---
+
+## Problem Without the Pattern
+
+With 3 platforms and 3 quality settings, pure inheritance creates one class per combination:
+
+```java
+class WebSDPlayer    { public void play(String title) { ... } }
+class WebHDPlayer    { public void play(String title) { ... } }
+class Web4KPlayer    { public void play(String title) { ... } }
+class MobileSDPlayer { public void play(String title) { ... } }
+class MobileHDPlayer { public void play(String title) { ... } }
+class Mobile4KPlayer { public void play(String title) { ... } }
+class SmartTVSDPlayer { ... }
+class SmartTVHDPlayer { ... }
+class SmartTV4KPlayer { ... }
+// 3 platforms × 3 qualities = 9 classes
+// Add SmartWatch → 3 more classes
+// Add 8K quality → 4 more classes (one per platform)
+```
+
+**What breaks**:
+1. **Class explosion**: M platforms × N qualities = M×N classes. Every addition multiplies.
+2. **Duplication**: The HD streaming logic is nearly identical across `WebHDPlayer`, `MobileHDPlayer`, `SmartTVHDPlayer` — only the platform output differs.
+3. **Adding one thing forces adding many**: A new quality tier requires one subclass per platform.
+4. **Static binding**: You cannot switch quality at runtime — it is baked into the class name.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **the two dimensions (platform and quality) must vary independently**.
+
+Step 1 — recognize the two hierarchies: what you're doing (platform abstraction) and how (quality implementation). Separate them:
+
+```java
+// Implementation hierarchy: how the video is rendered
+interface VideoQuality {
+    void load(String title);
+}
+class HDQuality implements VideoQuality {
+    public void load(String title) { System.out.println("Streaming " + title + " in HD"); }
+}
+
+// Abstraction hierarchy: which platform
+abstract class VideoPlayer {
+    protected VideoQuality quality;  // bridge — holds the implementation
+    public VideoPlayer(VideoQuality q) { this.quality = q; }
+    abstract void play(String title);
+}
+class WebPlayer extends VideoPlayer {
+    public WebPlayer(VideoQuality q) { super(q); }
+    public void play(String title) {
+        System.out.print("Web: ");
+        quality.load(title);  // delegates to whichever quality was injected
+    }
+}
+```
+
+Step 2 — compose at runtime:
+```java
+VideoPlayer player = new WebPlayer(new HDQuality()); // HD on Web
+VideoPlayer player = new MobilePlayer(new UltraHDQuality()); // 4K on Mobile
+```
+
+Now: 3 platforms + 3 qualities = 6 classes instead of 9. Adding SmartWatch = 1 class. Adding 8K = 1 class. They work with all combinations automatically.
+
+---
+
 ## Real-Life Analogy
 
 A TV and a remote control are two separate hierarchies that communicate through a common interface.

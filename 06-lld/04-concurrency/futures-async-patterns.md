@@ -1,5 +1,33 @@
 # Futures & Async Patterns
 
+## Question
+
+Before reading the patterns below, reason through each scenario:
+
+1. **Future blocking**: You call `userService.getUser(id)` which takes 200ms. While waiting, your thread does nothing. In a 500-thread server handling 10,000 concurrent requests, what is the failure mode?
+
+2. **Sequential chaining**: You need to: fetch a user ID (100ms) → fetch their profile (150ms) → format the response (10ms). You call each step with `.get()` between them. Total latency?
+
+3. **Fan-out**: You need data from 3 independent services (each 200ms). You call them sequentially. Total latency? What is the theoretical minimum if you call them concurrently?
+
+4. **Timeout**: An external service sometimes takes 30 seconds. Your SLA requires 500ms response. Without a timeout, what happens to your threads?
+
+Try each before reading the corresponding section below.
+
+---
+
+**Race conditions and failure modes derived per pattern:**
+
+- **Future blocking**: Blocking `.get()` pins a thread for the entire I/O duration. 10,000 concurrent requests × 200ms each = threads pile up waiting. With a 500-thread pool, Thread 501 cannot start until Thread 1 finishes its 200ms wait. Fix: don't block between I/O steps — use callbacks or `CompletableFuture` chaining.
+
+- **Sequential chaining**: 100ms + 150ms + 10ms = 260ms minimum if you call `.get()` between steps (each step blocks before the next starts). With `CompletableFuture.thenApplyAsync`, the steps chain without intermediate blocking — still 260ms of actual I/O, but the thread is freed between steps.
+
+- **Fan-out sequential vs concurrent**: Sequential = 200ms + 200ms + 200ms = 600ms. Concurrent with `CompletableFuture.allOf()` = 200ms (all three in parallel). The constraint: independent operations must not be sequenced.
+
+- **Timeout**: Without timeout, one slow external call holds a thread for 30 seconds. Under load, the thread pool drains and the entire service stops accepting requests — cascade failure. Fix: `.orTimeout(500, MILLISECONDS)` releases the thread and throws, allowing caller to use a fallback.
+
+---
+
 > Java async execution patterns for LLD interviews. Know these for any system involving parallel I/O, async pipelines, or non-blocking computation.
 
 ---

@@ -8,7 +8,13 @@
 
 ### Write-Ahead Log (WAL)
 
-> **Analogy**: Before a surgeon makes an incision, they document the procedure in the patient's chart. If anything goes wrong mid-surgery, the chart allows recovery to a known-good state. The WAL is PostgreSQL's chart — every change is documented before it happens.
+**Question**: You write a row to Postgres. The kernel buffers the write in RAM. Before it flushes to disk, the machine crashes. Is the row there when you restart? If Postgres said "committed", it must be — but how can it guarantee that if disk writes are buffered? What mechanism makes "committed" mean something durable?
+
+**Physical constraint**: Random writes to disk are slow (~4ms per seek for HDD, ~0.1ms for NVMe). A typical transaction touches multiple pages scattered across the file. Flushing all dirty pages synchronously on every commit would make each commit take tens of milliseconds. At 1,000 writes/sec that's 10 seconds of disk time per second — impossible.
+
+**Minimal solution**: Write sequentially to a log file before touching data pages. Sequential writes are 100× faster than random writes because there's no seek — you just append. The log is the source of truth. If the machine crashes, replay the log on restart. Data pages are just a cache of the log's state.
+
+**Generalize**: The WAL is also the replication mechanism. Standbys stream the WAL from the primary and apply it. Physical replication streams raw WAL bytes (exact replica). Logical replication streams decoded logical changes (works across versions, more flexible). Every scaling capability in Postgres — replication, PITR, crash recovery — derives from the WAL.
 
 ```
 Every write operation (INSERT/UPDATE/DELETE) in PostgreSQL:
@@ -31,6 +37,14 @@ WAL and replication:
 ```
 
 ### MVCC (Multi-Version Concurrency Control)
+
+**Question**: Reader and writer hit the same row simultaneously. With a lock, one blocks the other. Your dashboard query holds a read lock while a write is waiting. At 10,000 concurrent users, lock contention becomes the bottleneck — not disk, not CPU. How do you let readers and writers proceed simultaneously without seeing inconsistent data?
+
+**Physical constraint**: A lock is a flag in shared memory. Acquiring it requires a memory fence (a CPU instruction that stops out-of-order execution). At high concurrency, the lock itself becomes a bottleneck — thousands of threads queuing up for the same flag. More threads means more contention, not more throughput.
+
+**Minimal solution**: Keep multiple versions of each row. Readers see the version that was current when their transaction started. Writers create a new version without touching the old one. Readers never block writers; writers never block readers.
+
+**Generalize**: MVCC is Postgres's implementation. Every row has `xmin` (the transaction that created it) and `xmax` (the transaction that deleted it). A reader at transaction ID T sees a row if `xmin <= T` and `(xmax is NULL OR xmax > T)`. The cost: dead tuples accumulate. Autovacuum reclaims them. Without vacuum, tables bloat. Transaction ID wraparound is a critical failure mode — monitor `age(datfrozenxid)` and alert before it reaches 2 billion.
 
 ```
 Problem without MVCC: Read acquires a lock → blocks writer. Writer blocks readers.
@@ -62,9 +76,13 @@ Transaction ID wraparound (critical!):
 
 ## 2. Connection Pooling
 
-> **Analogy**: A busy restaurant where each customer (app thread) needs their own waiter (database connection). Hiring 1,000 waiters is expensive (memory, context switching). A pool of 50 waiters serves 1,000 customers by sharing connections — each transaction uses a waiter briefly, then returns them to the pool.
+**Question**: You have 500 app server threads, each needing a DB connection. Postgres allocates a backend process (~10MB RAM) per connection. 500 connections = 5GB of RAM just for connection overhead, before a single query runs. At 1,000 threads, Postgres crashes with "too many connections." Why does each connection require a dedicated process, and how do you serve thousands of app threads without thousands of DB connections?
 
-### Why Connection Limits Matter
+**Physical constraint**: Postgres uses a process-per-connection model (not threads). Each OS process has its own virtual memory space (~10MB minimum), its own stack, its own TLB entries. Context-switching between 1,000 processes is expensive. The OS scheduler, not Postgres, is the bottleneck at high connection counts.
+
+**Minimal solution**: Connection pool at the application level. Each app instance keeps a pool of 10 connections and queues requests. Works until: you have 50 app instances × 10 connections = 500 connections, which is still too many for a large Postgres deployment.
+
+**Generalize**: PgBouncer as a proxy. App threads connect to PgBouncer (cheap — just a socket). PgBouncer holds a small pool of real Postgres connections. In transaction mode, a real connection is borrowed only for the duration of a transaction (typically <10ms), then returned to the pool. 50 real connections can serve 5,000 app threads because most threads are waiting on network or computation, not holding a DB transaction.
 
 ```
 Each PostgreSQL connection:
@@ -118,6 +136,14 @@ Effective multiplexing:
 ## 3. Index Strategies for Scale
 
 ### B-Tree (Default) — When and Why
+
+**Question**: A table has 100M rows. `SELECT * FROM orders WHERE user_id = 12345 ORDER BY created_at DESC LIMIT 20`. Without an index, Postgres scans all 100M rows. With an index on `(user_id)` alone it finds the rows but then sorts them. What index structure makes this query instant regardless of table size?
+
+**Physical constraint**: A B-tree lookup is O(log N) I/Os. For 100M rows that's ~27 levels — but in practice ~3–4 disk reads because upper levels stay hot in buffer cache. A sequential scan is O(N) — proportional to table size. The deeper the tree, the more pages you need in buffer cache to avoid disk I/Os. Column order in a composite index determines which prefix of the index is usable for a given query.
+
+**Minimal solution**: Index on `(user_id)`. Finds rows fast but still requires a sort on `created_at`. Alternatively, index on `(created_at)` alone enables range scans but not the user filter.
+
+**Generalize**: Composite index `(user_id, created_at DESC)`. The index is ordered by `user_id` first, then `created_at` descending within each user. A query filtering `user_id = X ORDER BY created_at DESC` can walk the index in order and return the first 20 rows without a sort. This is an index-ordered scan — zero additional work after the index lookup.
 
 ```sql
 -- Default index: good for equality and range queries
@@ -204,6 +230,14 @@ LIMIT 10;
 
 ### Read Replicas
 
+**Question**: Your primary handles 500 write QPS and 5,000 read QPS. Reads are overwhelming the primary — it's at 80% CPU and reads are adding latency to writes. You can't move writes off the primary. How do you serve 5,000 reads/sec without touching the write path?
+
+**Physical constraint**: CPU time is shared between read queries and write processing (WAL, index maintenance, checkpoint). A read-heavy workload that saturates CPU delays write acknowledgment — which directly increases write latency. Reads and writes compete for the same buffer cache, the same CPU, and the same I/O bandwidth.
+
+**Minimal solution**: One read replica. The primary replicates its WAL to the replica; the replica applies it and accepts read queries. The primary is no longer responsible for read CPU. Works until: one replica can't absorb all reads, or replication lag causes stale reads on a time-sensitive path.
+
+**Generalize**: Multiple read replicas with a read load balancer. Route `readOnly=true` transactions to replicas. Monitor replication lag — alert if it exceeds your staleness tolerance. Route critical reads (post-write, auth) to the primary. Auto-scale replicas on read load.
+
 ```
 Architecture:
   Primary: accepts all writes + critical reads (balance checks, auth)
@@ -261,6 +295,14 @@ Write path (cache invalidation):
 
 ### When to Shard
 
+**Question**: Your primary write QPS is 8,000/sec and growing. Postgres can handle ~50,000 simple writes/sec, but your writes are complex — 3 index updates per row. Effective throughput is ~15,000 writes/sec before index maintenance starts slowing down. You're at 50% of that ceiling today. At what point do you shard, and why is that decision so expensive to reverse?
+
+**Physical constraint**: Each secondary index update is a random write to a B-tree page. At high write rates, index pages are constantly being written, evicting other pages from buffer cache, increasing the chance that the next write hits a cold page. Write amplification (one logical write → multiple physical writes for indexes) grows with the number of indexes and the size of each index.
+
+**Minimal solution**: Vertical scale + PgBouncer + async writes (write to Kafka, batch-write to DB). This can buy significant headroom. Sharding is a last resort — it adds enormous operational complexity: routing logic in application code, cross-shard queries become impossible, resharding under live traffic is weeks of careful work.
+
+**Generalize**: When you must shard, choose the shard key carefully. Properties: high cardinality, even write distribution (no hotspots), queries almost always include the shard key, key is stable after write. Use consistent hashing to minimize data movement on resize. Plan for resharding from day one — even if you never need it, the plan forces you to pick the right key.
+
 ```
 Signal 1: Primary write QPS > 10K/sec (Postgres max ~50K simple writes/sec)
 Signal 2: Table > 500GB with frequent writes (index maintenance slows writes)
@@ -315,6 +357,14 @@ Duration: Weeks for large datasets. Never underestimate resharding cost.
 ---
 
 ## 6. Time-Series Data Scaling
+
+**Question**: You collect 100,000 metrics data points per second. After 1 year that's ~3 trillion rows. A standard Postgres table at that scale has an index that no longer fits in RAM. Every query does index page I/Os. INSERT performance degrades because index pages must be fetched, modified, and written. How do you store append-only time-series data without killing insert throughput or query performance?
+
+**Physical constraint**: A B-tree index on a table with 3 trillion rows is ~20 levels deep. Each index write touches ~20 pages. At 100,000 inserts/sec that's 2,000,000 index page writes/sec — far exceeding NVMe throughput for random writes. The index simply cannot keep up.
+
+**Minimal solution**: Range partitioning by time. Each partition (e.g. one month) is a separate physical table with its own smaller index. Recent queries only scan the recent partition. Old partitions can be moved to cold storage. Works until: partition management is manual and error-prone, or write throughput exceeds what even a single-partition index can handle.
+
+**Generalize**: TimescaleDB (a Postgres extension) automates time-based partitioning (hypertables), pre-computes continuous aggregates, and compresses old data 90–95% using dictionary + delta encoding. For even higher write throughput, ClickHouse (columnar, 100K+ inserts/sec) or Cassandra (time-series with partition key by sensor/time).
 
 ```
 Problem: append-only time-series data (metrics, events, logs) grows unboundedly.

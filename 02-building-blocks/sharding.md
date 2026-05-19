@@ -4,22 +4,15 @@
 
 ---
 
-## The Library Expansion Analogy
+## 1. Why Sharding Exists
 
-A library starts with all books on one floor. As the collection grows, that floor becomes overcrowded — shelves are full, librarians can't keep up, and finding a book takes forever. The solution: expand to 10 floors, each holding a subset of the collection.
+**Question**: Your single PostgreSQL node handles 50,000 writes/sec. Business needs 500,000. Vertical scaling maxes out at ~$100k/month for a 128-core machine. What's the only option left?
 
-How you assign books to floors determines your sharding strategy:
-- **Range sharding**: Floor 1 = Science, Floor 2 = History, Floor 3 = Fiction. Simple to query by subject, but Fiction (floor 3) is always packed while Science (floor 1) is empty. That's a **hotspot**.
-- **Hash sharding**: Take the book's ISBN, hash it, assign to `floor = hash(ISBN) % 10`. Even spread, but you can't say "give me all books on Floor 3" and get a meaningful range.
-- **Directory-based**: A card catalog at the entrance that says "The Great Gatsby → Floor 7, Shelf B." Maximum flexibility, but the card catalog itself becomes a bottleneck and single point of failure.
+**Physical constraint**: A single disk has one write head. SSDs saturate at ~500MB/s sequential, far less for random writes. A single PostgreSQL instance serializes WAL writes through one file. No matter how much you spend on hardware, one machine has one set of I/O bottlenecks — and the WAL is a single-writer log that cannot be parallelized on one node.
 
-**Why it exists**: A single database has limits on disk, memory, and write throughput. Sharding spreads data and load across many nodes, enabling horizontal scaling.
+**Minimal solution**: Put users 0–49% on DB1, users 50–99% on DB2. Writes scale 2×. Works until: the split is uneven (all new signups land in one half if you're splitting by creation date), or you need to re-split (moving 50% of data requires a full migration with downtime).
 
----
-
-## 1. Concept Overview
-
-**Sharding** splits a dataset into shards (e.g. by user_id or key range), each stored on a different node. It enables horizontal scaling of storage and write throughput.
+**Production generalization**: Consistent hashing with virtual nodes ensures even distribution and minimizes data movement on reshard. The shard key choice determines everything — a bad key creates hotspots that defeat the entire point.
 
 ---
 
@@ -48,9 +41,7 @@ All bestsellers live in the Fiction section (floor 3). That floor is always pack
 
 ### Resharding Pain and Consistent Hashing
 
-Moving the library from 3 floors to 4 means every book must be checked and possibly moved to a new floor. With `shard = hash(key) % 3` → `% 4`, nearly all books change floors.
-
-Consistent hashing solves this: picture the floors arranged in a circle. Each floor owns a segment of the circle. Adding a new floor only takes the books from the adjacent segment — roughly 1/4 of books move when going from 3 to 4 floors, instead of nearly all of them.
+With `shard = hash(key) % 3` → `% 4`, nearly all keys change shards. Consistent hashing solves this: place shards on a ring. Adding a new shard only takes keys from its adjacent neighbor — roughly 1/4 of keys move when going from 3 to 4 shards instead of nearly all of them.
 
 ### Architecture
 

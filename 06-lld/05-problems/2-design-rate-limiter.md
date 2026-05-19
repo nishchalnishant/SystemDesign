@@ -4,6 +4,70 @@
 > **Topics**: Concurrency, Design Patterns (Strategy), Token Bucket Algorithm
 > **Context**: Designing the internal class implementation (Thread-Safe), not the distributed system.
 
+---
+
+## What Breaks Without This Design?
+
+```java
+class RateLimiter {
+    private Map<String, Integer> requestCounts = new HashMap<>();
+    private Map<String, Long> windowStarts = new HashMap<>();
+    private final int limit = 10;
+    private final long windowMs = 1000;
+
+    public boolean allow(String userId) {
+        long now = System.currentTimeMillis();
+        long windowStart = windowStarts.getOrDefault(userId, now);
+
+        if (now - windowStart > windowMs) {
+            // Reset window
+            windowStarts.put(userId, now);
+            requestCounts.put(userId, 1);
+            return true;
+        }
+
+        int count = requestCounts.getOrDefault(userId, 0);
+        if (count < limit) {
+            requestCounts.put(userId, count + 1);
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+**Concrete failures**:
+1. **Race condition on `count`**: Thread A reads `count = 9`, Thread B reads `count = 9`. Both see `count < 10 → true`. Both increment to 10. Two requests are allowed when the limit should have stopped at the 10th. At high concurrency, the limit is violated by a factor of the thread count.
+2. **`HashMap` is not thread-safe**: Concurrent `put()` operations on `HashMap` can corrupt the internal structure (`ConcurrentModificationException` or silent data loss).
+3. **Fixed-window burst**: A user sends 10 requests at 00:00.999 (end of window) and 10 more at 00:01.001 (start of next window). Total: 20 requests in 2ms — 2× the allowed rate. Fixed windows allow this burst at window boundaries.
+4. **One algorithm hardcoded**: Switching from Fixed Window to Token Bucket or Sliding Window requires rewriting the class. No way to test the algorithm independently.
+5. **No per-user bucket isolation**: `requestCounts` and `windowStarts` are shared maps — high-cardinality user bases cause lock contention (if synchronized) or corruption (if not).
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — The rate-limiting algorithm must be swappable**: Token Bucket, Fixed Window, Sliding Window Log — each is a different algorithm. Extract `RateLimitAlgorithm` interface with `boolean allow(String userId)`. Each algorithm is a class.
+
+**Force 2 — Per-user state must be isolated**: Each user has an independent token bucket (or window counter). A `ConcurrentHashMap<String, TokenBucket>` gives per-user isolation: `computeIfAbsent` creates a bucket on first use, and subsequent accesses go to the per-user object. Locking can be done at the bucket level, not the map level.
+
+**Force 3 — `allow()` must be atomic**: The check-and-decrement (`tokens > 0 → tokens--`) must be a single atomic operation. Synchronize on the per-user `TokenBucket` object, not the global map. This eliminates the global bottleneck while ensuring correctness per user.
+
+**Force 4 — Bucket refill must be lazy (not scheduled)**: A background thread refilling every user's bucket is O(N users) per tick. Instead, record the `lastRefillTime` in the bucket; on each `allow()` call, compute how many tokens should have been added since `lastRefillTime` and add them inline. Refill cost is O(1) per call.
+
+**Force 5 — Inactive user cleanup**: `ConcurrentHashMap` grows unboundedly if users never call `allow()` again. A background thread with a `WeakReference` or TTL-based eviction handles this.
+
+**Result** — the class split these forces produce:
+```
+God class → RateLimiter (ConcurrentHashMap<userId, Bucket>, delegates to algorithm)
+          → RateLimitAlgorithm (interface: boolean allow(userId))
+             → TokenBucketAlgorithm, SlidingWindowAlgorithm, FixedWindowAlgorithm
+          → TokenBucket (tokens, capacity, refillRate, lastRefillTime, synchronized allow())
+          → RateLimiterConfig (limit, windowMs, refillRate — immutable value object)
+```
+
+---
+
 ## Real-Life Analogy
 
 **A turnstile at a metro station.**

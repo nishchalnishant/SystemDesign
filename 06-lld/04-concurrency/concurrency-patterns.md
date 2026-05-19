@@ -1,5 +1,33 @@
 # Concurrency Patterns
 
+## Question
+
+Before reading any pattern below, reason through each scenario:
+
+1. **ReadWriteLock**: A cache is read 10,000 times/sec and written once every 5 minutes. You use `synchronized` on every read. What is the throughput cost? What constraint does the correct fix satisfy?
+
+2. **Semaphore**: A service can handle 10 concurrent DB connections. Thread 11 arrives. What happens without a semaphore? What is the concrete failure?
+
+3. **CountDownLatch**: You fan out work to 5 threads. The main thread calls `result.aggregate()` before all workers finish. What does it read?
+
+4. **volatile**: A `boolean running` flag is written by Thread A and read by Thread B in a loop. Without `volatile`, Thread B's CPU caches the value. What is the failure mode? What does `volatile` fix, and what does it NOT fix?
+
+Try each before reading the corresponding section below.
+
+---
+
+**Race condition derivations per pattern:**
+
+- **ReadWriteLock**: `synchronized` on reads means Thread 2–1000 queue behind Thread 1 even though reads don't mutate state. The constraint: concurrent reads are safe; only writes need exclusive access. Fix: allow N concurrent readers, one exclusive writer.
+
+- **Semaphore**: Without a gate, Thread 11 opens an 11th DB connection. Under load, this becomes 100 connections, exhausting the pool and crashing the DB. The constraint: at most K threads may hold the resource simultaneously. Fix: a counting semaphore initialized to K.
+
+- **CountDownLatch**: Without awaiting completion, the main thread reads partial results — some workers haven't written yet. The constraint: proceed only after all N events have fired. Fix: `latch.await()` blocks until `countDown()` has been called N times.
+
+- **volatile**: Without `volatile`, the JIT hoists the read of `running` out of the loop (it looks like a constant to the optimizer). Thread B loops forever even after Thread A sets `running = false`. `volatile` guarantees visibility (no cache, no reorder) but NOT atomicity — `running++` is still a race.
+
+---
+
 > Core Java concurrency primitives and patterns for LLD interviews. Know these before tackling Tier 2 problems.
 
 ---

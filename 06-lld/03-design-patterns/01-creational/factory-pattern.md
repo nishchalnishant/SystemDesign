@@ -1,5 +1,83 @@
 # Factory Pattern
 
+## Question
+
+You are building a notification service. Currently it only sends emails. Write the code to send an email notification. Now a requirement comes in: also support SMS. Then push notifications. Where does the creation logic go?
+
+Try writing it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The first instinct is a single method with branching:
+
+```java
+class NotificationService {
+    public void send(String type, String message) {
+        if (type.equals("EMAIL")) {
+            EmailNotification n = new EmailNotification();
+            n.send(message);
+        } else if (type.equals("SMS")) {
+            SMSNotification n = new SMSNotification();
+            n.send(message);
+        } else if (type.equals("PUSH")) {
+            PushNotification n = new PushNotification();
+            n.send(message);
+        }
+        // Adding "SLACK" means editing this method
+    }
+}
+```
+
+**What breaks**:
+1. **OCP violation**: Every new notification type requires editing `NotificationService`. It's never closed for modification.
+2. **SRP violation**: `NotificationService` now knows *how* to construct every notification type — that's not its job.
+3. **Untestable construction**: You cannot substitute a mock `EmailNotification` without changing the `if` block.
+4. **Scattered `new` calls**: If `EmailNotification` needs a constructor argument added, you find and fix every `new EmailNotification()` site.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **the caller should not `new` the concrete type directly**.
+
+Step 1 — extract an interface so all notification types are interchangeable:
+```java
+interface Notification {
+    void send(String message);
+}
+class EmailNotification implements Notification { ... }
+class SMSNotification implements Notification { ... }
+```
+
+Step 2 — move the `new` into a dedicated method that returns the interface:
+```java
+class NotificationFactory {
+    public static Notification create(String type) {
+        switch (type) {
+            case "EMAIL": return new EmailNotification();
+            case "SMS":   return new SMSNotification();
+            default: throw new IllegalArgumentException("Unknown type: " + type);
+        }
+    }
+}
+```
+
+Step 3 — the service only calls the factory, never `new` directly:
+```java
+class NotificationService {
+    public void send(String type, String message) {
+        Notification n = NotificationFactory.create(type);
+        n.send(message);
+    }
+}
+```
+
+Adding `SLACK` means adding one case in `NotificationFactory` — `NotificationService` is untouched. That's the pattern.
+
+---
+
 > **Category**: Creational Pattern
 > **Purpose**: Create objects without specifying the exact class of object that will be created.
 

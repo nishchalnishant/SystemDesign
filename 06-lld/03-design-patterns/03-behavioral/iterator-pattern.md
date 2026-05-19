@@ -1,5 +1,83 @@
 # Iterator Pattern
 
+## Question
+
+You have a `VideoLibrary` that stores videos internally in an `ArrayList`. You need to let a client iterate through all videos. You also have a `PlaylistLibrary` that uses a `LinkedList`. The client code must work the same way for both. Write the traversal code.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The obvious approach — expose the internal collection directly:
+
+```java
+class VideoLibrary {
+    private ArrayList<Video> videos = new ArrayList<>();
+
+    public ArrayList<Video> getVideos() { return videos; } // exposes ArrayList
+}
+
+class PlaylistLibrary {
+    private LinkedList<Video> videos = new LinkedList<>();
+
+    public LinkedList<Video> getVideos() { return videos; } // exposes LinkedList
+}
+
+// Client must know the concrete type to iterate:
+ArrayList<Video> vids = library.getVideos();
+for (int i = 0; i < vids.size(); i++) {
+    process(vids.get(i));  // only works because we know it's an ArrayList
+}
+```
+
+**What breaks**:
+1. **Encapsulation broken**: The client knows the internal data structure. Changing `ArrayList` to `TreeSet` inside `VideoLibrary` breaks all client code.
+2. **No uniform traversal**: `ArrayList` iterates with `get(i)`, `LinkedList` with `.poll()`, a custom BST with a recursive walk. Each requires different client code.
+3. **Exposes internal mutability**: `getVideos()` returns a live reference — the caller can `videos.clear()` the library.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **the client must not know the internal structure; traversal interface must be identical regardless of storage type**.
+
+Step 1 — define an `Iterator` interface that hides the traversal mechanism:
+```java
+interface Iterator<T> {
+    boolean hasNext();
+    T next();
+}
+```
+
+Step 2 — the collection creates and returns its own iterator (it knows its internal structure; the client does not need to):
+```java
+class VideoLibrary {
+    private ArrayList<Video> videos = new ArrayList<>();
+
+    public Iterator<Video> iterator() {
+        return new Iterator<Video>() {
+            private int index = 0;
+            public boolean hasNext() { return index < videos.size(); }
+            public Video next()      { return videos.get(index++); }
+        };
+    }
+}
+```
+
+Step 3 — the client only uses `Iterator<Video>`, regardless of the underlying structure:
+```java
+Iterator<Video> it = library.iterator(); // works for ArrayList, LinkedList, BST
+while (it.hasNext()) {
+    process(it.next());
+}
+```
+
+Changing `VideoLibrary` to use `TreeSet` internally requires updating only the `iterator()` factory — the client is untouched.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Provide a way to access elements of a collection sequentially without exposing its underlying representation.
 

@@ -24,6 +24,26 @@ A master cartographer who has divided the entire world into a grid of tiles at m
 
 ---
 
+## What Breaks Without This System?
+
+Without pre-rendered map tiles and a CDN, every user viewport renders a new map image from raw geodata on demand — petabytes of satellite and road data queried and composited per request. At 1B MAU, even 1 map view per user per hour is 278K renders/sec, each requiring seconds of compute. Latency would be 5–30 seconds per map load, making the product unusable. Without pre-computed routing shortcuts (Contraction Hierarchies), running Dijkstra on the full 60M-node global road graph takes 10–60 seconds per route — real-time navigation is impossible.
+
+---
+
+## Derive the Architecture
+
+**1 server, render map on demand**: User requests a viewport → server queries PostGIS for all roads/labels in bounding box → renders a PNG → returns it. Works for a developer demo. Breaks when: 1K concurrent users × 500ms render time = 500 server-seconds/sec — one server handles ~2 concurrent renders. Fix: pre-render map tiles at every zoom level and cache them as static images.
+
+**Pre-rendered tile pyramid, 1 server**: Render all tiles at zoom levels 0–18 offline. Total tiles: ~300 billion (mostly ocean/uninhabited). Storage: ~50 TB for raster tiles at medium quality. Serve tiles as static files. Breaks when: 50 TB of tiles can't be served from one origin server at 1B MAU — cache hit rate is high but even 1% cache miss rate = 278K tile fetches/sec to origin. Fix: serve tiles from a globally distributed CDN; origin only needs to handle the ~1% uncached or newly updated tiles.
+
+**Tile CDN**: 99%+ of tile requests served from CDN edge nodes near users at <50ms. Origin handles tile updates and rare misses. Handles 1B MAU tile rendering. Breaks when: route calculation uses raw Dijkstra on the 60M-node global road graph — even with a heap, this runs in ~60 seconds. Fix: pre-process the graph with Contraction Hierarchies (CH) — contract less important nodes, add virtual "shortcut" edges between high-importance highway nodes. CH reduces routing query time from seconds to milliseconds.
+
+**Contraction Hierarchies for routing**: CH preprocessing assigns importance ranks to all 60M nodes; queries run bidirectional Dijkstra only on the contracted graph of ~1M high-ranked nodes. Route calculation drops from 60 seconds to <500ms. Handles 10K routing requests/sec on a single compute node. Breaks when: edge weights (road speeds) in the CH graph are static — the shortcut weights don't reflect live traffic jams. Fix: periodically (every 5 minutes) update edge weights from live GPS probe data and partially recompute affected CH shortcuts in the region.
+
+**Live traffic integration**: GPS probes from 500M active navigation sessions update road-segment speeds in near-real time via a stream processor (Kafka → Flink). Speed updates flow into the routing graph; CH shortcuts in affected sub-regions are recomputed on a rolling basis. Re-routing fires when cumulative ETA delta > 2 minutes. Breaks when: 500M GPS location updates/sec overwhelm a centralized speed aggregator. Fix: aggregate probe data by road segment ID in a regional stream processor; only send segment-level speed summaries (not raw GPS) to the global routing service.
+
+---
+
 ## Why This Is Hard
 
 1. **Map data scale**: The world's road network has ~60M road segments. The map data (satellite imagery, street view, points of interest) is petabytes. Serving any viewport instantly requires intelligent pre-computation and tiling.

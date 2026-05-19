@@ -18,6 +18,14 @@
 
 ## OSI Model vs TCP/IP
 
+**Question**: Your API call fails. Is the problem in your application code, in the network routing between machines, in the physical link between your server and its switch, or somewhere else? Without a mental model of which layer handles what, you will waste 30 minutes blaming the wrong thing. How do you instantly narrow the search space?
+
+**Physical constraint**: Data traveling from one process on one machine to another process on another machine passes through at least seven distinct transformations — from your application's bytes to electrical signals on a wire, then back. Each transformation is handled by different hardware and software, with different failure modes. A broken NIC (Layer 2) and a misconfigured route (Layer 3) and a port-blocked firewall (Layer 4) and a slow database query (Layer 7) all produce "the API call failed" from the application's perspective.
+
+**Minimal solution**: Name each layer and define what it owns. When something fails, start at Layer 7 (application) and descend until you find a layer behaving abnormally. The first layer whose metrics are out of spec is where the problem lives.
+
+**Production generalization**: The OSI model is a diagnostic tool, not just an academic taxonomy. Every debugging session in distributed systems is implicitly a top-down layer traversal — from application logs to TCP retransmit metrics to network path tracing. Knowing which protocol lives at which layer tells you which command to run next.
+
 > **Analogy: An international letter.**  
 > Your words are the Application layer. The envelope format is Presentation. The tracking number is Session. The delivery guarantee is Transport. Routing through sorting facilities is Network. The local mail truck is Data Link. The physical road is Physical.
 
@@ -40,6 +48,14 @@ Work top-down. Start at Layer 7 (Application): Is the service returning slow res
 ---
 
 ## TCP vs UDP
+
+**Question**: You're designing a live multiplayer game. Player positions update 60 times per second. You have two choices: use TCP (guaranteed delivery, in-order) or UDP (best effort, no ordering). With TCP, if a position packet is lost, TCP stalls all subsequent packets until the lost one is retransmitted. The player sees their character freeze for 50–200ms waiting for one stale position update. With UDP, the lost packet is simply skipped — the next update arrives and the client interpolates. Which is better for real-time games, and why does it matter?
+
+**Physical constraint**: TCP's reliability comes from a retransmit-and-wait mechanism — when a packet is lost, the receiver cannot advance past the gap until the missing bytes arrive in order. This is head-of-line blocking at the transport layer. Retransmit round-trips take at minimum one RTT (~1ms same-DC, ~20–100ms cross-country), during which all packets after the gap sit in a buffer unused. For data where the latest value supersedes all prior values (game positions, video frames, voice samples), waiting for stale data is strictly worse than skipping it.
+
+**Minimal solution**: Use UDP for any real-time stream where a late packet is worse than a lost one. Implement only the reliability you actually need in the application layer — for a game, that means ordered delivery for critical events (player deaths) but not for position updates.
+
+**Production generalization**: TCP for everything where losing a byte is unacceptable — HTTP, database connections, file transfers, email. UDP for latency-sensitive streams where partial data is preferable to stale data — games, VoIP, video conferencing, DNS lookups, DHCP. QUIC (the foundation of HTTP/3) essentially reimplements TCP's reliability per-stream on top of UDP, getting the best of both models.
 
 ### TCP (Transmission Control Protocol)
 
@@ -77,6 +93,14 @@ Work top-down. Start at Layer 7 (Application): Is the service returning slow res
 ---
 
 ## QUIC
+
+**Question**: HTTP/2 promised multiplexing — multiple requests over one TCP connection with no waiting. You deploy it, expecting faster page loads. On a lossy mobile network (2% packet loss is normal), your users report that HTTP/2 pages actually load *slower* than HTTP/1.1. How? HTTP/2 was supposed to fix head-of-line blocking.
+
+**Physical constraint**: HTTP/2 fixed *application-layer* head-of-line blocking — multiple HTTP streams share one TCP connection so an HTTP response no longer blocks others. But TCP doesn't know about HTTP streams. When a TCP packet is lost, the TCP layer stalls the *entire* connection until the missing packet is retransmitted, regardless of how many HTTP streams are waiting. With HTTP/1.1 you had 6 TCP connections — one lost packet stalled 1/6 of your streams. With HTTP/2 you have 1 TCP connection — one lost packet stalls all streams. On lossy networks, HTTP/2 is strictly worse.
+
+**Minimal solution**: The only fix is to move stream management below TCP — into the transport layer itself. If the transport protocol understands streams, a lost packet can block only the stream it belongs to while other streams continue.
+
+**Production generalization**: QUIC rebuilds TCP's reliability and congestion control per-stream on top of UDP. A lost packet blocks only its own stream. TLS 1.3 is baked into the QUIC handshake (not layered on top), reducing connection setup to 1 RTT and 0-RTT for resumption. Connection migration (changing IP without reconnecting) works because QUIC uses connection IDs rather than IP:port tuples. HTTP/3 is HTTP over QUIC.
 
 **The backstory**: HTTP/2 introduced multiplexing — multiple streams over one TCP connection. But TCP doesn't know about HTTP streams. To TCP, it's all one byte sequence. When a single packet is lost, TCP stops the entire connection and retransmits it before delivering anything else. All HTTP/2 streams freeze waiting for one dropped packet. This is **TCP's head-of-line blocking problem**, and HTTP/2 actually made it worse than HTTP/1.1 (which used multiple TCP connections).
 
@@ -137,6 +161,14 @@ HTTP/3 runs on QUIC (UDP):
 ---
 
 ## REST vs GraphQL vs gRPC
+
+**Question**: Your mobile app's home screen needs: the user's name and avatar, their 5 most recent orders with product thumbnails, and 3 personalized recommendations. With REST, that's 3 separate API calls: `GET /users/me`, `GET /orders?limit=5`, `GET /recommendations`. On a 4G mobile connection with 50ms RTT per request, those 3 serial calls take at least 150ms before any rendering starts. A desktop browser on a 1Gbps fiber line wouldn't care. Your mobile users do. What's the tradeoff — and when does it matter?
+
+**Physical constraint**: REST resources are fixed shapes defined server-side. Getting exactly the fields you need for a specific screen requires either: multiple round-trips (under-fetching) each costing one RTT, or one large response that contains far more data than needed (over-fetching). On mobile, bandwidth is measured in kilobits and RTT in tens of milliseconds — both matter. GraphQL eliminates round-trips by letting the client specify exactly what it needs in one query. gRPC eliminates payload overhead via binary Protocol Buffers but requires both client and server to share a `.proto` contract.
+
+**Minimal solution**: REST. Simple, well-understood, works with HTTP caching out of the box. Breaks when mobile client payload optimization becomes critical or when internal service-to-service calls need streaming and binary efficiency.
+
+**Production generalization**: REST for public APIs where discoverability, broad tooling, and HTTP caching matter. GraphQL for BFF layers where different clients (mobile vs web) need different data shapes from the same backend. gRPC for internal microservice communication where both ends are owned by your team and you need streaming, strong typing, and minimal serialization overhead.
 
 ### REST
 
@@ -203,6 +235,14 @@ OrderResponse response = stub.getOrder(
 ---
 
 ## Real-Time Communication Patterns
+
+**Question**: You're building a live notification system — users should see order status updates within 1 second of the server event. HTTP is request-response: the client asks, the server answers. The server cannot push data to a client that hasn't asked. You need updates to flow server→client without the client constantly asking. What are your options and what does each cost?
+
+**Physical constraint**: HTTP 1.1 is half-duplex: the client opens a TCP connection, sends a request, gets a response, and the connection idles. A server cannot initiate data delivery to a client that is sitting idle — the server doesn't have a socket to the client. For sub-second updates, the client must either periodically re-open the connection (polling, costly at scale) or maintain a persistent connection that the server can write to at any time (WebSocket, SSE).
+
+**Minimal solution**: Poll every second. Simple, stateless, works everywhere. Breaks when you have 1 million concurrent users polling every second: 1 million HTTP requests/sec, 999,900 of which return empty (nothing changed). Every empty response wastes a TCP connection open/close and one server thread for the duration.
+
+**Production generalization**: SSE for server-to-client streams (notifications, live feeds) — HTTP-based, auto-reconnects, one persistent connection per user. WebSockets for full-duplex bidirectional communication (chat, collaborative editing, live games) — persistent TCP connection, stateful, requires sticky sessions or a pub/sub fan-out layer. SSE is almost always simpler than WebSockets; only choose WebSockets when you genuinely need client→server low-latency messages.
 
 ### Short Polling
 
@@ -320,6 +360,14 @@ An API Gateway is the single front door to your microservices. It centralizes cr
 ---
 
 ## DNS Deep Dive
+
+**Question**: You have a service running at IP `93.184.216.34`. Your clients connect to it by hostname `api.example.com`. You update the IP to `93.184.216.35` during a migration. 12 hours later, some clients are still hitting the old IP. The old server is down. Those clients are seeing errors. Why, and what should you have done 48 hours ago to prevent this?
+
+**Physical constraint**: There is no global registry that immediately notifies every client of a DNS change. DNS is a distributed caching system — each resolver (your ISP's nameserver, Google's 8.8.8.8, your laptop's stub resolver) caches DNS answers for the duration of the TTL set on the record. When you update a record, each cached copy must independently expire before the resolver re-queries the authoritative server. A resolver that cached your record 5 minutes ago with a 24-hour TTL will continue serving the old value for the next 23 hours and 55 minutes, regardless of what you've changed at the authoritative server.
+
+**Minimal solution**: Lower your TTL to 60 seconds 48 hours before any planned migration. Wait for the old high-TTL records to expire everywhere (roughly 2× the previous TTL). Now perform the migration — the worst-case stale window is 60 seconds rather than 24 hours.
+
+**Production generalization**: DNS TTL is not just a performance knob — it is a migration safety knob. Pre-lower TTLs before migrations. Run both old and new destinations simultaneously during the TTL expiry window. Use DNS for geographic routing (GeoDNS, latency-based routing in Route 53) but not for real-time failover — TTL propagation is too slow for sub-minute recovery. Use a load balancer's health checks for real-time failover within a region.
 
 > **Analogy: A distributed phone book where every library keeps a local copy — but each copy expires on a different schedule.**  
 > When you look up "google.com", your local library (resolver) checks its cached copy first. If it's expired, it asks the regional library, which asks the national archive, which finally asks the original publisher. Every library caches the answer for its own TTL period before it expires and must be refreshed. This is why DNS changes don't propagate instantly — old copies in libraries around the world take time to expire.

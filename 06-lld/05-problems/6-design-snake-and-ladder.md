@@ -6,6 +6,85 @@
 
 ---
 
+## What Breaks Without This Design?
+
+```java
+class SnakeAndLadder {
+    private int[] playerPositions; // indexed by playerId
+    private int currentPlayer = 0;
+    // Snakes: head → tail. Ladders: foot → top. Hardcoded.
+    private int[] snakeHeads   = {99, 70, 54, 36};
+    private int[] snakeTails   = {2,  32, 19, 6};
+    private int[] ladderFeet   = {3,  22, 42, 54};
+    private int[] ladderTops   = {38, 58, 65, 80};
+
+    public void playTurn() {
+        int roll = (int)(Math.random() * 6) + 1;
+        playerPositions[currentPlayer] += roll;
+
+        if (playerPositions[currentPlayer] > 100) {
+            playerPositions[currentPlayer] -= roll; // undo overshoot
+            return;
+        }
+
+        // Check snake
+        for (int i = 0; i < snakeHeads.length; i++) {
+            if (playerPositions[currentPlayer] == snakeHeads[i]) {
+                playerPositions[currentPlayer] = snakeTails[i];
+                break;
+            }
+        }
+        // Check ladder
+        for (int i = 0; i < ladderFeet.length; i++) {
+            if (playerPositions[currentPlayer] == ladderFeet[i]) {
+                playerPositions[currentPlayer] = ladderTops[i];
+                break;
+            }
+        }
+
+        if (playerPositions[currentPlayer] == 100) {
+            System.out.println("Player " + currentPlayer + " wins!");
+        }
+
+        currentPlayer = (currentPlayer + 1) % playerPositions.length;
+    }
+}
+```
+
+**Concrete failures**:
+1. **Board is hardcoded**: Snakes and ladders are in parallel arrays. Changing the board layout requires editing source code. No way to configure different boards.
+2. **Two O(S) and O(L) scans per turn**: Linear scans through `snakeHeads[]` and `ladderFeet[]` to find a match. A `HashMap<cell → destination>` gives O(1) lookup.
+3. **Snakes and ladders are structurally identical**: Both are "if you land on cell X, jump to cell Y." Two separate arrays encode the same relationship. Unify into a single `jumpMap: Map<Integer, Integer>`.
+4. **No player abstraction**: `playerPositions[currentPlayer]` is an index into an array. You cannot store a player's name or implement different turn strategies (e.g., AI player).
+5. **No save/restore**: There is no way to snapshot and restore `playerPositions` mid-game. Adding save/load requires restructuring the entire state.
+6. **Turn cycling is manual**: `currentPlayer = (currentPlayer + 1) % n` is error-prone. A `Queue<Player>` with `poll()` + `offer()` captures the cycling intent more clearly and supports removing a player who wins.
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — Board as a `Map<Integer, Integer>`**: Snakes and ladders are identical in behavior — both redirect a landing cell to a different cell. One `jumpMap: Map<Integer, Integer>` handles both: positive jumps (ladders), negative jumps (snakes). Lookup is O(1). Board configuration is data, not code.
+
+**Force 2 — Players need identity**: Extract `Player` (name, currentPosition). A `Queue<Player>` cycles through them naturally: `poll()` gets the current player, `offer()` re-enqueues them at the back (or removes them on win).
+
+**Force 3 — Dice roll is a separate concern**: The die value source should be injectable for deterministic testing. Extract `Dice` interface with `roll()`. `StandardDice` uses `Random`; `LoadedDice` (for testing) returns a fixed sequence.
+
+**Force 4 — Game save/load requires state snapshot**: The full game state is: all player positions + current turn order + which players are still active. Extract a `GameState` value object (Memento). `GameController.save()` creates a `GameState`; `GameController.restore(GameState)` restores it.
+
+**Force 5 — Cycle detection on board setup**: A snake tail can be a ladder foot, creating an infinite loop (`A→B→A`). The board setup validator must detect cycles in `jumpMap` via DFS/BFS before the game starts.
+
+**Result** — the class split these forces produce:
+```
+God class → GameController (turn loop, win detection, save/restore)
+          → Board (jumpMap: Map<cell, destination>, size, cycle detection)
+          → Player (name, position)
+          → Dice (interface: int roll())
+             → StandardDice, LoadedDice (testing)
+          → GameState (Memento: snapshot of all player positions + turn order)
+```
+
+---
+
 ## Opening Analogy
 
 Think about a physical board game sitting on a table. The board is simply a printed map where certain squares have pictures: a ladder foot means "if you land here, climb to the top", a snake mouth means "if you land here, slide to the tail". The board itself does not move — it is a static lookup table from `landing_cell → destination`. The die roll drives movement. Multiple players take turns — that is naturally an Iterator. And if someone knocks the board off the table mid-game, you want to restore the saved state — that is Memento.

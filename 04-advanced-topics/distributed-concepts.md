@@ -15,6 +15,14 @@
 
 ## 1. Idempotency
 
+**Question**: A user clicks "Pay $100." Your service calls the payment processor. The processor charges the card and sends back "200 OK" — but the TCP connection drops before the response reaches your service. Your service sees a timeout, assumes failure, and retries. The card is charged twice. The user calls support. How do you prevent this without blocking all retries?
+
+**Physical constraint**: Network packets are delivered with at-least-once semantics at the TCP level, and your application layer adds more sources of duplication: retries on timeout, message queue redelivery after a consumer crash, and duplicate events from at-least-once brokers like Kafka. You cannot eliminate duplicates without also eliminating retries — and retries are how you recover from transient failures. The duplicate problem is not a bug you can fix; it is a fundamental property of unreliable networks.
+
+**Minimal solution**: Don't retry. Breaks immediately: transient failures (~0.1% of network calls) become permanent failures visible to users. At 10,000 req/sec that is 10 failed operations per second with zero recovery.
+
+**Production generalization**: Make the operation safe to execute multiple times. The server — not the client — owns deduplication. The client sends a unique key per logical operation; the server stores (key → result) and returns the cached result for any duplicate. The client can retry as aggressively as it wants; only the first execution runs.
+
 > **Analogy**: A doorbell. Press it once — ding. Press it five times fast — still just one ding. The outcome is the same regardless of how many times you trigger it. In payments, clicking "Pay" three times should not charge three times. The operation has already completed; repeated triggers should be safe no-ops.
 
 ### Concept Overview
@@ -100,6 +108,14 @@ public void applyOrder(String orderId) {
 ---
 
 ## 2. Retry Strategies
+
+**Question**: Your service receives a 503 from a downstream. You retry immediately. The downstream is recovering — slow, not dead. Your immediate retry hits it before it has recovered. So does every other caller's retry. The downstream, which was 80% recovered, collapses again under the coordinated retry storm from 200 callers all retrying at exactly t+1ms. You have turned a partial outage into a full one. How do you retry without making this worse?
+
+**Physical constraint**: When a service is overloaded or recovering, every additional request adds load. A server returning 503 is saying "I am at capacity." Retrying immediately sends the same volume of traffic as before the error — at the worst possible moment. The recovery window for an overloaded service is typically 1–30 seconds; callers need to stay quiet long enough for the service to drain its queue and catch up.
+
+**Minimal solution**: Retry once after a fixed 1-second delay. Breaks at scale: if 500 clients all got a 503 at t=0 and all retry at t=1.000s, you send a synchronized burst at exactly t=1s — the thundering herd problem. The service, which had started to recover, gets hit by 500 simultaneous requests.
+
+**Production generalization**: Exponential backoff spreads retries over an increasing time window. Jitter randomizes each client's wait independently so the 500 clients retry at 500 different times instead of simultaneously. Together they convert a synchronized spike into a smooth ramp that the recovering service can absorb.
 
 > **Analogy**: Knocking on a door. If no answer, knock again in 30 seconds (fixed retry). If still no answer, wait 1 minute, then 2 minutes, then 4 minutes — each wait doubles (exponential backoff). Jitter is adding a random variation: instead of knocking at exactly 4 minutes, knock somewhere between 3:45 and 4:15. This is crucial when 1,000 people are all knocking on the same door after it briefly went unanswered — without jitter, all 1,000 knock at the exact same moment and overwhelm the person inside.
 
@@ -192,6 +208,14 @@ private static boolean isRetryable(int statusCode) {
 ---
 
 ## 3. Backpressure
+
+**Question**: Your API ingests user events at 50,000 events/sec. Each event is pushed to a downstream analytics service that can process 10,000 events/sec. You buffer events in an in-memory queue. After 60 seconds the queue holds 2.4 million events. After 5 minutes: OutOfMemoryError. Your service crashes, taking the buffer with it — 15 million events lost. What should have happened instead?
+
+**Physical constraint**: RAM on a single machine is typically 8–128GB. An unbounded in-memory queue will fill it. At 50,000 events/sec with 1KB per event, that is 50MB/sec — 8GB exhausted in 160 seconds. You cannot buffer faster than memory fills. The only sustainable operating point is: producer rate ≤ consumer rate. Anything else is debt that compounds until the system crashes.
+
+**Minimal solution**: Add a large buffer (e.g., 10 million items) and hope producers never exceed consumers for long. Breaks when: any sustained spike exhausts the buffer, or the crash loses everything in the buffer (durability problem), or the buffer simply delays the crash rather than preventing it.
+
+**Production generalization**: Backpressure propagates the capacity constraint upstream to the source of the load — where something can actually be done about it. Either: (a) slow the producer (pull-based consumption, flow-control window), (b) reject excess load with a 503 so clients back off, or (c) route overflow to a durable queue (Kafka) that can absorb the burst and replay at consumer pace. The key insight is that dropping load explicitly at the edge is always better than crashing silently in the middle.
 
 > **Analogy**: A factory conveyor belt. Items come in from one end and get packaged at the other. If the packaging station gets overwhelmed, the belt has two choices: (1) slow the belt down to match the packaging speed (backpressure), or (2) keep running at full speed until items fall off the end and get lost (no backpressure). A third option: the belt has a buffer zone — a staging area. If the buffer fills up, the belt pauses upstream. Without any of these mechanisms, the floor gets covered in unpackaged items and the whole factory jams.
 
@@ -374,6 +398,14 @@ public class CircuitBreaker {
 ---
 
 ## 4. Distributed Failure Modes
+
+**Question**: Your checkout service is healthy. Users start seeing 502 errors. You check your service — all green. You check the payment service — all green. You check the inventory service — all green. The error is real and ongoing. Where is it? What systematic way do you have to narrow this down before it takes 45 minutes to find the problem?
+
+**Physical constraint**: A distributed system has N services and N×(N-1)/2 possible communication edges. Any edge can fail in multiple ways — crash-stop, slow, wrong answer, intermittent. A human cannot hold all these failure modes in their head simultaneously. The only way to reduce the search space is to have a failure taxonomy that tells you which class of failure you are looking at from the observable symptoms.
+
+**Minimal solution**: Wait for an alert, SSH into machines, read logs. Breaks at: intermittent failures that are gone by the time you look; failures that only appear under load; failures in the interaction between two healthy services. Log reading without structure is linear search through gigabytes of text.
+
+**Production generalization**: Classifying failure modes in advance lets you wire in the right detection and mitigation for each class before they happen in production. The taxonomy below is the map; the mitigations are the pre-built escape routes.
 
 > **Analogy**: A distributed system is like a city's power grid. Most of the time everything works. But failures are not random — they follow predictable patterns: a transformer blows (node failure), a road closes (network partition), a substation gets overwhelmed (cascading overload), a worker misreads a signal (Byzantine fault). Knowing the failure taxonomy means you can design defenses in advance instead of firefighting after the fact.
 

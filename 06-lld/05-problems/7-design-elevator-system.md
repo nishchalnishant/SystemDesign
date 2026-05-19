@@ -4,6 +4,73 @@
 > **Topics**: State Design Pattern, Strategy Pattern, Scheduling Algorithm (SCAN)
 > **Key Concepts**: Concurrency, Request Optimization, State Management.
 
+---
+
+## What Breaks Without This Design?
+
+```java
+class ElevatorSystem {
+    private int[] elevatorFloors;  // current floor of each elevator
+    private String[] elevatorStates; // "IDLE", "UP", "DOWN"
+    private List<int[]> requests = new ArrayList<>(); // [floor, direction]
+
+    public void requestElevator(int floor, String direction) {
+        requests.add(new int[]{floor, 1});
+        // Which elevator do we assign? Pick the first idle one:
+        for (int i = 0; i < elevatorFloors.length; i++) {
+            if (elevatorStates[i].equals("IDLE")) {
+                elevatorStates[i] = elevatorFloors[i] < floor ? "UP" : "DOWN";
+                // move elevator:
+                while (elevatorFloors[i] != floor) {
+                    elevatorFloors[i] += elevatorStates[i].equals("UP") ? 1 : -1;
+                    // check all requests at this floor inline
+                    for (int[] req : requests) {
+                        if (req[0] == elevatorFloors[i]) {
+                            openDoors(i); // string-based state, no state machine
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+```
+
+**Concrete failures**:
+1. **No SCAN/LOOK scheduling**: The code assigns the first idle elevator without checking proximity or direction. An elevator at floor 20 heading down gets assigned a floor-1 request, while a floor-2 elevator is idle — inefficient dispatching.
+2. **String-based state**: `elevatorStates[i].equals("IDLE")` has no compile-time safety. Typo "IDEL" compiles and silently fails. State transitions (moving → doors open → idle) are scattered across methods.
+3. **Illegal transitions compile**: Nothing prevents `openDoors()` while the elevator is moving — the string check can be bypassed.
+4. **Single-threaded assumption**: Multiple concurrent requests from different floors corrupt `requests` and `elevatorFloors` arrays with no synchronization.
+5. **Dispatch logic in the God class**: The algorithm for "which elevator to assign" (SCAN, nearest-car) is inline in `requestElevator()`, making it impossible to swap.
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — Elevator behavior is state-dependent**: An elevator behaves completely differently when IDLE, MOVING_UP, MOVING_DOWN, or DOORS_OPEN. The same action (e.g., "add stop request") is valid in MOVING_UP but illegal in DOORS_OPEN. Extract a `State` interface with per-action methods. Each state is a class that handles actions appropriate to it and rejects invalid ones.
+
+**Force 2 — Each elevator is an independent entity**: An elevator has its own floor, state, and stop queue. It is not a row in an array. Extract `Elevator` class with its own `currentFloor`, `state`, and `TreeSet<Integer> stops` (sorted so SCAN works naturally).
+
+**Force 3 — Dispatch algorithm must be swappable**: The rule "pick the closest elevator moving in the right direction" is one scheduling strategy. A simpler rule (round-robin) is another. Extract `DispatchStrategy` interface; `SCANDispatcher` is one implementation.
+
+**Force 4 — External and internal requests are different**: Pressing floor 5 from a hallway (external request) and pressing floor 5 inside the car (internal request) have different semantics. External requests go to the dispatcher; internal requests go directly to the assigned elevator's stop queue.
+
+**Force 5 — Concurrent requests need thread safety**: Multiple passengers press buttons simultaneously. The elevator's stop queue must be thread-safe (`Collections.synchronizedSortedSet` or `ConcurrentSkipListSet`).
+
+**Result** — the class split these forces produce:
+```
+God class → ElevatorController (Singleton dispatcher, holds elevators + strategy)
+          → Elevator (floor, state, stop queue, door control)
+          → ElevatorState (interface: handleExternalRequest, handleInternalRequest, move)
+             → IdleState, MovingUpState, MovingDownState, DoorsOpenState
+          → DispatchStrategy (interface: selectElevator(floor, direction))
+             → SCANDispatcher, NearestCarDispatcher
+          → Request (floor + direction, immutable)
+```
+
+---
+
 ## Real-Life Analogy
 
 **An elevator in a tall office building during morning rush hour.**

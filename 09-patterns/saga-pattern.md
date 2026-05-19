@@ -4,6 +4,28 @@
 
 ---
 
+## What Breaks Without This Pattern?
+
+An e-commerce order touches three services: Order, Inventory, Payment. Without coordination, this happens:
+
+1. OrderService writes `order_id=789, status=PENDING` to its DB — success.
+2. InventoryService reserves 2 units of SKU-42 — success.
+3. PaymentService charges the card — the bank rejects it (insufficient funds).
+
+Now you have reserved inventory that will never be used and an order stuck in PENDING forever. No single `ROLLBACK` fixes this — each service committed to its own database independently.
+
+**The naive fix: Two-Phase Commit (2PC)**
+
+2PC adds a coordinator that asks every participant "can you commit?" before anyone does. This violates two properties that distributed systems need:
+- **Blocking lock**: All participants hold locks from Phase 1 until the coordinator says go. If the coordinator crashes between phases, every participant is locked indefinitely.
+- **Coordinator SPOF**: The coordinator must be highly available and persistent. At scale (hundreds of services, thousands of transactions/sec), this is a bottleneck and a single point of failure.
+
+**The pattern as the minimal fix**
+
+The Saga is the minimum addition that works: instead of one atomic distributed transaction, use a sequence of local transactions. Each service commits independently and publishes an event. If any step fails, each prior step is reversed by a compensating transaction (a new forward transaction that semantically undoes the previous one — not a DB ROLLBACK). No global lock, no coordinator SPOF, no blocked threads.
+
+---
+
 ## The Problem: Distributed Transactions
 
 When a business operation spans multiple services (each with their own database), how do you maintain data consistency without a distributed transaction (2PC)?

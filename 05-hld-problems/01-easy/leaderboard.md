@@ -7,6 +7,43 @@
 
 ---
 
+## What Breaks Without This System?
+
+Duolingo launches a weekly XP competition. Rank is computed by querying PostgreSQL: `SELECT COUNT(*) + 1 FROM user_scores WHERE score > (SELECT score FROM user_scores WHERE user_id = ?)`. At 100M users and 10K score updates/sec, this query takes 3–8 seconds. The leaderboard shows ranks from 10 minutes ago. After a tournament event drives 100K score updates/sec, the DB falls behind and rank data becomes 45 minutes stale. Users refresh obsessively to see if they've climbed — their refreshes compound the query load. The DB locks up. The game stops working.
+
+Without real-time rank infrastructure: ranks are either computed too slowly to be meaningful (minutes behind), computed too expensively (full table scans per user), or not updated during the event that makes them interesting (the tournament). You lose the engagement loop that makes the leaderboard valuable.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single DB query**
+`SELECT COUNT(*) + 1 FROM user_scores WHERE score > ?` with an index on `score`. Works for small N. At 100M rows, even an indexed count takes 50–200ms per query. At 100K reads/sec, that's 5,000–20,000 seconds of DB compute/second — unsustainable.
+
+**Step 2 — What data structure gives O(log N) insert and O(log N) rank in one shot?**
+A skip list (which is what Redis Sorted Set implements). `ZADD leaderboard score member` inserts in O(log N). `ZREVRANK leaderboard member` returns rank in O(log N) — it doesn't scan, it traverses the skip list levels. For 100M members, that's roughly 27 levels of skip → sub-millisecond even on 100M entries.
+
+**Step 3 — What forces us away from a single Redis Sorted Set for 100M users?**
+100M × 30 bytes/entry = 3GB. A single Redis instance can hold this, but:
+- A single global leaderboard with 100M entries is feasible in one Redis node.
+- 1.25M leaderboards (global + 250 country + 1M friend groups) is not — the memory and fan-out cost is prohibitive.
+- Solution: keep only top-1M users in Redis (the meaningful competition range); compute rank for the other 99M with the DB query (they're far enough behind that 10ms latency is acceptable).
+
+**Step 4 — Score update path**
+At 100K writes/sec peak:
+- Redis ZADD: Redis handles 1M ops/sec. Writing to Redis synchronously is fine.
+- PostgreSQL sync write: 100K writes/sec saturates a single DB node (~50K max). Solution: Redis is the synchronous write (user sees update immediately); PostgreSQL is the durable store updated async via Kafka + batch consumer (500ms batch window). Idempotent: `ON CONFLICT (user_id) DO UPDATE SET score = GREATEST(excluded.score, score)`.
+
+**Step 5 — Friend group leaderboards**
+User has 500 friends. Fan-out on write: every score update triggers 500 leaderboard updates × 100M users = 50B write operations/day. Infeasible.
+
+Pull-based alternative: on query, fetch friend IDs from the social graph, `SELECT score WHERE user_id IN (friend_ids)`, sort in application layer. Friend list ≤ 500 entries — sort is O(500 log 500), trivially fast. Cache result in Redis for 30 seconds. No write fan-out needed.
+
+**Step 6 — Multiple time windows**
+One Redis Sorted Set per window: `leaderboard:alltime`, `leaderboard:weekly:2026-w20`, `leaderboard:monthly:2026-05`. Each score update writes to all active windows in a Redis pipeline. Weekly/monthly keys get a TTL set at creation — they expire automatically after the window closes. Storage cost: proportional to active windows × active users, not total history.
+
+---
+
 ## Problem Statement
 
 Design a real-time leaderboard that:

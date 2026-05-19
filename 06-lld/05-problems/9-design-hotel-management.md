@@ -6,6 +6,71 @@
 
 ---
 
+## What Breaks Without This Design?
+
+```java
+class HotelSystem {
+    private Map<Integer, String> roomStatus = new HashMap<>(); // roomId → "AVAILABLE"/"RESERVED"/"OCCUPIED"
+    private Map<String, int[]> reservations = new HashMap<>(); // confirmId → [roomId, checkIn, checkOut]
+    private String pricingMode = "STANDARD"; // or "WEEKEND"
+
+    public String bookRoom(int roomId, long checkIn, long checkOut, String guestName) {
+        if (!"AVAILABLE".equals(roomStatus.get(roomId))) {
+            return null; // room not available
+        }
+        // Does not check date overlap with existing reservations for this room
+        roomStatus.put(roomId, "RESERVED");
+        String confirmId = UUID.randomUUID().toString();
+        reservations.put(confirmId, new int[]{roomId, (int)checkIn, (int)checkOut});
+        return confirmId;
+    }
+
+    public double calculatePrice(int roomId, long checkIn, long checkOut) {
+        long nights = (checkOut - checkIn) / 86400000;
+        double baseRate = 100.0; // hardcoded
+        if (pricingMode.equals("WEEKEND")) return nights * baseRate * 1.5;
+        else return nights * baseRate;
+        // Adding "HOLIDAY" pricing requires editing this method
+    }
+}
+```
+
+**Concrete failures**:
+1. **No date-range overlap check**: `roomStatus.get(roomId) == "AVAILABLE"` is a global flag — it does not check whether the requested `[checkIn, checkOut]` overlaps any existing reservation for that room. Room 101 can be booked for June 1–5 and again for June 3–7 simultaneously.
+2. **Race condition on double booking**: Thread A reads `roomStatus.get(101) == "AVAILABLE"` → Thread B also reads `"AVAILABLE"` → both write `"RESERVED"` and generate different confirmation IDs for the same room and overlapping dates.
+3. **`String` for status is not type-safe**: Typo `"AVAILAIBLE"` compiles and silently fails all equality checks.
+4. **Room lifecycle ignored**: A room that needs cleaning after checkout should go `OCCUPIED → CLEANING → AVAILABLE`, not directly to `AVAILABLE`. The string-flag model has no concept of intermediate states.
+5. **Pricing change requires editing `calculatePrice()`**: Each new pricing tier (loyalty discount, holiday rate) adds another `else if`.
+
+---
+
+## Derive the Class Structure
+
+**Force 1 — Date-range overlap detection is complex**: Check whether `[reqCheckIn, reqCheckOut)` overlaps any existing `[existCheckIn, existCheckOut)` for the same room. Condition: overlap exists when `reqCheckIn < existCheckOut && reqCheckOut > existCheckIn`. This logic belongs on `Room` or a `ReservationRepository`, not inline in `bookRoom()`.
+
+**Force 2 — Room lifecycle is a state machine**: `AVAILABLE → RESERVED → OCCUPIED → CLEANING → AVAILABLE`. Each state has different rules: you can only book an `AVAILABLE` room; you can only check in a `RESERVED` room; cleaning transition is triggered by checkout. Extract `RoomState` interface; each state class handles its own valid transitions.
+
+**Force 3 — Double-booking requires per-room locking**: Two threads both pass the overlap check before either writes the reservation. Lock at the `Room` level (`ReentrantLock` per room), not the entire `HotelSystem`. Re-validate inside the lock (double-check pattern).
+
+**Force 4 — Pricing is a separate strategy**: `StandardPricing`, `WeekendPricing`, `HolidayPricing` each implement `PricingStrategy`. The `Room` or `HotelSystem` holds a `PricingStrategy` reference. Swapping to dynamic pricing requires one constructor call.
+
+**Force 5 — `Reservation` is an entity**: A reservation has a lifecycle (CONFIRMED → CANCELLED → COMPLETED). It references the `Room` and `Guest`. Without a `Reservation` entity, you cannot cancel, retrieve, or audit bookings.
+
+**Result** — the class split these forces produce:
+```
+God class → HotelManagementSystem (search, book, cancel — orchestration only)
+          → Room (id, type, state, List<Reservation> for overlap detection)
+          → RoomState (interface: book, checkIn, checkOut, clean)
+             → AvailableState, ReservedState, OccupiedState, CleaningState
+          → Reservation (confirmId, room, guest, checkIn, checkOut, status)
+          → Guest (id, name, loyaltyTier)
+          → PricingStrategy (interface: calculatePrice(room, nights))
+             → StandardPricing, WeekendPricing, DynamicPricing
+          → ReservationRepository (overlap check, CRUD — separates persistence logic)
+```
+
+---
+
 ## Opening Analogy
 
 Picture a hotel with 200 rooms. Each room has a lifecycle: it is `AVAILABLE` until a guest reserves it (`RESERVED`), then the guest arrives and it becomes `OCCUPIED`, and after checkout it goes back to `AVAILABLE` (but may need `CLEANING` first). This lifecycle is a state machine — the exact behavior of "can you book this room?" depends entirely on which state the room is in. Meanwhile, pricing changes based on weekday vs weekend vs holiday — that is a Strategy. And two users clicking "Book" at the same millisecond must not both succeed — that is a concurrency problem.

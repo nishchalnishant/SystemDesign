@@ -4,16 +4,15 @@
 
 ---
 
-## 1. Concept Overview
+## 1. Why Load Balancers Exist
 
-A **load balancer (LB)** sits in front of a pool of servers and directs each request to one of them. It provides:
-- **High availability**: If one server fails, traffic goes to others.
-- **Scalability**: Add more servers to handle more load.
-- **Performance**: Spread load so no single server is overwhelmed.
+**Question**: Your single app server handles 5,000 req/s and is at 90% CPU. You need 50,000 req/s in three months. A bigger machine tops out at ~2× the throughput before you hit hardware limits. What do you do?
 
-**Why it exists**: A single server is a single point of failure and a capacity ceiling. Load balancers enable horizontal scaling and fault tolerance.
+**Physical constraint**: A single CPU has a fixed instruction-per-second ceiling. A single NIC saturates at ~10–100 Gbps. A single process can only hold so many concurrent TCP connections. No matter how much you spend on vertical scaling, one machine has one set of CPU, memory, and I/O limits — and at some point those limits are absolute.
 
-**Real-life analogy**: Think of a hotel with 10 floors and a front desk. When guests arrive, the front desk agent directs them to available rooms. Without a front desk, every guest would rush to the same floor, and some floors would be completely empty. The front desk is the load balancer — it distributes guests across the hotel so no one floor is overwhelmed while others sit idle.
+**Minimal solution**: Put two servers behind a DNS record with two A-entries. Round-trip DNS resolves to one or the other. Works until: one server dies and DNS still points to it (requests fail for minutes until TTL expires), servers receive uneven load because clients cache DNS, and you have no way to drain one server for a deploy.
+
+**Production generalization**: A dedicated load balancer sits in front of the pool. It maintains live health checks so dead servers are removed in seconds (not minutes). It tracks connection state to implement smarter algorithms. It terminates TLS once instead of on each app server. Everything a DNS hack cannot do is what a load balancer provides.
 
 ---
 

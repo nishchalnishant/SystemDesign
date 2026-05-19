@@ -18,6 +18,57 @@ Design a hotel booking system that:
 
 ---
 
+## What Breaks Without This System?
+
+New Year's Eve in Paris. 5,000 users search for the same 200-room hotel simultaneously. All 5,000 see "1 room available." All 5,000 click "Book." Without a booking system that enforces inventory atomically, 5,000 bookings are created for 200 rooms. 4,800 guests arrive on New Year's Eve with valid confirmation codes to find no room available. The hotel owes refunds and reputational damage. The platform owes refunds, compensation, and likely regulatory penalties.
+
+The simpler failure: user A and user B both see "2 rooms available." User A starts booking — fills form, proceeds to payment (takes 30 seconds). User B starts and finishes booking during that 30 seconds. When User A's payment processes, the room is already booked. Without proper state management, either A is double-billed, or B's confirmed booking gets cancelled with no warning.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single server (conceptually)**
+One database with a `rooms` table and an `UPDATE SET booked=TRUE WHERE booked=FALSE` atomic operation. Correct for one server. Problems arise at scale.
+
+**Step 2 — What breaks at 50M DAU?**
+- Read/write contention: 30K availability searches/sec hit the same DB as 100 bookings/sec. Searches join 5 tables; bookings need strict write locks on inventory rows.
+- Slow reads blocking fast writes: an availability search scanning 18B rows of `room_inventory` while a booking is trying to acquire a row lock causes deadlocks and timeouts.
+- Race condition on the last room: read-then-write (SELECT available > 0, then UPDATE) has a TOCTOU (time-of-check-to-time-of-use) race between the two statements. Two threads both read "available=1", both proceed.
+
+**Step 3 — Fix the race condition first (the hardest part)**
+Do the check and the update in a single atomic SQL statement:
+```sql
+UPDATE room_inventory
+SET booked_rooms = booked_rooms + 1
+WHERE room_type_id = ? AND date = ? AND booked_rooms < total_rooms
+```
+If `rows_affected = 0`, inventory wasn't available. This is not read-then-write — it's a single statement with an atomic conditional. The DB's row-level lock prevents two concurrent updates from both incrementing. The CHECK constraint `booked_rooms <= total_rooms` is the final safety net.
+
+**Step 4 — Fix the browse-to-book gap (the UX problem)**
+Users browse, fill a form for 2 minutes, then pay. The room may become unavailable during those 2 minutes. Solution: soft hold on "Book Now" click. Status transitions:
+```
+PENDING (inventory held, 15-min timeout) → CONFIRMED (payment succeeded)
+                                         → EXPIRED (timeout, inventory released)
+                                         → CANCELLED (user cancelled)
+```
+The inventory row is decremented at PENDING creation (not at payment) — the room appears unavailable to other users. An expiry job releases PENDING bookings that exceed the timeout.
+
+**Step 5 — Separate read and write paths**
+- Availability search (30K/sec): hits a read replica + Redis cache. Results may be 60s stale — acceptable. Exact availability is re-verified at booking time (the source of truth DB).
+- Bookings (100/sec): hits the primary DB with row-level locking. Far fewer requests, so contention is manageable.
+- Elasticsearch: index hotel metadata (location, rating, amenities) for geospatial and faceted search. Availability is approximate in ES (boolean "has rooms"), exact only in the DB.
+
+**Step 6 — Payment atomicity**
+Payment and booking are in separate systems. Never hold a DB transaction open while calling a payment gateway (takes 1–3 seconds, holds a lock). Pattern:
+1. Create PENDING booking in DB (lock released immediately after commit).
+2. Call payment gateway outside any transaction.
+3. On success: UPDATE booking SET status=CONFIRMED.
+4. On failure: UPDATE booking SET status=FAILED, then release inventory.
+5. On timeout: query gateway with idempotency key to determine actual outcome. Never assume timeout = failure.
+
+---
+
 ## Analogy
 
 A concert ticket counter. Two fans arrive simultaneously for the last ticket. Only one can get it. The box office uses a numbered token system — whoever gets token #1 gets the ticket; #2 is told it's sold out. In software, this "token" is a database row-level lock. The critical insight: holding the lock for the entire "browse → fill form → pay" workflow (30 seconds) would make the system unusable. Instead, we hold locks only for the milliseconds of the actual booking transaction.

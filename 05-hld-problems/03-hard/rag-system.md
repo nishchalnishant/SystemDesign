@@ -27,6 +27,26 @@ Without the library index: the librarian would have to read every book for every
 
 ---
 
+## What Breaks Without This System?
+
+Without retrieval augmentation, the LLM answers entirely from its training weights — it hallucates facts not in its training data, cannot reference documents updated after its cutoff, and cannot cite sources. For enterprise use cases (internal knowledge bases, legal documents, medical records), this is not just unhelpful but actively dangerous. Without a vector index, finding relevant passages from 1M documents means feeding all 1M documents into the LLM context per query — at 500 tokens/doc that's 500M tokens per query, costing hundreds of dollars and taking hours per answer.
+
+---
+
+## Derive the Architecture
+
+**No retrieval, pure LLM**: Send the user's question directly to the LLM. Works when the answer is in the model's training data. Breaks when: the question requires knowledge from private enterprise documents. The model has no access to those documents and hallucates a plausible-sounding answer. Fix: embed documents into a vector index so relevant passages can be retrieved and injected into the prompt.
+
+**1 server, vector DB (1M documents)**: Chunk each document into ~500-token passages, embed each with a text embedding model (1536-dim vector), store in a vector DB (Pinecone/Weaviate). At query time: embed the question → approximate nearest neighbor (ANN) search → retrieve top-10 chunks → send them as context to LLM. Handles 1M documents at ~10K QPS. Breaks when: pure semantic search misses exact term matches — "GDPR Article 17" is not semantically close to its embedding unless those exact terms appear repeatedly. Fix: hybrid search — run BM25 keyword search in parallel with vector search, merge results with RRF (Reciprocal Rank Fusion).
+
+**Hybrid search (BM25 + vector)**: Run both searches in parallel; RRF merges ranked lists from each. Recall improves significantly for exact-term queries while semantic matching is preserved. Handles 10K QPS at <200ms retrieval latency. Breaks when: 1M documents from multiple tenants share one vector index — a query from Tenant A could return Tenant B's confidential documents if tenant isolation is not enforced at the query layer. Fix: add tenant_id as a metadata filter on every ANN query; the vector DB evaluates the filter before returning results.
+
+**Multi-tenant isolation with metadata filters**: Each document indexed with `{tenant_id, doc_id, chunk_id}`. Every query filtered by `tenant_id == caller`. Prevents cross-tenant data leakage. Handles 1,000 tenants sharing one index. Breaks when: retrieval quality degrades as the corpus grows to 10M+ documents — top-10 retrieved chunks may be superficially related but not the most useful passage for the specific question. Fix: add a re-ranker (cross-encoder model) that scores each candidate chunk against the query directly and reorders the top-10 by relevance.
+
+**Re-ranking layer**: Retrieve top-50 candidates from hybrid search (<100ms), then cross-encoder re-ranks to top-10 (~150ms for 50 candidates on a small model). Total retrieval latency: ~250ms. Answer quality improves substantially for ambiguous queries. Breaks when: documents are updated or added — the old embeddings in the vector DB are stale, and users get answers from outdated content. Fix: document change events (via webhook, Confluence sync, file watcher) trigger an incremental re-ingestion pipeline: chunk → embed → upsert into vector DB with version metadata, replacing the old embedding within 5 minutes.
+
+---
+
 ## Why This Is Hard
 
 1. **Retrieval quality determines answer quality**: The LLM can only answer from what you retrieve. If the wrong chunks are retrieved, even a perfect LLM gives a wrong answer. Getting retrieval right (precision AND recall) at millisecond latency is the core engineering problem.

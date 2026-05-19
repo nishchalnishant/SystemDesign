@@ -7,6 +7,57 @@
 
 ---
 
+## What Breaks Without This System?
+
+Amazon launches Prime Day. A TV that normally sells 100 units/day is offered at 50% off. Without a designed e-commerce platform:
+
+- **Inventory race condition**: 50,000 users see "1 unit left" simultaneously. All 50,000 click "Buy Now." All 50,000 pass the naive `quantity > 0` check before any decrement lands. 50,000 order confirmations are sent for 1 unit. Amazon owes 49,999 cancellation emails and reputation damage.
+- **Cart stale data**: User adds an item to cart, leaves for 2 days. Returns to checkout. The price changed, the item went out of stock. The naive system either crashes the checkout or silently charges the wrong price.
+- **Search at catalog scale**: Amazon has 350M products. A search for "bluetooth headphones under $50" must filter by price, category, brand, rating, and Prime eligibility, then rank by relevance, then paginate — against 350M rows. A SQL `WHERE` query with multiple JOINs takes 30+ seconds. Users have left after 3 seconds.
+- **Flash sale thundering herd**: at midnight when the sale starts, 5M users simultaneously hit the product page, the cart API, and checkout. A single DB node handles 5K writes/sec — it receives 500K writes/sec and falls over. The site goes down at the exact moment it matters most.
+
+Without a designed system: inventory oversells, search is unusable, and high-traffic events (the highest-revenue moments) crash the platform.
+
+---
+
+## Derive the Architecture
+
+**Step 1 — Single DB (works to ~10K users)**
+Product catalog in PostgreSQL, cart in PostgreSQL, orders in PostgreSQL. One server. Read replicas buy time on reads. Write bottleneck appears first.
+
+**Step 2 — Separate the catalog from the transaction path**
+Product catalog is read-heavy, rarely updated, and large. Orders/inventory are write-heavy, transactional, and require consistency. They have different performance and consistency requirements — put them in different systems.
+- Product catalog: PostgreSQL + Elasticsearch. ES indexes all products for full-text and faceted search. PostgreSQL is the source of truth. ES is updated asynchronously via CDC on product updates.
+- Inventory: Redis for real-time available count (fast atomic decrements). PostgreSQL as durable record.
+- Cart: Redis (session-like, ephemeral, fast read/write). TTL = 30 days. Not ACID-critical.
+- Orders: PostgreSQL (ACID required — payment and inventory must be consistent).
+
+**Step 3 — Flash sale inventory (the hardest constraint)**
+At 100K requests/sec for a flash sale item with 1,000 units:
+- PostgreSQL `UPDATE SET quantity = quantity - 1 WHERE quantity > 0` can handle ~5K/sec with row locks. At 100K/sec, lock contention causes timeouts and cascading failures.
+- Redis `DECR` is atomic and handles 1M ops/sec. Pre-load inventory count into Redis: `SET inventory:sku:123 1000`. On purchase: `DECR inventory:sku:123` → if result < 0, `INCR` to rollback and return "sold out." Fast, non-blocking, no lock contention.
+- DB is updated asynchronously (Kafka consumer processes confirmed orders and decrements PostgreSQL). If Redis crashes, re-seed from PostgreSQL.
+
+**Step 4 — Search**
+Elasticsearch for the search path:
+- Index 350M products with all filterable attributes.
+- Query: `bool filter` for in-stock, price range, category. `function_score` for ranking (sales velocity, rating, relevance score).
+- Updates: product changes go to Kafka `product_updates` topic. An ES indexing consumer updates the index within seconds (not real-time, but fast enough).
+- Pagination: use `search_after` (keyset pagination) instead of `offset`, which degrades at deep pages.
+
+**Step 5 — Checkout flow and inventory reservation**
+Checkout is the critical path — must prevent double-booking.
+1. User initiates checkout → reserve inventory in Redis (`DECR`) and create a `reservation` record in DB with `expires_at = now() + 15 min`.
+2. Payment processing (outside any DB transaction, async to payment gateway).
+3. Payment succeeds → confirm order, update inventory in PostgreSQL, expire the reservation.
+4. Payment fails / timeout → release reservation (`INCR` in Redis, delete reservation row).
+5. An expiry job releases abandoned reservations every minute.
+
+**Step 6 — Cart consistency**
+Cart items have a `price_at_add` and a `current_price`. On checkout, re-validate: if price changed, show the user and ask to confirm. If item went out of stock, remove from cart and notify. Never charge a stale price silently.
+
+---
+
 ## Problem Statement
 
 Design an e-commerce platform that:

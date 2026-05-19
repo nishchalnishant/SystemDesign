@@ -1,5 +1,94 @@
 # Composite Pattern
 
+## Question
+
+You are building a shopping cart. A cart can contain individual `Product` items. It can also contain `Bundle` (a gift set containing multiple products). `Bundle` can contain other `Bundle`s. You need `getPrice()` to work uniformly for both. Write the code.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+The `instanceof` approach:
+
+```java
+class Cart {
+    public double totalPrice(List<Object> items) {
+        double total = 0;
+        for (Object item : items) {
+            if (item instanceof Product) {
+                total += ((Product) item).getPrice();
+            } else if (item instanceof Bundle) {
+                Bundle bundle = (Bundle) item;
+                for (Object inner : bundle.getItems()) {
+                    if (inner instanceof Product) {
+                        total += ((Product) inner).getPrice();
+                    } else if (inner instanceof Bundle) {
+                        // recurse manually again...
+                    }
+                }
+            }
+        }
+        return total;
+    }
+}
+```
+
+**What breaks**:
+1. **`instanceof` chains break on new types**: Adding `DigitalProduct` requires editing `totalPrice()`.
+2. **Manual recursion**: The caller must know that `Bundle` can nest, and must replicate the recursion logic everywhere it handles items.
+3. **No uniform interface**: You cannot call `.getPrice()` on both `Product` and `Bundle` — they require different code paths.
+4. **SRP violation**: `Cart` knows the internal structure of `Bundle`.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **treat individual objects and compositions uniformly through a common interface**.
+
+Step 1 — define a common interface:
+```java
+interface CartItem {
+    double getPrice();
+}
+```
+
+Step 2 — leaf (individual item) implements the interface directly:
+```java
+class Product implements CartItem {
+    private double price;
+    public double getPrice() { return price; }
+}
+```
+
+Step 3 — composite (bundle) implements the same interface and delegates to its children:
+```java
+class Bundle implements CartItem {
+    private List<CartItem> items = new ArrayList<>();
+
+    public void add(CartItem item) { items.add(item); }
+
+    public double getPrice() {
+        return items.stream().mapToDouble(CartItem::getPrice).sum();
+        // recursion happens automatically — a Bundle inside a Bundle just delegates again
+    }
+}
+```
+
+Step 4 — the caller is identical for both:
+```java
+CartItem singleProduct = new Product(10.0);
+CartItem giftBundle    = new Bundle();
+((Bundle)giftBundle).add(new Product(5.0));
+((Bundle)giftBundle).add(new Product(3.0));
+
+System.out.println(singleProduct.getPrice()); // 10.0
+System.out.println(giftBundle.getPrice());    // 8.0 — recursion is automatic
+```
+
+---
+
 ## Real-Life Analogy
 
 A **file system** is the perfect example of Composite Pattern.

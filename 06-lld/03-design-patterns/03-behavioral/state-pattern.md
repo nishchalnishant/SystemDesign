@@ -1,5 +1,99 @@
 # State Pattern
 
+## Question
+
+You are designing a `VendingMachine`. It has four states: `IDLE`, `HAS_COIN`, `DISPENSING`, `OUT_OF_STOCK`. Write `insertCoin()`, `selectProduct()`, and `dispense()` methods for the machine.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class VendingMachine {
+    private String state = "IDLE";
+
+    public void insertCoin() {
+        if (state.equals("IDLE")) {
+            state = "HAS_COIN";
+            System.out.println("Coin accepted");
+        } else if (state.equals("HAS_COIN")) {
+            System.out.println("Coin already inserted");
+        } else if (state.equals("DISPENSING")) {
+            System.out.println("Please wait, dispensing");
+        } else if (state.equals("OUT_OF_STOCK")) {
+            System.out.println("Machine out of stock");
+        }
+    }
+
+    public void selectProduct() {
+        if (state.equals("IDLE")) {
+            System.out.println("Please insert coin first");
+        } else if (state.equals("HAS_COIN")) {
+            state = "DISPENSING";
+        }
+        // ... more branches
+    }
+    // dispense() — another full set of branches
+}
+```
+
+**What breaks**:
+1. **O(S × A) branching**: S states × A actions = branches that grow quadratically. 4 states × 4 actions = 16 blocks, all in one class.
+2. **OCP violation**: Adding a new state (e.g., `MAINTENANCE`) requires editing every method.
+3. **Logic scatter**: The behavior for a given state is split across all methods, not grouped in one place.
+4. **Invalid transitions compile silently**: Nothing in the type system prevents calling `dispense()` in `IDLE` — only a runtime string check catches it.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **each state should own its own behavior, and the machine delegates to the current state**.
+
+Step 1 — extract a `State` interface where each action is a method:
+```java
+interface State {
+    void insertCoin();
+    void selectProduct();
+    void dispense();
+}
+```
+
+Step 2 — each state is its own class that owns the logic for that state:
+```java
+class IdleState implements State {
+    private VendingMachine machine;
+    public void insertCoin()    { machine.setState(machine.getHasCoinState()); }
+    public void selectProduct() { System.out.println("Insert coin first"); }
+    public void dispense()      { System.out.println("Insert coin first"); }
+}
+
+class HasCoinState implements State {
+    private VendingMachine machine;
+    public void insertCoin()    { System.out.println("Coin already inserted"); }
+    public void selectProduct() { machine.setState(machine.getDispensingState()); }
+    public void dispense()      { System.out.println("Select product first"); }
+}
+```
+
+Step 3 — the machine holds a reference to the current state and delegates:
+```java
+class VendingMachine {
+    private State currentState;
+
+    public void insertCoin()    { currentState.insertCoin(); }
+    public void selectProduct() { currentState.selectProduct(); }
+    public void dispense()      { currentState.dispense(); }
+
+    public void setState(State s) { currentState = s; }
+}
+```
+
+Adding `MAINTENANCE` is now one new `MaintenanceState` class. The existing states are untouched.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Allows an object to alter its behavior when its internal state changes. The object will appear to change its class.
 

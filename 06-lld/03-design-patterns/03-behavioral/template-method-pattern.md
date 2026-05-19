@@ -1,5 +1,83 @@
 # Template Method Pattern
 
+## Question
+
+You are building an order processing system. Every order goes through: validate → calculate price → notify customer. Email orders validate differently from SMS orders. The notification medium differs too. But the sequence never changes. Write `processOrder()` for both `EmailOrder` and `SMSOrder`.
+
+Try it before reading on.
+
+---
+
+## Problem Without the Pattern
+
+```java
+class EmailOrderProcessor {
+    public void processOrder(Order o) {
+        // Step 1: validate
+        if (o.getEmail() == null) throw new IllegalArgumentException("No email");
+        // Step 2: calculate
+        double price = o.getBasePrice() * 1.1; // email surcharge
+        // Step 3: notify
+        emailService.send(o.getEmail(), "Your order: $" + price);
+    }
+}
+
+class SMSOrderProcessor {
+    public void processOrder(Order o) {
+        // Step 1: validate
+        if (o.getPhone() == null) throw new IllegalArgumentException("No phone");
+        // Step 2: calculate
+        double price = o.getBasePrice(); // no surcharge
+        // Step 3: notify
+        smsService.send(o.getPhone(), "Order: $" + price);
+    }
+}
+```
+
+**What breaks**:
+1. **Duplicated structure**: Both classes have an identical three-step sequence — validate → calculate → notify. The order is repeated, not shared.
+2. **SRP violation**: If the sequence gains a 4th step (e.g., log audit trail), it must be added to every processor class.
+3. **Risk of divergence**: A developer adds "log audit" to `EmailOrderProcessor` but forgets `SMSOrderProcessor`. Silent inconsistency.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **the algorithm's sequence lives in one place; only the varying steps are overridable**.
+
+Step 1 — move the sequence into a base class as a `final` method (the "template"):
+```java
+abstract class OrderProcessor {
+    // Template method — sequence is fixed, not overridable
+    public final void processOrder(Order o) {
+        validate(o);
+        double price = calculatePrice(o);
+        notify(o, price);
+    }
+
+    protected abstract void validate(Order o);
+    protected abstract double calculatePrice(Order o);
+    protected abstract void notify(Order o, double price);
+}
+```
+
+Step 2 — subclasses only provide the varying steps:
+```java
+class EmailOrderProcessor extends OrderProcessor {
+    protected void validate(Order o) {
+        if (o.getEmail() == null) throw new IllegalArgumentException("No email");
+    }
+    protected double calculatePrice(Order o) { return o.getBasePrice() * 1.1; }
+    protected void notify(Order o, double price) {
+        emailService.send(o.getEmail(), "Your order: $" + price);
+    }
+}
+```
+
+Adding a new channel (`PushNotification`) is one new subclass — the sequence in `processOrder()` is untouched.
+
+---
+
 > **Category**: Behavioral Pattern
 > **Purpose**: Define the skeleton of an algorithm in the base class, deferring some steps to subclasses. Subclasses can override specific steps without changing the algorithm's structure.
 
