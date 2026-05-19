@@ -8,6 +8,46 @@ Reason through the exact interleaving before reading on.
 
 ---
 
+## Topic Mindmap
+
+```
+[Thread-Safe Singleton]
+├── Problem It Solves
+│   ├── Two threads both see instance == null → both call new Database()
+│   ├── Thread B's instance is discarded; its state (connections, config) lost
+│   └── Visibility issue: even without double-creation, partially-constructed object visible
+├── Root Race Condition
+│   ├── Thread A: check null → true → pause before assignment
+│   ├── Thread B: check null → true → creates and assigns instance B
+│   ├── Thread A: resumes → creates and assigns instance A (overwrites B)
+│   └── Both threads got different objects; instance B's state is gone
+├── Constraints
+│   ├── Atomicity: check + create + assign must be atomic
+│   └── Visibility: assignment must be visible to all threads immediately (volatile)
+├── Solution 1: Synchronized Method
+│   ├── public static synchronized getInstance()
+│   ├── Thread-safe: lock prevents double creation
+│   └── Slow: every call acquires lock even after first initialization
+├── Solution 2: Double-Checked Locking (Optimal)
+│   ├── private static volatile instance (volatile mandatory)
+│   ├── First check (no lock): fast path for 99.99% of calls
+│   ├── synchronized block: create only if still null
+│   └── volatile prevents: partially-constructed object visibility across CPUs
+├── Solution 3: Enum (Best in Java)
+│   ├── JVM guarantees single initialization (class loading is thread-safe)
+│   ├── Prevents reflection attacks (can't call private constructor via reflection)
+│   └── Serialization-safe: no extra readResolve() needed
+├── Testing Thread Safety
+│   ├── 100 threads simultaneously call getInstance()
+│   ├── CountDownLatch ensures all threads start at the same time
+│   ├── Collect all instances in ConcurrentHashSet
+│   └── Assert set.size() == 1
+└── Interview Angles
+    ├── Why does DCL require volatile even with synchronized?
+    ├── What is the publication safety problem?
+    └── How does enum prevent reflection-based singleton breaking?
+```
+
 ## Race Condition Without Synchronization
 
 ```java

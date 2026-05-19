@@ -15,6 +15,54 @@
 
 ---
 
+## File Mindmap
+
+```
+Security
+├── Why It Exists
+│   ├── Problem → HTTP stateless; any request can spoof user_id=42; no inherent identity proof
+│   └── Forces → can't DB-lookup every request at 100k req/s (~5ms each = 500s latency budget blown)
+├── AuthN vs AuthZ
+│   ├── Authentication (AuthN) → who are you? → verify identity (password, token, cert)
+│   └── Authorization (AuthZ) → what can you do? → verify permission (RBAC, ABAC, ACL)
+├── Authentication Types
+│   ├── Session (stateful) → server stores session; cookie holds session ID; simple; hard to scale horizontally
+│   ├── JWT (stateless) → server signs token; client sends on every request; no DB lookup; can't revoke
+│   ├── API Key → long-lived secret string; machine-to-machine; easy to leak; no expiry by default
+│   └── mTLS → both client and server present certs; mutual trust; used in service meshes
+├── JWT Deep Dive
+│   ├── Structure → Header.Payload.Signature (base64url encoded)
+│   ├── Signing → HS256 (symmetric, shared secret) or RS256 (asymmetric, private/public key)
+│   ├── Stateless verification → server verifies signature locally; no DB call; scales horizontally
+│   └── Revocation problem → JWT valid until expiry; short TTL (15min) + refresh token is best practice
+├── OAuth 2.0 / OIDC
+│   ├── OAuth 2.0 → authorization framework; grants third-party limited access on user's behalf
+│   ├── OIDC → identity layer on top of OAuth; adds ID token (JWT) with user claims
+│   └── Flows → Authorization Code (web) → PKCE (mobile/SPA) → Client Credentials (machine-to-machine)
+├── Transport Security
+│   ├── TLS 1.3 → 1-RTT handshake; forward secrecy; encrypts in transit; prevents MitM
+│   ├── mTLS → client presents cert to server; server presents cert to client; mutual authentication
+│   └── Certificate Pinning → app trusts only specific cert/CA; prevents rogue CAs
+├── OWASP Top 10 Highlights
+│   ├── Injection (SQL/XSS) → parameterized queries; Content-Security-Policy headers
+│   ├── Broken Auth → short JWT TTL; rotate secrets; revoke refresh tokens on logout
+│   ├── IDOR → server-side ownership check; never trust client-provided resource IDs
+│   └── SSRF → block private IP ranges at egress; validate redirect URLs
+├── Rate Limiting for Security
+│   ├── Brute force → limit login attempts per IP/account; exponential backoff + CAPTCHA
+│   └── Credential stuffing → detect unusual geolocation; require MFA on suspicious login
+├── Real-World Usage
+│   ├── Google → OAuth2 + OIDC for "Sign in with Google"; refresh token rotation
+│   └── Kubernetes → mTLS between pods via Istio; service accounts for RBAC
+└── Interview Angles
+    ├── "JWT vs sessions — when to use each?" → JWT for stateless/multi-region; sessions for revocability
+    ├── "How do you revoke a JWT?" → short TTL + refresh token; or blocklist (adds DB lookup back)
+    ├── "What is mTLS and when do you need it?" → service mesh internal calls; zero-trust networks
+    └── Follow-up: "OWASP IDOR — how does your API prevent it?" → ownership check on every resource fetch
+```
+
+---
+
 ## Authentication Types
 
 **Question**: Your API receives a request claiming to be from user ID 42. How does your server know it's actually that user and not anyone who just typed `user_id=42` in a request? What stops me from impersonating any user I want just by guessing their ID?

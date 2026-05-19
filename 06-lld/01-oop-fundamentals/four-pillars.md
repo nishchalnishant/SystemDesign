@@ -4,6 +4,50 @@
 
 ---
 
+## Topic Mindmap
+
+```
+[Four Pillars of OOP]
+├── Problem It Solves
+│   ├── Global variables readable/writable by 40+ functions — no ownership
+│   ├── Changing one thing requires understanding everything
+│   └── Fix: group variable + its allowed functions into one bounded unit
+├── Encapsulation
+│   ├── Hide internal state behind a public interface
+│   ├── BankAccount hides balance; only deposit/withdraw can touch it
+│   ├── Analogy: hospital patient record — nurse accesses via defined procedure
+│   └── Benefit: change internals without breaking callers
+├── Abstraction
+│   ├── Expose what you need; hide how it works
+│   ├── Airline passenger uses book/cancel — not seat-allocation internals
+│   ├── Interface/abstract class defines the contract
+│   └── Benefit: caller depends on behavior, not implementation
+├── Inheritance (IS-A)
+│   ├── Subclass inherits fields + methods from superclass
+│   ├── Doctor IS-A HospitalStaff — gets scheduleShift(), adds prescribe()
+│   ├── Avoid deep hierarchies — prefer composition
+│   └── Risk: tight coupling; violating Liskov breaks substitutability
+├── Polymorphism
+│   ├── One interface, many implementations
+│   ├── Waiter.serve(customer) works for DineIn, Takeout, Delivery
+│   ├── Compile-time: method overloading (same name, different params)
+│   └── Runtime: method overriding + dynamic dispatch
+├── IS-A vs HAS-A
+│   ├── IS-A → use inheritance (Car IS-A Vehicle)
+│   ├── HAS-A → use composition (Car HAS-A Engine)
+│   └── Default to HAS-A — more flexible, avoids hierarchy lock-in
+├── Design Principles
+│   ├── DRY: Don't Repeat Yourself — extract to one place
+│   ├── KISS: Keep It Simple — don't over-engineer
+│   ├── YAGNI: You Aren't Gonna Need It — don't add unused abstractions
+│   └── Law of Demeter: talk to direct collaborators, not their internals
+└── Interview Angles
+    ├── Why prefer composition over inheritance?
+    ├── What breaks when IS-A is misused? (Square/Rectangle, Penguin/Bird)
+    ├── Difference between overloading and overriding?
+    └── What does encapsulation buy you at the system level?
+```
+
 ## What is OOP and Why Does It Exist?
 
 **Question**: You are maintaining a 3,000-line program. A bug is reported. The variable causing the bug is read by 40 different functions. Which functions actually write to it? Which should be allowed to? How do you fix the bug without breaking one of the other 39 readers?

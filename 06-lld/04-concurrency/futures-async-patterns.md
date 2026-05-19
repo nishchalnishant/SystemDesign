@@ -16,6 +16,41 @@ Try each before reading the corresponding section below.
 
 ---
 
+## Topic Mindmap
+
+```
+[Futures & Async Patterns — Java CompletableFuture]
+├── Core Concept
+│   ├── What → Non-blocking async computation pipelines that free threads during I/O waits
+│   └── Why → Blocking .get() wastes threads; CompletableFuture chains work without thread pinning
+├── Key Operations
+│   ├── supplyAsync() → run supplier in ForkJoinPool; returns CompletableFuture<T>
+│   ├── thenApply() → sync transform on result (map); stays on same thread
+│   ├── thenApplyAsync() → transform on a different thread pool
+│   ├── thenCompose() → chain dependent async calls (flatMap); avoids CompletableFuture<CF<T>>
+│   ├── allOf() → wait for all independent futures (fan-out); result is CF<Void>
+│   └── exceptionally() / handle() → error recovery without breaking the chain
+├── When to Use
+│   ├── ✓ Multiple independent I/O calls (fetch user + fetch orders + fetch recommendations)
+│   ├── ✓ Dependent async steps that must sequence (get userId → get profile → format)
+│   └── ✓ Timeout enforcement on external service calls
+├── When NOT to Use
+│   ├── ✗ CPU-bound work — async doesn't help; use parallel streams or ForkJoinPool directly
+│   └── ✗ Simple sequential single-threaded logic — adds complexity for no gain
+├── Trade-offs
+│   ├── Pro: Fan-out reduces latency from sum-of-latencies to max-of-latencies
+│   └── Con: Callback chains are hard to debug; exceptions must be explicitly handled per stage
+├── Real-World Examples
+│   ├── Product page → user, inventory, reviews fetched in parallel with allOf()
+│   └── Payment flow → auth → charge → notify chained with thenCompose()
+└── Interview Angles
+    ├── Fan-out math → 3×200ms sequential = 600ms; concurrent = 200ms
+    ├── Timeout → completeOnTimeout(fallback, 500, MILLISECONDS) or orTimeout(500, MILLISECONDS)
+    └── Code challenge: implement a parallel search across 3 databases returning fastest result
+```
+
+---
+
 **Race conditions and failure modes derived per pattern:**
 
 - **Future blocking**: Blocking `.get()` pins a thread for the entire I/O duration. 10,000 concurrent requests × 200ms each = threads pile up waiting. With a 500-thread pool, Thread 501 cannot start until Thread 1 finishes its 200ms wait. Fix: don't block between I/O steps — use callbacks or `CompletableFuture` chaining.

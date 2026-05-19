@@ -8,6 +8,39 @@ Try to count before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Bridge Pattern]
+├── Core Concept
+│   ├── What → Decouple abstraction from implementation so both vary independently
+│   └── Why → Prevents M×N class explosion from combining two orthogonal dimensions
+├── Key Components
+│   ├── Abstraction → high-level control layer (VideoPlayer); holds ref to Implementor
+│   ├── Refined Abstraction → WebPlayer, MobilePlayer, SmartTVPlayer
+│   ├── Implementor interface → VideoRenderer with render(quality, title)
+│   └── Concrete Implementor → SDRenderer, HDRenderer, FourKRenderer
+├── When to Use
+│   ├── ✓ Two independent dimensions of variation (platform × quality, shape × color)
+│   ├── ✓ Want to switch implementations at runtime
+│   └── ✓ Inheritance would create a combinatorial class explosion
+├── When NOT to Use
+│   ├── ✗ Only one dimension varies — simpler inheritance or strategy is enough
+│   └── ✗ Both dimensions are stable and rarely change
+├── Trade-offs
+│   ├── Pro: Add new platform or quality without touching existing classes
+│   └── Con: Indirection makes call stack harder to trace; extra interfaces to define
+├── Real-World Examples
+│   ├── JDBC Driver → Connection abstraction bridges to MySQLDriver / OracleDriver
+│   └── GUI frameworks → Window abstraction bridges to WindowsImpl / MacImpl
+└── Interview Angles
+    ├── vs Adapter → Bridge is designed upfront; Adapter retrofits incompatible interfaces
+    ├── vs Strategy → Strategy swaps one algorithm; Bridge decouples two class hierarchies
+    └── Code challenge: model Shape (Circle/Square) × Color (Red/Blue) without 4 subclasses
+```
+
+---
+
 ## Problem Without the Pattern
 
 With 3 platforms and 3 quality settings, pure inheritance creates one class per combination:

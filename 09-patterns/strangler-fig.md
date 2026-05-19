@@ -4,6 +4,47 @@
 
 ---
 
+## Pattern Mindmap
+
+```
+Strangler Fig Pattern
+├── Core Problem
+│   └── Big-bang monolith rewrites fail; need incremental extraction with real-traffic validation
+├── Key Components
+│   ├── Routing Layer → reverse proxy or API gateway in front of monolith (no code change)
+│   ├── Facade → intercepts calls; routes to new service or monolith per feature
+│   ├── Extracted Microservice → owns one bounded context; independently deployable
+│   └── Data Migration → service gets its own DB; monolith DB access removed last
+├── Migration Steps
+│   ├── 1. Add facade → zero change to monolith, all traffic still flows through it
+│   ├── 2. Extract feature → new service built alongside monolith
+│   ├── 3. Shadow mode → new service runs in parallel; responses compared, not served
+│   ├── 4. Canary → 1% → 10% → 50% → 100% traffic shift with rollback at any point
+│   └── 5. Remove monolith code → once new service handles 100% traffic, delete old path
+├── When to Use
+│   ├── ✓ Monolith that needs selective scaling (one module has 10× the load)
+│   ├── ✓ Team wants continuous delivery without blocking on monolith deploy cycle
+│   └── ✓ Risk-averse migration — each step must be independently reversible
+├── When NOT to Use
+│   ├── ✗ Small monolith (< 50K LOC) that is easily maintainable — overhead not justified
+│   └── ✗ Deeply intertwined modules with no clear domain boundaries
+├── Trade-offs
+│   ├── Pro: No big-bang risk; each extraction validated with real traffic
+│   ├── Pro: Business feature development continues during migration
+│   ├── Con: Dual-write complexity during data migration phase
+│   └── Con: Routing layer adds latency and operational overhead
+├── Real-World Usage
+│   ├── Shopify → extracted storefront rendering from Rails monolith via facade routing
+│   ├── Amazon → started as a monolith; strangler fig over years into 500+ services
+│   └── Netflix → migrated DVD rental monolith to streaming microservices incrementally
+└── Interview Angles
+    ├── "How do you avoid breaking the monolith during migration?" → facade + canary routing
+    ├── "How do you migrate the shared DB?" → strangler data: dual-write then cutover
+    └── "What's the risk of this approach?" → long-lived dual systems, sync complexity
+```
+
+---
+
 ## What Breaks Without This Pattern?
 
 A 500K-line Rails monolith serves 5M users. The checkout module needs to scale independently for Black Friday — but it can't, because it shares a process with the user profile module, the email service, and the admin panel. Scaling means scaling everything, at 10x cost. Deploying a fix to checkout means deploying the entire monolith — a 45-minute deploy window with risk to every feature.

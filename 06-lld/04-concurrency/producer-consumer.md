@@ -8,6 +8,48 @@ Try to identify every failure mode before reading on.
 
 ---
 
+## Topic Mindmap
+
+```
+[Producer-Consumer Pattern]
+├── Problem It Solves
+│   ├── Thread A adds to ArrayList; Thread B removes — no synchronization
+│   ├── ConcurrentModificationException on concurrent structural modification
+│   ├── Lost tasks: isEmpty() then remove() not atomic
+│   ├── Buffer overflow: producer adds faster → heap exhaustion
+│   └── Busy-wait: consumer spins on isEmpty() at 100% CPU
+├── Root Constraints
+│   ├── isEmpty() + remove() must be a single atomic operation
+│   ├── Consumer must block (not spin) when buffer is empty
+│   └── Producer must block when buffer is at capacity
+├── Solution 1: BlockingQueue (Best)
+│   ├── ArrayBlockingQueue<Integer>(capacity)
+│   ├── put(): blocks if full — automatic backpressure
+│   ├── take(): blocks if empty — no busy-wait
+│   └── Both are thread-safe internally — no external locking needed
+├── Poison Pill Shutdown
+│   ├── Producer puts sentinel value (-1, null, STOP_SIGNAL)
+│   ├── Consumer checks for sentinel → exits loop gracefully
+│   └── One sentinel per consumer thread for clean multi-consumer shutdown
+├── Solution 2: wait()/notify() Low-Level
+│   ├── synchronized produce(): while(full) wait(); add; notifyAll()
+│   ├── synchronized consume(): while(empty) wait(); remove; notifyAll()
+│   ├── while loop required — spurious wakeups can happen
+│   └── notifyAll() preferred over notify() when multiple waiters exist
+├── Real-World Examples
+│   ├── Web server: listener thread (producer) → worker thread pool (consumer)
+│   ├── Logger: application threads (producer) → background disk writer (consumer)
+│   └── Print spooler: apps submit docs (producer) → printer hardware (consumer)
+├── When to Use
+│   ├── Decoupling production rate from consumption rate
+│   ├── Batching slow consumers behind fast producers
+│   └── Thread pool task queues, async pipelines
+└── Interview Angles
+    ├── Why use while() not if() around wait()?
+    ├── What is a poison pill and why is it needed?
+    └── BlockingQueue vs wait/notify — when do you use each?
+```
+
 ## Race Conditions Without Synchronization
 
 ```java

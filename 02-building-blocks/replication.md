@@ -4,6 +4,66 @@
 
 ---
 
+## File Mindmap
+
+```
+Replication
+├── Why It Exists
+│   ├── Problem 1 → primary goes down 10 min = revenue impact; need failover
+│   └── Problem 2 → 500K read queries at 95% CPU; writes queuing; no single machine upgrade solves it
+├── Replication Topologies
+│   ├── Leader-Follower (Primary-Replica)
+│   │   ├── All writes → leader; reads → followers
+│   │   ├── Failover → promote follower on leader failure
+│   │   └── Cons → replication lag; reads from follower may be stale
+│   ├── Multi-Leader
+│   │   ├── Multiple primaries accept writes; sync to each other
+│   │   ├── Use case → multi-datacenter active-active; offline-capable clients
+│   │   └── Cons → write conflicts; require conflict resolution (last-write-wins / CRDT / manual)
+│   └── Leaderless (Dynamo-style)
+│       ├── Writes sent to W nodes; reads from R nodes
+│       ├── Quorum: W + R > N guarantees overlap (read sees latest write)
+│       └── Use case → Cassandra, DynamoDB; high availability; eventual consistency
+├── Sync vs Async Replication
+│   ├── Synchronous → leader waits for follower ack before confirming write
+│   │   ├── Guarantees → no data loss on failover
+│   │   └── Cons → increased write latency; follower slowness blocks leader
+│   └── Asynchronous → leader confirms immediately; follower catches up later
+│       ├── Guarantees → low latency writes
+│       └── Cons → replication lag; data loss window on leader crash before sync
+├── Replication Lag Problems
+│   ├── Read-your-writes → user writes profile, reads it back from stale replica; fix: route own reads to leader
+│   ├── Monotonic reads → user sees post, refreshes, post disappears (stale replica); fix: sticky routing per session
+│   └── Consistent prefix reads → events appear out of order across replicas; fix: causality tracking
+├── Quorum (Leaderless)
+│   ├── N = total replicas, W = write quorum, R = read quorum
+│   ├── W + R > N → at least one node in read set has the latest write
+│   ├── Strong consistency: W = N/2 + 1, R = N/2 + 1 (e.g. N=3, W=2, R=2)
+│   └── High availability: W=1, R=1 (fast; weak consistency)
+├── Split Brain & Fencing
+│   ├── Split brain → network partition; two leaders accept writes independently
+│   ├── Fencing token → monotonically increasing token issued with each leadership; old leader's writes rejected by storage
+│   └── STONITH → "Shoot The Other Node In The Head"; force-kill old leader before promoting new
+├── Consensus (Raft)
+│   ├── Leader election → nodes vote; majority required
+│   ├── Log replication → leader sends log entries; majority ack → commit
+│   └── Used in → etcd, CockroachDB, Kafka KRaft
+├── Trade-offs
+│   ├── Pros → read scale; fault tolerance; geographic distribution
+│   └── Cons → replication lag; conflict resolution complexity; added latency for sync replication
+├── Failure Scenarios
+│   ├── Leader fails → promote follower; risk data loss if async; use semi-sync for critical data
+│   ├── Follower lag → monitor replication delay; alert at N seconds
+│   └── Network partition → quorum prevents split brain; minority partition rejects writes
+└── Interview Angles
+    ├── "Sync vs async replication trade-off?" → sync: no data loss but higher latency; async: fast but lose latest writes on crash
+    ├── "How do you prevent split brain?" → fencing tokens; Raft consensus; STONITH
+    ├── "What is W+R>N?" → quorum ensures read set overlaps with write set; always sees latest write
+    └── Follow-up: "What is replication lag and how do you handle read-your-writes?" → route user's own reads to leader
+```
+
+---
+
 ## 1. Why Replication Exists
 
 **Question**: Your database primary handles all reads and writes. It goes down for 10 minutes. What is your revenue impact? Now: your primary is healthy but 500,000 users are hammering it with read queries for a product catalog that changes once per hour. Reads are at 95% CPU while writes queue up. Which hardware upgrade solves this?

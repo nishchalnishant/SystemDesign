@@ -8,6 +8,49 @@ Try writing it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Factory Pattern]
+├── Problem It Solves
+│   ├── NotificationService if/else: add SMS = modify existing code (OCP violation)
+│   ├── Creation logic scattered across callers
+│   └── Hard to test: can't swap concrete type without changing caller
+├── Core Structure
+│   ├── Product interface: Notification with send()
+│   ├── Concrete products: EmailNotification, SMSNotification, PushNotification
+│   ├── Factory: centralizes creation logic, returns interface type
+│   └── Client: calls factory, uses product via interface only
+├── Static Factory Method
+│   ├── NotificationFactory.create(type) returns Notification
+│   ├── if/else or switch inside the factory (isolated in one place)
+│   └── Adding new type: change only the factory
+├── Factory Method Pattern (GoF)
+│   ├── Abstract creator class with abstract createTransport()
+│   ├── Logistics.planDelivery() calls this.createTransport()
+│   ├── RoadLogistics overrides createTransport() → Truck
+│   └── SeaLogistics overrides createTransport() → Ship
+├── Abstract Factory (brief)
+│   ├── Factory of factories — creates families of related objects
+│   ├── IndiaFactory: IndianPaymentGateway + IndianTaxCalculator
+│   └── One method to get the whole suite for a region
+├── When to Use
+│   ├── Creation logic is complex or needs to vary by config/type
+│   ├── Client must not know the concrete class (depend on interface)
+│   └── You anticipate adding new product types over time
+├── When NOT to Use
+│   ├── Only one concrete type exists — over-engineering
+│   └── Simple new call is readable and unlikely to change
+├── Trade-offs
+│   ├── Factory Method requires subclassing — more classes
+│   ├── Static factory: simpler but can become a large switch
+│   └── Abstract Factory: most flexible but most indirection
+└── Interview Angles
+    ├── Difference between Static Factory, Factory Method, and Abstract Factory?
+    ├── How does Factory relate to OCP?
+    └── When would you use a factory over a DI container?
+```
+
 ## Problem Without the Pattern
 
 The first instinct is a single method with branching:

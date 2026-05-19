@@ -8,6 +8,46 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Builder Pattern]
+├── Problem It Solves
+│   ├── Telescoping constructor: User(name, email, age, address, phone, pic)
+│   ├── Caller must pass null for optional fields — unreadable, error-prone
+│   ├── Setter approach: object is invalid between first and last setter call
+│   └── Need to create immutable objects with many optional fields
+├── Core Structure
+│   ├── Outer class: final fields, private constructor taking Builder
+│   ├── Static inner Builder class with same fields
+│   ├── Builder.name(), Builder.email() — fluent setters returning this
+│   ├── Builder.build() validates and constructs the outer object
+│   └── Client: new User.Builder("name","email").age(30).build()
+├── BurgerMeal Example
+│   ├── BurgerMeal.BurgerBuilder with required + optional fields
+│   ├── size(s), sauce(s), cheese(b), lettuce(b) fluent methods
+│   └── build() creates immutable BurgerMeal
+├── Real-World Usage
+│   ├── OkHttp: Request.Builder().url().method().build()
+│   ├── Lombok @Builder annotation generates builder automatically
+│   └── StringBuilder is a mutable builder for String
+├── When to Use
+│   ├── Object has 4+ fields, several optional
+│   ├── Object must be immutable (final fields, no setters)
+│   └── Construction requires validation of field combinations
+├── When NOT to Use
+│   ├── Object has 2–3 fields — constructor or factory is simpler
+│   └── Mutability is acceptable and setters work fine
+├── Trade-offs
+│   ├── Verbose: Builder has same fields as the object (duplication)
+│   ├── Lombok @Builder eliminates boilerplate automatically
+│   └── Harder to extend: subclass needs its own builder
+└── Interview Angles
+    ├── What is the telescoping constructor anti-pattern?
+    ├── How does Builder enforce immutability?
+    └── Difference between Builder and Factory?
+```
+
 ## Problem Without the Pattern
 
 The first approach — a constructor with all fields:

@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Distributed Key-Value Store
+├── Problem Constraints
+│   ├── Scale → 10M QPS (9:1 read:write), 1B keys, 1.32TB with RF=3 replication
+│   ├── Latency target → < 10ms p99 reads, eventual consistency acceptable
+│   └── Core hardness → partition tolerance + consistent hashing for even load + anti-entropy for replica divergence
+├── Architecture Derivation
+│   ├── Step 1 → Single server HashMap → works to ~1M keys; no fault tolerance, no horizontal scale
+│   ├── Step 2 → Hash(key) % N shards → works until a node is added/removed; all keys remap (avalanche)
+│   ├── Step 3 → Consistent hashing ring → only K/N keys remap on node change; add 150 virtual nodes/server for evenness
+│   └── Step 4 → RF=3 with quorum (R=2, W=2, R+W>N=3) → tolerate 1 node failure without data loss
+├── Core Components
+│   ├── Consistent hash ring → CRC32(key) on 0..2^32 ring; 150 vnodes/server; next 3 nodes = replicas
+│   ├── LSM-tree storage → MemTable (write) + WAL (durability) + SSTables (disk); Bloom filter skips cold reads
+│   ├── Quorum coordinator → routes GET/PUT to RF=3 replicas; returns after R or W acks
+│   ├── Vector clocks → per-key version tracking across replicas; detect concurrent writes → last-write-wins or app-level merge
+│   └── Merkle trees → per-replica tree for each key range; anti-entropy compares root hashes to find diverged subtrees
+├── Data Model
+│   ├── SSTable → immutable sorted file; key → (value, timestamp, tombstone flag); indexed by Bloom filter per level
+│   └── WAL → append-only log: (seq_no, key, value, op_type); replayed on crash recovery before MemTable rebuild
+├── APIs
+│   ├── PUT /kv/{key} body:{value} → 200 OK or 503 (quorum not met)
+│   ├── GET /kv/{key} → {value, version} or 404
+│   └── DELETE /kv/{key} → tombstone write (logical delete); physical delete on compaction
+├── Critical Trade-offs
+│   ├── CP vs AP → AP chosen (like Dynamo); prefer availability over strong consistency; tunable quorum
+│   ├── LSM vs B-Tree → LSM chosen; write-optimized (sequential disk writes); B-Tree better for read-heavy
+│   └── Last-write-wins vs CRDT → LWW default; vector clocks exposed to client for conflict resolution at app layer
+├── Failure Scenarios
+│   ├── Node failure → coordinator reroutes to next replica on ring; hinted handoff queues writes for recovery
+│   ├── Network partition → quorum reads/writes may fail; client retries; stale reads possible with R=1
+│   └── Compaction I/O spike → tiered compaction limits concurrent merges; read path unaffected (Bloom filter + index)
+└── Interview Angles
+    ├── Amazon DynamoDB → "Design DynamoDB" → consistent hashing + quorum + vector clocks = core answer
+    ├── Deep-dive → "How does Bloom filter help?" → avoids disk reads for missing keys; 1% FPR = 10 bits/key
+    └── Follow-up → "What is hinted handoff?" → coordinator stores write locally for unavailable replica, replays on recovery
+```
+
+---
+
 ## What Breaks Without This System
 
 Every microservice in your stack relies on a single-node key-value store: session tokens, feature flags, distributed locks, and rate-limit counters all live there. Traffic is 1M writes/sec on a node running PostgreSQL with a B-tree index. By month 3, disk I/O wait climbs to 80%: every write requires a random seek to the right B-tree page, and at 1M writes/sec that's 1M random disk seeks per second — mechanical disks max out at ~200 and even NVMe saturates around 600K IOPS under mixed workload. Latency spikes from 2ms to 400ms. Distributed locks start timing out. Feature flag reads fail. Half your services start returning 503s, not because of a code bug, but because the storage layer can't absorb sequential writes.

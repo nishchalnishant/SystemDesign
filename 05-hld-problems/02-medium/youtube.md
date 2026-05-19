@@ -7,6 +7,49 @@
 
 ---
 
+## Problem Mindmap
+
+```
+YouTube
+├── Problem Constraints
+│   ├── Scale → 1B DAU, 57K concurrent streams avg, 500 hrs/min uploaded, 13 PB/day transcoded output
+│   ├── Latency target → video start < 2s (buffered); upload acknowledgment < 5s
+│   └── Core hardness → async transcoding pipeline at petabyte scale + CDN delivery for 57K concurrent streams
+├── Architecture Derivation
+│   ├── Step 1 → Serve raw upload directly → no adaptive bitrate; one resolution; 4K file = 40GB bandwidth per view
+│   ├── Step 2 → Transcode to multiple resolutions (360p/720p/1080p/4K) → need async pipeline; synchronous = timeout
+│   ├── Step 3 → DAG transcoding workers → each resolution is independent task in parallel; Kafka coordinates stages
+│   └── Step 4 → S3 → CDN → signed URL redirect; CDN caches segments; player uses HLS adaptive bitrate to pick quality
+├── Core Components
+│   ├── Upload Service → receives raw video via resumable upload (5MB chunks); writes to S3 raw bucket; publishes to Kafka
+│   ├── Transcoding Workers → Kafka consumer; FFmpeg DAG: 360p / 720p / 1080p / 4K in parallel; output to S3 processed bucket
+│   ├── HLS Packager → splits each resolution into 10-second .ts segments; generates .m3u8 manifest per resolution
+│   ├── CDN → caches .ts segments at edge PoPs; 99%+ hit rate for popular videos; signed URL with 1h TTL for auth
+│   ├── Metadata DB → PostgreSQL: (video_id, uploader_id, title, description, tags, status, view_count, duration)
+│   └── View Counter → Redis INCR for real-time view count; Kafka → ClickHouse for analytics; periodic flush to PostgreSQL
+├── Data Model
+│   ├── videos → (video_id PK, uploader_id, title, s3_raw_key, status ENUM[PROCESSING,READY,FAILED], resolution_urls{}, created_at)
+│   └── view_events → (video_id, user_id, watch_duration, timestamp) → append-only; Kafka → ClickHouse
+├── APIs
+│   ├── POST /upload/init → {filename, size, content_type} → {upload_id, chunk_urls[]}
+│   ├── GET /video/{video_id} → {metadata, stream_url} (stream_url = CDN signed manifest URL)
+│   └── GET /recommendations?video_id= → [{video_id, title, thumbnail}] (ML collaborative filtering)
+├── Critical Trade-offs
+│   ├── HLS vs DASH → HLS chosen for broader device support (iOS native); DASH for Android; serve both manifests
+│   ├── CDN vs direct S3 → CDN for all delivery; S3 is origin; signed URLs prevent hotlinking / unauthorized access
+│   └── Sync vs async transcode → async Kafka pipeline; upload acknowledged immediately; PROCESSING status shown to uploader
+├── Failure Scenarios
+│   ├── Transcode worker crash → Kafka offset not committed; job re-picked by another worker; idempotent output (same S3 key)
+│   ├── CDN cache miss → origin S3 serves; latency spike but no outage; CDN warms on first miss
+│   └── View count storm (viral video) → Redis INCR handles millions/sec; flush to DB every 60s to avoid write amplification
+└── Interview Angles
+    ├── Google → "Design YouTube video delivery" → HLS + CDN + signed URLs + adaptive bitrate is the core answer
+    ├── Netflix → "Design video streaming pipeline" → same async DAG + multi-codec (H.264/H.265/AV1) + per-title encoding
+    └── Follow-up → "How do you handle resumable uploads?" → client sends chunk with byte range; server tracks received chunks in Redis
+```
+
+---
+
 ## What Breaks Without This System
 
 A startup builds a video platform: users upload MP4s, the server copies them to S3 as-is, and the video tag in the HTML points directly to the S3 URL. It works for 1,000 users.

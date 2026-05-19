@@ -14,6 +14,48 @@ The interviewer is watching:
 
 ---
 
+## Template Mindmap
+
+```
+HLD Interview Framework (45-60 min)
+├── Core Problem
+│   └── Turn a vague "build X" prompt into a concrete, defensible system design
+├── Phase 1 — Requirements (0-10 min)
+│   ├── Functional → what must the system do (core features only)
+│   ├── Non-functional → latency, availability, consistency, durability targets
+│   └── PASS-R → Performance, Availability, Scalability, Security, Reliability
+├── Phase 2 — Capacity Estimation (10-15 min)
+│   ├── QPS = DAU × requests/day / 86400
+│   ├── Storage = write QPS × object size × retention days
+│   └── Bandwidth = read QPS × response size
+├── Phase 3 — API Design (15-20 min)
+│   ├── REST endpoints per core feature
+│   ├── Request/response shapes — include pagination tokens
+│   └── Auth strategy — JWT, API key, OAuth
+├── Phase 4 — Data Model (20-25 min)
+│   ├── SQL vs NoSQL decision → justify with access pattern
+│   ├── Key entities and relationships
+│   └── Indexing strategy → primary key, secondary indexes
+├── Phase 5 — High-Level Architecture (25-35 min)
+│   ├── Component diagram: clients → LB → API servers → DB/cache/queue
+│   ├── Data flow for the primary write path and primary read path
+│   └── Where async processing fits (background jobs, message queues)
+├── Phase 6 — Deep Dives (35-50 min)
+│   ├── Pick the hardest sub-problem: fan-out, search, consistency
+│   └── Show you can go from box on whiteboard to working design
+├── Phase 7 — Bottlenecks & Trade-offs (50-60 min)
+│   ├── Identify SPOFs and mitigation
+│   └── State trade-offs explicitly — never pretend there are none
+├── When to Use
+│   └── ✓ Any "design a large-scale system" interview question
+└── Interview Angles
+    ├── "What would you change at 10× scale?" → horizontal scale, caching, sharding
+    ├── "What breaks first?" → DB write path, fan-out, single-region deployment
+    └── "How do you handle failures?" → retries, circuit breakers, graceful degradation
+```
+
+---
+
 ## Interview Flow Timeline
 
 | Phase | Time | Activity |

@@ -8,6 +8,40 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Visitor Pattern]
+├── Core Concept
+│   ├── What → Add new operations to a class hierarchy without modifying the classes
+│   └── Why → Open/Closed for operations — new operation = new Visitor, not new class method
+├── Key Components
+│   ├── Visitor interface → visitFood(Food f); visitElectronics(Electronics e); visitClothing(Clothing c)
+│   ├── Concrete Visitors → TaxVisitor, ShippingVisitor — each implements all visit() methods
+│   ├── Element interface → accept(Visitor v) — implemented by Food, Electronics, Clothing
+│   ├── Concrete Elements → each calls v.visitFood(this) — double dispatch
+│   └── Double dispatch → runtime type of element selects the right visit() overload
+├── When to Use
+│   ├── ✓ Stable class hierarchy + frequently adding new operations
+│   ├── ✓ Operations across a heterogeneous object structure (AST traversal, document export)
+│   └── ✓ Avoid polluting element classes with unrelated logic (tax, shipping, rendering)
+├── When NOT to Use
+│   ├── ✗ Class hierarchy changes often — every new class requires updating all Visitors
+│   └── ✗ Elements are homogeneous — simpler iterator + method call is enough
+├── Trade-offs
+│   ├── Pro: Group related operations in one Visitor; element classes stay clean
+│   └── Con: Breaks encapsulation — Visitor must access element internals; adding element = update all visitors
+├── Real-World Examples
+│   ├── Compiler AST → TypeCheckVisitor, CodeGenVisitor walk the same syntax tree
+│   └── Tax calculation → TaxVisitor computes different rates for Food, Electronics, Clothing
+└── Interview Angles
+    ├── Double dispatch → accept(v) routes to v.visitFood(this); static dispatch alone can't do this
+    ├── vs Strategy → Strategy replaces one algorithm; Visitor operates across a whole hierarchy
+    └── Code challenge: implement an AST with NumberNode, AddNode, MulNode + EvalVisitor + PrintVisitor
+```
+
+---
+
 ## Problem Without the Pattern
 
 Option A — add methods to each class:

@@ -14,6 +14,57 @@ Unlike a traditional message queue (where a message disappears after it is read)
 
 ---
 
+## File Mindmap
+
+```
+Kafka Internals
+├── Why It Exists
+│   ├── Problem → traditional MQ: message gone after consume; one consumer group starves others; no replay
+│   └── Physical limit → sequential disk I/O is 100× faster than random; Kafka exploits this for millions/sec throughput
+├── Core Abstractions
+│   ├── Topic → logical stream of events (e.g., "payment-events"); like a newspaper title
+│   ├── Partition → ordered, immutable, append-only log within a topic; unit of parallelism
+│   ├── Offset → consumer's bookmark within a partition; consumer controls when to advance
+│   └── Consumer Group → each group gets independent copy of all messages; groups don't interfere
+├── Partition Assignment Rule
+│   ├── One partition → at most one consumer per group at a time
+│   ├── More partitions than consumers → some consumers handle multiple partitions
+│   └── More consumers than partitions → extra consumers are idle; scale by adding partitions
+├── Delivery Guarantees
+│   ├── At-most-once → auto-commit offset before processing; may lose on crash
+│   ├── At-least-once → commit offset after processing; may duplicate on crash; most common
+│   └── Exactly-once → transactional API (beginTransaction + commitTransaction) + idempotent producer; Kafka-to-Kafka only
+├── ISR (In-Sync Replicas)
+│   ├── ISR = leader + followers that are caught up (within replica.lag.time.max.ms)
+│   ├── acks=0 → fire-and-forget; fastest; may lose data
+│   ├── acks=1 → leader acks; lose data if leader dies before follower catches up
+│   ├── acks=all → all ISR ack; strongest durability guarantee
+│   └── min.insync.replicas=2 → at least 2 replicas must ack; prevents silent data loss
+├── Why Kafka Is Fast
+│   ├── Sequential I/O → append-only log; HDD sequential = 150 MB/s vs random = 1 MB/s
+│   ├── Zero-copy → sendfile() syscall; data goes disk → kernel buffer → NIC; skips user space copy
+│   ├── Page cache → OS caches hot log segments in RAM; recent messages served from memory
+│   └── Batching → producer batches messages; linger.ms + batch.size trade latency for throughput
+├── Retention vs Log Compaction
+│   ├── Time/size retention → delete old segments after N days or N GB (event streaming use case)
+│   └── Log compaction → keep only latest value per key; useful for change data capture / state rebuild
+├── Hot Partition Problem
+│   ├── Cause → all events for popular entity (celebrity user) route to same partition
+│   ├── Salting → append random suffix to key: userId + "_" + random(0,10) → spreads load
+│   └── Two-stage aggregation → aggregate per salt shard first, then merge
+├── Consistent Hashing with Virtual Nodes
+│   ├── Partition assignment uses murmur2 hash of key mod numPartitions
+│   └── Virtual nodes → multiple ring positions per broker; ensures even partition distribution on broker add/remove
+├── Trade-offs
+│   ├── Pro: millions of events/sec, replay, fan-out to independent consumer groups
+│   ├── Con: high operational complexity (brokers, partitions, consumer lag monitoring)
+│   └── Con: ordering only within partition; cross-partition ordering requires external sequencing
+└── Interview Angles
+    ├── "How does Kafka achieve high throughput?" → sequential I/O + zero-copy + batching + page cache
+    ├── "How do you handle duplicate messages?" → idempotent consumer with dedup table or upsert
+    └── Follow-up: rebalancing storm → sticky partition assignment + incremental cooperative rebalancing
+```
+
 ## 1. Storage & Scaling: Topics vs. Partitions
 
 ### Topic

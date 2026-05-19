@@ -2,6 +2,50 @@
 
 Unified modeling language, there are multiple places where this is used.
 
+## Topic Mindmap
+
+```
+[UML Diagrams for LLD]
+├── Core Concept
+│   ├── What → Standardized visual notation for software design
+│   └── Why → Communicate class relationships before writing code; lingua franca in interviews
+├── Two Categories
+│   ├── Structural → what the system IS (static view)
+│   │   ├── Class Diagram → classes, attributes, methods, relationships
+│   │   ├── Object Diagram → snapshot of instances at runtime
+│   │   └── Component/Package Diagrams → module-level structure
+│   └── Behavioral → what the system DOES (dynamic view)
+│       ├── Sequence Diagram → object interactions over time (message flow)
+│       ├── Activity Diagram → workflow/flowchart of steps
+│       ├── State Machine → states + transitions (vending machine, order lifecycle)
+│       └── Use Case Diagram → actor-system interactions
+├── Class Diagram Notation
+│   ├── Visibility → + public / - private / # protected / ~ package
+│   ├── Association → solid line; A uses B
+│   ├── Aggregation → hollow diamond; whole HAS-A part (can exist independently)
+│   ├── Composition → filled diamond; whole OWNS part (part dies with whole)
+│   ├── Inheritance → hollow triangle arrow; IS-A relationship
+│   └── Dependency → dashed arrow; A depends on B (method parameter or return type)
+├── Sequence Diagram Notation
+│   ├── Lifeline → vertical dashed line per object
+│   ├── Activation bar → rectangle on lifeline when object is active
+│   ├── Synchronous call → solid arrow with filled head
+│   ├── Return → dashed arrow
+│   └── Self-call → arrow loops back to own lifeline
+├── When to Use
+│   ├── ✓ Class diagram for LLD design rounds — show relationships before coding
+│   └── ✓ Sequence diagram to explain API call flows or event ordering
+├── Real-World Examples
+│   ├── BookMyShow LLD → Class diagram: Show, Screen, Seat, Booking, User, Payment
+│   └── ATM flow → Sequence diagram: User → ATM → Bank → Account
+└── Interview Angles
+    ├── Always start with class diagram → enumerate entities, then add relationships
+    ├── Composition vs Aggregation → Order HAS-MANY OrderItems (composition); Employee works-in Department (aggregation)
+    └── Code challenge: draw class diagram for Parking Lot with inheritance and relationships
+```
+
+---
+
 Can be divided into 2 types --
 
 <figure><img src="https://media.geeksforgeeks.org/wp-content/uploads/20231222121300/UML-Diagrams.jpg" alt=""><figcaption></figcaption></figure>

@@ -1,5 +1,51 @@
 # Python OOPS mislanious
 
+## Topic Mindmap
+
+```
+[Python OOP]
+├── Core Concept
+│   ├── What → Everything in Python is an object (int, str, function, class)
+│   └── Why → Python OOP is looser than Java — duck typing, no access modifiers
+├── Key Constructs
+│   ├── class → blueprint; object = instance of class
+│   ├── __init__ → constructor called on object creation
+│   ├── self → explicit reference to the current instance (unlike Java's implicit this)
+│   └── Dunder methods → __str__, __repr__, __eq__, __len__, __add__ (operator overload)
+├── Encapsulation in Python
+│   ├── _name → convention: "internal, don't touch" (not enforced)
+│   ├── __name → name mangling: _ClassName__name (compiler-enforced privacy)
+│   └── @property → getter/setter without explicit method calls
+├── Inheritance & MRO
+│   ├── Single: class Dog(Animal) — straightforward
+│   ├── Multiple: class Mule(Horse, Donkey) — Python allows it, Java does not
+│   ├── MRO (C3 Linearization) → Python resolves method lookup left-to-right, depth-first
+│   └── super() → calls next class in MRO chain, not necessarily direct parent
+├── Dataclasses (@dataclass)
+│   ├── Auto-generates __init__, __repr__, __eq__ from field annotations
+│   ├── frozen=True → immutable (like Java record)
+│   └── Reduces boilerplate for plain data-holding classes
+├── When to Use
+│   ├── ✓ Group data + behavior that naturally belongs together
+│   ├── ✓ Use @dataclass for DTOs / value objects
+│   └── ✓ Use __dunder__ for Pythonic API (len(obj), obj1 == obj2)
+├── When NOT to Use
+│   ├── ✗ Deep inheritance chains — prefer composition
+│   └── ✗ Multiple inheritance with shared state — MRO confusion
+├── Trade-offs
+│   ├── Pro: Less ceremony than Java; duck typing enables flexible polymorphism
+│   └── Con: No compile-time type safety; privacy is convention, not enforcement
+├── Real-World Examples
+│   ├── Django Model → class-based ORM objects with __str__ and Meta
+│   └── FastAPI Pydantic → dataclass-like validation with type hints
+└── Interview Angles
+    ├── MRO → draw diamond problem, trace C3 linearization order
+    ├── __slots__ → reduces per-instance memory by disabling __dict__
+    └── Code challenge: implement a Stack class with __len__, __iter__, __repr__
+```
+
+---
+
 *
 
     <figure><img src="../../../.gitbook/assets/image (139).png" alt=""><figcaption></figcaption></figure>

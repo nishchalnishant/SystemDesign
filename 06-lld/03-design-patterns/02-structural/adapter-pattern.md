@@ -8,6 +8,46 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Adapter Pattern]
+├── Problem It Solves
+│   ├── CheckoutService expects PaymentGateway.charge(amount, currency)
+│   ├── Razorpay SDK exposes initiatePayment(RazorpayRequest)
+│   └── Cannot modify CheckoutService; cannot modify Razorpay SDK
+├── Core Structure
+│   ├── Target interface: PaymentGateway with charge(amount, currency)
+│   ├── Adaptee: RazorpayClient with initiatePayment(RazorpayRequest)
+│   ├── Adapter: RazorpayAdapter implements PaymentGateway
+│   │   └── charge() builds RazorpayRequest and calls razorpayClient.initiatePayment()
+│   └── Client: CheckoutService uses PaymentGateway — never knows about Razorpay
+├── Analogy
+│   ├── Travel power adapter: your laptop plug ≠ foreign wall socket
+│   ├── Adapter bridges the two standards without modifying either
+│   └── You need one adapter class, not a new laptop
+├── Class Adapter vs Object Adapter
+│   ├── Object adapter: adapter holds reference to adaptee (composition)
+│   ├── Class adapter: adapter extends adaptee (inheritance) — Java rarely used
+│   └── Object adapter preferred: works with subclasses of adaptee too
+├── When to Use
+│   ├── Integrating third-party library with incompatible interface
+│   ├── Legacy code cannot be modified but must plug into new system
+│   └── You want a consistent interface across multiple providers
+├── Adapter vs Facade vs Decorator
+│   ├── Adapter: makes incompatible interfaces work together (interface translation)
+│   ├── Facade: simplifies a complex subsystem (hides complexity)
+│   └── Decorator: adds behavior while keeping same interface (wraps, extends)
+├── Trade-offs
+│   ├── One adapter per library — manageable
+│   ├── If library interface changes, only adapter needs updating
+│   └── Over-adapting (adapter chains) → complexity, prefer direct integration
+└── Interview Angles
+    ├── When would you use an Adapter over a Facade?
+    ├── Object adapter vs class adapter — what is the difference?
+    └── How does Adapter relate to the Open/Closed Principle?
+```
+
 ## Problem Without the Pattern
 
 The instinct is to modify the call site:

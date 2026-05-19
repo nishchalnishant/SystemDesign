@@ -4,6 +4,54 @@
 
 ---
 
+## File Mindmap
+
+```
+Scaling Strategies
+├── Why It Exists
+│   ├── Problem → single server at 70% CPU, traffic grows 20%/month → need 37,000 req/sec in 12 months
+│   └── Physical limit → fastest single machine ~$200k, 2-week provision, single point of failure
+├── Vertical vs Horizontal
+│   ├── Vertical → bigger machine, simpler ops, hard ceiling, SPOF
+│   └── Horizontal → commodity machines, linear cost, requires stateless services + LB
+├── Database Read Scaling
+│   ├── Read Replicas → async replication from primary, stale reads possible
+│   ├── Write still goes to primary → read replicas don't help write bottlenecks
+│   └── Connection Pooling → PgBouncer to reduce connection overhead
+├── Database Write Scaling
+│   ├── Sharding → split data across nodes by shard key
+│   ├── Hash sharding → ConsistentHashRouter, even distribution, bad for range queries
+│   ├── Range sharding → sequential access patterns, risk of hot shards
+│   └── Directory sharding → lookup table, flexible, extra hop per query
+├── Consistent Hashing
+│   ├── Virtual nodes → each physical node owns multiple ring positions
+│   ├── Adding node → only 1/N keys move (not full reshuffle)
+│   └── Java: TreeMap<Long, String> ring + MD5 hash
+├── Caching Patterns
+│   ├── Cache-aside (lazy) → miss: fetch DB + populate cache; stale on write
+│   ├── Write-through → write DB + cache simultaneously; consistent, double writes
+│   └── Write-behind → write cache, async flush to DB; fast writes, risk data loss on crash
+├── CQRS
+│   ├── Separate write model (normalized) from read model (denormalized)
+│   ├── Event drives projection updates → eventual consistency
+│   └── Use when: read shape ≠ write shape, read-heavy, multiple read projections needed
+├── Queue-Based Architecture
+│   ├── Kafka listener → async processing decouples producer from consumer
+│   ├── Absorbs bursts → consumer processes at steady rate
+│   └── Trade-off: eventual consistency, harder to debug, at-least-once delivery
+├── Async Processing
+│   ├── Offload slow work (email, resizing, ML inference) to background workers
+│   └── Return 202 Accepted immediately, poll or webhook for result
+├── Trade-offs
+│   ├── Pro: horizontal scale = near-linear throughput increase
+│   ├── Con: distributed state = consistency problems
+│   └── Con: operational complexity (service discovery, health checks, LB config)
+└── Interview Angles
+    ├── "How would you scale this system 10x?" → start with read replicas + caching
+    ├── "When would you shard?" → when single-node write throughput is the bottleneck
+    └── Follow-up: hot shard problem → salting / composite shard key
+```
+
 ## 1. Horizontal vs Vertical Scaling
 
 **Question**: Your single server handles 5,000 req/sec at 70% CPU. Traffic grows 20% per month. In 12 months you need ~37,000 req/sec. The fastest single machine you can buy does ~100,000 req/sec — but it costs $200k, takes 2 weeks to provision, and if it dies your entire product is down. What do you do?

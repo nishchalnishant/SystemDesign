@@ -6,6 +6,67 @@ PostgreSQL is an advanced open-source relational database known for ACID complia
 
 ---
 
+## File Mindmap
+
+```
+PostgreSQL Internals
+├── Why It Exists
+│   ├── Problem → need ACID compliance, complex queries, and high concurrency without reader-writer blocking
+│   └── Physical limit → 8KB page size; large values require TOAST; random I/O (4.0 cost) vs sequential (1.0 cost)
+├── MVCC (Multi-Version Concurrency Control)
+│   ├── Every row has xmin (created by txn ID) and xmax (deleted by txn ID)
+│   ├── Readers see snapshot of DB at their txn start → readers never block writers
+│   ├── Snapshot visibility → row visible if xmin committed before snapshot AND (xmax null OR xmax not committed)
+│   └── Cost: dead tuples accumulate from old row versions → VACUUM reclaims space
+├── WAL (Write-Ahead Log)
+│   ├── Sequential WAL write → flush WAL → ack client → async dirty page write to data files
+│   ├── Checkpoint → flush dirty pages from shared_buffers to disk; crash recovery replays WAL from last checkpoint
+│   ├── Streaming replication → WAL shipped to replicas (async by default, sync possible)
+│   └── Key insight: WAL is sequential → fast; data page updates are random → async to avoid bottleneck
+├── Storage Layout
+│   ├── Pages → 8KB fixed-size pages; header + item pointers + actual tuples
+│   ├── TOAST → "The Oversized-Attribute Storage Technique"; values > ~2KB compressed/chunked into separate TOAST table
+│   └── Shared buffers → in-memory page cache; size: typically 25% of RAM
+├── Index Types
+│   ├── B-tree → default; O(log N); equality, range, ORDER BY; works for most cases
+│   ├── GIN (Generalized Inverted Index) → arrays, JSONB, full-text search; expensive to build/update
+│   ├── GiST → spatial data, geometric types; PostGIS uses GiST
+│   └── BRIN (Block Range Index) → time-series / monotonically increasing columns; tiny index size; not for random access
+├── Index Strategies
+│   ├── Partial index → WHERE clause reduces size (CREATE INDEX ON orders(status) WHERE status='pending')
+│   ├── Expression index → index on expression (CREATE INDEX ON users(lower(email)))
+│   └── Covering index → INCLUDE columns to avoid heap fetch (index-only scan)
+├── Query Execution
+│   ├── Pipeline → parse → rewrite → plan → execute
+│   ├── Cost estimation → seq_page_cost=1.0, random_page_cost=4.0, cpu_tuple_cost=0.01
+│   ├── EXPLAIN ANALYZE → actual vs estimated rows; Seq Scan vs Index Scan vs Bitmap Heap Scan
+│   └── N+1 problem → watch for Nested Loop with sequential scans in explain output
+├── VACUUM
+│   ├── Standard VACUUM → reclaims dead tuples; does NOT return space to OS; safe for production
+│   ├── VACUUM FULL → rewrites table; returns space to OS; locks table; avoid in production
+│   ├── Autovacuum → background daemon; triggered by dead tuple threshold
+│   └── XID Wraparound → critical: 32-bit transaction ID wraps at 2 billion; autovacuum must run to freeze old XIDs; failure = DB refuses writes
+├── Replication
+│   ├── Physical (streaming) → byte-for-byte WAL copy; same Postgres version required; used for HA standby
+│   └── Logical → SELECT-level replication; cross-version, selective tables; used for zero-downtime upgrades
+├── Transaction Isolation Levels
+│   ├── Read Committed (default) → sees committed data at statement start; phantom reads possible
+│   ├── Repeatable Read → snapshot at txn start; no phantom reads in Postgres (MVCC)
+│   └── Serializable → full serializability via predicate locks; highest isolation, most contention
+├── Locking
+│   ├── Row-level locks → SELECT FOR UPDATE; FOR SHARE; FOR NO KEY UPDATE
+│   ├── Table-level locks → DDL (ALTER TABLE) takes AccessExclusiveLock; blocks all reads + writes
+│   └── Deadlock detection → background process detects cycles; aborts one txn; rare with consistent lock ordering
+├── Trade-offs
+│   ├── Pro: ACID, rich indexing, MVCC for concurrency, extensible types
+│   ├── Con: VACUUM overhead; dead tuple bloat if autovacuum misconfigured
+│   └── Con: write scaling requires sharding (no built-in horizontal write scale)
+└── Interview Angles
+    ├── "Why is my query slow?" → EXPLAIN ANALYZE → missing index vs bad statistics vs N+1
+    ├── "How does Postgres handle concurrent reads/writes?" → MVCC; readers never block writers
+    └── Follow-up: XID wraparound emergency → VACUUM FREEZE on affected tables before ID limit
+```
+
 ## MVCC (Multi-Version Concurrency Control)
 
 ### Analogy: A Library Book Checkout System

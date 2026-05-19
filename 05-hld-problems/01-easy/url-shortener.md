@@ -7,6 +7,50 @@
 
 ---
 
+## Problem Mindmap
+
+```
+URL Shortener
+├── Problem Constraints
+│   ├── Scale → 100M URLs/month = 40 writes/sec, 4B redirects/month = 12K reads/sec peak
+│   ├── Storage → 500 bytes/URL × 100M × 12 months × 5yr = 15TB total
+│   ├── Latency target → redirect < 10ms (cached), no tolerable loss of short codes
+│   └── Core hardness → collision-free unique key generation at write + sub-10ms redirect at massive read scale
+├── Architecture Derivation
+│   ├── Step 1 → MD5(url)[0:7] → hash collisions at 100M URLs; can't guarantee uniqueness
+│   ├── Step 2 → Auto-increment counter + Base62 encode → no collision, but single DB = SPOF
+│   ├── Step 3 → Distributed counter (Redis INCR or ticket server) → scalable, no collision
+│   └── Step 4 → CDN → LB → App servers → Redis read-through cache → PostgreSQL shards → handles 12K reads/sec, 40 writes/sec
+├── Core Components
+│   ├── Encoder → Base62(counter) → 7 chars = 62^7 = 3.5T unique URLs
+│   ├── Redis cache → hot short codes (20% URLs = 80% traffic); TTL 24h LRU eviction
+│   ├── PostgreSQL → source of truth for short_code → long_url mapping; sharded by code prefix
+│   ├── CDN → serves redirect for globally popular URLs; Cache-Control: max-age=86400
+│   └── Kafka → async click analytics (no write latency impact on redirect path)
+├── Data Model
+│   ├── urls table → (short_code PK, long_url, user_id, created_at, expires_at, click_count)
+│   └── analytics events → (short_code, timestamp, ip_hash, country, referrer) → write-only append
+├── APIs
+│   ├── POST /shorten → {long_url, custom_alias?, ttl?} → {short_url}
+│   ├── GET /{short_code} → 302 redirect to long_url (301 for permanent = breaks analytics)
+│   └── GET /api/stats/{short_code} → {clicks, countries, referrers, timeline}
+├── Critical Trade-offs
+│   ├── 301 vs 302 → 302 chosen → browser doesn't cache; every hit tracked for analytics
+│   ├── Counter vs Hash → Counter+Base62 chosen → no collisions, predictable length, fast
+│   └── Custom alias → stored in shared short_code namespace; UNIQUE constraint prevents collision
+├── Failure Scenarios
+│   ├── Redis miss → fall through to PostgreSQL; no data loss, just latency spike
+│   ├── Counter node failure → switch to backup Redis replica; DB UNIQUE constraint prevents duplicates
+│   └── DB shard unavailable → read replicas serve reads; writes queue; expired URLs return 404
+└── Interview Angles
+    ├── Scale → "How do you get to 12K reads/sec?" → CDN + Redis; DB is rarely hit
+    ├── Uniqueness → "What if two users shorten the same URL?" → two codes, both valid; no dedup by default
+    ├── Custom alias → "How do you prevent collisions with generated codes?" → shared namespace + UNIQUE constraint
+    └── Follow-up → "How do you handle URL expiry?" → TTL column + background sweeper + Redis TTL aligned
+```
+
+---
+
 ## What Breaks Without This System
 
 Without a URL shortener, every shared link is the raw long URL. A tweet containing `https://example.com/products/electronics/laptops/dell-xps-15-9500-15-6-inch-4k-uhd-display?ref=newsletter&utm_source=email&utm_medium=cta&discount=SAVE20` has already consumed the character budget and is unclickable in many SMS clients and printed materials. Marketing campaigns can't track click-through. QR codes encoding 200-character URLs become dense and fail to scan on cheap scanners.

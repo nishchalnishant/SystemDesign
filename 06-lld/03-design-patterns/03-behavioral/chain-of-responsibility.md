@@ -8,6 +8,39 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Chain of Responsibility Pattern]
+├── Core Concept
+│   ├── What → Pass a request along a chain of handlers; each decides to handle or forward
+│   └── Why → Decouples sender from receiver; avoids if-else chains for routing logic
+├── Key Components
+│   ├── Handler interface → handleRequest(Request r); setNext(Handler h)
+│   ├── Concrete Handlers → BotHandler, JuniorAgentHandler, SeniorAgentHandler
+│   ├── Chain setup → bot.setNext(junior).setNext(senior)
+│   └── Client → sends to chain head; doesn't know which handler responds
+├── When to Use
+│   ├── ✓ Request processing pipelines: auth → logging → rate-limit → business logic
+│   ├── ✓ Multiple handlers can process a request (middleware stack)
+│   └── ✓ Handler set changes at runtime or is configurable
+├── When NOT to Use
+│   ├── ✗ Exactly one handler always handles the request — use strategy instead
+│   └── ✗ Chain is very long — debugging which handler ran becomes hard
+├── Trade-offs
+│   ├── Pro: Open/Closed — add new handler without modifying chain or client
+│   └── Con: No guarantee of handling; request may fall off the end of chain
+├── Real-World Examples
+│   ├── Servlet Filters → doFilter() chain in Java EE / Spring
+│   └── Express.js middleware → next() passes request to next handler
+└── Interview Angles
+    ├── vs Decorator → Decorator always wraps (adds behavior); CoR may stop propagation
+    ├── vs Strategy → Strategy selects one algorithm; CoR lets each handler decide
+    └── Code challenge: implement logging + auth + rate-limit middleware chain
+```
+
+---
+
 ## Problem Without the Pattern
 
 ```java

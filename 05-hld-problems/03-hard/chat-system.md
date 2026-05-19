@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Chat System (WhatsApp/Telegram)
+├── Problem Constraints
+│   ├── Scale → 2B users, 100B messages/day = 1.16M messages/sec, 200M concurrent connections = 4K gateway servers
+│   ├── Latency target → message delivery < 100ms (online users); offline delivery within seconds of reconnect
+│   └── Core hardness → routing 1.16M msgs/sec across 4K stateful gateways + message ordering + offline durability
+├── Architecture Derivation
+│   ├── Step 1 → HTTP polling → 2B users × 1 poll/sec = 2B req/sec pure overhead; 99% requests produce nothing
+│   ├── Step 2 → WebSocket per user → server pushes; 1 server handles ~50K connections; need routing across servers
+│   ├── Step 3 → Redis presence registry: user_id → gateway_id → route messages to correct server; offline → queue in Cassandra
+│   └── Step 4 → Server-side sequence numbers per conversation → monotonic INCR; client re-orders on gap detection
+├── Core Components
+│   ├── WebSocket Gateway → stateful; 50K connections/server; heartbeat every 30s updates Redis TTL
+│   ├── Redis presence → "presence:{user_id}" → {gateway_id, last_active}; TTL 30s; refreshed by heartbeat
+│   ├── Message Service → stateless; Redis lookup → forward to gateway or queue in Cassandra if offline
+│   ├── Cassandra → partition by chat_id, cluster by message_id TIMEUUID DESC; 100B msgs/day = 20TB/day; 7-day = 140TB
+│   └── Snowflake message IDs → 41-bit timestamp + 10-bit machine + 12-bit sequence; sortable; monotonic per conversation
+├── Data Model
+│   ├── messages → Cassandra (chat_id BIGINT, message_id TIMEUUID, sender_id BIGINT, content TEXT, status TINYINT, PRIMARY KEY (chat_id, message_id DESC))
+│   └── conversations → PostgreSQL (conversation_id, type ENUM[1:1, GROUP], participants[], created_at, last_message_id)
+├── APIs
+│   ├── WS /connect → upgrade HTTP; register presence in Redis; subscribe to message events
+│   ├── WS send → {recipient_id, message_id, encrypted_payload, chat_id} → ACK {SENT}
+│   └── GET /messages/{chat_id}?after={message_id} → [{message_id, sender_id, content, status}] paginated
+├── Critical Trade-offs
+│   ├── Fan-out on write vs read → fan-out on write for groups ≤ 256 members (WhatsApp limit); each member gets inbox write
+│   ├── Cassandra vs PostgreSQL → Cassandra for messages; write-heavy time-series; no joins; partition by chat_id = fast inbox
+│   └── E2EE → Signal Protocol Double Ratchet; server stores only encrypted blobs; keys on device; server blind to content
+├── Failure Scenarios
+│   ├── Gateway crash → heartbeat TTL expires; user goes offline in Redis; messages queue in Cassandra; client reconnects + fetches
+│   ├── Redis split-brain → brief stale routing; delivery attempt fails; fallback to offline path (Cassandra + FCM push notification)
+│   └── Message duplication on retry → TIMEUUID as idempotency key; Cassandra INSERT IF NOT EXISTS; client deduplicates by message_id
+└── Interview Angles
+    ├── Meta → "Design WhatsApp" → WebSocket gateways + Redis presence routing + Cassandra offline = complete answer
+    ├── Telegram → "How do you handle 256-member group messages?" → fan-out on write to each member's Cassandra inbox via Kafka workers
+    └── Follow-up → "Exactly-once delivery?" → at-least-once in practice; client-side Bloom filter of seen message_ids for dedup before render
+```
+
+---
+
 ## Problem Statement
 
 Design a one-on-one and group chat application like WhatsApp.

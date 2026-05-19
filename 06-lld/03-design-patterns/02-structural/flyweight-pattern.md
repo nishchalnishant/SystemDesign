@@ -8,6 +8,48 @@ Try to reason through the memory math before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Flyweight Pattern]
+├── Problem It Solves
+│   ├── 1M Tree objects × 50KB texture = 50GB memory
+│   ├── Most data (type, texture, color) is shared across trees
+│   └── Only position (x, y) differs per tree instance
+├── Core Structure
+│   ├── Intrinsic state (TreeType): type, texture, color — shared, immutable
+│   ├── Extrinsic state (Tree): x, y — per-instance, passed at call time
+│   ├── TreeFactory: cache of TreeType objects by type name
+│   └── Client: creates Tree(x, y, factory.getTreeType("Oak"))
+├── Memory Math
+│   ├── Without Flyweight: 1M × 50KB = 50GB
+│   ├── With Flyweight: 3 TreeType objects × 50KB = 150KB + 1M × (8 bytes x,y) = ~8MB
+│   └── Savings: ~99.98% memory reduction
+├── TreeFactory (Registry)
+│   ├── Map<String, TreeType> cache
+│   ├── getTreeType(name): return cached or create and cache new
+│   └── Client never calls new TreeType() directly
+├── Analogy
+│   ├── Google Maps: one icon image for each POI type (hotel, restaurant)
+│   ├── Position is extrinsic; icon texture is intrinsic flyweight
+│   └── Uber: one car icon shared across thousands of driver pins on map
+├── Real-World Java
+│   ├── String Pool: identical literals share same String object
+│   ├── Integer.valueOf(-128 to 127): cached, not re-created
+│   └── Character cache, Boolean.TRUE/FALSE singletons
+├── When to Use
+│   ├── Large number of fine-grained objects with shared state
+│   ├── Memory is the bottleneck (game objects, map pins, font glyphs)
+│   └── Intrinsic and extrinsic state can be clearly separated
+├── When NOT to Use
+│   ├── Object count is small — premature optimization
+│   └── State cannot be cleanly split into intrinsic/extrinsic
+└── Interview Angles
+    ├── What is the difference between intrinsic and extrinsic state?
+    ├── How does Java String Pool implement Flyweight?
+    └── How do you prevent cache growth from becoming a memory leak?
+```
+
 ## Problem Without the Pattern
 
 ```java

@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+LLM Chat System (ChatGPT-like)
+├── Problem Space
+│   ├── Scale → 10M DAU, 1M concurrent conversations, 100K tokens/sec throughput across GPU fleet
+│   └── Core challenge → GPU is 1000x more expensive than CPU; KV-cache reuse is the key to cost and latency
+├── Functional Requirements
+│   ├── Multi-turn conversation (context preserved across messages)
+│   ├── Token streaming to client (< 200ms time-to-first-token)
+│   ├── Conversation history persistence and search
+│   └── Multiple model sizes (GPT-4-turbo vs GPT-3.5 speed/cost tradeoff)
+├── Non-Functional Requirements
+│   ├── Latency → TTFT (time to first token) < 200ms; token generation > 20 tokens/sec
+│   ├── Availability → 99.9%; model server restart acceptable if conversation resumes
+│   └── Consistency → conversation history strongly consistent; model weights eventually consistent across replicas
+├── High-Level Architecture
+│   ├── API gateway → auth, rate limiting (RPM/TPM per user tier), routes to inference cluster
+│   ├── Inference cluster → NVIDIA A100/H100 GPUs; vLLM or TensorRT-LLM for batching
+│   ├── KV-cache server → GPU VRAM holds key-value attention cache for active conversations; reduces TTFT by 10x
+│   ├── Conversation DB → PostgreSQL for message history; partitioned by user_id
+│   ├── Streaming layer → Server-Sent Events (SSE) from inference node to client; token-by-token
+│   └── Context manager → truncates conversation to fit context window (128K tokens); sliding window or summarization
+├── Key Design Decisions
+│   ├── Continuous batching (vLLM) → batch multiple requests on same GPU; reduces cost by 5-10x vs sequential
+│   ├── KV-cache → caches attention K/V tensors for prompt prefix; prefix caching hits when system prompt is reused
+│   ├── Speculative decoding → draft model generates N tokens; target model verifies in parallel; 2-3x speedup
+│   └── Model routing → small requests (short context) → Haiku; complex requests → Opus; reduces GPU cost 60%
+├── Scale & Bottlenecks
+│   ├── GPU memory → 128K context × 80 layers × 8192 dim × 2 bytes = ~10GB KV-cache per conversation; limit concurrency
+│   └── Token throughput → 1 A100 = ~2000 tokens/sec at batch size 32; 100K tokens/sec needs 50 A100s
+├── Failure Modes
+│   ├── GPU OOM → context window exceeded; truncate oldest messages; return 413 with retry hint
+│   └── Inference node crash → conversation replayed from DB; KV-cache cold; TTFT increases for one turn
+└── Interview Angles
+    ├── KV-cache → what is it, why does it matter, how does prefix caching work?
+    ├── Continuous batching → how does vLLM batch variable-length requests without padding waste?
+    └── Follow-up: how do you serve 1M concurrent conversations with limited GPU VRAM?
+```
+
+---
+
 ## Problem Statement
 
 Design a production LLM chat service that:

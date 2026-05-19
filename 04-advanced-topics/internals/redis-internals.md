@@ -13,6 +13,57 @@ Redis stands for **RE**mote **DI**ctionary **S**erver. It is an open-source, in-
 
 ---
 
+## File Mindmap
+
+```
+Redis Internals
+├── Why It Exists
+│   ├── Problem → database reads for hot data are too slow (milliseconds); need microsecond response
+│   └── Physical limit → RAM access ~100ns vs SSD ~100μs; Redis exploits this for sub-millisecond lookups
+├── Core Data Structures
+│   ├── String → GET/SET/INCR; cache, counter, idempotency key; O(1)
+│   ├── Hash → HGET/HSET; user session object, partial field updates; O(1) per field
+│   ├── List → LPUSH/RPOP/LRANGE; task queue, recent items; O(1) push/pop
+│   ├── Set → SADD/SMEMBERS/SINTER; unique visitors, tag systems; O(1) add/check
+│   ├── Sorted Set → ZADD/ZRANGE/ZRANGEBYSCORE; leaderboards, sliding window rate limiter; O(log N)
+│   │   └── Internals: Skip List (probabilistic linked list) for O(log N) rank queries
+│   └── Streams → XADD/XREADGROUP/XACK/XCLAIM; durable message log with consumer groups
+├── Rate Limiting Patterns
+│   ├── Fixed Window → INCR counter per minute key; EXPIRE TTL=60s; fast but burst at boundary
+│   └── Sliding Window → ZADD timestamp as score; ZREMRANGEBYSCORE removes old; ZCARD = current count
+├── Caching Patterns
+│   ├── Cache-aside (lazy loading) → miss: fetch DB → SET with TTL → return; cache only hot data
+│   ├── Write-through → write to cache and DB simultaneously; consistent, double write overhead
+│   └── Write-behind → write cache; async flush to DB; fastest writes, risk data loss on crash
+├── Pub/Sub vs Streams
+│   ├── Pub/Sub → fire-and-forget; no persistence; offline subscriber misses messages; use for live notifications
+│   └── Streams → persistent log; XREADGROUP = consumer groups; XACK = ack; XCLAIM = reassign failed; use for reliable messaging
+├── Persistence
+│   ├── RDB (Redis Database Backup)
+│   │   ├── Periodic fork → child process writes snapshot to disk; low I/O overhead
+│   │   └── Risk: data loss between snapshots (minutes); faster restart than AOF
+│   └── AOF (Append-Only File)
+│       ├── Log every write command; fsync options: always / everysec / no
+│       └── everysec → lose at most 1 second of data; recommended for durability
+├── Redis Cluster
+│   ├── 16,384 hash slots → CRC16(key) % 16384 → assign slot to node
+│   ├── MOVED redirection → client sent to wrong node → redirect to correct shard
+│   ├── Minimum 3 primaries (for quorum); each primary has 1+ replicas
+│   └── Hot key problem → one slot overloaded; solution: key hash tags {userId}.suffix for co-location or client-side sharding
+├── Single-Threaded Event Loop
+│   ├── All commands execute serially → atomicity guaranteed for individual operations
+│   ├── MULTI/EXEC → transaction block; no rollback on error; WATCH for optimistic locking
+│   └── I/O threads (Redis 6+) → multi-threaded I/O, single-threaded command processing
+├── Trade-offs
+│   ├── Pro: sub-millisecond latency; rich data structures; atomic operations
+│   ├── Con: data must fit in RAM; persistence adds write latency
+│   └── Con: Redis Cluster complicates multi-key operations (keys must share hash slot)
+└── Interview Angles
+    ├── "Design a rate limiter" → sliding window with Sorted Set (ZADD + ZREMRANGEBYSCORE + ZCARD)
+    ├── "How does Redis persist data?" → RDB for snapshots, AOF for durability; use both in production
+    └── Follow-up: Redis vs Kafka for messaging → Redis Streams for low-latency; Kafka for replay + fan-out at scale
+```
+
 ## 1. Core Data Structures
 
 The index cards come in different formats. Choosing the right format is the most important Redis decision you make in a system design interview.

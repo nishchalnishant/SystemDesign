@@ -8,6 +8,40 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Command Pattern]
+├── Core Concept
+│   ├── What → Encapsulate a request as an object with execute() and undo()
+│   └── Why → Enables undo/redo, macro commands, request queuing, and logging
+├── Key Components
+│   ├── Command interface → execute(); undo()
+│   ├── Concrete Commands → LightOnCommand, FanOffCommand (hold receiver + state)
+│   ├── Receiver → Light, Fan — actual business logic lives here
+│   ├── Invoker → RemoteControl — stores command, calls execute()
+│   └── Command history stack → for undo/redo
+├── When to Use
+│   ├── ✓ Need undo/redo functionality (text editor, drawing app)
+│   ├── ✓ Queue or schedule operations (job queue, task scheduler)
+│   └── ✓ Macro commands: one button triggers a sequence of actions
+├── When NOT to Use
+│   ├── ✗ Simple one-time invocations with no need for undo or queuing
+│   └── ✗ Only one type of command — direct method call is simpler
+├── Trade-offs
+│   ├── Pro: Decouples invoker from receiver; commands are first-class objects
+│   └── Con: Class proliferation — one Command class per operation
+├── Real-World Examples
+│   ├── GUI toolbars → each button is a Command; undo stack holds history
+│   └── Database transactions → each SQL operation wrapped as a Command with rollback
+└── Interview Angles
+    ├── Undo → store commands on a stack; call undo() in reverse order
+    ├── Macro → MacroCommand holds List<Command>; execute() calls all in order
+    └── Code challenge: implement text editor insert/delete with undo history
+```
+
+---
+
 ## Problem Without the Pattern
 
 ```java

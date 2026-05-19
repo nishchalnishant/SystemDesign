@@ -4,6 +4,58 @@
 
 ---
 
+## File Mindmap
+
+```
+Global Distribution & Multi-Region Architecture
+├── Why It Exists
+│   ├── Problem → US-EAST only: London p99=180ms, Tokyo=280ms; physics minimum NY→London=68ms
+│   └── Physical limit → speed of light ~200,000 km/s in fiber; latency is irreducible below RTT/2
+├── Three Motivations
+│   ├── Latency → serve users from nearest region (<20ms vs 200ms)
+│   ├── Availability → region failure doesn't take down global service
+│   └── Compliance → GDPR requires EU data stays in EU (data sovereignty)
+├── Active-Active Architecture
+│   ├── All regions accept reads AND writes simultaneously
+│   ├── Conflict resolution required: LWW (last-write-wins by timestamp), CRDT, or Google Spanner TrueTime
+│   ├── CRDTs → G-Counter (increment-only), PN-Counter (inc/dec), OR-Set (add/remove)
+│   └── Trade-off: complex conflict resolution; best for: social feeds, shopping carts, analytics
+├── Active-Passive Architecture
+│   ├── One primary region accepts writes; others are hot standbys
+│   ├── Failover: promote replica → update DNS TTL → redirect traffic (RTO: 1-3 min, RPO: seconds)
+│   └── Trade-off: simpler consistency; reads in passive regions may be stale
+├── Global Load Balancing (4 Layers)
+│   ├── L1 GeoDNS / Anycast → Route 53 latency routing → nearest region
+│   ├── L2 Global LB (Cloudflare / AWS Global Accelerator) → Anycast IP, TCP at edge
+│   ├── L3 Regional LB → ALB/NLB per region
+│   └── L4 Service mesh → Envoy sidecar for inter-service routing within region
+├── Cross-Region Replication
+│   ├── Synchronous → write to all regions before ack; RPO=0, high write latency
+│   └── Asynchronous → ack local, replicate async; low latency, RPO=seconds of potential loss
+├── Consistency Models
+│   ├── Strong → all reads see latest write (Spanner TrueTime, high latency)
+│   ├── Eventual → replicas converge "eventually" (Cassandra, DynamoDB default)
+│   ├── Causal → preserve cause-effect order (writes by same user see their own writes)
+│   └── Session → read-your-own-writes within one client session
+├── GDPR Data Residency
+│   ├── EU user data must not leave EU region
+│   ├── Implementation: regional KMS keys, partition data by user_region at write time
+│   └── Cross-region analytics: anonymize/aggregate before export
+├── Failover Runbook
+│   ├── Step 1: health check detects primary down → alert fires
+│   ├── Step 2: verify it's not a monitoring false positive
+│   ├── Step 3: promote replica, update Route 53 record (TTL pre-lowered to 60s)
+│   └── Step 4: verify traffic routing, run smoke tests, page on-call
+├── Trade-offs
+│   ├── Pro: p99 latency drops 5-10× with regional deployment
+│   ├── Con: cross-region replication adds cost (~$0.02/GB inter-region transfer on AWS)
+│   └── Con: Active-Active conflict resolution is hard to implement correctly
+└── Interview Angles
+    ├── "How do you handle a full region failure?" → Active-Passive failover runbook
+    ├── "How do you comply with GDPR?" → regional data partitioning + KMS
+    └── Follow-up: split-brain in Active-Active → CRDTs or Spanner-style external time
+```
+
 ## 1. Why Multi-Region?
 
 **Question**: Your entire infrastructure runs in US-EAST. Your p99 latency for users in London is 180ms. Physics says the round-trip between New York and London is at minimum 68ms (speed of light, ~5,500km each way). You're already at 2.6× the physical minimum. A user in Tokyo sees 280ms. Nothing in your code is wrong — the problem is geography. What do you do?

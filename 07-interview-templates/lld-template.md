@@ -14,6 +14,47 @@ The failure mode is jumping to code before you have a class diagram. Build top-d
 
 ---
 
+## Template Mindmap
+
+```
+LLD Interview Framework (45-60 min)
+├── Core Problem
+│   └── Translate a real-world problem into a clean, extensible object model with code
+├── Phase 1 — Requirements (0-5 min)
+│   ├── Actors → who uses the system (User, Admin, Driver, etc.)
+│   ├── Core features → 3-5 primary use cases only
+│   └── Constraints → concurrency, persistence, throughput expectations
+├── Phase 2 — Use Cases (5-10 min)
+│   ├── Primary flows → happy path for each core feature
+│   └── Edge cases → concurrent access, invalid inputs, resource limits
+├── Phase 3 — Class Identification (10-15 min)
+│   ├── Nouns → candidate classes (Order, User, Payment, Seat)
+│   ├── Verbs → candidate methods (reserve(), cancel(), process())
+│   └── Adjectives → candidate attributes or enums (OrderStatus, SeatType)
+├── Phase 4 — Class Diagram (15-25 min)
+│   ├── Relationships: inheritance, composition, aggregation, dependency
+│   ├── Interfaces → define contracts before implementations
+│   └── Attributes + method signatures per class
+├── Phase 5 — Design Patterns (25-35 min)
+│   ├── Factory → object creation without exposing instantiation logic
+│   ├── Strategy → interchangeable algorithms (pricing, discount, routing)
+│   ├── Observer → event-driven updates (notification, audit log)
+│   ├── Singleton → shared resource (DB connection pool, config)
+│   └── Decorator → layered behavior (logging, rate limiting, auth)
+├── Phase 6 — Core Code (35-55 min)
+│   ├── Code the most complex class or method in full
+│   ├── Handle concurrency if relevant (synchronized, locks, atomic ops)
+│   └── Show null checks, boundary conditions, error paths
+├── When to Use
+│   └── ✓ "Design the classes for X" or "write the code for Y" style questions
+└── Interview Angles
+    ├── "Why did you use Strategy here?" → justify each pattern by the problem it solves
+    ├── "How do you handle concurrent bookings?" → locking strategy, optimistic vs pessimistic
+    └── "How would you add X feature?" → show extensibility via open/closed principle
+```
+
+---
+
 ## Interview Flow Timeline
 
 | Phase | Time | Activity |

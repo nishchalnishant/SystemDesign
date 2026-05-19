@@ -4,6 +4,49 @@
 
 ---
 
+## Pattern Mindmap
+
+```
+CQRS + Event Sourcing
+├── Core Problem
+│   └── Single model can't be optimal for both writes (normalized) and reads (denormalized)
+├── Key Components
+│   ├── Command Side → validates, enforces business rules, writes to event store
+│   ├── Query Side → read-optimized projections, can use different DB per read model
+│   ├── Event Store → append-only log; source of truth for all state changes
+│   └── Projections → derived read models rebuilt by replaying events
+├── CQRS Alone
+│   ├── Separate read/write models at application layer
+│   ├── Write DB stays normalized; read DB is denormalized per query pattern
+│   └── Read model updated async from write events (eventual consistency)
+├── Event Sourcing Alone
+│   ├── Store events, not current state — reconstruct state by replaying event log
+│   ├── Full audit trail: every state transition is captured and replayable
+│   └── Snapshots avoid replaying entire history on large aggregates
+├── When to Use
+│   ├── ✓ Read/write ratio heavily skewed (50K reads vs 5K writes/sec)
+│   ├── ✓ Need complete audit trail (finance, healthcare, compliance)
+│   └── ✓ Multiple read projections with different shapes from one write model
+├── When NOT to Use
+│   ├── ✗ Simple CRUD apps — overhead of separate models exceeds benefit
+│   └── ✗ Strong read-after-write consistency required — async sync adds lag
+├── Trade-offs
+│   ├── Pro: Independent scaling of read and write paths
+│   ├── Pro: Event log enables time-travel debugging and replay
+│   ├── Con: Eventual consistency between write and read models
+│   └── Con: Event schema evolution is hard — old events must still be replayable
+├── Real-World Usage
+│   ├── Axon Framework → Java CQRS/ES framework used in banking systems
+│   ├── Microsoft → Azure Event Grid + Cosmos DB projections for read models
+│   └── LinkedIn → feed as projection rebuilt from engagement events
+└── Interview Angles
+    ├── "How do reads stay consistent?" → eventual consistency, explain async projection
+    ├── "What if projection breaks?" → replay events to rebuild from event store
+    └── "When NOT to use CQRS?" → simple domains, strong consistency needs
+```
+
+---
+
 ## Part 1: CQRS (Command Query Responsibility Segregation)
 
 ### What Breaks Without CQRS?

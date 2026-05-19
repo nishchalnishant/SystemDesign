@@ -20,6 +20,44 @@ Write the event into your own database — the same database transaction as the 
 
 ---
 
+## Pattern Mindmap
+
+```
+Outbox Pattern
+├── Core Problem
+│   └── Dual-write: DB commit and message publish cannot be atomic across two systems
+├── Key Components
+│   ├── Outbox Table → same DB as business record; stores pending events transactionally
+│   ├── Local ACID Transaction → writes business record + outbox row atomically
+│   ├── Relay Process → reads outbox, publishes to broker (Kafka/SQS/RabbitMQ)
+│   └── Idempotent Consumer → handles duplicate events on retry without side effects
+├── Two Relay Approaches
+│   ├── CDC (Debezium) → tails DB write-ahead log, low latency, no DB polling load
+│   └── Polling Relay → SELECT unpublished rows, publish, mark done — simpler but adds DB load
+├── When to Use
+│   ├── ✓ Service must write to DB AND publish event in same logical operation
+│   ├── ✓ At-least-once delivery guarantee required for downstream consumers
+│   └── ✓ Cannot afford to lose events on broker downtime or network partition
+├── When NOT to Use
+│   ├── ✗ At-most-once delivery acceptable (fire-and-forget notifications)
+│   └── ✗ DB does not support transactions (some NoSQL stores)
+├── Trade-offs
+│   ├── Pro: Exactly-one write + durable event; no lost messages on broker failure
+│   ├── Pro: Retry is safe — event persisted in DB before any publish attempt
+│   ├── Con: At-least-once delivery — consumers must be idempotent
+│   └── Con: Additional outbox table + relay process to operate
+├── Real-World Usage
+│   ├── Debezium + Kafka → standard CDC-based outbox for Postgres/MySQL microservices
+│   ├── Eventuate Tram → framework wrapping outbox pattern for Java services
+│   └── Stripe → transactional event log ensures webhook delivery after payment write
+└── Interview Angles
+    ├── "How do you guarantee event delivery?" → outbox + relay, describe CDC vs polling
+    ├── "What if relay crashes mid-publish?" → idempotent consumer handles duplicates
+    └── "Why not wrap DB + Kafka in one transaction?" → no shared coordinator; 2PC problem
+```
+
+---
+
 ## The Problem
 
 You need to do two things:

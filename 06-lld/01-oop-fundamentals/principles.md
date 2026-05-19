@@ -4,6 +4,46 @@ A comprehensive reference covering all key OOP concepts with Java examples, real
 
 ---
 
+## Topic Mindmap
+
+```
+[OOP Principles — Java Reference]
+├── Class and Object
+│   ├── Class: blueprint defining fields + methods
+│   ├── Object: runtime instance of a class
+│   └── new keyword allocates memory and calls constructor
+├── Encapsulation
+│   ├── private fields + public getters/setters
+│   ├── Only expose what external callers need
+│   └── Analogy: ATM hides cash mechanics behind deposit/withdraw
+├── Abstraction
+│   ├── Abstract class: partial implementation, forces subclass to complete
+│   ├── Interface: pure contract, no state
+│   └── Analogy: TV remote — you press buttons, not circuit logic
+├── Inheritance
+│   ├── Single: one parent (Animal → Dog)
+│   ├── Multilevel: chain (Animal → Mammal → Dog)
+│   ├── Hierarchical: one parent, many children (Shape → Circle, Square)
+│   └── Java has no multiple class inheritance — use interfaces instead
+├── Polymorphism
+│   ├── Overriding: subclass redefines parent method (runtime dispatch)
+│   ├── Overloading: same name, different parameter signatures (compile-time)
+│   └── Dynamic dispatch enables open/closed extension
+├── IS-A vs HAS-A
+│   ├── IS-A: inheritance — Dog IS-A Animal
+│   ├── HAS-A: composition — Car HAS-A Engine
+│   └── Prefer HAS-A for flexibility and testability
+├── Design Principles
+│   ├── DRY: extract repeated logic — one change propagates everywhere
+│   ├── KISS: simplest solution that works; complexity is a liability
+│   ├── YAGNI: don't add abstractions for hypothetical future use
+│   └── Law of Demeter: a.b.c.doX() is a violation — only talk to neighbors
+└── Static vs Instance
+    ├── static: belongs to the class, shared across all instances
+    ├── instance: belongs to an object, per-object state
+    └── static methods cannot access instance fields
+```
+
 ## Key OOP Concepts Covered
 
 1. Class and Object

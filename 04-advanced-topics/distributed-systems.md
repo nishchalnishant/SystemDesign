@@ -15,6 +15,56 @@
 
 ---
 
+## File Mindmap
+
+```
+Distributed Systems - Advanced Topics
+├── Why It Exists
+│   ├── Problem → single server, traffic doubles every 6 months → 160,000 req/sec in 2 years
+│   └── Physical limit → $500k machine handles ~500,000 req/sec, SPOF; distribution is the only exit
+├── Consistency Models (weakest → strongest)
+│   ├── Eventual → replicas converge "eventually"; Cassandra / DynamoDB default
+│   ├── Read-your-writes → client sees its own writes; session consistency
+│   ├── Causal → preserve happens-before ordering; vector clocks enforce this
+│   ├── Sequential → all nodes see same order of operations
+│   └── Strong (Linearizable) → every read sees most recent write; Spanner / etcd
+├── Consensus Protocols
+│   ├── Raft (understandable Paxos)
+│   │   ├── Leader election → candidate wins if quorum grants vote for highest term
+│   │   ├── Log replication → leader appends, sends AppendEntries, commits when quorum acks
+│   │   └── Java state machine: FOLLOWER → CANDIDATE → LEADER
+│   ├── Paxos
+│   │   ├── Phase 1 (Prepare) → proposer gets promise from quorum
+│   │   ├── Phase 2 (Accept) → proposer sends value, acceptors accept
+│   │   └── Multi-Paxos → leader persists across rounds for efficiency
+│   └── ZAB (ZooKeeper Atomic Broadcast) → discovery + broadcast; ZXID epoch:counter
+├── Distributed Transactions
+│   ├── 2PC → coordinator sends Prepare → all vote yes → commit; blocking on coordinator crash
+│   ├── Saga (Choreography) → each service publishes event, next service reacts; decentralized
+│   ├── Saga (Orchestration) → central orchestrator sends commands; easier to reason about
+│   └── Outbox Pattern → write event to same DB table, CDC relay publishes to Kafka atomically
+├── Time and Ordering
+│   ├── Lamport Clocks → logical counter; send: increment; receive: max(local,received)+1
+│   ├── Vector Clocks → per-node counter array; detects concurrent writes (Java HashMap impl)
+│   └── TrueTime (Google Spanner) → GPS+atomic clocks; commit wait until uncertainty interval passes; enables external consistency
+├── Conflict Resolution
+│   ├── LWW (Last-Write-Wins) → highest timestamp wins; risk of clock skew data loss
+│   ├── Multi-value (Dynamo) → return all conflicts, let client merge
+│   └── CRDTs → mathematically merge-safe; G-Counter: sum all node counts; PN-Counter; OR-Set
+├── Distributed Coordination (ZooKeeper)
+│   ├── Ephemeral sequential znodes → leader election (smallest znode = leader)
+│   ├── Watches → one-time triggers on znode change → re-register after fire
+│   └── Ensemble quorum → odd N; (N/2)+1 required for writes
+├── Trade-offs
+│   ├── CAP → Partition-tolerant systems choose CP (Zookeeper) or AP (Cassandra)
+│   ├── PACELC → even without partition: latency vs consistency trade-off
+│   └── Strong consistency → higher latency (quorum round-trips add 1-5ms per hop)
+└── Interview Angles
+    ├── "What's the difference between Raft and Paxos?" → Raft designed for understandability; same safety guarantees
+    ├── "How do you handle distributed transactions?" → Saga + compensating transactions, not 2PC
+    └── Follow-up: how does Saga handle partial failure → dead letter queue + compensating event
+```
+
 ## Introduction to Distributed Systems
 
 **Question**: You have one server handling 10,000 req/sec. Traffic doubles every 6 months. In 2 years that's 160,000 req/sec. The fastest single server costs $500k, handles ~500,000 req/sec, and if it dies your entire product is down for hours. What is the only exit?

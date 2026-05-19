@@ -7,6 +7,49 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Hotel/Flight Booking System
+├── Problem Constraints
+│   ├── Scale → 50M DAU, 100K hotels/flights, 500K bookings/day = ~6 bookings/sec avg; 100/sec peak
+│   ├── Latency target → search < 200ms; booking confirmation < 2s
+│   └── Core hardness → preventing double-booking under concurrent reservations without sacrificing availability
+├── Architecture Derivation
+│   ├── Step 1 → Naive SELECT then INSERT → two users check availability simultaneously; both see 1 room; both book
+│   ├── Step 2 → DB row lock (SELECT FOR UPDATE) → serializes concurrent bookings; deadlock risk at scale
+│   ├── Step 3 → Atomic conditional UPDATE → UPDATE rooms SET status='BOOKED' WHERE id=? AND status='AVAILABLE'; check rows_affected
+│   └── Step 4 → PENDING state (15-min TTL) → reserve first, then process payment, then CONFIRM; expired reservations auto-release
+├── Core Components
+│   ├── Search Service → Elasticsearch for availability + price filtering; PostgreSQL source of truth
+│   ├── Inventory Service → room/seat availability; PostgreSQL with row-level locks; Redis cache for read-heavy availability display
+│   ├── Reservation Service → PENDING → CONFIRMED/EXPIRED state machine; idempotency key per checkout session
+│   ├── Payment Service → async to external gateway; idempotency key = reservation_id; saga compensation on failure
+│   └── Notification Service → Kafka → email/SMS on CONFIRMED or EXPIRED
+├── Data Model
+│   ├── rooms/seats → (id PK, property_id, date, status ENUM[AVAILABLE,PENDING,BOOKED], reservation_id, expires_at)
+│   └── reservations → (id PK, user_id, room_id, check_in, check_out, status, payment_id, idempotency_key, created_at)
+├── APIs
+│   ├── GET /search?location=&dates=&guests= → [{property, price, availability}] paginated
+│   ├── POST /reserve → {room_id, check_in, check_out, idempotency_key} → {reservation_id, expires_at}
+│   ├── POST /confirm → {reservation_id, payment_token} → {booking_id, confirmation_number}
+│   └── DELETE /reserve/{reservation_id} → release PENDING reservation
+├── Critical Trade-offs
+│   ├── Optimistic vs Pessimistic locking → Pessimistic (SELECT FOR UPDATE) for low-inventory seats; Optimistic (version column) for hotels
+│   ├── PENDING TTL → 15 min chosen; long enough for payment; short enough to not block inventory for hours
+│   └── Overbooking → airlines intentionally overbook 5-10%; configurable overbook_limit per flight; compensation flow on full flight
+├── Failure Scenarios
+│   ├── Payment fails after PENDING → reservation expires via background sweeper; room returns to AVAILABLE
+│   ├── Confirmation service crash → idempotency key prevents duplicate booking on retry; resume from PENDING state
+│   └── Redis cache stale availability → always re-validate against PostgreSQL before reservation; cache is display-only
+└── Interview Angles
+    ├── Booking.com → "How do you prevent double-booking at Black Friday scale?" → atomic conditional UPDATE + PENDING state
+    ├── Airbnb → "What if a host cancels after booking?" → compensating saga: refund + notify + re-search alternatives
+    └── Follow-up → "How do you handle overbooking?" → overbook_limit column; oversold state triggers upgrade or compensation flow
+```
+
+---
+
 ## Problem Statement
 
 Design a hotel booking system that:

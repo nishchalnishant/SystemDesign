@@ -8,6 +8,46 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[State Pattern]
+├── Problem It Solves
+│   ├── VendingMachine: 4 states × 3 actions = 12 if/else branches
+│   ├── Add new state: must touch every method to add new branch
+│   └── Complexity grows as O(S × A) — unmanageable
+├── Core Structure
+│   ├── State interface: insertCoin(), selectProduct(), dispense()
+│   ├── Concrete states: IdleState, HasCoinState, DispensingState, OutOfStockState
+│   ├── Context: VendingMachine holds current State reference
+│   ├── Context delegates: insertCoin() calls currentState.insertCoin()
+│   └── States transition context: state.insertCoin() calls context.setState(new HasCoinState())
+├── Transition Ownership
+│   ├── State objects own their own transitions
+│   ├── IdleState.insertCoin() → context.setState(new HasCoinState())
+│   ├── HasCoinState.dispense() → context.setState(new IdleState())
+│   └── Each state only handles its own valid transitions — invalid actions throw
+├── Analogy
+│   ├── Traffic light: each color knows when to transition to the next color
+│   └── The light (context) delegates behavior to the current signal (state)
+├── When to Use
+│   ├── Object behavior depends heavily on its current state
+│   ├── Large switch/if-else in methods based on state field
+│   └── State transitions are complex or need to be self-contained
+├── State vs Strategy
+│   ├── Strategy: algorithms are interchangeable; client chooses
+│   ├── State: transitions are internal — state decides next state
+│   └── State pattern: context changes state itself; Strategy: client swaps strategy
+├── Trade-offs
+│   ├── More classes (one per state), but each is small and focused
+│   ├── Adding a new state: one new class + update transitions in neighboring states
+│   └── State explosion if states are too fine-grained
+└── Interview Angles
+    ├── How is State different from Strategy?
+    ├── Who owns the transition logic — context or state?
+    └── How do you model hierarchical states (nested states)?
+```
+
 ## Problem Without the Pattern
 
 ```java

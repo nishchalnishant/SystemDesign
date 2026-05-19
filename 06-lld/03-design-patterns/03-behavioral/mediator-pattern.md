@@ -8,6 +8,39 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Mediator Pattern]
+├── Core Concept
+│   ├── What → Centralize communication between components through a mediator object
+│   └── Why → Reduces N×(N-1) peer-to-peer couplings to N mediator couplings
+├── Key Components
+│   ├── Mediator interface → notify(Component sender, String event)
+│   ├── Concrete Mediator → DocumentEditor — wires Alice, Bob, Charlie together
+│   ├── Colleague → User/Component — calls mediator.notify() instead of peers directly
+│   └── Mediator routes → receives event, decides who else to update
+├── When to Use
+│   ├── ✓ Many components communicate in complex, many-to-many patterns
+│   ├── ✓ Changing collaboration logic without touching individual components
+│   └── ✓ Chat rooms, air traffic control, UI component coordination
+├── When NOT to Use
+│   ├── ✗ Few components — mediator adds needless indirection
+│   └── ✗ Communication is one-directional — Observer is simpler
+├── Trade-offs
+│   ├── Pro: Decouples colleagues; mediator is the only place to change routing
+│   └── Con: Mediator can become a God Object — complex, hard to maintain
+├── Real-World Examples
+│   ├── Chat room → ChatRoom mediates messages between User objects
+│   └── Air Traffic Control → ATC mediates between Plane objects; planes never talk directly
+└── Interview Angles
+    ├── vs Observer → Observer is one-to-many (subject→subscribers); Mediator is many-to-many
+    ├── God Object risk → split mediator by domain if it grows too large
+    └── Code challenge: implement a chat room where users join/leave and broadcast messages
+```
+
+---
+
 ## Problem Without the Pattern
 
 ```java

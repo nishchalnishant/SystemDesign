@@ -13,6 +13,64 @@ Apache Cassandra is a highly scalable, distributed NoSQL database designed for h
 
 ---
 
+## File Mindmap
+
+```
+Cassandra Internals
+├── Why It Exists
+│   ├── Problem → need petabyte-scale writes with no single point of failure; relational DBs can't scale writes horizontally
+│   └── Physical limit → single-node write throughput bounded by disk I/O; distributed writes require no master coordination
+├── Ring Architecture
+│   ├── No master node → every node is equal (peer-to-peer); any node accepts reads and writes
+│   ├── Consistent hashing → partition key hashed → token assigned to node on ring
+│   ├── Virtual nodes (vnodes=256) → each physical node owns 256 ring positions; even distribution
+│   └── Gossip protocol → nodes exchange state every second; detect failures within seconds
+├── Data Model
+│   ├── Keyspace → namespace with replication config (like a database)
+│   ├── Table → has primary key = partition key + clustering columns
+│   ├── Partition key → determines which node(s) own the data (hash of this key)
+│   ├── Clustering columns → ordering within a partition; range queries use these
+│   └── Model-by-query principle → design tables for specific query patterns; denormalize; no joins
+├── Write Path (Why Cassandra Writes Are Fast)
+│   ├── Step 1: Write to Commit Log (sequential disk write; crash durability)
+│   ├── Step 2: Write to MemTable (in-memory sorted structure)
+│   ├── Step 3: Return success to client
+│   ├── Step 4: MemTable flushes to SSTable when full (async)
+│   └── Key insight: no read-before-write; no locking; sequential writes only
+├── Read Path
+│   ├── Step 1: Bloom Filter → probabilistic check: "is this key definitely NOT in this SSTable?" → skip if absent
+│   ├── Step 2: Partition Summary → in-memory sparse index → narrow byte range in SSTable
+│   ├── Step 3: Partition Index → binary search within SSTable for exact offset
+│   ├── Step 4: Key Cache → cache recent partition offsets; skip steps 2-3 on hit
+│   └── Step 5: Merge results from MemTable + all SSTables (resolve with highest timestamp)
+├── Compaction Strategies
+│   ├── STCS (Size-Tiered) → merge SSTables of similar size; good for write-heavy
+│   ├── LCS (Leveled) → maintain levels; better read performance; more I/O during compaction
+│   └── TWCS (Time-Window) → group SSTables by time window; ideal for time-series (TTL data)
+├── Tunable Consistency (R + W > RF = strong consistency)
+│   ├── Replication Factor (RF) → how many copies of each partition
+│   ├── ONE → fastest; any one replica responds; eventual consistency
+│   ├── QUORUM → (RF/2)+1 replicas must respond; balances speed and consistency
+│   ├── ALL → all replicas must respond; strongest; not partition-tolerant
+│   └── LOCAL_QUORUM → quorum within local DC; used in multi-region deployments
+├── Fault Tolerance Mechanisms
+│   ├── Hinted Handoff → if target node down, coordinator stores hint; delivers when node recovers (3-hour window)
+│   ├── Read Repair → during read, coordinator checks replicas; repairs inconsistency in background
+│   └── Anti-Entropy (Merkle Trees) → periodic full repair; detect and fix diverged data across replicas
+├── Tombstones & Deletes
+│   ├── Deletes write a tombstone marker (not actual deletion)
+│   ├── gc_grace_seconds=10 days → tombstone persists 10 days to ensure all replicas receive it
+│   └── Zombie problem → node down during delete misses tombstone; returns deleted data on recovery; repair fixes this
+├── Trade-offs
+│   ├── Pro: linear write scale, high availability, no SPOF, tunable consistency
+│   ├── Con: no JOINs, no cross-partition transactions, no secondary index efficiency
+│   └── Con: tombstones accumulate → slow reads if gc_grace not managed
+└── Interview Angles
+    ├── "Why choose Cassandra over Postgres?" → write-heavy, high availability, multi-region, no single master
+    ├── "How does Cassandra achieve high write throughput?" → commit log + MemTable (sequential, no read-before-write)
+    └── Follow-up: consistency vs availability trade-off → QUORUM for balanced, LOCAL_QUORUM for multi-region
+```
+
 ## Architecture
 
 ### Ring Architecture & Consistent Hashing

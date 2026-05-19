@@ -4,6 +4,68 @@
 
 ---
 
+## File Mindmap
+
+```
+Caching Layer
+├── Why It Exists
+│   ├── Problem → 1M users, 100K req/s, profiles change weekly; PostgreSQL handles ~10K queries/s; math fails
+│   └── Forces → RAM access ~100ns; DB over network 1–20ms; 10,000–200,000× speed difference
+├── Cache Patterns
+│   ├── Cache-Aside (Lazy Loading)
+│   │   ├── App checks cache → hit: return; miss: query DB → write to cache → return
+│   │   ├── Pros → only cache what's read; cache failure doesn't break app
+│   │   └── Cons → cache miss penalty (2 round trips); stale data possible
+│   ├── Read-Through
+│   │   ├── Cache sits in front of DB; cache fetches from DB on miss automatically
+│   │   ├── Pros → cache always populated on read; app code simpler
+│   │   └── Cons → first read always slow; cache layer must understand data model
+│   ├── Write-Through
+│   │   ├── Every write goes to cache AND DB synchronously
+│   │   ├── Pros → cache always fresh; no stale reads
+│   │   └── Cons → write latency doubled; cache fills with rarely-read data
+│   └── Write-Behind (Write-Back)
+│       ├── Write → cache only; async flush to DB later
+│       ├── Pros → very fast writes; batch DB writes
+│       └── Cons → data loss if cache fails before flush; complex recovery
+├── Eviction Policies
+│   ├── LRU (Least Recently Used) → evict item not accessed longest; good for temporal locality
+│   ├── LFU (Least Frequently Used) → evict item accessed fewest times; good for frequency skew
+│   └── TTL (Time To Live) → evict after fixed time; simplest; controls staleness
+├── Cache Stampede (Thundering Herd)
+│   ├── Scenario → popular key expires; N concurrent requests all miss; all query DB simultaneously
+│   ├── Fix 1 → Single-flighter (mutex) → one request fetches; others wait on same promise
+│   ├── Fix 2 → TTL Jitter → add ±random seconds to TTL; stagger expiry across keys
+│   └── Fix 3 → Pre-warming → background job refreshes key before expiry
+├── Hot Key Problem
+│   ├── Scenario → single key (celebrity tweet) gets millions of req/s; one Redis node saturates
+│   ├── Fix 1 → Key replication → store same value under key_0…key_9; read random suffix
+│   └── Fix 2 → L1 local cache → Caffeine in-process cache in front of Redis; reduce Redis calls
+├── Redis vs Memcached
+│   ├── Redis → data structures (hash, sorted set, list, stream); persistence; pub/sub; Lua scripts
+│   ├── Memcached → simple key-value; multi-threaded; no persistence; pure cache
+│   └── Choose Redis → if you need more than simple get/set; almost always Redis in production
+├── Cache Metrics
+│   ├── Hit rate = hits / (hits + misses); target > 90% for performance benefit
+│   ├── Eviction rate → rising eviction = cache too small or TTL too short
+│   └── Miss penalty → time spent on DB fetch per cache miss; bound by DB latency
+├── Implementation Patterns
+│   ├── Single node → dev; SPOF; not for production
+│   ├── Replicated → primary + replica; read scale + HA; leader failover
+│   ├── Distributed (Redis Cluster) → sharded across N nodes; each holds subset of keys
+│   └── Multi-level → L1 Caffeine (in-process, µs) → L2 Redis (shared, sub-ms) → L3 DB
+├── Trade-offs
+│   ├── Pros → massive latency reduction; DB load offload; enables read scale
+│   └── Cons → stale data; cache invalidation complexity; extra infrastructure; stampede risk
+└── Interview Angles
+    ├── "Which cache pattern do you use?" → cache-aside for most; write-through if consistency critical
+    ├── "How do you handle cache stampede?" → single-flighter + TTL jitter + background refresh
+    ├── "What is your cache invalidation strategy?" → TTL + event-driven invalidation on write
+    └── Follow-up: "How do you handle hot keys in Redis?" → key replication with random suffix; L1 local cache
+```
+
+---
+
 ## 1. Why Caching Exists
 
 **Question**: Your user profile API makes a SELECT on every request. Profiles change once a week. You have 1M active users and 100k req/s. Your PostgreSQL can handle ~10k complex queries/second at acceptable latency. The math doesn't work — what do you do?

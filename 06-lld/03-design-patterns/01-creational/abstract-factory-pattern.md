@@ -8,6 +8,50 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Abstract Factory Pattern]
+├── Problem It Solves
+│   ├── CheckoutService branches on region to create PaymentProcessor + Invoice
+│   ├── Add new region = modify CheckoutService (OCP violation)
+│   └── Products created for India must not mix with US products
+├── Core Structure
+│   ├── Abstract factory interface: RegionFactory
+│   │   ├── createPaymentProcessor() → PaymentProcessor
+│   │   └── createInvoiceGenerator() → InvoiceGenerator
+│   ├── Concrete factories: IndiaFactory, USFactory
+│   ├── Product interfaces: PaymentProcessor, InvoiceGenerator
+│   └── CheckoutService takes RegionFactory — never knows the region
+├── Product Families
+│   ├── IndiaFactory → UPIProcessor + RupeeInvoiceGenerator
+│   ├── USFactory → CreditCardProcessor + DollarInvoiceGenerator
+│   └── Products within a family are guaranteed compatible
+├── Analogy
+│   ├── IKEA (Scandinavian style) vs Ashley (American style) furniture stores
+│   ├── Each store is a factory that produces a compatible family
+│   └── You shop at one store — all pieces match
+├── Factory Method vs Abstract Factory
+│   ├── Factory Method: one product, subclass decides type
+│   ├── Abstract Factory: family of related products, whole factory swapped
+│   └── Abstract Factory uses multiple Factory Methods internally
+├── When to Use
+│   ├── System needs multiple families of related objects
+│   ├── Families must be used together (no cross-region mixing)
+│   └── You want to switch entire product families by config
+├── When NOT to Use
+│   ├── Only one product type to create — Factory Method suffices
+│   └── Product families rarely change — over-engineering
+├── Trade-offs
+│   ├── Adding a new product to the family requires changing all factories
+│   ├── High indirection: concrete types hidden from all callers
+│   └── Excellent for cross-platform UI toolkits, regional configs
+└── Interview Angles
+    ├── How does Abstract Factory enforce product family consistency?
+    ├── When do you choose Abstract Factory over Factory Method?
+    └── What changes when you add a new region?
+```
+
 ## Problem Without the Pattern
 
 The instinct is to branch on region:

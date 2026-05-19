@@ -4,6 +4,44 @@
 
 ---
 
+## Template Mindmap
+
+```
+Capacity Estimation Framework
+├── Core Problem
+│   └── Determine right order of magnitude for scale — drives every architectural decision
+├── Step 1 — Users & Activity
+│   ├── Total users → registered base
+│   ├── DAU (Daily Active Users) → typically 10-20% of total
+│   └── Read/write ratio → e.g., Twitter is 100:1 read-heavy
+├── Step 2 — QPS Calculation
+│   ├── Avg QPS = DAU × requests_per_user / 86,400
+│   └── Peak QPS = Avg QPS × 2-3× (spiky traffic factor)
+├── Step 3 — Storage
+│   ├── Per-object size → text (1 KB), image (300 KB), video (100 MB)
+│   ├── Daily storage = write QPS × object size × 86,400
+│   └── Total = daily storage × retention (years × 365)
+├── Step 4 — Bandwidth
+│   ├── Ingress = write QPS × avg request size
+│   └── Egress = read QPS × avg response size
+├── Step 5 — Memory (Cache)
+│   ├── Hot data = 20% of daily requests serve 80% of traffic (Pareto)
+│   └── Cache size = top 20% objects × object size
+├── Key Constants to Memorize
+│   ├── 1 day = 86,400 seconds (~10^5)
+│   ├── 1 month = 2.5M seconds; 1 year = 31.5M seconds (~3×10^7)
+│   ├── 1 KB = 10^3 B, 1 MB = 10^6 B, 1 GB = 10^9 B, 1 TB = 10^12 B
+│   └── Single server handles ~10K-50K HTTP req/sec (depends on payload)
+├── When to Use
+│   └── ✓ Every HLD interview — do this before drawing any architecture boxes
+└── Interview Angles
+    ├── "How many servers do you need?" → Peak QPS / throughput per server
+    ├── "What's your storage cost?" → total bytes × $/GB (S3 ~$0.023/GB/month)
+    └── "Would you shard the DB?" → yes if storage > 5 TB or write QPS > 10K
+```
+
+---
+
 ## The Right Mindset: The Napkin Sketch
 
 > **Analogy: A napkin sketch at a startup pitch.**

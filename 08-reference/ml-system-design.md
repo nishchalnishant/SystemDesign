@@ -17,6 +17,45 @@ This is why ML systems need:
 
 ---
 
+## Reference Mindmap
+
+```
+ML System Design
+├── Core Problem
+│   └── ML systems add data pipelines, model drift, and retraining to standard system complexity
+├── Feature Store
+│   ├── Centralized repository for pre-computed, reusable features
+│   ├── Offline store → batch features for training (S3 + Parquet / BigQuery)
+│   ├── Online store → low-latency feature lookup at serving time (Redis / DynamoDB)
+│   └── Key benefit → training/serving skew prevention; feature reuse across teams
+├── Training Pipeline
+│   ├── Data ingestion → raw data from warehouse or event streams
+│   ├── Feature engineering → transform raw signals into model inputs
+│   ├── Model training → distributed if needed (Spark MLlib, PyTorch DDP, SageMaker)
+│   └── Evaluation → held-out test set + offline metrics before promotion
+├── Model Serving
+│   ├── Real-time inference → low latency (<100 ms); REST/gRPC endpoint; stateless replicas
+│   ├── Batch inference → high throughput; scheduled job; results written to DB/S3
+│   └── Model registry → versioned model artifacts; promotes candidate → staging → prod
+├── A/B Testing & Experimentation
+│   ├── Traffic splitting → route % of requests to challenger model
+│   ├── Guard-rails → auto-rollback if online metrics degrade beyond threshold
+│   └── Logging → capture request + prediction + outcome for offline analysis
+├── Monitoring
+│   ├── Data drift → input feature distribution shifts from training distribution
+│   ├── Concept drift → relationship between features and label changes over time
+│   └── Triggers → schedule retraining when drift metric exceeds threshold
+├── When to Use Real-Time vs Batch Inference
+│   ├── Real-time → recommendation at request time, fraud detection, search ranking
+│   └── Batch → pre-compute recommendations overnight, risk scoring for all accounts
+└── Interview Angles
+    ├── "How do you prevent training/serving skew?" → shared feature store for both paths
+    ├── "How do you detect model degradation?" → monitor prediction distribution + outcome metrics
+    └── "How do you retrain without downtime?" → blue/green model deployment via registry
+```
+
+---
+
 ## Feature Store
 
 **What is it?**

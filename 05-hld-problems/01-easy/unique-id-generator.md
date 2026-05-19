@@ -7,6 +7,46 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Unique ID Generator
+├── Problem Constraints
+│   ├── Scale → 4096 IDs/ms/node with Snowflake; Twitter peak ~18K tweets/sec
+│   ├── Ordering → IDs must be roughly time-sortable (not strictly sequential across nodes)
+│   └── Core hardness → globally unique + monotonically increasing + no coordination overhead + clock skew safety
+├── Architecture Derivation
+│   ├── Step 1 → UUID v4 → globally unique but random (not sortable), 128 bits (too large for DB index)
+│   ├── Step 2 → DB auto-increment → sequential but single DB = SPOF; bottleneck at high write rates
+│   ├── Step 3 → Ticket server (DB per shard, even/odd increments) → still DB-bound, limited throughput
+│   └── Step 4 → Snowflake: 1+41+10+12 bits → no coordination, 64-bit, sortable, 4096 IDs/ms/node
+├── Core Components
+│   ├── Snowflake ID structure → 1 bit (sign=0) + 41 bits (ms timestamp) + 10 bits (machine ID) + 12 bits (sequence)
+│   ├── ZooKeeper → assigns unique 10-bit machine IDs (0..1023) at node startup; prevents machine ID collision
+│   ├── Sequence counter → per-node per-millisecond counter; resets to 0 each ms; maxes at 4095 (12 bits)
+│   └── Clock skew handler → if current_time < last_time: spin-wait if delta < 5ms; throw exception if > 5ms
+├── Data Model
+│   ├── No persistent store → IDs generated in-memory; epoch = 2010-01-01 (41 bits = 69 years from epoch)
+│   └── Machine registry (ZooKeeper) → node_id (10-bit int) → {hostname, assigned_at, heartbeat_ts}
+├── APIs
+│   ├── GET /id → {id: 7391523847234} (single 64-bit integer)
+│   └── GET /ids?count=N → batch generation; all IDs from same ms bucket or spill to next ms
+├── Critical Trade-offs
+│   ├── Snowflake vs UUID → Snowflake chosen → 64-bit (fits BIGINT), sortable, no coordination per ID
+│   ├── Machine ID assignment → ZooKeeper chosen over static config → dynamic node addition without ops overhead
+│   └── Clock dependency → NTP-synced clocks; monotonic clock prevents backward drift within process
+├── Failure Scenarios
+│   ├── Clock skew forward → IDs still unique but out of order across nodes; acceptable for "roughly sorted"
+│   ├── Clock moves backward → spin-wait or refuse; log alert; prevents duplicate IDs
+│   └── ZooKeeper down → nodes use cached machine ID; no new nodes can join until ZK recovers
+└── Interview Angles
+    ├── Twitter → "Design Snowflake" → recite the 1+41+10+12 bit layout and explain each component
+    ├── Instagram → "How does Instagram generate photo IDs?" → Snowflake-like with shard ID embedded in 13 bits
+    └── Follow-up → "What happens when sequence overflows 4096/ms?" → wait until next millisecond; natural backpressure
+```
+
+---
+
 ## What Breaks Without This System?
 
 An e-commerce platform uses `AUTO_INCREMENT` primary keys in a single PostgreSQL instance. At 50M orders/day it shards the database across 8 nodes — each node's `AUTO_INCREMENT` now produces overlapping IDs. `ORDER_ID=1` exists in 3 different shards pointing to 3 different orders. Joins are broken. Deduplication is broken. Every downstream service that stores an `order_id` is storing an ambiguous value.

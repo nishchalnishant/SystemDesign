@@ -4,6 +4,43 @@
 
 ---
 
+## Reference Mindmap
+
+```
+Cloud Services Cheat Sheet
+├── Core Problem
+│   └── Know which managed service to name in interviews; show cloud fluency without vendor lock-in bias
+├── Compute
+│   ├── VMs → EC2 (AWS) / Compute Engine (GCP) / Azure VMs
+│   ├── Managed Kubernetes → EKS / GKE (most mature) / AKS
+│   ├── Serverless Functions → Lambda / Cloud Functions / Azure Functions
+│   └── Serverless Containers → Fargate / Cloud Run (best DX) / Container Apps
+├── Storage
+│   ├── Object Storage → S3 / GCS / Azure Blob (S3 is the standard reference)
+│   ├── Block Storage → EBS / Persistent Disk / Azure Disk
+│   └── File Storage → EFS / Filestore / Azure Files
+├── Databases
+│   ├── Managed SQL → RDS / Cloud SQL / Azure SQL
+│   ├── Global Distributed SQL → Aurora Global / Spanner (gold standard) / Cosmos DB (SQL API)
+│   ├── Key-Value NoSQL → DynamoDB / Firestore / Cosmos DB
+│   └── In-Memory Cache → ElastiCache (Redis) / Memorystore / Azure Cache for Redis
+├── Messaging
+│   ├── Message Queue → SQS / Cloud Tasks / Azure Service Bus
+│   └── Event Streaming → Kinesis / Pub/Sub / Azure Event Hubs (all Kafka-compatible)
+├── Managed vs Self-Hosted
+│   ├── Use Managed → when ops overhead > engineering cost (most cases at <500 eng org)
+│   └── Use Self-Hosted → when cost at scale exceeds managed price, or need deep config control
+├── When to Use
+│   ├── ✓ "What DB would you use?" → name managed equivalent for the cloud given in prompt
+│   └── ✓ Multi-cloud question → show awareness of feature parity and gaps
+└── Interview Angles
+    ├── "Why S3 over self-hosted storage?" → 11 nines durability, no ops, pay-per-use
+    ├── "When would you use Spanner?" → global strong consistency; accept higher cost + latency
+    └── "Lambda vs Fargate?" → Lambda for event-driven <15 min; Fargate for long-running containers
+```
+
+---
+
 ## Compute
 
 | Category | AWS | GCP | Azure | Notes |

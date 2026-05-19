@@ -5,6 +5,69 @@ Apache ZooKeeper is a distributed coordination service used for maintaining conf
 
 ---
 
+## File Mindmap
+
+```
+ZooKeeper Internals
+├── Why It Exists
+│   ├── Problem → distributed systems need shared configuration and coordination; no reliable single source of truth
+│   └── Forces → coordination via shared DB fails under network partitions; need linearizable, fault-tolerant store
+├── ZAB Protocol (ZooKeeper Atomic Broadcast)
+│   ├── Leader-based → one leader handles all writes; followers replicate
+│   ├── Phase 1 (discovery) → elect leader; followers sync epoch number
+│   ├── Phase 2 (synchronization) → leader syncs followers to latest committed state
+│   ├── Phase 3 (broadcast) → leader proposes txn; quorum acks → leader commits → followers apply
+│   └── Quorum → N/2+1 followers must ack before commit; survives (N-1)/2 node failures
+├── Znodes (Data Nodes)
+│   ├── Hierarchical namespace → /app/config, /app/leader; like a filesystem
+│   ├── Persistent znode → survives client disconnect; exists until explicitly deleted
+│   ├── Ephemeral znode → auto-deleted when creating client session expires; used for leader election
+│   ├── Sequential znode → ZK appends monotonic counter to name; /lock/request-0000000001
+│   └── Data limit → max 1MB per znode; recommended <1KB; not a general-purpose data store
+├── Watches
+│   ├── One-shot listeners → client sets watch on znode; gets notification on change; must re-register
+│   ├── Events → NodeCreated, NodeDeleted, NodeDataChanged, NodeChildrenChanged
+│   ├── Guarantee → notification delivered before any subsequent reads by same client
+│   └── Use case → config hot-reload; leader change detection; service membership changes
+├── Leader Election
+│   ├── Each candidate creates ephemeral sequential znode under /election/
+│   ├── Lowest sequence number → current leader
+│   ├── Others watch the znode just below them (not the leader directly) → avoids herd effect
+│   └── Leader dies → ephemeral znode deleted → next in sequence gets notified → becomes leader
+├── Distributed Locks
+│   ├── Acquire → create ephemeral sequential znode under /locks/
+│   ├── Check → if your znode has lowest sequence → you hold lock
+│   ├── Wait → watch the znode with next lower sequence; wait for its deletion
+│   ├── Release → delete your znode; next waiter gets notified
+│   └── Fencing → lock holder gets a lock epoch; storage layer rejects writes with stale epoch
+├── Service Discovery
+│   ├── Service registers → create ephemeral znode /services/payment/instance-1 with host:port data
+│   ├── Client reads → list children of /services/payment/ → get all live instances
+│   ├── Instance crash → ephemeral znode deleted → clients watching get NodeDeleted event
+│   └── Used by → Kafka (pre-KRaft), HBase, HDFS NameNode HA, Hadoop YARN
+├── Session Management
+│   ├── Session timeout → if ZK doesn't hear from client within timeout → session expires → ephemerals deleted
+│   ├── Session ID → unique 64-bit token; reconnects resume same session if within timeout
+│   └── Heartbeat → client sends PING every session_timeout/3; ZK responds with PONG
+├── Trade-offs
+│   ├── Pro: linearizable reads (with sync), strong ordering guarantees, mature ecosystem
+│   └── Con: write throughput ~10k/s (not a data store); watch re-registration overhead; not partition-tolerant (CP)
+├── Failure Modes
+│   ├── Herd effect → all clients watch same znode (leader) → leader dies → thundering herd of watches
+│   ├── Session expiry surprise → GC pause > session timeout → all ephemerals deleted → lock lost
+│   └── Quorum loss → majority of nodes down → ZK rejects all writes; clients see CONNECTION_LOSS
+├── Real-World Usage
+│   ├── Kafka (pre-KRaft) → broker registration, controller election, topic metadata storage
+│   ├── HBase → master election, region server registration, table metadata
+│   └── Apache Solr → cluster state management, shard leader election in SolrCloud
+└── Interview Angles
+    ├── Leader election → "coordinate distributed election?" → ephemeral sequential znodes; watch predecessor
+    ├── Distributed lock → "prevent concurrent writes?" → ZK lock recipe; fencing token for safety
+    └── vs etcd → "ZK vs etcd?" → etcd uses Raft (simpler), REST API, better for cloud-native; ZK older, JVM
+```
+
+---
+
 ## Core Concepts
 
 ### Znodes (Data Nodes)

@@ -7,6 +7,49 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Notification Service
+├── Problem Constraints
+│   ├── Scale → 10M notifications/day = 115/sec avg; 1,667/sec peak; push/email/SMS channels
+│   ├── Latency target → critical alerts < 5s; marketing < 5 min; DND scheduling for time zones
+│   └── Core hardness → reliable delivery across unreliable third-party gateways (FCM/APNS/Twilio) + deduplication
+├── Architecture Derivation
+│   ├── Step 1 → Synchronous HTTP call to FCM per event → third-party latency blocks service; failures propagate
+│   ├── Step 2 → Async Kafka queue → decouple producer from delivery; workers retry independently
+│   ├── Step 3 → Separate Kafka topics by priority: critical / transactional / marketing → no marketing blocking critical
+│   └── Step 4 → Redis idempotency key (TTL 24h) + circuit breaker (50% failure threshold) + DLQ for failed notifications
+├── Core Components
+│   ├── Notification API → validates request; enriches with user preferences (channel, DND); publishes to Kafka topic
+│   ├── Kafka topics → "notif-critical" / "notif-transactional" / "notif-marketing"; separate consumer groups per channel
+│   ├── Channel Workers → Push worker (FCM/APNS), Email worker (SendGrid), SMS worker (Twilio); retry with backoff
+│   ├── Redis dedup → SET NX "notif:dedup:{idempotency_key}" EX 86400; skip if key exists (duplicate detected)
+│   ├── Circuit breaker → per-channel; open at 50% error rate in 1-min window; half-open probe after 30s
+│   └── Cassandra logs → (user_id, notif_id, channel, status, sent_at, delivered_at); TTL 1 year; audit trail
+├── Data Model
+│   ├── notifications → (notif_id UUID PK, user_id, type, channel, payload, priority, idempotency_key, status, created_at)
+│   └── user_preferences → (user_id, channel_enabled{push,email,sms}, dnd_start, dnd_end, timezone, frequency_cap)
+├── APIs
+│   ├── POST /notifications → {user_id, type, channel, payload, idempotency_key, priority?} → {notif_id, queued_at}
+│   ├── GET /notifications/{user_id}/history → [{notif_id, type, status, sent_at}] paginated
+│   └── PUT /users/{user_id}/preferences → {dnd_start, dnd_end, channel_enabled, frequency_cap}
+├── Critical Trade-offs
+│   ├── Priority lanes → separate Kafka topics prevent marketing burst from delaying OTP/critical alerts
+│   ├── At-least-once vs exactly-once → at-least-once with Redis dedup; easier than Kafka transactions; 24h TTL covers retry window
+│   └── DND handling → delay queue: notifications scheduled to send at DND end time; stored in delayed Kafka topic
+├── Failure Scenarios
+│   ├── FCM rate limit → exponential backoff (1s, 2s, 4s, 8s); circuit breaker opens if > 50% fail; DLQ after 5 retries
+│   ├── Kafka consumer lag → add consumer instances; Kafka partitions allow parallel consumption; auto-scale on lag metric
+│   └── Redis dedup unavailable → fail-open: allow notification to send; risk of duplicate acceptable vs missed notification
+└── Interview Angles
+    ├── Amazon SNS → "Design SNS fan-out" → Kafka topics + channel workers + circuit breaker = production-grade answer
+    ├── Uber → "Design ride status notifications" → critical lane for driver arrival; DLQ replay for missed ride events
+    └── Follow-up → "How do you handle frequency capping?" → Redis counter INCR per (user_id, channel, day); reject if > cap
+```
+
+---
+
 ## What Breaks Without This System?
 
 Uber needs to send a push notification when a driver accepts a ride. Without a dedicated notification service, the Order Service calls the FCM API directly in the HTTP request handler — synchronously. FCM is occasionally slow (2–5 seconds). Every ride acceptance request blocks a thread for 2–5 seconds waiting for FCM. At peak (10K ride acceptances/sec), all thread pool slots are occupied waiting for FCM. The Order Service stops responding to new requests. A notification delivery slowdown has taken down ride matching.

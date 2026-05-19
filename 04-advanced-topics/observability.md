@@ -13,6 +13,65 @@
 
 ---
 
+## File Mindmap
+
+```
+Observability - Monitoring, Metrics, and Tracing
+├── Why It Exists
+│   ├── Problem → checkout slow for mobile users 6-8pm only; CPU green, error rate green; no alert fires
+│   └── Physical limit → monitoring tells you a predefined thing is wrong; observability lets you ask new questions about unknown failures
+├── Monitoring vs Observability
+│   ├── Monitoring → known-unknowns; pre-defined dashboards; tells you WHAT broke
+│   └── Observability → unknown-unknowns; query arbitrary dimensions; tells you WHY it broke
+├── Three Pillars
+│   ├── Metrics
+│   │   ├── Counter → monotonically increasing (requests_total, errors_total)
+│   │   ├── Gauge → point-in-time snapshot (memory_used_bytes, queue_depth)
+│   │   ├── Histogram → bucket distribution for latency (http_request_duration_seconds)
+│   │   └── Java: Micrometer → Prometheus scrapes /actuator/prometheus endpoint
+│   ├── Logs
+│   │   ├── Structured JSON logging → {timestamp, level, traceId, userId, message, durationMs}
+│   │   ├── Include trace ID in every log line → correlate logs to traces
+│   │   └── Tools: ELK Stack (Logstash ingest, Elasticsearch store, Kibana query), Splunk
+│   └── Traces
+│       ├── Distributed trace = tree of spans across service boundaries
+│       ├── OpenTelemetry Java → Tracer.spanBuilder().startSpan(); propagate via W3C headers
+│       └── Tools: Jaeger, Zipkin, Datadog APM
+├── SLI / SLO / SLA
+│   ├── SLI → actual measured metric (e.g., % of requests < 200ms)
+│   ├── SLO → internal target (e.g., 99.9% of requests < 200ms)
+│   ├── SLA → external contractual commitment (breach = refund/penalty)
+│   ├── Error Budget → 100% - SLO = allowed failure budget (99.9% → 43.8 min/month downtime)
+│   └── Error budget depleted → freeze feature releases, focus on reliability
+├── Golden Signals (Google SRE)
+│   ├── Latency → p50/p95/p99 response time (p99 matters most for user experience)
+│   ├── Traffic → requests/sec, events/sec (baseline for anomaly detection)
+│   ├── Errors → 5xx rate, failed job rate (direct user impact)
+│   └── Saturation → CPU%, memory%, queue depth (leading indicator before errors)
+├── Distributed Tracing Deep Dive
+│   ├── Context propagation → traceparent header (W3C) carries trace-id + span-id across hops
+│   ├── Head-based sampling → decision at ingress; misses rare high-latency tails
+│   └── Tail-based sampling → buffer all spans; sample based on outcome (e.g., keep all errors)
+├── Alerting
+│   ├── P0 → page immediately (SLO breach, data loss risk)
+│   ├── P1 → page within 5 min (degraded but not down)
+│   ├── P2 → ticket (non-critical warning trend)
+│   └── P3 → informational; no action required
+├── Tools
+│   ├── Prometheus → pull-based metrics scraping; PromQL for queries; Alertmanager for alerts
+│   ├── Datadog → SaaS APM + metrics + logs; auto-instrumentation
+│   ├── CloudWatch → AWS-native; tight integration with AWS services
+│   └── Jaeger / Zipkin → open-source distributed tracing backends
+├── Trade-offs
+│   ├── Pro: fast MTTR (mean time to resolution) with good observability tooling
+│   ├── Con: high cardinality metrics (per-user traces) → storage explosion
+│   └── Con: sampling means you may miss the one failing request you care about
+└── Interview Angles
+    ├── "How do you debug a production issue?" → metrics → logs with trace ID → distributed trace
+    ├── "What is an error budget?" → 100% - SLO; governs release velocity vs reliability investment
+    └── Follow-up: high-cardinality tracing cost → tail-based sampling + cardinality limits
+```
+
 ## What is Observability?
 
 **Question**: Users are complaining that checkout is slow — but only for some users, only on mobile, only between 6pm and 8pm. Your CPU dashboard shows green. Your error rate dashboard shows green. Your "checkout success rate" alert hasn't fired. The problem is real — your support queue proves it — but none of your existing dashboards show it. What is the difference between a system that can find this bug and one that cannot?

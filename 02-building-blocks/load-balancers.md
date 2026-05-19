@@ -4,6 +4,64 @@
 
 ---
 
+## File Mindmap
+
+```
+Load Balancers
+├── Why It Exists
+│   ├── Problem → single server at 90% CPU, need 10× throughput; vertical scaling maxes out at ~2×
+│   └── Forces → single machine has hard CPU/RAM/NIC ceiling; more traffic requires more machines
+├── Core Concepts
+│   ├── L4 (Transport Layer) → routes by IP + TCP port; no content inspection; faster
+│   │   ├── Use case → raw TCP/UDP, database traffic, latency-critical paths
+│   │   └── Examples → AWS NLB, HAProxy TCP mode
+│   └── L7 (Application Layer) → routes by HTTP headers, URL path, cookies; slower but smarter
+│       ├── Use case → microservices routing, A/B testing, sticky sessions
+│       └── Examples → AWS ALB, Nginx, Envoy
+├── Routing Algorithms
+│   ├── Round Robin → request 1→S1, 2→S2, 3→S3, 4→S1 … equal distribution
+│   │   └── Weighted → server capacity differs; heavier server gets more share
+│   ├── Least Connections → route to server with fewest active connections
+│   │   └── Best for → long-lived connections (WebSocket, DB conn)
+│   ├── IP Hash → hash(client_IP) % N → same client always hits same server
+│   │   └── Use case → stateful apps where session lives on server (not recommended)
+│   └── Consistent Hashing → hash(request_key) on a ring; minimal reshuffling when N changes
+│       └── Use case → CDN, distributed caches, session affinity without IP lock-in
+├── Health Checks
+│   ├── Active → LB sends probe (HTTP GET /health) at interval; removes if N failures
+│   ├── Passive → LB watches real traffic; removes server after N consecutive errors (5xx)
+│   └── Flapping → server oscillates UP/DOWN; fix with cooldown period before re-adding
+├── SSL Termination
+│   ├── LB decrypts HTTPS; backends receive plain HTTP
+│   ├── Saves CPU on backends; one cert in one place
+│   └── Cost → TLS handshake ~1ms CPU per new connection; handled at LB
+├── Real-World Tools
+│   ├── AWS ALB → L7; path/host routing; Lambda/ECS integration
+│   ├── AWS NLB → L4; ultra-low latency; preserves client IP
+│   ├── GCP Load Balancer → global anycast; single IP worldwide
+│   ├── Nginx → software LB + reverse proxy; highly configurable
+│   └── Kubernetes → Service (L4) + Ingress (L7) controller pattern
+├── Failure Scenarios
+│   ├── LB down → active-active pair; DNS failover; VRRP/keepalived
+│   ├── Backend down → health check removes it; retry on next server
+│   ├── Sticky session breaks → session store in Redis, not server memory
+│   └── Uneven load → consistent hash or least-connections; monitor per-server QPS
+├── Implementation Patterns
+│   ├── Single LB → dev/small setups; single point of failure
+│   ├── Active-Active pair → both serve traffic; LB has its own LB (DNS or ECMP)
+│   └── Global LB + Regional LB → DNS → Global (anycast) → Regional → servers
+├── Trade-offs
+│   ├── Pros → horizontal scale; no single server bottleneck; health isolation
+│   └── Cons → LB is now the SPOF; extra hop latency; SSL offload compute cost
+└── Interview Angles
+    ├── "L4 vs L7?" → L4 fast/simple, L7 smart/features; choose by use case
+    ├── "How do you handle sticky sessions?" → prefer stateless; use Redis for session state
+    ├── "What happens when LB goes down?" → active-active; DNS TTL; VRRP
+    └── Follow-up: "How does consistent hashing reduce reshuffling vs modulo?"
+```
+
+---
+
 ## 1. Why Load Balancers Exist
 
 **Question**: Your single app server handles 5,000 req/s and is at 90% CPU. You need 50,000 req/s in three months. A bigger machine tops out at ~2× the throughput before you hit hardware limits. What do you do?

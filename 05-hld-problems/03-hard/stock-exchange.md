@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Stock Exchange
+├── Problem Constraints
+│   ├── Scale → 1M orders/sec, 10K tickers, 100K trades/sec, 500K market data subscribers; deterministic sub-microsecond matching
+│   ├── Latency target → order-to-ack < 100μs; market data publish < 1ms; no GC pauses allowed
+│   └── Core hardness → lock-free single-threaded matching engine + strict price-time priority + deterministic replay for audit
+├── Architecture Derivation
+│   ├── Step 1 → Multithreaded order book with locks → lock contention at 1M orders/sec = unpredictable latency spikes; GC pauses
+│   ├── Step 2 → Single-threaded matching engine per ticker → no locks; deterministic; 10K tickers = 10K dedicated threads
+│   ├── Step 3 → LMAX Disruptor ring buffer → lockless producer-consumer via memory barriers; power-of-2 slots; 1M ops/sec per core
+│   └── Step 4 → WAL on NVMe (fsync per batch) + multicast UDP for market data (no TCP overhead for 500K subscribers)
+├── Core Components
+│   ├── LMAX Disruptor → ring buffer (power-of-2 slots); single producer; multiple consumers (matching engine, WAL writer, market data publisher)
+│   ├── Order Book (per ticker) → bid side: TreeMap<Price, Queue<Order>> descending; ask side: TreeMap ascending; price-time priority FIFO
+│   ├── Matching Engine → single thread per ticker; reads from Disruptor; matches bid/ask at crossing prices; emits trade events
+│   ├── WAL → NVMe SSD; fsync every batch; sequence number per entry; enables deterministic replay for audit and crash recovery
+│   └── Market Data Publisher → multicast UDP with sequence numbers; subscribers detect gaps via sequence; unicast gap-fill on request
+├── Data Model
+│   ├── orders → (order_id, ticker, side ENUM[BUY,SELL], type ENUM[LIMIT,MARKET], price, quantity, status, trader_id, timestamp_ns)
+│   └── trades → (trade_id, buy_order_id, sell_order_id, ticker, price, quantity, executed_at_ns); append-only; WAL source of truth
+├── APIs
+│   ├── POST /orders → {ticker, side, type, price?, quantity, idempotency_key} → {order_id, status, timestamp_ns}
+│   ├── DELETE /orders/{order_id} → cancel; matching engine processes cancel as event in Disruptor queue
+│   └── GET /orderbook/{ticker} → {bids: [(price, qty)], asks: [(price, qty)]} top-10 levels; snapshot + delta stream via WebSocket
+├── Critical Trade-offs
+│   ├── Single-threaded per ticker vs multithreaded → single-threaded eliminates locking; 10K tickers = 10K threads (manageable)
+│   ├── LMAX Disruptor vs queue → Disruptor: lockless via memory barriers; no allocation; 25M ops/sec vs 5M for ArrayBlockingQueue
+│   └── Multicast UDP vs TCP → UDP: 500K subscribers with zero per-subscriber overhead; TCP requires 500K connections; multicast = one packet
+├── Failure Scenarios
+│   ├── Matching engine crash → WAL replay from last sequence number; deterministic replay rebuilds order book to exact state
+│   ├── Market data subscriber gap → subscriber detects sequence gap; sends unicast gap-fill request; buffer size determines max gap survivable
+│   └── Circuit breaker triggered → LULD (Limit Up-Limit Down) rules halt trading if price moves > 5% in 5 min; engine rejects new orders
+└── Interview Angles
+    ├── NYSE/NASDAQ → "Design a stock exchange matching engine" → LMAX Disruptor + single-threaded book + WAL = production pattern
+    ├── Robinhood → "How do you route orders with < 1ms latency?" → co-location + kernel bypass (DPDK/RDMA) + LMAX Disruptor
+    └── Follow-up → "How do you ensure price-time priority?" → TreeMap sorted by price; each price level = FIFO Queue; strictly ordered
+```
+
+---
+
 ## Problem Statement
 
 Design a stock exchange that:

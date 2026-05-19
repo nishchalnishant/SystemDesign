@@ -4,6 +4,48 @@
 
 ---
 
+## Pattern Mindmap
+
+```
+System Design Anti-Patterns
+├── Core Problem
+│   └── Architectural mistakes that add microservice complexity without gaining independence
+├── Anti-Pattern: Distributed Monolith
+│   ├── Symptom → services split by technical layer, not business domain
+│   ├── Signal → deploy requires coordinating all 8 services simultaneously
+│   ├── Root cause → shared DB, synchronous call chains, shared deploy pipeline
+│   └── Fix → DDD bounded contexts; each service owns its data exclusively
+├── Anti-Pattern: Chatty Services
+│   ├── Symptom → one user request triggers 20+ inter-service calls
+│   ├── Signal → p99 latency is 3 seconds; all services are fast individually
+│   ├── Root cause → fine-grained API design; no aggregation layer
+│   └── Fix → BFF (Backend for Frontend), GraphQL, or aggregate service
+├── Anti-Pattern: Shared Database
+│   ├── Symptom → reporting service can deadlock checkout table
+│   ├── Signal → schema change requires coordinating 6 teams
+│   ├── Root cause → services share a single DB — the integration point is the schema
+│   └── Fix → each service owns its DB; cross-service reads via API or async events
+├── Anti-Pattern: God Service
+│   ├── Symptom → one service handles auth, billing, email, user profile, and reporting
+│   ├── Signal → all PRs touch the same service; one team is the bottleneck
+│   ├── Root cause → no domain decomposition; all logic funnels to one place
+│   └── Fix → apply SRP at service level; split by bounded context
+├── Anti-Pattern: Missing Circuit Breaker
+│   ├── Symptom → slow downstream causes thread pool exhaustion; entire app goes down
+│   ├── Signal → cascade failure from a single dependency timeout
+│   ├── Root cause → unbounded retries + no fail-fast mechanism
+│   └── Fix → circuit breaker (Hystrix/Resilience4j), bulkhead, timeout per call
+├── When These Appear in Interviews
+│   ├── ✓ Interviewer describes a "microservices" system with a shared DB → name it
+│   └── ✓ Asked "what went wrong?" in a system review → check for these 5 first
+└── Interview Angles
+    ├── "How do you detect a distributed monolith?" → can you deploy service A without B?
+    ├── "How do you fix shared DB coupling?" → data ownership + async event propagation
+    └── "What's a circuit breaker and when do you add one?" → any sync inter-service call
+```
+
+---
+
 ## 1. The Distributed Monolith
 
 ### What Breaks Without Knowing This Anti-Pattern?

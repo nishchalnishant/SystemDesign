@@ -2,6 +2,57 @@
 
 > **Quick decision guide for senior/staff engineer level system design interviews**
 
+---
+
+## Topic Mindmap
+
+```
+[System Design Trade-offs Cheat Sheet]
+├── Consistency vs Availability (CAP)
+│   ├── CP systems: reject requests during partition (banks, inventory)
+│   ├── AP systems: serve stale data (DNS, shopping carts, social feeds)
+│   └── PACELC: also trade latency vs consistency when no partition
+├── Latency vs Throughput
+│   ├── Optimize latency: reduce hops, use caches, precompute
+│   ├── Optimize throughput: batch writes, async processing, streaming
+│   └── Usually conflict — optimize for the bottleneck, not both
+├── SQL vs NoSQL
+│   ├── SQL: ACID, complex joins, schema enforcement — billing, auth
+│   ├── Document DB: flexible schema, nested data — catalogs, profiles
+│   ├── Key-Value: O(1) reads — session stores, caches
+│   ├── Column-family: time-series, analytics — Cassandra, HBase
+│   └── Graph DB: relationship traversal — social networks, fraud
+├── Sync vs Async
+│   ├── Sync: simple, consistent, but caller waits — user-facing reads
+│   ├── Async: decoupled, resilient, but eventual — background processing
+│   └── Long-polling: middle ground for real-time-ish with HTTP
+├── Push vs Pull
+│   ├── Push: low latency delivery, but receiver must handle spikes
+│   ├── Pull: receiver controls rate, backpressure natural
+│   └── Fan-out-on-write vs fan-out-on-read for social feeds
+├── Horizontal vs Vertical Scaling
+│   ├── Vertical: simpler, no distributed complexity — limited ceiling
+│   ├── Horizontal: unbounded scale, needs stateless services + sharding
+│   └── Stateful services are harder to scale horizontally
+├── Monolith vs Microservices
+│   ├── Monolith: simple deploy, lower latency, strong consistency — early stage
+│   ├── Microservices: independent scale/deploy, polyglot — at scale
+│   └── Start monolith; extract services when team or scale demands it
+├── Caching Strategies
+│   ├── Cache-aside: app reads cache, miss → load DB → populate cache
+│   ├── Write-through: write to cache and DB synchronously — safe, slow
+│   ├── Write-behind: write to cache; async flush to DB — fast, risky
+│   └── Eviction: LRU (recency), LFU (frequency), TTL (staleness)
+├── Message Queues
+│   ├── SQS: at-least-once, fully managed, simple — task queues
+│   ├── Kafka: ordered, replayable, high throughput — event streaming
+│   └── RabbitMQ: flexible routing, lower throughput — task distribution
+└── API Design
+    ├── REST: stateless, resource-oriented, wide tooling — public APIs
+    ├── GraphQL: client-specified shape, reduces over-fetching — BFF layer
+    └── gRPC: binary, streaming, low latency — internal service-to-service
+```
+
 ## Core Trade-off Categories
 
 1. [Consistency vs Availability](#consistency-vs-availability)
@@ -16,6 +67,45 @@
 10. [Caching Strategies](#caching-strategies)
 11. [Message Queues](#message-queues)
 12. [API Design (REST vs GraphQL vs gRPC)](#api-design)
+
+---
+
+## Template Mindmap
+
+```
+Trade-offs Cheat Sheet
+├── Core Problem
+│   └── Every design decision has costs — articulate them explicitly to signal seniority
+├── Consistency vs Availability (CAP)
+│   ├── Strong Consistency → all reads see latest write; higher latency; use for finance
+│   └── Eventual Consistency → replicas lag; lower latency; use for social feeds, caches
+├── SQL vs NoSQL
+│   ├── SQL → ACID, joins, schema enforcement; use when data is relational and consistent
+│   └── NoSQL → horizontal scale, flexible schema; use for high write QPS or variable schema
+├── Synchronous vs Asynchronous
+│   ├── Sync → immediate response, tight coupling, latency adds up across call chain
+│   └── Async → decoupled, higher throughput, but eventual consistency and harder debugging
+├── Push vs Pull
+│   ├── Push → server initiates delivery; low latency; fan-out cost on large audiences
+│   └── Pull → client polls; simpler server; higher latency; wasted cycles on quiet feeds
+├── Cache Strategies
+│   ├── Cache-aside → app manages cache; miss = DB read + cache write; most flexible
+│   ├── Write-through → write to cache + DB together; consistent but write latency higher
+│   └── Write-behind → write to cache; async flush to DB; fast writes, risk of data loss
+├── Horizontal vs Vertical Scaling
+│   ├── Vertical → bigger machine; simpler ops; hard limit; single point of failure
+│   └── Horizontal → more machines; stateless required; adds network complexity
+├── Monolith vs Microservices
+│   ├── Monolith → simpler deploy, single DB, fast local calls; scaling is all-or-nothing
+│   └── Microservices → independent scale/deploy; adds distributed systems complexity
+├── Normalization vs Denormalization
+│   ├── Normalized → no duplication, consistent writes; joins are expensive at scale
+│   └── Denormalized → fast reads, no joins; write complexity, risk of inconsistency
+└── Interview Angles
+    ├── "Why did you choose eventual consistency here?" → explain the availability gain
+    ├── "SQL or NoSQL for this?" → answer with access pattern + scale, not preference
+    └── "Sync or async?" → identify if caller needs immediate result or can tolerate lag
+```
 
 ---
 

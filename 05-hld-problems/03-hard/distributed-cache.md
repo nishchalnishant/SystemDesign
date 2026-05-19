@@ -7,6 +7,49 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Distributed Cache (Redis Cluster)
+├── Problem Constraints
+│   ├── Scale → 10B keys, 10TB data, 10M ops/sec, 120 nodes with RF=3 (40 master + 80 replica)
+│   ├── Latency target → < 1ms p99 reads; < 2ms p99 writes
+│   └── Core hardness → even key distribution across 120 nodes + zero-downtime failover + hot key isolation
+├── Architecture Derivation
+│   ├── Step 1 → Single Redis node → 32GB RAM ceiling; single point of failure; no horizontal scale
+│   ├── Step 2 → Hash(key) % N shards → node addition/removal remaps all keys; cache stampede during rebalance
+│   ├── Step 3 → Consistent hashing ring → only K/N keys remap; but uneven distribution without virtual nodes
+│   └── Step 4 → Redis Cluster: 16384 hash slots (CRC16(key) % 16384); each master owns slot range; gossip protocol for topology
+├── Core Components
+│   ├── Hash slot routing → CRC16(key) % 16384 = slot; client has slot→node map; MOVED redirect on mismatch
+│   ├── Gossip protocol → nodes exchange cluster state every 100ms; failure detection via PFAIL/FAIL voting
+│   ├── Master-replica → each master has 2 replicas (RF=3); async replication; replica auto-promoted on master FAIL
+│   ├── Hot key local L1 → app-local in-process cache for top-N hot keys; 1-second TTL; avoids thundering herd on single slot
+│   └── LRU eviction → maxmemory-policy: allkeys-lru; evicts least-recently-used when memory full
+├── Data Model
+│   ├── No schema → arbitrary key-value; string, hash, list, set, sorted set, stream data types
+│   └── Key design → "{user_id}.session" → hash tags {} force same slot for multi-key operations (MGET must be same slot)
+├── APIs
+│   ├── SET key value [EX seconds] [NX] → O(1)
+│   ├── GET key → O(1); MGET key1 key2... → O(N) — all keys must be same slot
+│   ├── ZADD/ZRANGE → sorted set for leaderboard; INCR/DECR → atomic counter
+│   └── CLUSTER KEYSLOT key → returns slot number; CLUSTER INFO → topology and health
+├── Critical Trade-offs
+│   ├── MOVED vs ASK → MOVED = permanent slot migration; ASK = temporary during slot migration (CLUSTER SETSLOT)
+│   ├── Async vs sync replication → async chosen for performance; risk: replica promotion may lose last few writes
+│   └── Hot key sharding → cannot split one key across nodes; app-side fan-out or local L1 cache for hot keys
+├── Failure Scenarios
+│   ├── Master failure → gossip detects PFAIL within 15s; cluster votes FAIL; replica auto-promoted; client retries with backoff
+│   ├── Network partition split-brain → minority partition's master demoted; writes blocked on minority side; accepts data loss risk
+│   └── Slot migration during failover → ASK redirects during migration; brief client confusion resolved by cluster client library
+└── Interview Angles
+    ├── Redis Labs → "Design Redis Cluster" → 16384 slots + CRC16 + gossip + master-replica = complete answer
+    ├── Amazon ElastiCache → "How does ElastiCache handle failover?" → same Redis Cluster mechanics + managed node replacement
+    └── Follow-up → "How do you handle a hot key with 500K req/sec?" → local L1 in-process cache + key sharding via suffix (key:shard0..N)
+```
+
+---
+
 ## Problem Statement
 
 Design a distributed, in-memory cache like Redis Cluster that:

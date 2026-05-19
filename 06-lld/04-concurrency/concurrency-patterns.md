@@ -16,6 +16,41 @@ Try each before reading the corresponding section below.
 
 ---
 
+## Topic Mindmap
+
+```
+[Concurrency Patterns — Java]
+├── Core Concept
+│   ├── What → Patterns that coordinate multiple threads accessing shared resources safely
+│   └── Why → Race conditions, deadlocks, and visibility bugs are invisible until production load
+├── Key Patterns
+│   ├── synchronized → mutual exclusion; only one thread executes the block at a time
+│   ├── volatile → guarantees visibility across CPUs; does NOT make compound ops atomic
+│   ├── ReadWriteLock → N concurrent readers OR 1 exclusive writer; boosts read-heavy caches
+│   ├── Semaphore → counting gate; limits concurrent access to K resources (DB connection pool)
+│   ├── CountDownLatch → fan-out sync; main thread awaits N worker completions
+│   └── CyclicBarrier → rendezvous; N threads wait for each other at a checkpoint
+├── When to Use
+│   ├── ✓ ReadWriteLock: high read/low write ratio (config cache, in-memory store)
+│   ├── ✓ Semaphore: bounded resource (DB pool, API rate limit across threads)
+│   └── ✓ CountDownLatch: parallel init tasks before serving requests
+├── When NOT to Use
+│   ├── ✗ synchronized on read-heavy paths — blocks all readers; use ReadWriteLock
+│   └── ✗ volatile for compound check-then-act — use AtomicReference or synchronized block
+├── Trade-offs
+│   ├── Pro: Correctness over unsafe concurrent mutations
+│   └── Con: Deadlock risk if lock ordering inconsistent; performance overhead vs lock-free
+├── Real-World Examples
+│   ├── HikariCP connection pool → Semaphore gates thread access to connection list
+│   └── Spring app startup → CountDownLatch waits for all beans to initialize
+└── Interview Angles
+    ├── Deadlock → four conditions: mutual exclusion, hold-and-wait, no preemption, circular wait
+    ├── volatile vs AtomicInteger → volatile for flags; Atomic for increment/compare-and-swap
+    └── Code challenge: implement a thread-safe bounded cache with ReadWriteLock
+```
+
+---
+
 **Race condition derivations per pattern:**
 
 - **ReadWriteLock**: `synchronized` on reads means Thread 2–1000 queue behind Thread 1 even though reads don't mutate state. The constraint: concurrent reads are safe; only writes need exclusive access. Fix: allow N concurrent readers, one exclusive writer.

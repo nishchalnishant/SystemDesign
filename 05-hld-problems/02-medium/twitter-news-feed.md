@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Twitter/News Feed
+├── Problem Constraints
+│   ├── Scale → 500M DAU, 12K tweets/sec write, 60K feed views/sec read, 1.8T tweets/5yr storage
+│   ├── Latency target → feed load < 200ms p99; tweet publish < 500ms
+│   └── Core hardness → serving pre-built feeds at 60K QPS while handling celebrities with 100M+ followers
+├── Architecture Derivation
+│   ├── Step 1 → Pull model: query all followees on feed load → N DB queries per user = unusable at 500M DAU
+│   ├── Step 2 → Fan-out on write: push tweet to all followers' Redis feed caches → works for normal users
+│   ├── Step 3 → Celebrity problem: fan-out for 100M followers × 12K tweets/sec = impossible in real-time
+│   └── Step 4 → Hybrid: < 10K followers = fan-out on write (Kafka→Redis ZADD); ≥ 10K = fan-out on read (merge at view time)
+├── Core Components
+│   ├── Tweet Service → writes tweet to PostgreSQL; publishes to Kafka topic "tweets"
+│   ├── Fan-out Worker → Kafka consumer; fetches follower list; ZADD into each follower's Redis feed ZSET (score=timestamp)
+│   ├── Feed Redis → per-user sorted set: ZSET "feed:{user_id}" → {tweet_id: timestamp}; top-200 tweets; TTL 7 days
+│   ├── Timeline Service → ZREVRANGE feed:{user_id} for regular users; merge with celebrity pull for hybrid users
+│   └── Social Graph DB → (user_id, followee_id) indexed on both; sharded by user_id; read replica for fan-out lookups
+├── Data Model
+│   ├── tweets → (tweet_id BIGINT PK, user_id, content, media_urls[], created_at, retweet_count, like_count)
+│   └── user_feed Redis ZSET → member: tweet_id, score: unix_timestamp_ms; ZREVRANGE fetches latest first
+├── APIs
+│   ├── POST /tweet → {content, media?, reply_to?} → {tweet_id}
+│   ├── GET /feed → {cursor?} → [{tweet_id, user_id, content, created_at, ...}] (paginated via cursor)
+│   └── GET /tweet/{tweet_id}/replies → paginated reply thread
+├── Critical Trade-offs
+│   ├── Fan-out on write vs read → hybrid chosen; write for normal users (fast reads); read for celebrities (avoids O(100M) fan-out)
+│   ├── Feed depth limit → only store top-200 tweets per user in Redis; older tweets fetched from DB on scroll
+│   └── Consistency → eventual: fan-out workers may lag 1-2 sec; tweet appears in followers' feeds with slight delay
+├── Failure Scenarios
+│   ├── Fan-out worker lag → Kafka consumer lag visible; tweets arrive late but never lost; consumers auto-scale
+│   ├── Redis feed evicted → rebuild from tweet DB on cache miss; user sees slight delay on first load
+│   └── Hot celebrity tweet → fan-out skipped (≥10K followers threshold); timeline service merges at read time
+└── Interview Angles
+    ├── Twitter/X → "Design the Twitter timeline" → hybrid fan-out with celebrity threshold is the key insight
+    ├── LinkedIn → "Design LinkedIn feed" → same fan-out; weight by connection degree + content relevance score
+    └── Follow-up → "How does ranked feed work?" → ML ranking model scores tweet_id list in Redis; re-ranks before return
+```
+
+---
+
 ## What Breaks Without This System
 
 Your social network launches with a simple news feed: when a user opens the app, you query the database for every person they follow, fetch the latest tweets from each, merge-sort by timestamp, and return the first 20. It works perfectly with 10,000 users.

@@ -4,6 +4,61 @@
 
 ---
 
+## File Mindmap
+
+```
+Bloom Filter
+├── Why It Exists
+│   ├── Problem → 1B URLs in hash set = 50 GB RAM; DB lookup at 5ms × 10K/s = impossible
+│   └── Forces → storing full keys requires O(key_size × n) memory; no compression without error
+├── Core Mechanics
+│   ├── Data structure → bit array of m bits (all 0 initially) + k independent hash functions
+│   ├── Insert element
+│   │   ├── Compute h1(x) % m, h2(x) % m … hk(x) % m
+│   │   └── Set those k bit positions to 1
+│   └── Lookup element
+│       ├── Compute same k positions
+│       ├── Any bit = 0? → DEFINITELY NOT in set (no false negatives)
+│       └── All bits = 1? → PROBABLY in set (false positive possible)
+├── Key Properties
+│   ├── False negatives → IMPOSSIBLE; inserted element always sets its bits
+│   ├── False positives → POSSIBLE; collision from other elements' bits
+│   ├── Deletion → NOT supported in basic BF; clearing bits breaks other elements
+│   └── Space → O(m) bits, independent of element size
+├── Mathematical Sizing
+│   ├── m = bit array size, n = insertions, k = hash functions
+│   ├── Optimal k = (m/n) × ln(2) ≈ 0.693 × (m/n)
+│   ├── False positive rate p = (1 - e^(-kn/m))^k
+│   └── Practical: 1% FP rate → ~9.6 bits/element, ~7 hash functions
+│       └── 1B URLs at 1% FP → 1.2 GB (vs 50 GB hash set = 40× savings)
+├── Variants
+│   └── Counting Bloom Filter
+│       ├── Replace bits with counters (4-bit typical)
+│       ├── Add → increment k counters; Remove → decrement k counters
+│       ├── Supports deletion; counter overflow risk (negligible at 4-bit)
+│       └── Use case → cache TTL expiry, dynamic blocklists
+├── Real-World Use Cases
+│   ├── Web Crawler URL deduplication → 1B URLs, 1.2 GB filter, µs lookups, 1% skip rate acceptable
+│   ├── Cassandra SSTable pre-filter → skip disk reads for keys definitely not in SSTable
+│   ├── Redis cache stampede prevention → gate cache+DB lookups for never-set keys
+│   ├── Bitcoin SPV wallet → send BF of wallet addresses; full node filters transactions → 100× bandwidth saving
+│   └── Chrome Safe Browsing → local BF of 5B malicious URLs (~500 MB); API call only on positive
+├── Implementation
+│   ├── Java (Guava) → BloomFilter.create(Funnels.stringFunnel(), expectedSize, fpRate)
+│   └── Redis (RedisBloom) → BF.RESERVE / BF.ADD / BF.EXISTS / BF.MADD / BF.MEXISTS
+│       └── Auto-expand → BF.RESERVE … EXPANSION 2 (doubles sub-filter on overflow)
+├── Trade-offs
+│   ├── Pros → massive memory savings; O(k) time; no false negatives
+│   └── Cons → false positives; no deletion (basic); not useful if FP rate unacceptable
+└── Interview Angles
+    ├── "Why no false negatives?" → inserted element sets its bits; they can't be unset by others
+    ├── "How do you tune FP rate?" → increase m (larger array) or decrease n (fewer inserts per filter)
+    ├── "When would you NOT use a BF?" → when false positives cause irreversible harm (e.g. payment dedup)
+    └── Follow-up: "What's the difference between a BF and a hash set?" → BF trades correctness for space
+```
+
+---
+
 ## Why Bloom Filters Exist
 
 **Question**: A web crawler has already visited 1 billion URLs. Before fetching a new URL, it must check whether it's been visited before. Option A: store all 1 billion URLs in a hash set in memory. At 50 bytes per URL average, that's 50 GB of RAM just for deduplication. A machine with 64 GB of RAM has almost no headroom left. Option B: store them in a database and query on each URL. At 5ms per lookup and 10,000 URLs/sec to check, that's 50 seconds of DB query time per second — impossible. Is there a way to answer "have I seen this URL?" in microseconds, using 1–2 GB instead of 50 GB, if you can tolerate occasionally saying "yes" when the answer is actually "no"?

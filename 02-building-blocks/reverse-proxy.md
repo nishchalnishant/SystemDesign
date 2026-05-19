@@ -16,6 +16,60 @@
 
 ---
 
+## File Mindmap
+
+```
+Reverse Proxy
+├── Why It Exists
+│   ├── Problem → 3 app servers all needing TLS cert, key rotation, cipher config; add 4th, 5th…
+│   └── Forces → N servers = N private key copies, N renewal schedules, N misconfiguration surfaces
+├── Core Functions
+│   ├── SSL/TLS Termination → proxy holds one cert; backends speak plain HTTP; one renewal point
+│   │   └── SSL Re-encryption → if proxy-to-backend crosses untrusted network, re-encrypt internally
+│   ├── Routing
+│   │   ├── Path-based → /api/ → api_servers; / → web_servers
+│   │   └── Host-based → api.example.com vs www.example.com → different backends
+│   ├── Caching → serve static files from disk without hitting app server; TTL + invalidation
+│   ├── Compression → gzip / Brotli at proxy; backends send uncompressed
+│   ├── Load Balancing → distribute across backend pool (overlaps with L7 LB)
+│   └── Security → hide backend IPs; add X-Forwarded-For; WAF integration
+├── Architecture
+│   ├── Clients → Reverse Proxy (Nginx / Envoy / Caddy)
+│   │   ├── App Server 1
+│   │   ├── App Server 2
+│   │   └── App Server 3
+│   └── Client never sees backend IPs — proxy is the only exposed surface
+├── Implementation Patterns
+│   ├── Single proxy → dev / small setup; single point of failure
+│   ├── Proxy + LB → multiple proxy instances; LB or DNS in front; active-active
+│   └── Sidecar per service → Envoy in Istio service mesh; per-service mTLS, retries, observability
+├── Real-World Tools
+│   ├── Nginx → high-performance; static file serving + proxy; widely used
+│   ├── Envoy → service mesh (Istio); rich observability and routing
+│   ├── Caddy → automatic HTTPS via Let's Encrypt; simple config
+│   └── AWS ALB → managed L7 LB acting as reverse proxy
+├── Failure Scenarios
+│   ├── Proxy down → active-active pair behind DNS or L4 LB; VRRP / keepalived
+│   ├── Backend down → proxy returns 502/503; circuit breaker; retry on next backend
+│   ├── Cache poisoning → validate responses; restrict cache key inputs; never cache user input
+│   └── SSL cert expiry → automate renewal (Certbot / Caddy auto-HTTPS); alert at 30 days remaining
+├── Performance
+│   ├── Latency → one extra hop; mitigate with keep-alive connections to backends
+│   ├── Throughput → TLS + compression consume CPU; scale proxy horizontally
+│   ├── Connection pooling → warm pool to each backend; avoid per-request TCP handshake
+│   └── Caching → hit ratio directly reduces backend load; monitor and tune TTL
+├── Trade-offs
+│   ├── Pros → single SSL point; central logging/auth; hides backend topology
+│   └── Cons → proxy itself is SPOF; extra network hop; high-value attack target
+└── Interview Angles
+    ├── "Reverse proxy vs load balancer?" → RP does L7 routing + SSL + caching; LB can be L4-only
+    ├── "What's SSL termination trade-off?" → simpler backends but proxy must be secure; re-encrypt if needed
+    ├── "How do you make the proxy HA?" → active-active pair + DNS failover or VRRP
+    └── Follow-up: "What is a sidecar proxy and when do you use it?" → per-service Envoy in service mesh
+```
+
+---
+
 ## 1. Concept Overview
 
 A **reverse proxy** receives requests from clients and forwards them to backend servers. Unlike a forward proxy (client-side), the client does not know it is talking to a proxy; the proxy represents one or more backends.

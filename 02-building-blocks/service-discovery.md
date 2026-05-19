@@ -4,6 +4,58 @@
 
 ---
 
+## File Mindmap
+
+```
+Service Discovery
+├── Why It Exists
+│   ├── Problem → hard-coded IP 10.0.1.45; Kubernetes pod restarts → new IP; service returns 500s
+│   └── Forces → containers / autoscaling → IPs are ephemeral; 50 microservices × multiple instances = unmanageable
+├── Core Components
+│   ├── Service Registry → database of {service name → [IP:port, health]} entries
+│   ├── Registration → service registers itself on startup (self-registration) or platform registers (3rd-party)
+│   ├── Deregistration → on shutdown (graceful) or TTL expiry (crash) → registry removes stale entry
+│   └── Health Checks → registry probes service or service sends heartbeat; stale = removed
+├── Discovery Patterns
+│   ├── Client-Side Discovery
+│   │   ├── Client queries registry → gets instance list → client-side LB (round robin, etc.)
+│   │   ├── Examples → Netflix Eureka + Ribbon; Spring Cloud LoadBalancer
+│   │   └── Cons → discovery logic in every client; language-specific client libraries needed
+│   └── Server-Side Discovery
+│       ├── Client sends request to LB; LB queries registry → routes to instance
+│       ├── Examples → Kubernetes Service (kube-proxy); AWS ALB + Cloud Map
+│       └── Cons → extra hop (LB); LB must be HA
+├── Registry Implementations
+│   ├── Consul → health checks built-in; DNS + HTTP API; supports KV store; multi-DC
+│   ├── etcd → Raft consensus; used by Kubernetes; key-value store; strong consistency
+│   ├── Kubernetes → built-in; Service objects + CoreDNS; kube-proxy for L4; Ingress for L7
+│   ├── AWS Cloud Map → managed; integrates with ECS/EKS; DNS + API queries
+│   └── Netflix Eureka → peer-to-peer; AP (prefers availability over consistency)
+├── DNS-Based vs API-Based
+│   ├── DNS-based → service-name.namespace.svc.cluster.local → IP list via A/SRV records
+│   │   └── Pros → works with any language; built-in caching via DNS TTL
+│   └── API-based → query registry HTTP API for instance list
+│       └── Pros → richer metadata (version, region, health score); real-time updates
+├── Failure Scenarios
+│   ├── Registry down → clients use cached instance list; cache timeout = stale routing
+│   │   └── Fix → replicate registry (Consul cluster / etcd cluster); clients retry with backoff
+│   ├── Thundering herd on registry restart → all services re-register simultaneously
+│   │   └── Fix → staggered registration with jitter delay
+│   ├── Stale instance in registry → service crashed but registry not updated yet
+│   │   └── Fix → aggressive health check intervals + TTL; circuit breaker on client side
+│   └── Network partition → Eureka prefers AP (keeps stale); Consul prefers CP (removes unreachable)
+├── Trade-offs
+│   ├── Pros → no hard-coded IPs; supports autoscaling; enables blue/green and canary
+│   └── Cons → registry is new dependency; cache staleness window; added latency
+└── Interview Angles
+    ├── "Client-side vs server-side discovery?" → client-side: smarter routing but client complexity; server-side: simpler clients but LB is SPOF
+    ├── "How does Kubernetes service discovery work?" → DNS (CoreDNS) + Service object + kube-proxy rules
+    ├── "What if the registry goes down?" → client caches; replicated registry; circuit breaker
+    └── Follow-up: "How do you do zero-downtime deploys with service discovery?" → blue/green + register new, deregister old after health check passes
+```
+
+---
+
 ## Why Service Discovery Exists
 
 **Question**: Your Order Service needs to call the Payment Service. You hard-code the IP `10.0.1.45:8080` in the config. Three days later, a Kubernetes rolling deployment restarts the Payment Service pod — it comes up with IP `10.0.1.67:8080`. Your Order Service starts returning 500s. You update the config, redeploy, and 2 days later it happens again. At 50 microservices with multiple instances each, constantly changing on autoscale events and deploys, how do you stop playing whack-a-mole with IPs?

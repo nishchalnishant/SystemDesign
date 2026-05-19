@@ -7,6 +7,49 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Google Drive
+├── Problem Constraints
+│   ├── Scale → 1B users, 23.5EB total storage, 200M DAU, 2PB/day uploads; multi-device sync
+│   ├── Latency target → file open < 1s (cached); sync notification < 5s; upload acknowledgment < 2s
+│   └── Core hardness → delta sync (avoid re-uploading unchanged chunks) + conflict resolution for simultaneous edits
+├── Architecture Derivation
+│   ├── Step 1 → Upload full file on every change → 100MB file edited slightly = 100MB upload each time; bandwidth-prohibitive
+│   ├── Step 2 → Content-addressed chunking → split file into 4MB chunks; SHA-256 per chunk; only upload changed chunks (delta sync)
+│   ├── Step 3 → Same chunk across users? Dedup by SHA-256 → store once in S3; 30% storage saving from duplicates
+│   └── Step 4 → WebSocket sync channel → on upload complete, Kafka event → notification service → push to all user devices via WebSocket
+├── Core Components
+│   ├── Chunk Store → S3 with SHA-256 content addressing; chunks are immutable; same hash = same content = stored once
+│   ├── Sync Service → WebSocket connection per device; Kafka "file-events" topic; workers push delta to connected devices
+│   ├── Metadata DB → PostgreSQL: file tree (file_id, parent_id, name, owner_id, chunks[], version, modified_at)
+│   ├── Block Service → client SDK splits file into 4MB chunks; checksums each; uploads only new chunks; commits manifest
+│   └── S3 tiering → active files: S3 Standard; files not accessed 90 days: S3-IA; 1 year: Glacier; automatic via lifecycle policy
+├── Data Model
+│   ├── files → PostgreSQL (file_id UUID PK, owner_id, parent_folder_id, name, size, chunk_hashes[], version INT, modified_at, is_deleted)
+│   └── chunks → (chunk_hash SHA-256 PK, s3_key, size, ref_count); ref_count for garbage collection when 0
+├── APIs
+│   ├── POST /files/upload/init → {filename, size, total_chunks} → {upload_id, missing_chunk_hashes[]}
+│   ├── PUT /chunks/{hash} → raw chunk data → 200 OK (idempotent; same hash = skip if already exists)
+│   ├── POST /files/upload/commit → {upload_id, chunk_hashes[]} → {file_id, version}
+│   └── GET /files/{file_id}/changes?since_version= → [{chunk_hash, offset, operation}] delta for sync
+├── Critical Trade-offs
+│   ├── Binary files vs collaborative docs → binary: conflict copy (both versions kept, user picks); collaborative: OT/CRDT for merge
+│   ├── 4MB chunk size → balances dedup efficiency vs metadata overhead; smaller = more chunks = more metadata; larger = less dedup
+│   └── Strong vs eventual consistency for metadata → strong (PostgreSQL) for file tree; eventual for sync notifications (Kafka lag OK)
+├── Failure Scenarios
+│   ├── Upload interrupted → client SDK retracks committed chunks; resumes from last uncommitted chunk; idempotent chunk PUT
+│   ├── Sync notification lost → client polls /changes?since_version on reconnect; version vector catches up missed events
+│   └── S3 unavailable → uploads queue client-side; retry with exponential backoff; offline-first SDK for mobile
+└── Interview Angles
+    ├── Google → "Design Google Drive" → content-addressed chunks + delta sync + WebSocket notify + conflict copies = core
+    ├── Dropbox → "Design Dropbox sync" → same chunked approach; Dropbox pioneered 4MB block sync in production
+    └── Follow-up → "How do you handle 1000 devices syncing the same popular file?" → CDN for read; WebSocket fan-out via Kafka partitions
+```
+
+---
+
 ## Problem Statement
 
 Design a cloud storage and file synchronization service like Google Drive that allows users to upload, store, share files and folders, with real-time synchronization across multiple devices.

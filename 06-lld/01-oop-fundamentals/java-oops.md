@@ -4,6 +4,52 @@ Here is a Java OOPs Revision Guide: Part 1 focused on the absolute fundamentals:
 
 Since you are new to Java, think of this as your "Cheat Sheet" to understand how a Java file is structured and how to bring your code to life.
 
+---
+
+## Topic Mindmap
+
+```
+[Java OOPs — Syntax Reference]
+├── Part 1: Class and Object
+│   ├── Class: blueprint (recipe); Object: instance (cake)
+│   ├── new keyword: allocates heap memory + calls constructor
+│   ├── this keyword: refers to current object instance
+│   └── static members: shared across all instances (no this)
+├── Part 2: Arrays and Strings
+│   ├── Arrays: fixed-size, zero-indexed, int[] arr = new int[5]
+│   ├── String: immutable; == compares reference, .equals() compares value
+│   └── StringBuilder: mutable, use for concatenation in loops
+├── Part 3: Methods and Control Flow
+│   ├── Method signature: return type + name + parameters
+│   ├── void: no return value
+│   ├── Overloading: same name, different parameter types/count
+│   └── Control flow: if/else, for, while, switch
+├── Part 4: Constructors Deep Dive
+│   ├── Default constructor: provided by compiler if none defined
+│   ├── Parameterized constructor: initializes fields on creation
+│   ├── Constructor chaining: this() calls another constructor
+│   └── Cannot be called after object creation — use a factory method
+├── Access Modifiers
+│   ├── private: class only
+│   ├── protected: class + subclasses + same package
+│   ├── public: everywhere
+│   └── default (package-private): same package only
+├── Static vs Instance
+│   ├── static field: one copy per class (counter, constants)
+│   ├── instance field: one copy per object (name, balance)
+│   ├── static method: no access to this or instance fields
+│   └── Use static for utility methods (Math.abs, Collections.sort)
+├── Key Java Mechanics
+│   ├── Primitive types: int, double, boolean, char (stack allocated)
+│   ├── Reference types: objects, arrays (heap allocated, null default)
+│   └── Pass-by-value: primitives copy value; objects copy reference
+└── Interview Angles
+    ├── What is the difference between == and .equals()?
+    ├── Why are Strings immutable in Java?
+    ├── When does a default constructor disappear?
+    └── What is the output of static initializer blocks?
+```
+
 ## Part 1
 
 ***

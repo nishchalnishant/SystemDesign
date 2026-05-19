@@ -4,6 +4,45 @@
 
 ---
 
+## Reference Mindmap
+
+```
+System Design Glossary
+├── Core Problem
+│   └── Imprecise language signals junior thinking; precise vocabulary signals seniority
+├── Consistency Models
+│   ├── Linearizability → strongest; read always sees latest write; Spanner, Zookeeper
+│   ├── Sequential Consistency → global order agreed by all nodes, not wall-clock
+│   ├── Eventual Consistency → all replicas converge given no new writes; Cassandra, DynamoDB
+│   └── Causal Consistency → causally related ops seen in order; unrelated ops may differ
+├── CAP Theorem
+│   ├── C → Consistency (every read sees latest write)
+│   ├── A → Availability (every request gets a response)
+│   ├── P → Partition Tolerance (system works despite network splits)
+│   └── Rule → cannot guarantee all 3; partition is unavoidable → choose C or A
+├── ACID vs BASE
+│   ├── ACID → Atomicity, Consistency, Isolation, Durability (RDBMS guarantee)
+│   └── BASE → Basically Available, Soft state, Eventually consistent (NoSQL trade-off)
+├── SLA / SLO / SLI
+│   ├── SLI → metric being measured (e.g., request success rate)
+│   ├── SLO → target for the SLI (e.g., 99.9% success rate)
+│   └── SLA → contract with penalty if SLO is missed
+├── RPO / RTO
+│   ├── RPO (Recovery Point Objective) → max acceptable data loss (time-based)
+│   └── RTO (Recovery Time Objective) → max acceptable downtime to restore service
+├── Key Abbreviations
+│   ├── WAL → Write-Ahead Log (crash recovery in Postgres, Kafka)
+│   ├── CDC → Change Data Capture (stream DB changes; Debezium)
+│   ├── CAS → Compare-And-Swap (optimistic locking primitive)
+│   └── HLC → Hybrid Logical Clock (distributed timestamp combining physical + logical)
+└── Interview Angles
+    ├── "What consistency does your DB provide?" → name the model and its cost
+    ├── "What's the RPO for this system?" → drives backup frequency and replication lag budget
+    └── "CP or AP system?" → know which side of CAP your design falls on and why
+```
+
+---
+
 ## Consistency
 
 ### Linearizability (Strong Consistency)

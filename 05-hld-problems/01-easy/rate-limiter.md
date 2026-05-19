@@ -7,6 +7,47 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Rate Limiter
+├── Problem Constraints
+│   ├── Scale → 10M users, 8.4M checks/sec peak (100 req/user/day × 10M ÷ 86400 × burst factor)
+│   ├── Latency target → < 1ms overhead added to every API request (inline check)
+│   └── Core hardness → atomicity of counter check+increment across distributed nodes without per-request DB writes
+├── Architecture Derivation
+│   ├── Step 1 → In-memory counter per server → doesn't work across multiple app servers (no shared state)
+│   ├── Step 2 → Centralized DB counter → too slow (DB write on every request = bottleneck)
+│   ├── Step 3 → Redis INCR/EXPIRE → atomic, sub-millisecond, shared across all nodes
+│   └── Step 4 → Lua script in Redis for Token Bucket → atomic check+decrement in single round-trip
+├── Core Components
+│   ├── Redis → shared rate limit counters; INCR+EXPIRE for Fixed Window; Lua for atomic Token Bucket
+│   ├── API Gateway / Middleware → intercepts every request before routing; returns 429 on limit exceeded
+│   ├── Config Service → rule store (user_id → limit, endpoint → limit); cached locally with 60s TTL
+│   └── Multi-DC sync → async gossip between regional Redis clusters; eventual consistency acceptable for limits
+├── Data Model
+│   ├── Fixed Window → key: "rl:{user_id}:{endpoint}:{window_ts}" → INCR; EXPIRE = window_size
+│   ├── Sliding Window → sorted set: ZADD ts score=timestamp; ZREMRANGEBYSCORE; ZCARD for count
+│   └── Token Bucket → hash: {tokens: N, last_refill: ts}; Lua script atomically refills + decrements
+├── APIs
+│   ├── check_and_consume(user_id, endpoint) → allowed: bool, remaining: int, retry_after: int
+│   └── GET /admin/limits/{user_id} → current config and current consumption
+├── Critical Trade-offs
+│   ├── Fixed vs Sliding Window → Sliding chosen for accuracy; Fixed allows 2× burst at window boundary
+│   ├── Token Bucket vs Sliding → Token Bucket chosen for bursty API clients; smooths bursts naturally
+│   └── Centralized vs Local → Redis centralized chosen; local cache risks stale limits under burst
+├── Failure Scenarios
+│   ├── Redis down → fail-open (allow requests) or fail-closed (429 all); fail-open preferred for availability
+│   ├── Clock skew between nodes → use server-side Redis timestamps; never trust client clock
+│   └── Multi-DC → async replication; brief over-limit allowance acceptable vs blocking cross-region on every check
+└── Interview Angles
+    ├── Stripe → "Design rate limiting for payment API" → per-key token bucket, hard limits for fraud
+    ├── Cloudflare → "How do you limit at 1M req/sec?" → local L1 counter + Redis sync every 100ms
+    └── Follow-up → "How do you handle distributed token bucket refill?" → Lua script with atomic HGETALL + HMSET
+```
+
+---
+
 ## What Breaks Without This System
 
 Without rate limiting, any single client can saturate your API. A script sending 10,000 requests/second to `POST /login` costs you nothing to receive but exhausts your database connection pool in seconds. Every legitimate user gets 503 errors. This is not a hypothetical: it is exactly what happened to GitHub in 2018, when a distributed credential-stuffing attack generated millions of login attempts against unauthenticated endpoints.

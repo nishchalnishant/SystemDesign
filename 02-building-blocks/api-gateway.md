@@ -16,6 +16,59 @@
 
 ---
 
+## File Mindmap
+
+```
+API Gateway
+├── Why It Exists
+│   ├── Problem → 20 microservices each implementing JWT, rate limiting, CORS, logging independently
+│   └── Forces → JWT algorithm change requires 20 simultaneous deploys; drift across teams over time
+├── Core Responsibilities
+│   ├── Routing → path/host → backend (e.g. /users → user-service)
+│   ├── Authentication → validate JWT / API key / OAuth; reject before reaching backend
+│   ├── Authorization → check scope/role; enforce permissions centrally
+│   ├── Rate Limiting → per user/key/IP; 429 when exceeded
+│   ├── Protocol Translation → REST (public) → gRPC (internal); GraphQL → REST backends
+│   ├── Caching → cache GET responses at gateway; reduce backend load
+│   ├── Circuit Breaking → fail fast when backend is down; avoid cascading failures
+│   └── Logging / Metrics → centralized access logs, latency, error rate per service
+├── Architecture
+│   ├── Clients (Web / Mobile / Partners) → all traffic enters via gateway
+│   ├── Gateway layer → auth, rate limit, route, cache, log
+│   └── Backend services → User / Order / Payment / Notification (never exposed directly)
+├── Gateway Patterns
+│   ├── Single gateway → all clients, all services
+│   ├── BFF (Backend for Frontend)
+│   │   ├── Mobile BFF → compact responses, merged calls (reduce round trips on slow network)
+│   │   ├── Web BFF → full payloads
+│   │   └── Partner BFF → rate-limited, API-key auth
+│   └── Gateway + Service Mesh → gateway at edge; mesh handles service-to-service (mTLS, retries)
+├── Stateless Design
+│   ├── No in-memory session state on gateway
+│   ├── Auth context lives in JWT itself
+│   └── Any gateway instance can handle any request (scale horizontally behind LB)
+├── Real-World Tools
+│   ├── Kong → open-source; plugins for auth, rate limit, logging; on-prem or managed
+│   ├── AWS API Gateway → managed; Lambda integration; usage plans and keys
+│   ├── Google Apigee → enterprise; monetization, analytics
+│   └── Nginx / Envoy → custom config with Lua / WASM plugins
+├── Trade-offs
+│   ├── Pros → one place for auth/rate-limit/routing; consistent policy; simplified backends
+│   └── Cons → gateway is critical path; extra hop; potential bottleneck; managed cost
+├── Failure Scenarios
+│   ├── Gateway down → multiple stateless instances behind LB
+│   ├── Backend down → circuit breaker; 503 with retry-after header
+│   ├── Auth bypass → validate only at gateway; never trust client-supplied auth headers downstream
+│   └── Latency spike → timeout + circuit breaker; scale gateway horizontally
+└── Interview Angles
+    ├── "Gateway vs reverse proxy?" → gateway adds auth, rate limit, API-specific logic; RP is more generic
+    ├── "How do you prevent gateway from being SPOF?" → stateless + multiple instances + LB
+    ├── "BFF pattern — when and why?" → tailor response shape per client type; reduce mobile round trips
+    └── Follow-up: "How do you do JWT rotation without downtime?" → support multiple signing keys during rollover
+```
+
+---
+
 ## The Hotel Concierge Analogy
 
 At a 5-star hotel, every guest request goes through the concierge desk. They verify your room key (authentication), route you to the right service — restaurant, spa, room service (routing), tell you "I'm sorry, the spa is fully booked today" (rate limiting), log every request in the concierge log (observability), and communicate in whichever language you need (protocol translation). The kitchen, spa, and housekeeping never deal with guests directly — they only receive well-formed, pre-approved requests from the concierge.

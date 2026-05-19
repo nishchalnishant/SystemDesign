@@ -43,6 +43,45 @@ If L1 cache = 1 second, then:
 
 ---
 
+## Reference Mindmap
+
+```
+Numbers Every Engineer Should Know
+├── Core Problem
+│   └── Wrong order-of-magnitude assumptions lead to over/under-engineered systems
+├── Latency Hierarchy (fastest → slowest)
+│   ├── L1 cache → 0.5 ns (1 CPU cycle)
+│   ├── L2 cache → 7 ns (14× L1)
+│   ├── RAM access → 100 ns (200× L1)
+│   ├── NVMe SSD read → ~100 µs
+│   ├── Same-datacenter round trip → 500 µs
+│   ├── SSD sequential 1 MB → 1 ms
+│   ├── HDD seek → 10 ms (20,000× RAM)
+│   └── Cross-continental round trip → 150 ms
+├── Throughput Rules of Thumb
+│   ├── 1 Gbps NIC → ~125 MB/s max
+│   ├── SSD sequential → 500 MB/s – 3 GB/s
+│   ├── RAM bandwidth → ~50 GB/s
+│   └── Single HTTP server → 10K–50K req/sec (stateless, small payload)
+├── Key Ratios to Internalize
+│   ├── RAM vs disk seek → 100,000× faster
+│   ├── Same-DC vs cross-region → 300× faster
+│   └── Sequential vs random disk → 10× faster
+├── Capacity Rules of Thumb
+│   ├── 1 day = 86,400 s ≈ 10^5
+│   ├── 1 year ≈ 3×10^7 s
+│   ├── 1 server: 10 GB RAM, 1 TB SSD typical baseline
+│   └── 1 million req/day ≈ 12 req/sec avg
+├── When to Use
+│   └── ✓ Justify caching decisions, sharding thresholds, replication lag budgets
+└── Interview Angles
+    ├── "Why cache?" → RAM (100 ns) vs disk (10 ms) = 100,000× latency difference
+    ├── "Why not HDD for low-latency reads?" → random seek is 10 ms; SSD is 0.1 ms
+    └── "How many servers for 1M QPS?" → ~1M / 50K = 20 servers minimum (stateless)
+```
+
+---
+
 ## Throughput Numbers
 
 ### Network Bandwidth

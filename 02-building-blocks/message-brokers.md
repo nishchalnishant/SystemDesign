@@ -4,6 +4,61 @@
 
 ---
 
+## File Mindmap
+
+```
+Message Brokers
+├── Why It Exists
+│   ├── Problem → order service calls notification synchronously; email saturates; orders fail
+│   └── Forces → synchronous coupling means producer speed bounded by slowest consumer; no buffering
+├── Core Models
+│   ├── Queue (Point-to-Point)
+│   │   ├── Message consumed by exactly one consumer
+│   │   ├── Use case → work distribution; task queues; order processing
+│   │   └── Examples → RabbitMQ, SQS, ActiveMQ
+│   └── Pub/Sub (Publish-Subscribe)
+│       ├── Message broadcast to all subscribed consumers
+│       ├── Use case → event fan-out; audit log; cache invalidation
+│       └── Examples → Kafka topics, Google Pub/Sub, SNS
+├── Kafka Architecture
+│   ├── Topics → named streams; logically partitioned
+│   ├── Partitions → ordered, immutable log; key → consistent partition
+│   │   └── Partition count → max parallelism for consumers
+│   ├── Consumer Groups → each group gets all messages; each partition read by one consumer/group
+│   ├── Offsets → consumer tracks position; broker doesn't push — consumer pulls
+│   └── Retention → messages kept N days regardless of consumption (replay capability)
+├── Delivery Guarantees
+│   ├── At-most-once → fire and forget; possible message loss; use for metrics/logs
+│   ├── At-least-once → retry until ack; possible duplicate; use for payments (idempotent consumer)
+│   └── Exactly-once → Kafka transactions + idempotent producer; highest cost; use for financial
+├── Dead Letter Queue (DLQ)
+│   ├── Messages that fail N retries → moved to DLQ
+│   ├── Prevents poison pill blocking queue indefinitely
+│   └── Ops workflow → alert on DLQ depth; manual inspect/replay
+├── Outbox Pattern (at-least-once across DB + broker)
+│   ├── Write event to outbox table in same DB transaction as business data
+│   ├── Separate relay process polls outbox and publishes to broker
+│   └── Ensures no message lost if broker down at write time
+├── Broker Comparison
+│   ├── Kafka → high throughput, durable, replay, partitioned; complex ops; best for streaming
+│   ├── RabbitMQ → flexible routing (exchanges); AMQP; easy to run; best for task queues
+│   └── SQS → managed AWS; auto-scaling; FIFO variant for ordering; no replay
+├── Trade-offs
+│   ├── Pros → decouple producer/consumer speeds; absorb bursts; enable async workflows
+│   └── Cons → at-least-once requires idempotent consumers; added latency; operational complexity
+├── Failure Scenarios
+│   ├── Broker down → producers buffer or fail fast; consumers pause; replication for HA
+│   ├── Consumer lag → add consumers; increase partitions; back-pressure to producer
+│   └── Poison pill → DLQ; schema validation at publish time
+└── Interview Angles
+    ├── "Queue vs pub/sub?" → queue: one consumer gets it; pub/sub: all subscribers get it
+    ├── "How do you ensure exactly-once?" → idempotent consumer + deduplication key; or Kafka transactions
+    ├── "What is the outbox pattern and why?" → atomic write to DB + broker without 2PC
+    └── Follow-up: "How do you handle consumer lag in Kafka?" → add consumers up to partition count; then repartition
+```
+
+---
+
 ## 1. Why Message Brokers Exist
 
 **Question**: Your order service calls the notification service synchronously. Black Friday hits: 50,000 orders/minute arrive, but the notification service can only handle 10,000 emails/minute. What happens to the orders while the email service is saturated?

@@ -8,6 +8,48 @@ Write the `PaymentProcessor.pay(amount)` method for all four types before readin
 
 ---
 
+## Pattern Mindmap
+
+```
+[Strategy Pattern]
+├── Problem It Solves
+│   ├── PaymentProcessor if/else per payment type — add method = modify class (OCP violation)
+│   ├── Algorithms (payment methods, sort algorithms, routing) need to vary independently
+│   └── Client should not know which algorithm is used — only that it works
+├── Core Structure
+│   ├── Strategy interface: PaymentStrategy with pay(amount)
+│   ├── Concrete strategies: CreditCardStrategy, PayPalStrategy, CryptoStrategy
+│   ├── Context: PaymentProcessor holds PaymentStrategy reference
+│   ├── Context.pay() delegates to strategy.pay() — no branching
+│   └── Strategy injected via constructor or setter (swappable at runtime)
+├── Runtime Swap
+│   ├── processor.setStrategy(new CryptoStrategy())
+│   ├── Same context, different behavior — no code change
+│   └── New payment method: one new class, no modification to context
+├── Analogy
+│   ├── GPS navigation: same trip, choose fastest/shortest/scenic route
+│   └── Route is the strategy — swapped without changing the destination
+├── When to Use
+│   ├── Multiple algorithms for the same task (sorting, payment, compression)
+│   ├── Algorithm must be selectable at runtime
+│   └── Eliminating large if/else or switch based on type
+├── Strategy vs State vs Template Method
+│   ├── Strategy: swaps interchangeable algorithms; context delegates entirely
+│   ├── State: object changes behavior as its internal state changes
+│   └── Template Method: skeleton fixed; subclass fills specific steps
+├── Strategy vs Policy
+│   ├── Strategy encapsulates a full algorithm
+│   └── Policy is a simpler predicate — but same structural pattern
+├── Trade-offs
+│   ├── Clients must know which strategies exist to choose one
+│   ├── If strategies need context data, must pass it or expose via interface
+│   └── Overkill for 2 variants — just use if/else; apply at 3+ variants
+└── Interview Angles
+    ├── How is Strategy different from using a simple if/else?
+    ├── Can a Strategy have state? Is it still a strategy?
+    └── Strategy vs Template Method — which do you choose when?
+```
+
 ## Problem Without the Pattern
 
 ```java

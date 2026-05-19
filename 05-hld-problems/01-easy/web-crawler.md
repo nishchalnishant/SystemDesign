@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Web Crawler
+├── Problem Constraints
+│   ├── Scale → 10K pages/sec, 5B URLs total, 550TB per crawl cycle (100KB avg page)
+│   ├── Latency → throughput-optimized not latency-sensitive; politeness = 1 req/domain/sec
+│   └── Core hardness → URL deduplication at 5B scale + politeness enforcement + near-duplicate content detection
+├── Architecture Derivation
+│   ├── Step 1 → Single-threaded BFS → 1 req/sec = 86K pages/day; need 10K pages/sec = 10K parallel workers
+│   ├── Step 2 → Distributed workers with shared URL queue → queue becomes bottleneck; no dedup across workers
+│   ├── Step 3 → Bloom filter for seen URLs (6GB at 1% FP for 5B URLs, 10 bits/URL) → constant-time dedup
+│   └── Step 4 → Two-level frontier: priority queue (importance score) + per-domain politeness queue (delay 1s)
+├── Core Components
+│   ├── URL Frontier → priority queue ranked by PageRank/freshness; per-domain back-queue enforces politeness
+│   ├── Bloom filter → 6GB for 5B URLs at 1% FPR; in-memory on frontier servers; backup in Redis
+│   ├── Fetcher pool → 1000 async worker nodes; DNS cache per worker; respect robots.txt
+│   ├── Parser → extracts outlinks + content; pushes new URLs to frontier; content to storage
+│   ├── Content dedup → SHA-256 for exact dedup; SimHash (64-bit fingerprint, Hamming ≤3) for near-dedup
+│   └── Distributed store → Cassandra for URL metadata (url, last_crawled, checksum, next_crawl)
+├── Data Model
+│   ├── url_metadata → (url_hash PK, url, last_crawled, content_hash, status, priority, next_crawl_at)
+│   └── content_store → S3 for raw HTML (keyed by SHA-256); Elasticsearch for indexed/searchable content
+├── APIs
+│   ├── POST /crawl/seed → {seed_urls: [...]} → kickstarts new crawl job
+│   └── GET /crawl/status/{job_id} → {pages_crawled, queue_depth, errors, estimated_completion}
+├── Critical Trade-offs
+│   ├── BFS vs Priority → Priority chosen; freshness + importance score avoids crawling low-value pages first
+│   ├── Bloom filter FP rate → 1% FPR = 6GB; 0.1% FPR = 9GB; 1% acceptable (miss 1 in 100 new URLs = re-crawl later)
+│   └── SimHash threshold → Hamming ≤3 of 64 bits = near-duplicate; threshold tunable per content type
+├── Failure Scenarios
+│   ├── Fetcher crash → URL re-queued after TTL; idempotent crawl (content hash dedup prevents duplicate storage)
+│   ├── Bloom filter reset → rebuild from Cassandra url_metadata on restart; brief duplication window acceptable
+│   └── DNS amplification → local DNS cache per fetcher (TTL 600s); rate limit outgoing DNS queries per domain
+└── Interview Angles
+    ├── Google → "Design Googlebot" → politeness + priority frontier + SimHash + distributed fetch at scale
+    ├── Common Crawl → "How do you crawl 5B pages per month?" → 10K workers × 86400s × 1 req/sec = 864M/day = 26B/month
+    └── Follow-up → "How do you handle spider traps?" → URL depth limit (max 10 hops) + detect infinite loop patterns
+```
+
+---
+
 ## What Breaks Without This System?
 
 A search engine needs to index the web. Without a crawler, its index is empty — no queries return results. More specifically: without a designed crawler, you write a naive recursive scraper. It fetches a page, extracts links, recursively fetches those. Within minutes it has visited `example.com` 400 times because it discovered the same URL via 400 different paths. It hammers `wikipedia.org` with 10K requests/second, gets IP-banned, and can never index Wikipedia again. It follows an infinite calendar URL (`/events?date=2026-01-01`, `/events?date=2026-01-02`...) for weeks without making progress on other sites. It downloads 2TB of near-duplicate content because it didn't canonicalize URLs (trailing slash, `http` vs `https`, query parameter order).

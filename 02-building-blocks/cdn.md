@@ -16,6 +16,63 @@
 
 ---
 
+## File Mindmap
+
+```
+CDN (Content Delivery Network)
+├── Why It Exists
+│   ├── Problem → origin in us-east-1; user in Mumbai; 50 assets × 180ms RTT = 9s blank screen
+│   └── Forces → speed of light in fiber ≈ 200,000 km/s; Mumbai→Virginia ~130ms RTT; irreducible physics
+├── Core Mechanism
+│   ├── Edge nodes (PoPs) → globally distributed caching servers
+│   ├── Pull model (on-demand) → first request → cache miss → fetch from origin → cache → serve
+│   │   └── Subsequent requests → served from edge at ~5ms vs ~150ms to origin
+│   └── Anycast routing → DNS directs each user to nearest/fastest PoP automatically
+├── Push vs Pull
+│   ├── Push (proactive)
+│   │   ├── You upload assets to CDN; CDN distributes to all edges before first request
+│   │   └── Best for → small known set: marketing pages, software binary releases
+│   └── Pull (on-demand)
+│       ├── Edge fetches on first miss; caches for subsequent requests
+│       └── Best for → large catalogs; only popular content gets cached (long tail stays on origin)
+├── What Gets Cached
+│   ├── Static → images, JS, CSS, fonts (long TTL, e.g. 1 year + versioned URL)
+│   ├── Dynamic → API responses, HTML (short TTL 30s–5min or ETag revalidation)
+│   └── Streaming → HLS/DASH video segments (immutable by design; TTL = segment duration)
+├── Multi-Tier CDN (Netflix model)
+│   ├── Origin (Virginia) → Regional PoP (Singapore) → Edge PoP (Mumbai) → User
+│   └── Edge miss hits regional first; origin only sees miss traffic from regional PoPs
+├── Cache Control Patterns
+│   ├── Versioned URLs → content hash in filename; new deploy = new URL = guaranteed cold miss
+│   │   └── TTL: 1 year; no purge needed; old file expires naturally
+│   ├── Short TTL → 30s–5min for dynamic content; ETag + stale-while-revalidate
+│   └── Personalized content → bypass CDN entirely; never cache user-scoped data at edge
+├── Real-World Providers
+│   ├── Cloudflare → global PoPs; WAF; cache purge ~150ms globally
+│   ├── CloudFront (AWS) → S3/ALB integration; Lambda@Edge for dynamic logic
+│   ├── Fastly → real-time purge; VCL customization
+│   └── Akamai → largest PoP network; enterprise-grade
+├── Failure Scenarios
+│   ├── Edge down → CDN routes to next nearest PoP; origin as ultimate fallback
+│   ├── Origin down → stale-while-revalidate / stale-if-error serves cached content; uncacheable requests fail (503)
+│   ├── Stale content → versioned URLs for static; short TTL or purge API for dynamic
+│   └── DDoS → CDN absorbs volumetric attacks at edge; WAF blocks application-layer attacks
+├── Performance Impact
+│   ├── Latency → Mumbai edge hit ~5ms vs ~150ms origin → 30× improvement
+│   ├── Throughput → 95–99% hit rate for static; origin handles 1–5% of traffic
+│   └── Invalidation → Cloudflare purge ~150ms globally; not atomic; rely on versioned URLs for correctness
+├── Trade-offs
+│   ├── Pros → global low latency; origin offload; DDoS absorption; scales infinitely
+│   └── Cons → staleness / invalidation complexity; CDN egress cost; personalized content cannot be cached
+└── Interview Angles
+    ├── "How do you avoid cache invalidation on deploys?" → content-hashed URLs; new hash = new cache entry
+    ├── "What happens if origin goes down?" → stale-if-error serves cached content; dynamic pages fail
+    ├── "Push vs pull — which do you choose?" → pull for large catalogs; push for known small asset sets
+    └── Follow-up: "How does multi-tier CDN help vs single-tier?" → regional PoP absorbs miss traffic; origin rarely hit
+```
+
+---
+
 ## 1. Concept Overview
 
 A **CDN** is a network of edge servers (points of presence, PoPs) that cache and serve content. Users are directed to the nearest (or least-loaded) edge, so content is delivered with lower latency and less load on the origin.

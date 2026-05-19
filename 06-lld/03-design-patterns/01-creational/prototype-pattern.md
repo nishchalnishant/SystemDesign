@@ -8,6 +8,47 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Prototype Pattern]
+├── Problem It Solves
+│   ├── 10,000 EmailTemplate objects each loading 50KB HTML from disk + DB
+│   ├── Construction is expensive: I/O, parsing, network calls
+│   └── Objects differ only in recipient + small personalization block
+├── Core Structure
+│   ├── Cloneable interface with clone() method
+│   ├── EmailTemplate.clone() copies expensive fields from prototype
+│   ├── Client mutates only the variable fields on the clone
+│   └── Prototype registry: map of named templates to pre-built instances
+├── Deep vs Shallow Clone
+│   ├── Shallow clone: nested objects are shared (mutable references copied)
+│   ├── Deep clone: nested objects are also duplicated (safe mutation)
+│   └── Rule: if cloned object will mutate nested state, must deep clone
+├── EmailTemplate Registry
+│   ├── EmailTemplateRegistry.get("WELCOME") → clone of pre-built prototype
+│   ├── Pre-built once at startup; each clone is O(field copy) not O(I/O)
+│   └── Register new templates without changing client code
+├── Analogy
+│   ├── Word document template: create template once, duplicate for each doc
+│   └── Cell mitosis: new cell is a copy of parent, then specializes
+├── When to Use
+│   ├── Object creation is expensive (I/O, network, parsing)
+│   ├── Objects are structurally similar with small variations
+│   └── Need many copies quickly (bulk campaign, game entities)
+├── When NOT to Use
+│   ├── Object creation is cheap (simple constructor) — just use new
+│   └── Deep clone is complex and error-prone — consider factory instead
+├── Trade-offs
+│   ├── Deep cloning complex object graphs is tricky
+│   ├── Circular references in object graph can break naive clone
+│   └── Registry adds indirection but simplifies client code significantly
+└── Interview Angles
+    ├── When would you choose Prototype over Factory?
+    ├── What is the difference between deep and shallow clone?
+    └── How does a prototype registry work?
+```
+
 ## Problem Without the Pattern
 
 The obvious approach: construct each one from scratch.

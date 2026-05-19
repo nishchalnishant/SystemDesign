@@ -16,6 +16,60 @@
 
 ---
 
+## File Mindmap
+
+```
+Microservices
+├── Why It Exists
+│   ├── Problem → 200 engineers, same repo; deploys take 45 min, twice/week; Black Friday: scale checkout not admin portal
+│   └── Physical limit → one JVM process = one deployment unit, one scaling unit, one failure domain
+├── Monolith vs Microservices Trade
+│   ├── Monolith problems → deployment coupling, team coupling, scaling coupling, language lock-in
+│   ├── Microservices problems → network failures, consistency, observability, operational complexity
+│   └── Rule: only worth the trade when monolith pain is real + team has operational maturity
+├── When NOT to Use Microservices
+│   ├── Small team (<10 engineers) → overhead exceeds benefit
+│   ├── Early product → bounded contexts not yet clear; premature decomposition is expensive
+│   └── Simple CRUD → distributed systems complexity for no gain
+├── API Gateway
+│   ├── Single entry point → auth, rate limiting, routing, SSL termination
+│   ├── Spring Cloud Gateway → route predicates + filters; GlobalFilter for cross-cutting concerns
+│   └── Avoids N×M client-service coupling; all clients talk to one stable interface
+├── Service Discovery
+│   ├── Problem → service IPs change in containerized environments; no static addresses
+│   ├── Client-side (Eureka + Ribbon) → service registers on start; client fetches registry and load-balances
+│   └── Server-side (K8s Service + DNS) → cluster DNS resolves service name to virtual IP
+├── Circuit Breaker (Resilience4j)
+│   ├── @CircuitBreaker annotation + YAML config: failure-rate-threshold, wait-duration-in-open-state
+│   ├── CLOSED → OPEN at 50% failure → HALF_OPEN after wait → probe → CLOSED or OPEN
+│   └── Fallback method → graceful degradation when circuit open
+├── Saga Pattern
+│   ├── Choreography → each service listens for events, publishes next event; no central coordinator
+│   ├── Orchestration → central saga orchestrator sends commands, handles compensations
+│   └── Compensating transactions → rollback by undoing prior steps (e.g., RefundPayment event)
+├── Service Mesh (Sidecar)
+│   ├── Envoy/Istio sidecar proxy → mTLS, retries, circuit breaking at mesh layer
+│   ├── No code changes needed → infrastructure-level resilience
+│   └── Trade-off: adds latency (~1ms), operational complexity
+├── Sync vs Async Communication
+│   ├── REST/gRPC → synchronous; use when caller needs immediate result; adds latency coupling
+│   └── Kafka → async; decouple producer from consumer; fan-out; absorbs traffic bursts
+├── DB-per-Service
+│   ├── Each service owns its data; no shared DB → no coupling through DB schema
+│   └── Cost: joins across services require API calls or denormalized read models (CQRS)
+├── Kubernetes Deployment
+│   ├── Rolling update → maxSurge/maxUnavailable → zero-downtime deploys
+│   ├── Liveness probe → restart if unhealthy; Readiness probe → remove from LB if not ready
+│   └── Horizontal Pod Autoscaler → scale on CPU/custom metrics
+├── Distributed Tracing
+│   ├── Trace ID propagated in HTTP headers across all service hops
+│   └── Jaeger / Zipkin → visualize full request trace across 10+ services
+└── Interview Angles
+    ├── "How do you handle a distributed transaction?" → Saga + compensating transactions
+    ├── "How do you debug a production issue across 10 services?" → distributed tracing with trace ID
+    └── Follow-up: data consistency across services → outbox pattern + eventual consistency
+```
+
 ## When to Go Microservices (and When NOT to)
 
 ### Good reasons to adopt microservices

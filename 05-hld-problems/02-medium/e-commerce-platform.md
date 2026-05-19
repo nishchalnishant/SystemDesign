@@ -7,6 +7,50 @@
 
 ---
 
+## Problem Mindmap
+
+```
+E-Commerce Platform
+├── Problem Constraints
+│   ├── Scale → 1M DAU normal / 50M during sales events; 100M products; 500K orders/day; 10M concurrent during flash sale
+│   ├── Latency target → search < 200ms; checkout < 2s; flash sale buy < 500ms
+│   └── Core hardness → flash sale inventory race conditions + search at 100M products + checkout atomicity
+├── Architecture Derivation
+│   ├── Step 1 → Single PostgreSQL → search 100M rows with filters = 30+ sec; write bottleneck at 500K orders/day
+│   ├── Step 2 → Separate catalog (read-heavy) from transactions (write-heavy, ACID); different stores for different needs
+│   ├── Step 3 → Flash sale: SQL UPDATE at 100K/sec → lock contention; Redis DECR atomic → 1M ops/sec, no deadlock
+│   └── Step 4 → MongoDB (flexible catalog schema) + Elasticsearch (search) + Redis (inventory counter + cart) + PostgreSQL (orders)
+├── Core Components
+│   ├── Search Service → Elasticsearch BM25 + function_score for ranking; aggregations for facet sidebar; search_after pagination
+│   ├── ML Re-ranker → LightGBM on top-200 ES candidates; features: BM25 score, CTR, rating, purchase history
+│   ├── Inventory Service → Redis SET "inventory:sku:{id}" N; DECR on buy; INCR on cancel; async flush to PostgreSQL
+│   ├── Cart Service → Redis Hash HSET cart:{user_id} product_id qty; TTL 7 days; price_at_add stored per item
+│   └── Checkout Service → Saga: PENDING reservation → payment → CONFIRMED; idempotency key = checkout_session_id
+├── Data Model
+│   ├── MongoDB products → {product_id, title, category[], brand, price, attributes{}, images[], rating, review_count}
+│   ├── Redis inventory → "inventory:flash:{sku}" = N (atomic counter); "inventory:regular:{sku}" = N with TTL
+│   └── PostgreSQL orders → (order_id, user_id, items JSONB, total, payment_id, status ENUM, created_at, idempotency_key)
+├── APIs
+│   ├── GET /search?q=&category=&price_max=&brand= → [{product_id, title, price, rating, in_stock}]
+│   ├── POST /cart/{user_id}/items → {product_id, quantity} → {cart_total, items_with_current_price}
+│   ├── POST /checkout → {cart_id, payment_token} → {order_id, confirmation, total}
+│   └── GET /orders/{order_id} → {status, items, tracking, estimated_delivery}
+├── Critical Trade-offs
+│   ├── Redis DECR vs SQL UPDATE → Redis chosen for flash sales; atomic, 1M ops/sec; SQL deadlocks at 100K/sec
+│   ├── MongoDB vs PostgreSQL for catalog → MongoDB for flexible schema (laptop attributes ≠ shirt attributes)
+│   └── Saga vs 2PC → Saga chosen; compensating transactions (refund + INCR) vs distributed lock across payment + inventory
+├── Failure Scenarios
+│   ├── Redis crash during flash sale → re-seed inventory counter from PostgreSQL on restart; brief oversell window acceptable
+│   ├── Payment fails after inventory reserved → Saga compensation: INCR Redis + release DB reservation; user sees "try again"
+│   └── Search index stale → MongoDB CDC → Kafka → ES indexer; < 5 sec lag; stale results briefly possible but acceptable
+└── Interview Angles
+    ├── Amazon → "Design Amazon checkout" → reservation-based (PENDING → CONFIRMED) + idempotency + Saga rollback
+    ├── Flipkart → "Design flash sale for Big Billion Day" → Redis atomic DECR pre-loaded inventory = core answer
+    └── Follow-up → "How does fraud detection work?" → rule-based (< 10ms sync) + ML model (async, halts fulfillment if flagged)
+```
+
+---
+
 ## What Breaks Without This System?
 
 Amazon launches Prime Day. A TV that normally sells 100 units/day is offered at 50% off. Without a designed e-commerce platform:

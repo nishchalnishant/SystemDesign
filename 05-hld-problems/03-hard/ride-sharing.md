@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Ride Sharing (Uber/Grab)
+├── Problem Constraints
+│   ├── Scale → 1M active drivers, 250K location writes/sec, 1M rides/day = ~12 rides/sec
+│   ├── Latency target → driver match < 5s; location update < 1s; ETA < 500ms
+│   └── Core hardness → real-time geospatial driver lookup at 250K updates/sec + distributed lock for driver assignment
+├── Architecture Derivation
+│   ├── Step 1 → SQL SELECT WHERE lat BETWEEN / lon BETWEEN → full table scan for 1M drivers; 500ms+ per query
+│   ├── Step 2 → QuadTree or Geohash → spatial index partitions map into cells; query = look up cell + neighbors
+│   ├── Step 3 → Redis GEO → GEOADD with driver location; GEORADIUS returns drivers within Nkm; 250K GEOADD/sec feasible
+│   └── Step 4 → Redlock (distributed lock) on driver_id for assignment; UNIQUE constraint on (driver_id, status=ACTIVE) trip
+├── Core Components
+│   ├── Location Service → driver app sends GPS every 4s; Kafka ingests 250K/sec; consumer updates Redis GEO
+│   ├── Redis GEO → GEOADD "drivers:city:{city_id}" lon lat driver_id; GEORADIUS for nearby drivers; TTL 60s per driver
+│   ├── Matching Service → GEORADIUS top-10 candidates; Redlock NX PX 30000 on each driver; first lock success = match
+│   ├── Trip State Machine → REQUESTED → DRIVER_ASSIGNED → ARRIVING → IN_PROGRESS → COMPLETED/CANCELLED; PostgreSQL
+│   └── Cassandra → location history (driver_id, timestamp, lat, lon); partitioned by driver_id + time bucket; 30-day retention
+├── Data Model
+│   ├── trips → PostgreSQL (trip_id PK, rider_id, driver_id UNIQUE+status index, status ENUM, pickup, dropoff, fare, created_at)
+│   └── driver_locations → Cassandra (driver_id, time_bucket, timestamp, lat, lon, speed, heading); Redis for real-time only
+├── APIs
+│   ├── POST /rides/request → {pickup_lat, pickup_lon, dropoff_lat, dropoff_lon} → {trip_id, estimated_wait_sec, fare_estimate}
+│   ├── WS /drivers/{driver_id}/location → continuous GPS stream from driver app
+│   └── GET /rides/{trip_id} → {status, driver_location, eta, fare}
+├── Critical Trade-offs
+│   ├── Redis GEO vs PostGIS → Redis GEO chosen for real-time; PostGIS for analytics; Redis handles 250K writes/sec easily
+│   ├── Redlock vs DB lock → Redlock for distributed driver assignment across microservices; UNIQUE DB constraint as safety net
+│   └── Geohash vs QuadTree → Redis GEO uses Geohash internally; QuadTree for custom proximity service (less operational overhead)
+├── Failure Scenarios
+│   ├── Redis GEO node failure → driver locations lost; Kafka replays last 60s of location updates to rebuild; brief match degradation
+│   ├── Redlock failure (Redis crash during lock) → driver may be double-assigned; DB UNIQUE constraint (driver_id + ACTIVE trip) rejects second assignment
+│   └── Driver app disconnect → TTL 60s on Redis GEO entry; driver appears offline after 60s; Kafka detects gap; push notification to driver
+└── Interview Angles
+    ├── Uber → "Design Uber" → Redis GEO + Kafka location pipeline + Redlock + trip state machine = complete answer
+    ├── DoorDash → "Design delivery matching" → same geospatial; add order readiness time to matching score; batch assignments
+    └── Follow-up → "How do you compute ETA?" → routing graph (Contraction Hierarchies); real-time traffic from GPS probe aggregation
+```
+
+---
+
 ## Problem Statement
 
 Design a ride-sharing service where:

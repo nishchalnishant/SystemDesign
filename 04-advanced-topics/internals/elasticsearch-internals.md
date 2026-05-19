@@ -5,6 +5,73 @@ Elasticsearch is a distributed search and analytics engine built on Apache Lucen
 
 ---
 
+## File Mindmap
+
+```
+Elasticsearch Internals
+├── Why It Exists
+│   ├── Problem → LIKE '%query%' on SQL is full table scan; no relevance ranking; no full-text analysis
+│   └── Physical limit → B-tree index doesn't invert text; need inverted index for term → document lookup
+├── Core Concepts
+│   ├── Cluster → one or more nodes sharing an index
+│   ├── Node → single Elasticsearch instance; roles: master / data / coordinating / ingest
+│   ├── Index → collection of documents (like a DB table)
+│   ├── Shard → unit of distribution; each shard is an independent Lucene index
+│   └── Primary + Replica → primary accepts writes; replicas serve reads + failover
+├── Inverted Index
+│   ├── Forward index → document → list of terms
+│   ├── Inverted index → term → list of document IDs (+ positions, frequencies)
+│   └── Enables O(1) lookup per term vs O(N) table scan
+├── Token Analysis Pipeline
+│   ├── Char filters → strip HTML, map characters (& → and)
+│   ├── Tokenizer → split text into tokens (standard: whitespace + punctuation)
+│   └── Token filters → lowercase, stop words removal, stemming (running → run), synonyms
+├── Document Indexing Flow
+│   ├── Route to shard → hash(doc_id) % num_primary_shards
+│   ├── Write to translog (WAL equivalent) → durability before memory write
+│   ├── Write to in-memory buffer → not yet searchable
+│   ├── Refresh (every 1 second) → flush buffer to Lucene segment → becomes searchable
+│   ├── Replicate to replica shards
+│   └── Flush to disk → translog cleared → segment committed to disk
+├── Segments & Merging
+│   ├── Each refresh creates a new immutable Lucene segment
+│   ├── Segments accumulate → queries must scan all; too many = slow reads
+│   ├── Tiered merge policy → background merges smaller segments into larger ones
+│   └── Cost: merge I/O can spike; schedule during low-traffic windows
+├── Search Query Flow (Scatter-Gather)
+│   ├── Query phase → coordinating node sends query to all shards; each returns top-N doc IDs + scores
+│   ├── Merge phase → coordinating node merges results; global top-N selected
+│   └── Fetch phase → coordinating node fetches full documents for final top-N from shard nodes
+├── Scoring (Relevance)
+│   ├── TF-IDF → term frequency × inverse document frequency; common baseline
+│   └── BM25 (default since ES 5) → TF with saturation (diminishing returns at high frequency); better for long docs
+├── Sharding Strategy
+│   ├── Primary shard count is fixed at index creation (cannot change without reindex)
+│   ├── Target shard size: 20-50GB; too small = overhead; too large = slow merges
+│   └── Rule: max_shard_count ≈ total_data_size / 30GB
+├── Cluster State & Master Node
+│   ├── Master node manages cluster state (shard assignments, index mappings)
+│   ├── Master election → quorum-based; minimum_master_nodes = (N/2)+1 to prevent split-brain
+│   └── Odd number of master-eligible nodes → prevents split-brain tie
+├── Query Optimizations
+│   ├── Filter context → yes/no match (no scoring); results cached in filter cache
+│   ├── Query context → relevance scored; not cached; more expensive
+│   ├── Fielddata cache → aggregations on text fields load entire field into heap; use keyword type instead
+│   └── Doc values → columnar on-disk structure for sorting/aggregations; default for numeric/keyword
+├── Aggregations
+│   ├── Bucket → group documents (terms, date_histogram, range)
+│   ├── Metric → compute values within buckets (avg, sum, max, percentiles)
+│   └── Pipeline → compute on other aggregations (moving average, derivative)
+├── Trade-offs
+│   ├── Pro: sub-second full-text search, relevance ranking, horizontal scale, rich aggregations
+│   ├── Con: not a primary DB; eventual consistency on replica; near-real-time (1s refresh lag)
+│   └── Con: mapping explosion with dynamic fields; fielddata can OOM heap
+└── Interview Angles
+    ├── "How does Elasticsearch search millions of documents fast?" → inverted index + scatter-gather across shards
+    ├── "Why is my query slow?" → too many shards, missing filter context caching, large fielddata
+    └── Follow-up: how do you scale Elasticsearch writes → increase primary shards (at index creation), add data nodes
+```
+
 ## Core Concepts
 
 ### Cluster, Nodes, and Shards

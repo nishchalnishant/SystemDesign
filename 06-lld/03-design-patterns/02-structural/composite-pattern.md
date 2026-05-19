@@ -8,6 +8,45 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Composite Pattern]
+├── Problem It Solves
+│   ├── Cart contains Product and Bundle (bundle may contain bundles)
+│   ├── instanceof chains to calculate price — breaks on every new type
+│   └── Recursive tree traversal is reimplemented everywhere
+├── Core Structure
+│   ├── Component interface: CartItem with getPrice() and getDescription()
+│   ├── Leaf: Product — implements CartItem, returns own price
+│   ├── Composite: ProductBundle — contains List<CartItem>
+│   │   └── getPrice() = sum of all children.getPrice() (recursive)
+│   └── Client: calls getPrice() on root — never cares about depth
+├── Tree Structure
+│   ├── Cart → [Product, Bundle → [Product, Bundle → [Product, Product]]]
+│   ├── Leaf and composite implement same interface
+│   └── Recursive getPrice() traverses the entire tree transparently
+├── File System Analogy
+│   ├── File (leaf): getSize() returns own size
+│   ├── Directory (composite): getSize() = sum of children sizes
+│   └── Client calls getSize() on any node — works for both
+├── When to Use
+│   ├── Part-whole hierarchies: tree structures where leaves and branches behave uniformly
+│   ├── UI component trees: Panel contains Button, Label, Panel
+│   └── Org charts, DOM trees, file systems
+├── When NOT to Use
+│   ├── Structure is flat — no nesting — direct list is simpler
+│   └── Leaf vs Composite must behave differently in important ways
+├── Trade-offs
+│   ├── Uniform treatment: client code is simpler (no instanceof)
+│   ├── Hard to restrict: nothing prevents invalid children in composite
+│   └── Walking the tree is O(N) — deep trees can be slow if not cached
+└── Interview Angles
+    ├── What makes Composite different from a simple recursive data structure?
+    ├── How does Composite relate to the Visitor pattern?
+    └── When does the Composite tree need a parent reference?
+```
+
 ## Problem Without the Pattern
 
 The `instanceof` approach:

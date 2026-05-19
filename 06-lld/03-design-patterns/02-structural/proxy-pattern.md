@@ -8,6 +8,50 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Proxy Pattern]
+├── Problem It Solves
+│   ├── HeavyReportGenerator: 500MB + 3 seconds to initialize
+│   ├── Most users never run a report — eager init wastes resources
+│   └── Some users must be blocked — access control before real call
+├── Core Structure
+│   ├── Subject interface: ReportGenerator with generateReport()
+│   ├── Real subject: HeavyReportGenerator (expensive)
+│   ├── Proxy: implements same interface, holds/creates real subject
+│   └── Client: calls proxy — cannot tell if it is talking to proxy or real
+├── Proxy Types
+│   ├── Virtual Proxy: lazy init — create real object only on first use
+│   ├── Protection Proxy: check permissions before delegating
+│   ├── Caching Proxy: return cached result if available
+│   ├── Remote Proxy: represent object in another address space (RMI, gRPC stub)
+│   └── Logging Proxy: record calls for audit/debugging
+├── LazyReportProxy
+│   ├── generator field starts null
+│   ├── On first generateReport(): check generator == null, create and assign
+│   └── Subsequent calls: delegate immediately (no re-init)
+├── SecureReportProxy
+│   ├── Check user role before delegating
+│   ├── Throw UnauthorizedException if no permission
+│   └── Real generator only created if access is granted
+├── Analogy
+│   ├── Celebrity manager: all requests go through manager (proxy)
+│   └── Manager decides what to forward, what to block, what to log
+├── Real-World Usage
+│   ├── Hibernate lazy loading: @OneToMany collection is a proxy — loaded on access
+│   ├── Spring AOP: transaction and security proxies wrap beans
+│   └── Java dynamic proxy: Proxy.newProxyInstance() for generic interception
+├── Proxy vs Decorator vs Adapter
+│   ├── Proxy: same interface, controls access to real object
+│   ├── Decorator: same interface, adds behavior, client knows it's decorated
+│   └── Adapter: different interface, translates between incompatible APIs
+└── Interview Angles
+    ├── How does Hibernate use Virtual Proxy for lazy loading?
+    ├── Difference between Proxy and Decorator?
+    └── What is a dynamic proxy and how does Spring use it?
+```
+
 ## Problem Without the Pattern
 
 Eager initialization wastes resources:

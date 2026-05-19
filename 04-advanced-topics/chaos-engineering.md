@@ -13,6 +13,62 @@
 
 ---
 
+## File Mindmap
+
+```
+Chaos Engineering & Resilience
+├── Why It Exists
+│   ├── Problem → circuit breakers, retries, fallbacks exist in code; never tested in production; theory ≠ evidence
+│   └── Physical limit → staging has different traffic (no real users), different load → timing-sensitive bugs only appear at production scale
+├── Definition
+│   ├── Discipline of controlled failure experiments to build confidence in system resilience
+│   ├── NOT random destruction, NOT testing without safeguards
+│   └── IS: controlled experiments, validate hypothesis, minimize blast radius
+├── Principles (5 Steps)
+│   ├── Step 1: Define steady state → e.g., error rate < 1%, p99 < 200ms
+│   ├── Step 2: Hypothesize → "if we kill one replica, latency increases < 10%"
+│   ├── Step 3: Inject fault → kill the replica
+│   ├── Step 4: Verify → did the metric stay within bounds?
+│   └── Step 5: Fix → if hypothesis violated, fix the weakness; without this step it's a fire drill, not engineering
+├── Fault Injection Types
+│   ├── Resource Exhaustion
+│   │   ├── CPU Spike → stress-ng at 100% → validates autoscaler response time
+│   │   ├── Memory Leak → consume RAM until OOM Killer triggers → validates graceful restart
+│   │   └── Disk Fill → 100% full → validates log rotation, ENOSPC error handling
+│   ├── Network Attacks
+│   │   ├── Latency → +500ms delay (simulate cross-region lag) → validates timeout configs
+│   │   ├── Packet Loss → drop 5% packets → validates retry logic
+│   │   ├── Blackhole → drop all traffic to specific IP → validates circuit breaker
+│   │   └── DNS Failure → block port 53 → validates DNS caching + fallback
+│   └── Application State
+│       ├── Clock Skew → change system time → breaks distributed locks, Lamport clocks
+│       ├── Process Kill → kill -9 main process → validates crash recovery + restart speed
+│       └── Certificate Expiry → use expired cert → validates cert monitoring + rotation
+├── Resilience Patterns (revealed by chaos experiments)
+│   ├── Circuit Breaker → failure rate > 50% → trip; fail fast; don't wait for timeout; Resilience4j
+│   ├── Bulkhead → separate thread pools per downstream; slow Image Service ≠ exhaust User Service threads
+│   ├── Retry + Jitter → wait = base * 2^attempt + Random(0,100ms); prevents thundering herd
+│   └── Fallback → Recommendations down → show "Trending Now" static list; Price down → show cached price + staleness warning
+├── Game Days
+│   ├── Structured production experiment: preparation → execution (2-3h) → observation → reporting
+│   ├── "Master of Disaster" role → dedicated observer watching metrics in real time
+│   ├── Blast radius control → start single AZ, expand scope only after each level passes
+│   └── Example: Redis Leader failover → expected < 30s; actual 5 min (client library didn't refresh topology) → Bug Found
+├── Tools
+│   ├── Chaos Monkey (Netflix) → random EC2 instance termination; the original
+│   ├── Gremlin → SaaS, controlled, enterprise-grade, safe defaults
+│   ├── Chaos Mesh → Kubernetes; YAML-based (PodKill, NetworkDelay)
+│   ├── LitmusChaos → K8s native, declarative, cloud-native
+│   └── Toxiproxy (Shopify) → network simulation; great for unit testing network partitions
+├── Trade-offs
+│   ├── Pro: converts "I believe this is resilient" into evidence
+│   └── Con: risk of real customer impact if blast radius is not controlled
+└── Interview Angles
+    ├── "How do you ensure system resilience?" → design with CB + bulkheads + chaos validation
+    ├── "What is a Game Day?" → structured production experiment with defined stop conditions
+    └── Follow-up: how do you limit blast radius → start with 1 AZ, 1 cluster, auto-rollback on SLO breach
+```
+
 ## What is Chaos Engineering?
 
 **Question**: You have circuit breakers, retries, fallbacks, and health checks. Your architecture diagram says the system is resilient. You have never actually killed a database replica in production. You have never actually dropped 5% of network packets on your payment service. How do you know the circuit breaker actually trips at the right threshold? How do you know the fallback actually serves cached data instead of returning an error? You have a theory of resilience. How do you convert it into evidence?

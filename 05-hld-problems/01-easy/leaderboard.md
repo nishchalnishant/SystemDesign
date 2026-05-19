@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Real-Time Leaderboard
+├── Problem Constraints
+│   ├── Scale → 100M users, 1.25M leaderboards, 10K score updates/sec avg (100K/sec burst during game events)
+│   ├── Latency target → rank lookup < 10ms; score update < 5ms; top-100 list < 50ms
+│   └── Core hardness → real-time rank computation across 100M users without full sort on every update
+├── Architecture Derivation
+│   ├── Step 1 → SQL ORDER BY score DESC with RANK() → O(N log N) full sort; unacceptable at 100M rows
+│   ├── Step 2 → Redis Sorted Set → ZADD O(log N); ZRANK O(log N); ZREVRANGE O(log N + K); all sub-millisecond
+│   ├── Step 3 → Only top-1M users in Redis (covering 99.9% of queries); tail users computed from PostgreSQL
+│   └── Step 4 → Friend leaderboard = pull-based: fetch friend list → ZSCORE for each friend → sort in-app
+├── Core Components
+│   ├── Redis Sorted Set → ZADD leaderboard:{game_id} score user_id; ZREVRANK for rank; ZREVRANGE for top-K
+│   ├── PostgreSQL → persistent score store; source of truth; synced async from Redis via Kafka consumer
+│   ├── Score Update Service → validates score (anti-cheat rules) → ZADD Redis → publish to Kafka
+│   ├── Friend Leaderboard Service → fetch friends from Social Graph → batch ZSCORE → sort → return top-10 friends
+│   └── Leaderboard Snapshot job → hourly Spark job for weekly/monthly leaderboard snapshots into S3
+├── Data Model
+│   ├── Redis → ZSET "lb:{game_id}:{period}" → {user_id: score}; TTL = period end time
+│   └── PostgreSQL scores → (user_id, game_id, score, updated_at); indexed on (game_id, score DESC) for tail queries
+├── APIs
+│   ├── POST /score → {user_id, game_id, score, delta} → {new_score, rank}
+│   ├── GET /leaderboard/{game_id}?page=1&size=100 → [{rank, user_id, score, username, avatar}]
+│   └── GET /leaderboard/{game_id}/me → {user_id, score, rank, percentile, neighbors: ±5 ranks}
+├── Critical Trade-offs
+│   ├── Redis vs DB sort → Redis ZSET chosen; O(log N) update and rank vs O(N log N) full scan
+│   ├── Real-time vs Snapshot → real-time for current leaderboard; snapshot for historical weekly/monthly (Spark job)
+│   └── Global vs Friend leaderboard → global uses Redis ZSET; friend uses pull-based ZSCORE batch (avoid fan-out on write)
+├── Failure Scenarios
+│   ├── Redis failure → serve stale leaderboard from PostgreSQL snapshot (up to 1 min stale); auto-rebuild Redis on restart
+│   ├── Hot key (popular game) → shard ZSET by score range: lb:{game_id}:0-1M, lb:{game_id}:1M-2M; aggregate at read time
+│   └── Score manipulation → server-side anti-cheat validation before ZADD; anomaly detection on delta distribution
+└── Interview Angles
+    ├── Duolingo → "Design XP leaderboard for 50M daily active learners" → Redis ZSET + weekly snapshot + friend leaderboard
+    ├── Chess.com → "Design ELO rating leaderboard" → same Redis ZSET; ELO computed server-side before ZADD
+    └── Follow-up → "How do you show a user their rank when they're #45,789,321?" → ZREVRANK is O(log N); works even at 100M
+```
+
+---
+
 ## What Breaks Without This System?
 
 Duolingo launches a weekly XP competition. Rank is computed by querying PostgreSQL: `SELECT COUNT(*) + 1 FROM user_scores WHERE score > (SELECT score FROM user_scores WHERE user_id = ?)`. At 100M users and 10K score updates/sec, this query takes 3–8 seconds. The leaderboard shows ranks from 10 minutes ago. After a tournament event drives 100K score updates/sec, the DB falls behind and rank data becomes 45 minutes stale. Users refresh obsessively to see if they've climbed — their refreshes compound the query load. The DB locks up. The game stops working.

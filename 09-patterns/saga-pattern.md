@@ -4,6 +4,44 @@
 
 ---
 
+## Pattern Mindmap
+
+```
+Saga Pattern
+├── Core Problem
+│   └── Distributed transactions across services without 2PC global lock
+├── Key Components
+│   ├── Local Transaction → each service commits to its own DB independently
+│   ├── Compensating Transaction → semantic undo (forward action, not DB ROLLBACK)
+│   ├── Choreography → services react to events, no central coordinator
+│   └── Orchestrator → single process issues commands, tracks saga state
+├── When to Use
+│   ├── ✓ Multi-service workflows that must stay consistent (order, payment, inventory)
+│   ├── ✓ Long-running business transactions (minutes to hours)
+│   └── ✓ Services own separate databases — no shared DB transaction possible
+├── When NOT to Use
+│   ├── ✗ Single service with one DB (just use a local ACID transaction)
+│   └── ✗ Need true isolation — saga intermediate states are visible to other readers
+├── Trade-offs
+│   ├── Pro: No distributed lock, no coordinator SPOF, scales horizontally
+│   ├── Pro: Each service independently deployable and failure-isolated
+│   ├── Con: Compensating transactions are complex to design and test
+│   └── Con: Eventual consistency — system is temporarily inconsistent during execution
+├── Choreography vs Orchestration
+│   ├── Choreography → no SPOF, hard to trace flow, good for simple linear sagas
+│   └── Orchestration → explicit flow control, easier debugging, coordinator can be SPOF
+├── Real-World Usage
+│   ├── Amazon → order saga: Order → Reserve Inventory → Charge Payment → Ship
+│   ├── Uber → trip saga: Request → Match Driver → Charge Card → Complete Trip
+│   └── Netflix → account saga: Signup → Payment → Profile Creation → Welcome Email
+└── Interview Angles
+    ├── "How do you handle partial failures?" → describe compensating transactions
+    ├── "Choreography vs orchestration?" → trade SPOF for debuggability
+    └── "How is this different from 2PC?" → no blocking locks, eventual consistency
+```
+
+---
+
 ## What Breaks Without This Pattern?
 
 An e-commerce order touches three services: Order, Inventory, Payment. Without coordination, this happens:

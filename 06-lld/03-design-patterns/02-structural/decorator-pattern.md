@@ -8,6 +8,52 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Decorator Pattern]
+├── Problem It Solves
+│   ├── Pizza + N toppings → 2^N subclasses (CheeseMushroom, CheeseOlive, ...)
+│   ├── Adding one topping doubles the subclass count
+│   └── Static inheritance cannot compose at runtime
+├── Core Structure
+│   ├── Component interface: Pizza with getCost() and getDescription()
+│   ├── Concrete component: BasePizza implements Pizza
+│   ├── Abstract decorator: ToppingDecorator implements Pizza, holds Pizza reference
+│   ├── Concrete decorators: CheeseDecorator, MushroomDecorator, OliveDecorator
+│   └── Each decorator: getCost() = inner.getCost() + own cost
+├── Composition at Runtime
+│   ├── new CheeseDecorator(new MushroomDecorator(new BasePizza()))
+│   ├── Chain can be built in any order, any combination
+│   └── Each wrapper adds exactly one responsibility
+├── Key Property
+│   ├── Decorator implements same interface as component
+│   ├── Client cannot tell if it has a base or decorated instance
+│   └── Open for extension (new decorators) without modifying base
+├── Analogy
+│   ├── Coffee shop: Espresso + Milk + Caramel + Whip
+│   └── Each add-on wraps the previous cup, adds cost and description
+├── Real-World: Java I/O
+│   ├── InputStream → FileInputStream → BufferedInputStream → DataInputStream
+│   ├── Each layer wraps the previous and adds behavior (buffering, data parsing)
+│   └── New InputStream type = one new class, works with all existing wrappers
+├── When to Use
+│   ├── Behavior combinations grow combinatorially with inheritance
+│   ├── Features should be added/removed at runtime
+│   └── Extending a class via subclassing is impractical (third-party, final)
+├── When NOT to Use
+│   ├── Only 2–3 fixed variants exist — simple subclassing is clearer
+│   └── Decorator chain order matters in non-obvious ways — confusing
+├── Trade-offs
+│   ├── Many small classes; deep chains are hard to debug
+│   ├── Identity: decorated object is not instanceof specific decorator
+│   └── Flexible for extension; rigid if component interface changes
+└── Interview Angles
+    ├── How is Decorator different from Inheritance?
+    ├── How does Java I/O use the Decorator pattern?
+    └── Decorator vs Proxy — what is the distinction?
+```
+
 ## Problem Without the Pattern
 
 The subclass-for-every-combination approach:

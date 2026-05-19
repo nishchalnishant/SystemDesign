@@ -8,6 +8,39 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Iterator Pattern]
+├── Core Concept
+│   ├── What → Provide sequential access to collection elements without exposing internals
+│   └── Why → Client code works identically for ArrayList, LinkedList, tree, graph
+├── Key Components
+│   ├── Iterator interface → hasNext(); next()
+│   ├── Concrete Iterators → ArrayListIterator, LinkedListIterator
+│   ├── Iterable interface → iterator() — collection implements this
+│   └── Client → only uses hasNext()/next(); doesn't know the underlying structure
+├── When to Use
+│   ├── ✓ Hide internal representation (switch ArrayList to TreeSet without changing callers)
+│   ├── ✓ Multiple simultaneous traversals of the same collection
+│   └── ✓ Provide uniform iteration over different data structures (composite tree)
+├── When NOT to Use
+│   ├── ✗ Direct index access needed — iterator hides positional info
+│   └── ✗ Simple List with no abstraction requirement — enhanced for-loop is sufficient
+├── Trade-offs
+│   ├── Pro: Decouples traversal logic from collection; swap structure without changing client
+│   └── Con: Stateful — concurrent modification during iteration causes ConcurrentModificationException
+├── Real-World Examples
+│   ├── Java Iterable/Iterator → every Collection implements Iterable; enables for-each
+│   └── Database ResultSet → rows fetched one at a time via next() without loading all into memory
+└── Interview Angles
+    ├── Internal vs External → internal hides loop; external gives caller control (Java uses external)
+    ├── Fail-fast → modCount check throws ConcurrentModificationException if mutated during iteration
+    └── Code challenge: implement an Iterator for a binary tree (in-order traversal)
+```
+
+---
+
 ## Problem Without the Pattern
 
 The obvious approach — expose the internal collection directly:

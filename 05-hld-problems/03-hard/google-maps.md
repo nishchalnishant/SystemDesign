@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Google Maps
+├── Problem Space
+│   ├── Scale → 1B+ MAU, 25M map tile requests/sec, petabytes of map data, 1B GPS probes/day for traffic
+│   └── Core challenge → render tiles for any zoom/region on demand + route shortest path on 50M-node road graph in < 500ms
+├── Functional Requirements
+│   ├── Display interactive map tiles at any zoom level globally
+│   ├── Turn-by-turn navigation with real-time ETA
+│   ├── Search for places (addresses, businesses, landmarks)
+│   └── Real-time traffic updates adjusting routes dynamically
+├── Non-Functional Requirements
+│   ├── Latency → tile serve < 50ms (CDN cached); route calculation < 500ms
+│   ├── Availability → 99.99%; map/navigation unavailability is safety-critical
+│   └── Consistency → eventual for traffic data (5-min staleness acceptable)
+├── High-Level Architecture
+│   ├── Tile server → pre-render tiles at 21 zoom levels into 256×256 PNG/vector tiles; store in GCS/S3
+│   ├── CDN (Akamai/Cloudflare) → cache tiles globally; cache-hit ratio > 95% for popular regions
+│   ├── Road graph DB → 50M nodes, 120M edges; stored as adjacency list; partitioned by geographic region
+│   ├── Routing engine → Contraction Hierarchies (CH) preprocessing; A* with CH at query time; < 100ms for continent-scale
+│   ├── Traffic pipeline → GPS probes from 1B Android devices → Kafka → Flink aggregation → edge weight updates every 2min
+│   └── Place search → Elasticsearch with geospatial index; fuzzy matching for typos; ranked by relevance + distance
+├── Key Design Decisions
+│   ├── Contraction Hierarchies → preprocess road graph (10h offline); query in <50ms vs Dijkstra's 30s on 50M nodes
+│   ├── Tile pyramid → 21 zoom levels; zoom 0 = 1 tile (whole world); zoom 18 = 68B tiles (street level)
+│   ├── Vector tiles over raster → 10x smaller; rendered client-side; supports dynamic styling
+│   └── GPS probe anonymization → strip user_id before aggregation; 5-min buckets prevent re-identification
+├── Scale & Bottlenecks
+│   ├── Tile cache → popular cities served 100% from CDN; long-tail tiles served from origin with 50ms SLA
+│   └── Route recalculation → traffic update every 2min triggers re-route for 100M active navigators; fan-out via push
+├── Failure Modes
+│   ├── CDN miss → origin tile server auto-renders on demand; first request slow (500ms), cached for subsequent
+│   └── Traffic data lag → stale edge weights cause suboptimal routes; acceptable for 5-min window
+└── Interview Angles
+    ├── Graph algorithm choice → why Contraction Hierarchies over Dijkstra for production routing?
+    ├── Tile serving → how do you handle 25M tile requests/sec? What's the caching strategy?
+    └── Follow-up: how do you incorporate real-time incidents (accidents, road closures) within seconds?
+```
+
+---
+
 ## Problem Statement
 
 Design a mapping and navigation system that:

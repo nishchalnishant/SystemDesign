@@ -16,6 +16,52 @@
 
 ---
 
+## File Mindmap
+
+```
+Networking
+├── Why It Exists
+│   ├── Problem → API fails; no mental model = 30min blaming wrong layer
+│   └── Forces → 7 transformations from app bytes to wire signal; each layer = different failure mode
+├── Core Concepts
+│   ├── OSI Model → 7 layers (Physical→Data Link→Network→Transport→Session→Presentation→Application)
+│   ├── TCP/IP → 4-layer practical stack (Link→Internet→Transport→Application)
+│   ├── TCP → reliable, ordered, connection-oriented; 3-way handshake before data
+│   ├── UDP → unreliable, no handshake; lower latency; used for video/DNS/gaming
+│   └── QUIC → UDP-based; 0-RTT reconnect; multiplexed streams; no head-of-line blocking
+├── HTTP Evolution
+│   ├── HTTP/1.1 → persistent connections; 6 parallel connections per host; head-of-line blocking
+│   ├── HTTP/2 → binary framing; multiplexing on one TCP connection; server push; header compression
+│   └── HTTP/3 → QUIC transport; 0-RTT; no TCP head-of-line blocking; better mobile performance
+├── API Protocols
+│   ├── REST → HTTP verbs; stateless; JSON; wide tooling support → higher overhead per call
+│   ├── GraphQL → single endpoint; client specifies shape → N+1 query risk; caching harder
+│   └── gRPC → Protobuf binary; HTTP/2; streaming; strong typing → not browser-native; harder debug
+├── Real-Time Patterns
+│   ├── WebSockets → full-duplex persistent TCP; chat, live feeds → stateful, hard to load balance
+│   ├── SSE (Server-Sent Events) → server push over HTTP/1.1; unidirectional; auto-reconnect
+│   └── Long Polling → client holds open request; server replies when data ready → higher overhead
+├── DNS Deep Dive
+│   ├── Recursive resolver → queries iteratively on client's behalf; caches results
+│   ├── TTL → controls cache duration; low TTL = faster failover; high TTL = fewer lookups
+│   └── Anycast → same IP announced from many PoPs; BGP routes user to nearest node
+├── Failure Modes
+│   ├── Layer 3 routing loop → traceroute to locate hop; check BGP announcements
+│   ├── TCP SYN flood → server exhausts half-open connections → SYN cookies mitigation
+│   └── DNS poisoning → DNSSEC validation; resolver cache TTL minimizes window
+├── Real-World Usage
+│   ├── Cloudflare → anycast IP; 300+ PoPs; routes user to nearest edge in <1 BGP hop
+│   ├── gRPC (Google, Netflix) → internal microservice calls; Protobuf cuts payload 60–80%
+│   └── WebSockets (Slack, Discord) → persistent connection per client; message push without polling
+└── Interview Angles
+    ├── "TCP vs UDP — when do you choose UDP?" → latency > reliability; DNS, video streaming, games
+    ├── "HTTP/2 vs HTTP/3 — key difference?" → HTTP/2 still TCP (HoL blocking); HTTP/3 uses QUIC/UDP
+    ├── "REST vs gRPC — when to use gRPC?" → internal services; streaming; high-throughput binary data
+    └── Follow-up: "How does DNS failover work and what are the pitfalls?" → TTL caching delays; low TTL cost
+```
+
+---
+
 ## OSI Model vs TCP/IP
 
 **Question**: Your API call fails. Is the problem in your application code, in the network routing between machines, in the physical link between your server and its switch, or somewhere else? Without a mental model of which layer handles what, you will waste 30 minutes blaming the wrong thing. How do you instantly narrow the search space?

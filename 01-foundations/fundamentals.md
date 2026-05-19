@@ -4,6 +4,69 @@ This is the entry point. Read this first, then follow the study path at the bott
 
 ---
 
+## File Mindmap
+
+```
+System Design: The Mental Model
+├── Why It Exists
+│   ├── Problem → app works for 100 users, breaks at 10M — what fails first?
+│   └── Forces → physics: CPU ~3B cycles/s, disk ~100-200 MB/s, RAM bounded, speed of light
+├── Core Concepts
+│   ├── Scalability → handle growing load without full rewrite
+│   │   ├── Vertical → bigger machine; hits hardware ceiling
+│   │   └── Horizontal → more machines; requires distribution decisions
+│   ├── Availability → % uptime; nines: 99.9% = 8.7h/yr downtime, 99.999% = 5.3min/yr
+│   ├── Consistency → all nodes see same data at same time (vs eventual consistency)
+│   └── Performance
+│       ├── Latency → time for one request (p50 / p99 / p999)
+│       └── Throughput → requests per second; QPS = DAU × actions/day / 86400
+├── The 8 Core Building Blocks
+│   ├── Load Balancer → distribute traffic; hide server topology
+│   ├── Cache → RAM over disk; reduce DB load; 100ns vs 5ms
+│   ├── Database → persistence; ACID vs BASE
+│   ├── Message Queue → decouple producers/consumers; async work
+│   ├── CDN → edge caching; serve static content close to user
+│   ├── Reverse Proxy → SSL, routing, compression in one place
+│   ├── API Gateway → auth + rate limit + routing for microservices
+│   └── Service Discovery → find other services dynamically
+├── Key Latency Numbers
+│   ├── L1 cache → ~1ns
+│   ├── RAM → ~100ns
+│   ├── SSD random read → ~100µs
+│   ├── Network same DC → ~0.5ms
+│   ├── HDD seek → ~10ms
+│   ├── Cross-region → ~100ms
+│   └── Speed of light NYC→London → ~70ms (one-way)
+├── Availability Nines Table
+│   ├── 99% → 3.65 days/yr downtime
+│   ├── 99.9% → 8.7 hrs/yr
+│   ├── 99.99% → 52.6 min/yr
+│   └── 99.999% → 5.3 min/yr
+├── QPS / Capacity Estimation
+│   ├── Pattern → DAU × actions/day / 86,400 = QPS
+│   ├── Storage → writes/day × payload bytes × retention days
+│   └── Bandwidth → QPS × avg response size
+├── SDE-3 Differentiators
+│   ├── Quantify tradeoffs (not just name them)
+│   ├── Know failure modes before the interviewer asks
+│   ├── Discuss monitoring and alerting strategy
+│   └── Justify tech choices with numbers, not preference
+├── Study Path (Reading Order)
+│   ├── 01-foundations → mental model, DB, networking, caching, security
+│   ├── 02-building-blocks → LB, message broker, sharding, replication, etc.
+│   ├── 03-scaling → strategies, patterns
+│   ├── 04-advanced-topics → distributed systems, chaos, internals
+│   ├── 05-hld-problems → real design walkthroughs
+│   └── 06-lld → object design, patterns
+└── Interview Angles
+    ├── "Walk me through your estimation" → show QPS → storage → bandwidth math
+    ├── "What breaks first?" → identify single points of failure
+    ├── "How do you know it's working?" → metrics, SLOs, alerting
+    └── Follow-up: "If latency spikes at 99th percentile, where do you look first?"
+```
+
+---
+
 ## What Is System Design?
 
 **Question**: You've written an app that works perfectly for 100 users. Now you need it to work for 10 million. You can't rewrite it from scratch — you're in production. What breaks first, and how do you know what to fix before it breaks?

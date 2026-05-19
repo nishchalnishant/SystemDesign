@@ -8,6 +8,39 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Template Method Pattern]
+├── Core Concept
+│   ├── What → Define the skeleton of an algorithm in a base class; subclasses fill in steps
+│   └── Why → Enforces a fixed sequence while allowing step-level variation without code duplication
+├── Key Components
+│   ├── Abstract base class → processOrder() calls validate(), calculatePrice(), notify() in order
+│   ├── Template method → final; cannot be overridden — sequence is locked
+│   ├── Abstract steps → validate(), notify() — must be overridden by subclass
+│   └── Hook methods → optional; base class provides default, subclass may override
+├── When to Use
+│   ├── ✓ Multiple classes share the same algorithm sequence but differ in steps
+│   ├── ✓ Prevent subclasses from changing the overall flow (mark template method final)
+│   └── ✓ Frameworks/libraries where callers extend and fill in hooks
+├── When NOT to Use
+│   ├── ✗ Steps vary so much that the shared skeleton is meaningless — use Strategy
+│   └── ✗ Composition preferred over inheritance — Strategy + delegation is more flexible
+├── Trade-offs
+│   ├── Pro: Eliminates duplication of algorithm skeleton; sequence enforced centrally
+│   └── Con: Inheritance coupling — subclass tied to base class; hard to change template later
+├── Real-World Examples
+│   ├── Java Collections.sort() → algorithm fixed; compareTo() is the customizable step
+│   └── Spring AbstractController → handleRequest() is the template; handleRequestInternal() is the hook
+└── Interview Angles
+    ├── vs Strategy → Strategy changes the whole algorithm at runtime; Template fixes sequence, varies steps
+    ├── Hollywood Principle → "Don't call us, we'll call you" — base class calls subclass methods
+    └── Code challenge: implement data parser with fixed parse() → open → extract → close steps
+```
+
+---
+
 ## Problem Without the Pattern
 
 ```java

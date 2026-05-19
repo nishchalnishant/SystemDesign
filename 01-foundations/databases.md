@@ -20,6 +20,56 @@
 
 ---
 
+## File Mindmap
+
+```
+Databases
+├── Why It Exists
+│   ├── Problem → two concurrent transfers from $250 account both read $250, both write, final balance wrong
+│   └── Forces → filesystem has no concept of atomicity or isolation; concurrent writes corrupt state
+├── SQL vs NoSQL
+│   ├── SQL (relational) → structured schema; ACID; JOINs; strong consistency; vertical scaling primary
+│   └── NoSQL → flexible schema; horizontal scale; eventual consistency; trade relational power for throughput
+├── ACID vs BASE
+│   ├── ACID → Atomicity, Consistency, Isolation, Durability; required for financial/transactional systems
+│   └── BASE → Basically Available, Soft state, Eventually consistent; trade consistency for availability/scale
+├── CAP Theorem
+│   ├── Consistency → every read sees latest write
+│   ├── Availability → every request gets a response (may not be latest)
+│   ├── Partition Tolerance → system works despite network splits
+│   └── Pick 2: CP (HBase, ZooKeeper) or AP (Cassandra, DynamoDB) — CA only possible without partitions
+├── Database Models
+│   ├── Relational (PostgreSQL, MySQL) → tables + FKs; ACID; best for structured, relational data
+│   ├── Document (MongoDB) → JSON docs; flexible schema; no joins; best for hierarchical/polymorphic data
+│   ├── Key-Value (Redis, DynamoDB) → O(1) lookup; no query; best for sessions, caching, counters
+│   ├── Wide-column (Cassandra) → row key + dynamic columns; time-series; write-heavy workloads
+│   └── Graph (Neo4j) → nodes + edges; traversal queries; social networks, recommendations
+├── Indexes
+│   ├── B-tree index → sorted; range queries; default for most DBs; O(log n) lookup
+│   ├── Hash index → exact match only; O(1); no range support
+│   ├── Composite index → multi-column; column order matters; leftmost prefix rule
+│   └── Trade-off → index speeds reads; slows writes; consumes storage; don't index everything
+├── Normalization vs Denormalization
+│   ├── Normalization → eliminate redundancy; update one place; more JOINs; slower reads
+│   └── Denormalization → duplicate data for read speed; fewer JOINs; stale copies on write
+├── Sharding → horizontal partition across nodes; shard key choice is critical; enables write scaling
+├── Replication → copies across nodes; primary-replica (read scale); multi-primary (write availability)
+├── Failure Modes
+│   ├── N+1 query → ORM loads list then fetches related N times → use JOIN or eager load
+│   └── Missing index → full table scan at scale → EXPLAIN plan; add selective index
+├── Real-World Usage
+│   ├── PostgreSQL → financial systems, Stripe; ACID critical; JSONB for flexible columns
+│   ├── Cassandra → Uber, Netflix; time-series writes; AP; wide-column; consistent hashing
+│   └── DynamoDB → Amazon; single-digit ms; KV + document; serverless; AP by default
+└── Interview Angles
+    ├── "SQL vs NoSQL — how do you choose?" → consistency + relational needs → SQL; scale + flexibility → NoSQL
+    ├── "Explain CAP theorem with a real example" → Cassandra: AP; writes succeed during partition, may diverge
+    ├── "What is an index and what's the cost?" → B-tree for reads; write overhead; storage cost; over-indexing
+    └── Follow-up: "How does a database guarantee ACID across a crash?" → WAL; write-ahead log; redo on restart
+```
+
+---
+
 ## Introduction to Databases
 
 **Question**: Two users simultaneously try to transfer money from the same account — one for $100, one for $200. The balance is $250. Both reads see $250. Both subtract their amounts. Both writes succeed. The balance is now $50 when it should be -$50 or a rejection. Your file system happily wrote both values. What just happened, and what primitive do you need to prevent it?

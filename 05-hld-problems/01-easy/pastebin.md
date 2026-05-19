@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Pastebin
+├── Problem Constraints
+│   ├── Scale → 1M pastes/day = 12 writes/sec; 100M reads/day = 1160 reads/sec; 3.65TB/5yr
+│   ├── Latency target → paste read < 50ms (cached); write < 200ms
+│   └── Core hardness → key generation uniqueness at scale + preventing hot-paste thundering herd
+├── Architecture Derivation
+│   ├── Step 1 → Hash(content)[0:7] → collisions for identical content; can't distinguish two users' same code
+│   ├── Step 2 → DB auto-increment + Base62 → sequential (guessable); privacy pastes discoverable by enumeration
+│   ├── Step 3 → Pre-generated random key pool → keys generated offline, stored in Redis list; LPOP on paste create
+│   └── Step 4 → CDN → LB → App → Redis (hot pastes) → PostgreSQL (metadata) → S3 (content); 7-char public / 16-char private keys
+├── Core Components
+│   ├── Key generator → offline job pre-generates 7-char Base62 keys (62^7 = 3.5T); pushes to Redis list as LPOP pool
+│   ├── S3 → stores paste content (keyed by paste_id); immutable objects; CDN origin
+│   ├── PostgreSQL → metadata: paste_id, title, user_id, created_at, expires_at, visibility, content_url
+│   ├── Redis → hot paste content cache (TTL 1h); key pool (Redis list for LPOP)
+│   └── CDN → public pastes served at edge; Cache-Control: max-age=3600; private pastes bypass CDN
+├── Data Model
+│   ├── pastes table → (paste_id PK, user_id, title, s3_key, visibility ENUM, expires_at, view_count, created_at)
+│   └── S3 object → key: pastes/{paste_id}; body: raw content text; metadata: content-type, owner
+├── APIs
+│   ├── POST /paste → {content, title?, visibility?, ttl?, syntax?} → {paste_id, url, expires_at}
+│   ├── GET /paste/{paste_id} → content (text/html with syntax highlighting or raw)
+│   └── DELETE /paste/{paste_id} → soft delete (mark expired); physical delete from S3 async
+├── Critical Trade-offs
+│   ├── Random key vs sequential → Random (Base62 7-char) chosen for public; 16-char for private (unguessable)
+│   ├── Pre-generated pool vs on-demand → Pre-generated avoids uniqueness check at write time; pool in Redis LPOP
+│   └── S3 vs DB for content → S3 chosen; content can be MB-sized; DB not suited for large BLOBs
+├── Failure Scenarios
+│   ├── Key pool exhausted → fallback: generate key on-demand with uniqueness retry; alert ops to refill pool
+│   ├── S3 unavailable → read from DB backup content column (for small pastes < 64KB stored in DB); large pastes 503
+│   └── Hot paste stampede → CDN absorbs 99% of reads; Redis serves remainder; S3 rarely hit directly
+└── Interview Angles
+    ├── GitHub Gist → "Design Gist" → same architecture + version history (Git diff stored in S3 per revision)
+    ├── Deep-dive → "How do you handle expiry?" → expires_at column + background sweeper (cron every 5 min) + CDN TTL
+    └── Follow-up → "How do you support syntax highlighting?" → stored in metadata; rendered client-side via highlight.js
+```
+
+---
+
 ## What Breaks Without This System?
 
 A developer needs to share 50KB of a stack trace with a colleague on Slack. Slack's message size limit is 4,000 characters — the trace is truncated. They try emailing it — the security gateway blocks plaintext attachments. They paste it into a Google Doc, share the link — their colleague doesn't have a Google account and gets an access request dialog. The simple act of sharing text across systems is broken by access controls, size limits, and platform coupling.

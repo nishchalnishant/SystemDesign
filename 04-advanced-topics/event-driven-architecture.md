@@ -16,6 +16,64 @@
 
 ---
 
+## File Mindmap
+
+```
+Event-Driven Architecture
+├── Why It Exists
+│   ├── Problem → Order Service chains 5 sync calls; adding 6th requires modifying + redeploying Order Service; email service down = order fails
+│   └── Physical limit → synchronous call from A to B: A must wait; N downstream calls = sum of all latencies
+├── EDA vs Request/Response
+│   ├── REST/RPC → A calls B directly, knows B's address, waits for response (temporal coupling)
+│   └── EDA → A publishes event to broker, doesn't know who consumes; B/C/D react independently
+├── Event Types
+│   ├── Domain Events → facts in past tense (OrderPlaced, PaymentCompleted); owned by producing service
+│   ├── Integration Events → domain events crossing bounded contexts; versioned Avro/Protobuf contract
+│   └── Commands → request to do something (ProcessPayment); one intended recipient; can fail
+├── Core Patterns
+│   ├── Event Sourcing
+│   │   ├── Store sequence of events instead of current state mutable row
+│   │   ├── Current state = replay of events (mitigated with snapshots after N events)
+│   │   ├── Pro: full audit trail, temporal queries, replay for new projections
+│   │   └── Con: event schema changes hard; query complexity; needs EventStoreDB / Kafka
+│   ├── CQRS
+│   │   ├── Write side → normalized command handler → events → event store
+│   │   ├── Read side → event processor → denormalized read DB → query handler
+│   │   ├── Use when: read shape ≠ write shape, read-heavy, multiple projections (mobile/web/analytics)
+│   │   └── Cost: eventual consistency; read model lags milliseconds to seconds
+│   └── Outbox Pattern
+│       ├── Problem → write to DB + publish to Kafka; one always fails first; no distributed transaction
+│       ├── Solution → INSERT event into outbox table in same local DB transaction
+│       └── CDC relay (Debezium) or polling relay reads outbox → publishes to Kafka (at-least-once)
+├── Message Brokers
+│   ├── Kafka → log-based pull, configurable retention, replay, consumer groups, millions/sec; high complexity
+│   ├── RabbitMQ → queue-based push, complex routing/priorities/DLQ, tens-of-thousands/sec
+│   └── SQS → AWS-native, fully managed, 14-day retention, competing consumers, simple
+├── At-Least-Once Delivery + Idempotency
+│   ├── Broker restarts or consumer crash before ACK → message redelivered
+│   ├── Strategy 1: idempotency key in DB → INSERT ON CONFLICT (idempotency_key) DO NOTHING
+│   ├── Strategy 2: natural idempotency → SET status='shipped' is safe to repeat
+│   ├── Strategy 3: dedup table → check event_id before processing; commit together
+│   └── Exactly-once in Kafka → transactional producer + consumer; only Kafka-to-Kafka; DB still needs idempotency
+├── Schema Evolution
+│   ├── Backward compat → add optional fields with defaults; old producers still work
+│   ├── Forward compat → old consumers ignore unknown fields; never remove/rename fields
+│   ├── Confluent Schema Registry → schemas versioned; compatibility check at registration not runtime
+│   └── Versioning strategies: additive-only / version in topic name (orders.v1, orders.v2) / version field in payload
+├── Trade-offs
+│   ├── Eventual consistency → different services see different state during lag window
+│   ├── Debugging complexity → trace ID in event payload; DLQ for failed events; Jaeger for visualization
+│   ├── Event ordering → Kafka guarantees order within partition; use entity ID as partition key
+│   └── Consumer lag → silent failure mode; alert on Kafka consumer_lag metric
+├── When to Use EDA
+│   ├── Good → fan-out, audit trails, async workflows, traffic spike buffering
+│   └── Poor → real-time request/response, simple CRUD, small systems
+└── Interview Angles
+    ├── "How do you ensure exactly-once processing?" → idempotency key + same-transaction dedup
+    ├── "How do you handle a failing consumer?" → DLQ after N retries, fix, replay from DLQ
+    └── Follow-up: EDA vs event sourcing → EDA is communication; event sourcing is persistence; independent
+```
+
 ## Event Types
 
 ### Domain Events

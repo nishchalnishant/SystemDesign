@@ -8,6 +8,50 @@ Try this before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Singleton Pattern]
+├── Problem It Solves
+│   ├── ConnectionPool created by every component = N pools, N×pool_size connections
+│   ├── Config, logger, thread pool — all must be exactly one instance
+│   └── Resource duplication or inconsistent shared state
+├── Core Structure
+│   ├── private static instance field
+│   ├── private constructor — blocks external new
+│   └── public static getInstance() — single access point
+├── Solution 1: Synchronized Method
+│   ├── public static synchronized getInstance()
+│   ├── Thread-safe, but every call acquires lock — slow
+│   └── Use only in very low-contention cases
+├── Solution 2: Double-Checked Locking (Optimal)
+│   ├── private static volatile instance (volatile required)
+│   ├── First check: no lock (fast path for 99.99% of calls)
+│   ├── synchronized block: create only if still null
+│   └── volatile prevents partially-constructed object visibility
+├── Solution 3: Enum (Best in Java)
+│   ├── JVM guarantees single initialization + thread safety
+│   ├── Prevents reflection attacks
+│   ├── Serialization-safe automatically
+│   └── Usage: Singleton.INSTANCE.doSomething()
+├── When to Use
+│   ├── Shared resource with initialization cost (connection pool, config)
+│   ├── Global coordination point (logger, cache, registry)
+│   └── Only when exactly-one semantics is a real constraint
+├── When NOT to Use
+│   ├── When testability matters — singleton resists mocking
+│   ├── When you think you need it for convenience — use DI instead
+│   └── When state is per-user or per-request — not shared global
+├── Trade-offs
+│   ├── Global state makes testing harder — prefer DI with single instance
+│   ├── Breaks if multiple classloaders exist (multiple "singletons")
+│   └── Enum is immune to reflection and serialization attacks
+└── Interview Angles
+    ├── Why must volatile be used in DCL?
+    ├── How does enum solve thread safety without any lock?
+    └── What is the difference between Singleton and a static class?
+```
+
 ## Problem Without the Pattern
 
 The obvious implementation:

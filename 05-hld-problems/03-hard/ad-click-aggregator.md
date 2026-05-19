@@ -7,6 +7,47 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Ad Click Aggregator
+├── Problem Space
+│   ├── Scale → 1M clicks/sec peak (Black Friday); 86B clicks/day; advertisers need aggregates within 5 seconds
+│   └── Core challenge → exact-once counting at 1M/sec with dedup + real-time + historical accuracy
+├── Functional Requirements
+│   ├── Record every click event (click_id, ad_id, user_id, timestamp, country, device)
+│   ├── Deduplicate fraudulent/duplicate clicks (same user, same ad, within 60s window)
+│   ├── Aggregate clicks by (ad_id, date, country, device) with seconds freshness
+│   └── Serve historical reports with exact counts (billing-accurate)
+├── Non-Functional Requirements
+│   ├── Latency → real-time dashboard: < 5s freshness; historical report: < 2s query time
+│   ├── Availability → 99.99%; missed click = lost billing data
+│   └── Consistency → eventual for real-time; exact for batch billing (at-least-once + dedup)
+├── High-Level Architecture
+│   ├── Click ingestion → click → Kafka topic (partitioned by ad_id); 1M msg/sec absorbed by Kafka
+│   ├── Stream processor (Flink) → dedup using Redis bloom filter (click_id, 60s TTL); aggregate in 5s tumbling windows
+│   ├── Real-time store → aggregates written to Cassandra (ad_id, window_start) → dashboard reads
+│   ├── Batch layer (Spark) → reprocesses Kafka log hourly; writes exact counts to ClickHouse OLAP
+│   └── Advertiser API → queries ClickHouse for reports; Redis cache for common queries (1h TTL)
+├── Key Design Decisions
+│   ├── Lambda architecture → stream for real-time (fast, approximate); batch for billing (slow, exact)
+│   ├── Kafka as durable log → 7-day retention; batch layer replays from Kafka; no data loss
+│   ├── Bloom filter dedup → 1% FPR for fraud dedup acceptable; saves DB lookups at 1M/sec
+│   └── Flink tumbling windows → 5s windows; watermark handles late arrivals up to 30s
+├── Scale & Bottlenecks
+│   ├── Kafka hot partition → ad_id hotspot (1 viral ad gets 90% clicks); use composite key (ad_id + random suffix), merge at query
+│   └── ClickHouse query speed → columnar storage; 1B rows queries in < 1s with proper partitioning by date
+├── Failure Modes
+│   ├── Flink crash → offset committed to Kafka on checkpoint; replay from last checkpoint on restart
+│   └── Dedup failure → bloom filter false negative = duplicate count; batch layer reconciles
+└── Interview Angles
+    ├── Lambda vs Kappa → why not Kappa (stream-only)? Reprocessing historical data with updated logic
+    ├── Dedup guarantees → bloom filter vs exact Redis set vs windowed dedup
+    └── Follow-up: how do you detect click fraud patterns (same IP, >100 clicks/min)?
+```
+
+---
+
 ## Problem Statement
 
 Design an ad click tracking and aggregation system that:

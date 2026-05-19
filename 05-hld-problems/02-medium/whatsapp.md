@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+WhatsApp
+├── Problem Constraints
+│   ├── Scale → 500M DAU, 694K messages/sec avg, 8PB/day media, 10K WebSocket gateway servers
+│   ├── Latency target → message delivery < 100ms (online users); offline delivery within seconds of reconnect
+│   └── Core hardness → routing messages across 10K stateful gateway servers + offline durability + E2EE
+├── Architecture Derivation
+│   ├── Step 1 → HTTP polling → 500M users × 1 poll/sec = 500M req/sec pure overhead; unusable
+│   ├── Step 2 → WebSocket per user → persistent bidirectional; server pushes instantly; 1 server handles ~50K conns
+│   ├── Step 3 → 500M DAU × 10% concurrent = 50M conns ÷ 50K/server = 1000 gateway servers; need routing registry
+│   └── Step 4 → Redis maps user_id → gateway_id; message service looks up gateway; forwards; offline → Cassandra queue
+├── Core Components
+│   ├── WebSocket Gateway → stateful; each server holds ~50K persistent connections; heartbeat every 30s
+│   ├── Redis presence → key: "ws:{user_id}" → {gateway_id, last_active}; TTL 30s refreshed by heartbeat
+│   ├── Message Service → stateless; looks up recipient gateway in Redis; forwards or queues if offline
+│   ├── Cassandra → partition by (user_id, conversation_id); cluster by TIMEUUID DESC; offline message store
+│   └── Signal Protocol → Double Ratchet algorithm; keys on device only; server stores only encrypted blobs
+├── Data Model
+│   ├── messages → Cassandra (user_id, conversation_id, message_id TIMEUUID, sender_id, encrypted_payload, status, created_at)
+│   └── conversations → PostgreSQL (conversation_id, participants[], type ENUM[1:1,GROUP], created_at, last_message_id)
+├── APIs
+│   ├── WS connect → upgrade HTTP to WebSocket; server registers in Redis presence
+│   ├── WS send message → {recipient_id, encrypted_payload, message_id} → ACK with SENT status
+│   └── GET /messages/{conversation_id}?after={message_id} → [{message_id, sender_id, payload, status}] paginated
+├── Critical Trade-offs
+│   ├── WebSocket vs SSE → WebSocket chosen; bidirectional needed for ACKs and typing indicators; SSE is server-only push
+│   ├── Cassandra vs PostgreSQL → Cassandra chosen for messages; write-heavy, partition by user = fast inbox fetch
+│   └── E2EE key management → keys generated on device; server never has plaintext; new device = key exchange ceremony
+├── Failure Scenarios
+│   ├── Gateway crash → heartbeat TTL expires in Redis; user goes offline; messages queue in Cassandra; reconnect fetches them
+│   ├── Redis failover → brief stale routing; message delivery attempt fails; fallback to offline path (Cassandra + push notification)
+│   └── Message duplication → TIMEUUID as idempotency key; Cassandra INSERT IF NOT EXISTS; client deduplicates by message_id
+└── Interview Angles
+    ├── Meta → "Design WhatsApp" → WebSocket gateways + Redis routing registry + Cassandra offline store = core
+    ├── Signal → "How does E2EE work at scale?" → Signal Protocol Double Ratchet; server holds zero plaintext; key distribution via prekeys
+    └── Follow-up → "How do you sync across multiple devices?" → treat each device as separate presence entry; fan-out to all sessions
+```
+
+---
+
 ## What Breaks Without This System?
 
 Before WhatsApp, international messaging cost $0.10–$0.25 per SMS. A family in Brazil messaging relatives in Portugal paid per message, switched off notifications to avoid charges, and missed messages entirely when roaming. Communication was economically gatekept.

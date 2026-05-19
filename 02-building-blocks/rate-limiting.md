@@ -4,6 +4,75 @@
 
 ---
 
+## File Mindmap
+
+```
+Rate Limiting
+├── Why It Exists
+│   ├── Problem → malicious/buggy client sends 50K req/s; service handles 10K total; other users starved
+│   └── Forces → shared infrastructure; one client consuming all capacity = denial of service for others
+├── Algorithms
+│   ├── Token Bucket
+│   │   ├── Bucket holds max N tokens; refilled at rate R tokens/sec
+│   │   ├── Request consumes 1 token; no token → reject (429)
+│   │   ├── Allows burst up to bucket size N
+│   │   └── Use case → API rate limits; most common production algorithm
+│   ├── Leaky Bucket
+│   │   ├── Requests enter queue; processed at fixed rate (leak rate)
+│   │   ├── Queue full → reject
+│   │   ├── Smooths traffic spikes; no burst allowed
+│   │   └── Use case → traffic shaping; QoS; network egress control
+│   ├── Fixed Window Counter
+│   │   ├── Count requests in fixed time window (e.g. per minute)
+│   │   ├── Counter resets at window boundary
+│   │   ├── Simple to implement; O(1) Redis INCR
+│   │   └── Cons → boundary burst: 2× limit allowed straddling window edge
+│   ├── Sliding Window Log
+│   │   ├── Store timestamp of each request; on check, evict entries older than window
+│   │   ├── Count remaining = exact rate
+│   │   └── Cons → O(n) memory per user (stores all timestamps)
+│   └── Sliding Window Counter (Approximate)
+│       ├── current_window_count + (prev_window_count × overlap_fraction)
+│       ├── O(1) memory; approximate but good enough
+│       └── Use case → Redis ZSET implementation; production recommendation
+├── Enforcement Dimensions
+│   ├── Per user / user ID
+│   ├── Per API key
+│   ├── Per IP address
+│   └── Per endpoint (different limits for /search vs /checkout)
+├── Centralized vs Distributed Enforcement
+│   ├── Centralized → single Redis; exact counts; bottleneck at very high scale
+│   └── Distributed → each instance has local counter; sync periodically; approximate but scalable
+├── Redis Implementation (Sliding Window via ZSET)
+│   ├── Key = "rate:{user_id}:{window}"
+│   ├── ZADD with timestamp as score; ZREMRANGEBYSCORE to evict old; ZCARD to count
+│   └── Lua script for atomicity (no race between check and increment)
+├── Tiered Limits
+│   ├── Free tier → 100 req/min
+│   ├── Pro tier → 1000 req/min
+│   └── Enterprise → custom; bypass or very high limit
+├── Failure Modes
+│   ├── Fail open → if rate limit store (Redis) is down, allow all requests
+│   │   └── Use when → availability > strict enforcement (most APIs)
+│   └── Fail closed → if store down, reject all requests
+│       └── Use when → security-critical (auth endpoints, payment)
+├── Headers to Return
+│   ├── X-RateLimit-Limit → max requests allowed
+│   ├── X-RateLimit-Remaining → remaining in current window
+│   ├── X-RateLimit-Reset → UTC epoch when window resets
+│   └── Retry-After → seconds until client may retry (on 429)
+├── Trade-offs
+│   ├── Pros → prevents abuse; fairness; protects downstream services
+│   └── Cons → complexity; distributed counting has race conditions; legitimate users may be rejected
+└── Interview Angles
+    ├── "Token bucket vs sliding window?" → TB allows burst; SW is exact; choose by burst tolerance
+    ├── "How do you implement rate limiting across N instances?" → centralized Redis with Lua atomic ops
+    ├── "Fail open vs fail closed?" → fail open for availability; fail closed for security endpoints
+    └── Follow-up: "How do you handle rate limit for distributed clients (same user, multiple IPs)?" → rate limit by user ID not IP
+```
+
+---
+
 ## Why Rate Limiting Exists
 
 **Question**: A single malicious (or buggy) client sends 50,000 requests/sec to your API. Your service handles 10,000 req/sec total. What prevents this one client from taking down every other user?

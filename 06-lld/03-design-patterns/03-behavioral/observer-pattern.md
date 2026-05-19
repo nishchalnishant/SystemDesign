@@ -8,6 +8,49 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Observer Pattern]
+├── Problem It Solves
+│   ├── StockMarket.setPrice() hardcoded to call PriceAlert, Chart, NewsFeed
+│   ├── Adding/removing a listener requires modifying StockMarket
+│   └── StockMarket should not know about its observers
+├── Core Structure
+│   ├── Subject (Observable): StockMarket maintains List<Observer>
+│   │   ├── subscribe(Observer o), unsubscribe(Observer o)
+│   │   └── notifyObservers() iterates and calls each o.update()
+│   ├── Observer interface: update(price) or update(Event)
+│   └── Concrete observers: PriceAlert, Chart, NewsFeed implement Observer
+├── Push vs Pull Model
+│   ├── Push: subject sends data in update(price) — observer gets what subject decides
+│   ├── Pull: update() passes subject reference; observer calls subject.getPrice()
+│   └── Pull: observer gets exactly what it needs; push: simpler but may send excess data
+├── Analogy
+│   ├── YouTube subscription: channel (subject) notifies subscribers (observers) on upload
+│   └── Subscriber list is dynamic — subscribe/unsubscribe any time
+├── Lapsed Listener (Memory Leak)
+│   ├── Observer registered but never unsubscribed when widget is destroyed
+│   ├── Subject holds strong reference → observer cannot be GC'd
+│   └── Fix: unsubscribe in onDestroy/close; use WeakReference for listeners
+├── When to Use
+│   ├── One-to-many dependency: one state change, many components must react
+│   ├── Decoupled event system (UI events, stock tickers, messaging)
+│   └── Publisher/subscriber systems (event bus, message queue)
+├── Java Built-ins
+│   ├── java.util.Observable (deprecated in Java 9)
+│   ├── PropertyChangeListener/PropertyChangeSupport
+│   └── Reactor/RxJava: reactive streams build on Observer
+├── Trade-offs
+│   ├── Unexpected cascading updates: one change → chain of reactions
+│   ├── Delivery order is undefined (iterate order = registration order)
+│   └── Memory leaks if unsubscribe is forgotten
+└── Interview Angles
+    ├── Push vs pull — what are the trade-offs?
+    ├── How do you prevent the lapsed listener memory leak?
+    └── How does Observer relate to event-driven architecture at scale?
+```
+
 ## Problem Without the Pattern
 
 The direct approach — `StockMarket` calls each component explicitly:

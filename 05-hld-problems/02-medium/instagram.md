@@ -7,6 +7,50 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Instagram
+├── Problem Constraints
+│   ├── Scale → 100M DAU, 50M posts/day = 578 writes/sec, 400TB/day media, 1B followers for top accounts
+│   ├── Latency target → feed load < 200ms; photo/video display < 1s; like < 100ms
+│   └── Core hardness → fan-out for 1B-follower accounts + media pipeline at 400TB/day + like count at billions
+├── Architecture Derivation
+│   ├── Step 1 → Naive fan-out: write post to all followers' feeds → 1B writes × 578 posts/sec = impossible in sync
+│   ├── Step 2 → Hybrid fan-out: < 1M followers = write-time fan-out; ≥ 1M = read-time merge (celebrity)
+│   ├── Step 3 → Media: async pipeline (upload → S3 → Kafka → resize worker → CDN); not blocking post creation
+│   └── Step 4 → Like counts: Redis INCR (real-time) + Cassandra COUNTER (durable) + async flush to PostgreSQL
+├── Core Components
+│   ├── Instagram Snowflake IDs → 41-bit timestamp + 13-bit shard + 10-bit sequence; DB-embedded generation
+│   ├── Media Pipeline → upload to S3 raw; Kafka triggers resize workers (thumbnail/standard/HD); CDN for delivery
+│   ├── Feed Service → hybrid fan-out; Redis ZSET per user (top-200 posts); celebrity pull merged at read time
+│   ├── Social Graph → Cassandra: (user_id, follower_id, created_at); partitioned by user_id; efficient fan-out lookup
+│   └── Like Service → Redis INCR per post; Cassandra COUNTER for durability; approximate count acceptable (±0.1%)
+├── Data Model
+│   ├── posts → (post_id BIGINT PK, user_id, caption, media_urls[], location, created_at, like_count_approx)
+│   ├── follows → Cassandra (follower_id, followee_id, created_at); reverse index (followee_id, follower_id) for fan-out
+│   └── likes → Cassandra (post_id, user_id, created_at); Redis COUNTER for fast count; PostgreSQL for exact billing
+├── APIs
+│   ├── POST /posts → {media_upload_id, caption, location?} → {post_id}
+│   ├── GET /feed → {cursor?} → [{post_id, user_id, media_url, like_count, ...}]
+│   ├── POST /posts/{post_id}/like → {user_id} → {like_count}
+│   └── GET /users/{user_id}/posts → paginated media grid
+├── Critical Trade-offs
+│   ├── 1M follower fan-out threshold → above 1M = celebrity path (read-time merge); avoids billions of Redis writes
+│   ├── Approximate like count → Redis INCR (fast) vs exact DB count (slow); ±0.1% acceptable for social feature
+│   └── CDN for media → all media served via CDN; S3 is origin only; no direct S3 URLs exposed to clients
+├── Failure Scenarios
+│   ├── Fan-out Kafka lag → delayed feed update (eventual); posts appear in feed within seconds; no data loss
+│   ├── Redis ZSET eviction → rebuild from PostgreSQL post timeline; 1-time latency penalty
+│   └── Media upload failure → resumable chunked upload; S3 multipart; post not published until media confirmed
+└── Interview Angles
+    ├── Meta → "Design Instagram" → Snowflake IDs + hybrid fan-out + async media pipeline is the core
+    ├── Snap → "Design Stories" → same feed mechanics; 24h TTL on story objects; separate story feed ZSET
+    └── Follow-up → "How do you handle Explore/Discover?" → offline ML ranking; candidate generation via collaborative filtering
+```
+
+---
+
 ## What Breaks Without This System?
 
 A user posts a photo on a naive system: the image is stored in the app server's local filesystem, the post is saved to MySQL, and the feed is computed on read by joining `posts` and `follows` tables. At 100M DAU with 50M posts/day:

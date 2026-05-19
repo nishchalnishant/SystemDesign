@@ -4,6 +4,55 @@
 
 ---
 
+## File Mindmap
+
+```
+Distributed Concepts: Idempotency, Retry, Backpressure
+├── Why It Exists
+│   ├── Problem → networks are unreliable; retries cause duplicate processing; slow consumers crash fast producers
+│   └── Physical limit → at-least-once delivery is the default guarantee; exactly-once requires explicit design
+├── Idempotency
+│   ├── Goal → processing same request N times = same result as processing once
+│   ├── Idempotency key → client-generated UUID sent in header/payload; server stores in DB with UNIQUE constraint
+│   ├── Redis store → SET idempotency:{key} result EX 86400 NX (atomic check-and-set)
+│   ├── Natural key approach → use domain identity (order_id + user_id) as dedup key
+│   └── SQL upsert → INSERT ... ON CONFLICT (idempotency_key) DO NOTHING
+├── Retry Strategies
+│   ├── Exponential Backoff → wait = base * 2^attempt (e.g., 100ms, 200ms, 400ms, 800ms)
+│   ├── Jitter → add Random(0, 100ms) to prevent thundering herd when service recovers
+│   ├── Java impl → RetryPolicy with max attempts, sleep with jitter in catch block
+│   ├── Retry by HTTP status → 429/503: retry; 400/404: do NOT retry (client error); 500: depends
+│   └── Max retries → cap at 3-5 attempts; after that → dead letter queue
+├── Backpressure
+│   ├── Problem → fast producer overwhelms slow consumer → consumer OOM / cascade failure
+│   ├── BoundedWorkerPool → fixed thread pool + bounded queue; queue full → reject with 503
+│   ├── Reactive streams → Flux/Mono with onBackpressureDrop / onBackpressureBuffer
+│   ├── Semaphore-based → acquire permit before processing; full → return 503 immediately
+│   └── Goal: fail fast at the edge rather than cascade through downstream services
+├── Circuit Breaker
+│   ├── States: CLOSED (normal) → OPEN (failing fast) → HALF_OPEN (probe recovery)
+│   ├── CLOSED → track failure rate; if > threshold (e.g. 50%) → trip to OPEN
+│   ├── OPEN → reject all calls immediately without hitting downstream; wait reset timeout
+│   ├── HALF_OPEN → allow one trial request; success → CLOSED; failure → OPEN again
+│   └── Tools: Netflix Hystrix (deprecated), Resilience4j (current standard)
+├── Distributed Failure Modes
+│   ├── Partial network failure → some nodes reachable, some not → hardest to detect
+│   ├── Slow network → requests succeed but with 10× latency → exhausts thread pools
+│   ├── Crash-stop → process dies immediately → easy to detect via health check
+│   ├── Crash-recovery → process restarts, may have stale state → idempotency required
+│   ├── Byzantine → node sends wrong data (rare in internal systems, real in public blockchains)
+│   ├── Cascade failure → A→B→C; B slow → A threads fill → A dies; mitigation: bulkhead per downstream
+│   └── Split-brain → network partition → two nodes believe they are leader; Raft prevents via quorum
+├── Trade-offs
+│   ├── Idempotency → requires storage + dedup logic overhead
+│   ├── Retry + backoff → adds tail latency; total wait can be 10-30s with 5 attempts
+│   └── Circuit breaker → may reject valid traffic during HALF_OPEN probe phase
+└── Interview Angles
+    ├── "How do you make a payment service safe to retry?" → idempotency key per payment attempt
+    ├── "How do you prevent cascade failures?" → circuit breaker + bulkhead per dependency
+    └── Follow-up: what happens if the idempotency store itself goes down → fallback: optimistic duplicate handling
+```
+
 ## Table of Contents
 
 1. [Idempotency](#1-idempotency)

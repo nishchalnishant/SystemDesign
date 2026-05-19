@@ -4,6 +4,60 @@
 
 ---
 
+## File Mindmap
+
+```
+Sharding
+├── Why It Exists
+│   ├── Problem → single PostgreSQL at 50K writes/sec ceiling; need 500K; vertical max = $100K/month machine
+│   └── Forces → single-node DB has CPU / RAM / disk I/O hard ceiling; only option is horizontal partition
+├── Shard Key — The Most Important Decision
+│   ├── Determines data distribution across shards
+│   ├── Bad key → hotspot (one shard gets 90% traffic, others idle)
+│   ├── Good key → even spread; no cross-shard joins needed for common queries
+│   └── Rule → choose key by access pattern, not schema convenience
+├── Sharding Strategies
+│   ├── Hash Sharding
+│   │   ├── shard = hash(key) % N
+│   │   ├── Even distribution; no hotspots for random keys
+│   │   └── Cons → range queries span all shards; hard to add N (all keys remap)
+│   ├── Range Sharding
+│   │   ├── Shard 0: A–F, Shard 1: G–M, Shard 2: N–Z (or numeric ranges)
+│   │   ├── Range queries efficient (scan one shard)
+│   │   └── Cons → hotspot risk if key space not uniform (e.g. timestamps → all writes to latest shard)
+│   ├── Directory Sharding
+│   │   ├── Lookup table maps key → shard ID
+│   │   ├── Most flexible; arbitrary mapping
+│   │   └── Cons → lookup table is a bottleneck and SPOF; must be replicated
+│   └── Consistent Hashing
+│       ├── Keys and shards placed on a ring; key → clockwise next shard
+│       ├── Add/remove shard → only adjacent keys remap (minimize reshuffling)
+│       └── Virtual nodes → each physical shard has multiple ring positions for even load
+├── Resharding
+│   ├── Trigger → shard fills up or load skews
+│   ├── Consistent hashing approach → add virtual node on ring; move only adjacent key range
+│   ├── Directory approach → update lookup table + migrate data offline
+│   └── Hash approach → N+1 modulo change remaps most keys (painful; requires full data migration)
+├── Cross-Shard Operations
+│   ├── Cross-shard queries → scatter-gather: query all shards, merge results in app layer
+│   ├── Cross-shard transactions → avoid if possible; use Saga / 2PC (expensive)
+│   └── Recommendation → denormalize to keep related data on same shard (shard by user_id if user data common join)
+├── Hotspot Problem
+│   ├── Cause → bad shard key (e.g. celebrity user_id, timestamp)
+│   ├── Fix → add random suffix to key (user_id_0 … user_id_9); scatter writes; merge reads
+│   └── Alternative → cache hot keys at app tier before they reach the shard
+├── Trade-offs
+│   ├── Pros → horizontal write scale; storage beyond single machine
+│   └── Cons → cross-shard joins expensive; resharding painful; transactions complex
+└── Interview Angles
+    ├── "How do you pick a shard key?" → identify the dominant access pattern; key should co-locate related data
+    ├── "What happens when a shard fills up?" → consistent hashing minimizes remapping; directory = update table
+    ├── "Hash vs range sharding?" → hash: even distribution; range: efficient range queries but hotspot risk
+    └── Follow-up: "How do you handle cross-shard transactions?" → Saga pattern; accept eventual consistency
+```
+
+---
+
 ## 1. Why Sharding Exists
 
 **Question**: Your single PostgreSQL node handles 50,000 writes/sec. Business needs 500,000. Vertical scaling maxes out at ~$100k/month for a 128-core machine. What's the only option left?

@@ -6,6 +6,51 @@
 
 ---
 
+## File Mindmap
+
+```
+Caching & CDN
+├── Why It Exists
+│   ├── Problem → 100k req/hr all hitting DB for same user profile; 500k ms DB compute wasted
+│   └── Forces → RAM ~100ns vs DB query ~1–20ms (10,000–200,000× difference); reads >> writes
+├── Core Concepts
+│   ├── Cache hit → data found in cache; served immediately; DB not touched
+│   ├── Cache miss → data absent; must fetch from DB; populate cache for next request
+│   ├── TTL (Time-to-Live) → auto-expiry; freshness vs staleness trade-off
+│   └── Hit ratio → % of requests served from cache; target >90% for meaningful DB offload
+├── Read Strategies
+│   ├── Cache-aside (lazy loading) → app checks cache; on miss: load DB, populate cache
+│   │   └── Pro: only hot data cached; Con: first request always slow (cold start)
+│   ├── Read-through → cache layer fetches from DB on miss; app sees only cache
+│   │   └── Pro: simpler app code; Con: first-request latency; less control
+│   └── Refresh-ahead → pre-load cache before TTL expires; Pro: no miss latency; Con: may prefetch stale
+├── Write Strategies
+│   ├── Write-through → write DB + cache together; always consistent; doubles write latency
+│   ├── Write-behind (write-back) → write cache first; flush to DB async; fast writes; risk data loss
+│   └── Write-around → write DB only; skip cache; next read will miss; good for write-once data
+├── Cache Invalidation
+│   ├── TTL expiry → simple; always slightly stale; tunable
+│   ├── Event-driven invalidation → on write, explicitly delete/update cache key; complex but fresh
+│   └── Cache-aside + short TTL → most common hybrid; acceptable staleness window
+├── CDN Summary
+│   ├── Pull CDN → edge fetches from origin on first miss; best for large asset catalogs
+│   ├── Push CDN → you upload to CDN ahead of time; best for small known asset sets
+│   └── Cache-Control headers → max-age, stale-while-revalidate, no-cache, s-maxage
+├── Failure Modes
+│   ├── Cache stampede (thundering herd) → TTL expires; all instances miss simultaneously → DB crushed
+│   │   └── Mitigations: mutex/lock on miss; probabilistic early expiry; background refresh
+│   └── Stale reads → user writes data; reads old value from cache → use write-through or invalidation
+├── Real-World Usage
+│   ├── Netflix → EVCache (Memcached-based); caches catalog; 99% hit rate; global replication
+│   └── Facebook → Memcached at massive scale; TAO for social graph with explicit invalidation
+└── Interview Angles
+    ├── "What is cache invalidation and why is it hard?" → distributed systems; clocks differ; order of writes
+    ├── "How do you prevent thundering herd?" → mutex on first miss; probabilistic early refresh
+    └── Follow-up: "Write-through vs write-behind — when to use each?" → consistency vs throughput trade-off
+```
+
+---
+
 ## Table of Contents
 
 1. [Why Caching Exists](#why-caching-exists)

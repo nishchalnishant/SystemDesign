@@ -7,6 +7,47 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Autocomplete / Typeahead Search
+├── Problem Constraints
+│   ├── Scale → 100K QPS, 100M unique prefixes, 30GB trie per language
+│   ├── Latency target → < 100ms end-to-end; ideally < 50ms for perceived real-time feel
+│   └── Core hardness → serving ranked suggestions at 100K QPS with freshness; trie too large for one machine
+├── Architecture Derivation
+│   ├── Step 1 → Single server trie → 30GB doesn't fit in RAM of one box; no fault tolerance
+│   ├── Step 2 → Shard trie by first 3 chars (26^3 = 17K shards) → each shard fits in memory; deterministic routing
+│   ├── Step 3 → 3-tier cache: CDN (popular queries) → local Redis (prefix→top10) → trie server
+│   └── Step 4 → Offline Spark rebuild (hourly) + Flink hot-patch (10-min window for trending terms)
+├── Core Components
+│   ├── Trie → each node stores precomputed top-K (K=10) suggestions by search frequency; avoids DFS at query time
+│   ├── Prefix sharding → consistent hash on prefix[0:3]; each shard = one language subtree; ~150 trie servers
+│   ├── CDN → caches top 1M queries (80% of traffic); TTL 10 min; invalidated on trie rebuild
+│   ├── Redis L2 cache → prefix → [suggestions]; TTL 60s; serves tail queries after CDN miss
+│   └── Flink streaming → aggregates search logs in 10-min windows; pushes hot new terms to trie without full rebuild
+├── Data Model
+│   ├── Trie node → {char, children: map, top_k: [(term, score)], count: int}
+│   └── Search log stream → (user_id, query, timestamp, selected_result) → Kafka → Flink aggregation
+├── APIs
+│   ├── GET /autocomplete?q={prefix}&lang={lang}&limit=10 → [{term, score}]
+│   └── POST /search/log → {query, selected, session_id} → async analytics
+├── Critical Trade-offs
+│   ├── Precomputed top-K vs on-the-fly DFS → Precomputed chosen; O(1) lookup vs O(depth×branching) DFS at 100K QPS
+│   ├── Hourly Spark rebuild vs real-time → hybrid: Spark for accuracy + Flink hot-patch for trending; avoids stale results
+│   └── Personalization → deferred to re-rank layer; core trie is global; user signals applied post-retrieval
+├── Failure Scenarios
+│   ├── Trie shard down → failover to replica shard; CDN continues serving cached prefixes during recovery
+│   ├── Flink lag → hot-patch delayed; fall back to Spark-built trie; trending terms lag up to 10 min
+│   └── Cache stampede → dog-pile protection: single writer lock per prefix; others serve stale until write completes
+└── Interview Angles
+    ├── Google → "How does Google Search suggest completions?" → trie + precomputed top-K + CDN + personalization layer
+    ├── Amazon → "Typeahead for product search" → same trie but weighted by purchase frequency + in-stock filter
+    └── Follow-up → "How do you handle multilingual?" → separate trie per language; routing by Accept-Language header
+```
+
+---
+
 ## What Breaks Without This System?
 
 A user types "java" in a search box and waits. The backend queries Elasticsearch with a full-text search for every keystroke. At 100K concurrent users each typing at ~2 characters/second, that's 200K Elasticsearch queries/second — each with a 50–200ms round trip. The search bar feels laggy: responses arrive 300ms after each keystroke. Users stop using search. Conversion drops.

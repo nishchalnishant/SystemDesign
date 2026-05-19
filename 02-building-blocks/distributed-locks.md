@@ -4,6 +4,65 @@
 
 ---
 
+## File Mindmap
+
+```
+Distributed Locks
+├── Why It Exists
+│   ├── Problem → 3 app servers; cron fires midnight on all 3; all generate+send daily report; users get 3 emails
+│   └── Forces → `synchronized` (Java) only works within one JVM process; doesn't span machines
+├── Requirements for a Correct Distributed Lock
+│   ├── Mutual Exclusion → only one holder at a time across all nodes
+│   ├── Liveness (No Deadlock) → lock must release even if holder crashes (TTL)
+│   ├── Safety (No Spurious Release) → only lock holder can release it (token check)
+│   └── Fault Tolerance → lock service must handle node failures without becoming unavailable
+├── TTL (Auto-Expiry)
+│   ├── Lock held with TTL = 30s; if holder crashes, lock auto-releases after TTL
+│   ├── Risk → GC pause / slow network causes holder to lose lock while still working
+│   └── Fix → lock renewal thread; extend TTL heartbeat while still working
+├── Fencing Tokens
+│   ├── Each lock acquisition returns monotonically increasing token (e.g. 1, 2, 3…)
+│   ├── Holder passes token to storage on every write
+│   ├── Storage rejects writes with token lower than last seen
+│   └── Prevents stale process from writing after lock was re-acquired by another holder
+├── Implementations
+│   ├── Redis (Simple)
+│   │   ├── SET key value NX PX 30000 → atomic; NX = only set if not exists; PX = TTL ms
+│   │   ├── Release → Lua script: check value == client_id before DEL (prevent spurious release)
+│   │   └── Renewal → background thread: EXPIRE key 30000 while still holding
+│   ├── Redlock (Multi-Node Redis)
+│   │   ├── Acquire lock on N/2+1 of N Redis nodes; majority must succeed within TTL
+│   │   ├── Controversy → Martin Kleppmann: unsafe under certain clock skews + GC pauses
+│   │   └── Use fencing tokens with Redlock if correctness is critical
+│   ├── ZooKeeper (Ephemeral Nodes)
+│   │   ├── Create ephemeral sequential node; lowest sequence number wins the lock
+│   │   ├── Watcher on predecessor node; notified when predecessor deleted
+│   │   └── Auto-release on session expiry (ZooKeeper handles cleanup on crash)
+│   └── etcd (Lease-based)
+│       ├── Grant lease with TTL; create key attached to lease
+│       ├── Key auto-deleted when lease expires (holder crash)
+│       └── Renew lease via KeepAlive RPC while holding lock
+├── Leader Election
+│   ├── Special case of distributed lock: only one node acts as leader
+│   ├── Pattern → try to acquire lock; winner is leader; releases on graceful shutdown or TTL expiry
+│   └── Use case → scheduled jobs, primary replica in custom systems, shard coordinator
+├── Trade-offs
+│   ├── Pros → mutual exclusion across distributed systems; prevents duplicate work
+│   └── Cons → lock service is new SPOF; TTL tuning tricky (too short = spurious; too long = blocking)
+├── Failure Scenarios
+│   ├── Lock holder crashes → TTL releases lock automatically after expiry
+│   ├── Lock service down → fail-closed; no progress; must replicate lock service
+│   ├── Clock drift → Redlock unsafe; prefer Raft-based (etcd/ZooKeeper) for correctness
+│   └── Spurious release → prevent with unique client ID check before DEL (Lua atomicity)
+└── Interview Angles
+    ├── "Why not use DB row lock?" → DB lock doesn't span processes; connection death = lock held
+    ├── "What is a fencing token and why do you need it?" → prevents stale lock holder from writing after eviction
+    ├── "Redis vs ZooKeeper for distributed lock?" → Redis: fast, simple; ZooKeeper: stronger guarantees, session expiry
+    └── Follow-up: "What happens if GC pause causes lock to expire while holder is still working?" → fencing token rejects the write
+```
+
+---
+
 ## Why Distributed Locks Exist
 
 **Question**: Your system runs a scheduled job every night at midnight: generate and email the daily report. You've scaled to 3 app servers for redundancy. At midnight, all 3 servers see the cron trigger. All 3 start generating the report. All 3 send the email. Users receive 3 identical emails. You add a `synchronized` block in Java. Does that fix it?

@@ -7,6 +7,49 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Payment System (Stripe/PayPal)
+├── Problem Constraints
+│   ├── Scale → 10M transactions/day = 1K TPS avg; 5K TPS peak; $500M daily volume; zero tolerance for double-charge
+│   ├── Latency target → payment API response < 2s; settlement < T+1 day
+│   └── Core hardness → exactly-once payment processing + double-entry accounting consistency + saga compensation on failure
+├── Architecture Derivation
+│   ├── Step 1 → Naive charge API → network retry on timeout causes double charge; no idempotency = catastrophic
+│   ├── Step 2 → Idempotency key → client sends key; server stores (key, result) in DB; duplicate request returns cached result
+│   ├── Step 3 → Idempotency key + DB INSERT in same transaction → atomically link payment attempt to idempotency record
+│   └── Step 4 → Saga pattern: AUTHORIZE → CAPTURE → SETTLE; compensating transactions (VOID/REFUND) on any step failure
+├── Core Components
+│   ├── Payment API → validates request; checks idempotency key; routes to payment processor
+│   ├── Idempotency store → PostgreSQL table (idempotency_key UNIQUE, status, response_payload, created_at); check before processing
+│   ├── Double-entry ledger → every payment = two journal entries (debit merchant_receivable, credit user_payable); sum always = 0
+│   ├── Reconciliation job → runs every 5 min; compares internal ledger vs payment processor reports; flags discrepancies
+│   └── Saga orchestrator → manages AUTHORIZE → CAPTURE → SETTLE state; triggers compensations on timeout or failure
+├── Data Model
+│   ├── transactions → (tx_id UUID PK, user_id, amount, currency, status ENUM, idempotency_key UNIQUE, payment_method_id, created_at)
+│   ├── journal_entries → (entry_id, tx_id, account_id, debit_amount, credit_amount, created_at); sum(debit)=sum(credit) invariant
+│   └── idempotency_keys → (key UNIQUE, tx_id, response JSONB, created_at); TTL 24h for cleanup
+├── APIs
+│   ├── POST /payments → {amount, currency, payment_method, idempotency_key} → {tx_id, status, amount}
+│   ├── POST /payments/{tx_id}/refund → {amount?, reason} → {refund_id, status}
+│   └── GET /payments/{tx_id} → {status, amount, created_at, events[]}
+├── Critical Trade-offs
+│   ├── Idempotency in same DB transaction → idempotency key INSERT + payment record INSERT in one TX; prevents partial state
+│   ├── Saga vs 2PC → Saga chosen; 2PC requires distributed lock across payment processor + internal DB (external system can't participate)
+│   └── Async settlement vs sync → authorization sync (< 2s); capture/settle async via job; reduces latency on critical path
+├── Failure Scenarios
+│   ├── Network timeout after charge → client retries with same idempotency_key; server returns cached success; no double charge
+│   ├── CAPTURE fails after AUTHORIZE → saga compensates: send VOID to payment processor; update status to VOIDED
+│   └── Reconciliation mismatch → flag for manual review; auto-retry for known transient errors; alert on persistent discrepancy
+└── Interview Angles
+    ├── Stripe → "Design Stripe's payment API" → idempotency key + double-entry ledger + saga = production-grade answer
+    ├── PayPal → "How do you prevent double charges?" → idempotency key stored in same DB transaction as payment record
+    └── Follow-up → "How do you handle currency conversion?" → snapshot exchange rate at transaction time; store in journal entry
+```
+
+---
+
 ## What Breaks Without This System
 
 Your e-commerce site processes payments with a simple flow: call Stripe's API, and on success, write to your orders table. You deploy on a Friday. At 11:48 PM, a network blip causes a timeout: Stripe charged the card, but the HTTP response never arrived. Your retry logic fires. Stripe charges the card again. The customer's order table shows one order; their bank shows two charges. You discover it Monday morning — after 200 customers emailed. Refunding all the duplicates takes three days of manual work and costs you $50K in trust.

@@ -8,6 +8,49 @@ Try it before reading on.
 
 ---
 
+## Pattern Mindmap
+
+```
+[Facade Pattern]
+├── Problem It Solves
+│   ├── Client must coordinate 5 services: inventory, payment, invoice, shipping, loyalty
+│   ├── Controller knows too much — violates SRP, hard to test
+│   └── Any subsystem change requires updating every client
+├── Core Structure
+│   ├── Facade: OrderFacade with placeOrder(order, user)
+│   ├── Orchestrates: InventoryService, PaymentService, InvoiceService, ShippingService, LoyaltyService
+│   ├── Client: calls facade.placeOrder() — one method, five subsystems hidden
+│   └── Subsystems: unchanged, still independently usable
+├── OrderFacade.placeOrder()
+│   ├── inventoryService.isAvailable() → throw if not
+│   ├── paymentService.charge()
+│   ├── invoiceService.generate()
+│   ├── shippingService.notifyShipment()
+│   └── loyaltyService.addPoints()
+├── HomeTheaterFacade Example
+│   ├── watchMovie() hides: projector.on(), speakers.setVolume(), dvd.play()...
+│   └── Client calls one method instead of six
+├── Analogy
+│   ├── Hotel concierge: one person handles reservations, taxis, room service
+│   └── You do not call each department — the concierge orchestrates
+├── When to Use
+│   ├── Subsystem is complex and clients only need a simple workflow
+│   ├── You want to decouple clients from subsystem internals
+│   └── Building a service layer on top of infrastructure components
+├── Facade vs Adapter vs Proxy
+│   ├── Facade: simplifies a complex subsystem (new simplified interface)
+│   ├── Adapter: translates one interface to another (same functionality)
+│   └── Proxy: controls access to a single object (same interface)
+├── Trade-offs
+│   ├── Facade can become a God Object if it orchestrates too much logic
+│   ├── Facade does not prevent direct subsystem access — just provides convenience
+│   └── Easy to test: mock the facade in client tests; test subsystems independently
+└── Interview Angles
+    ├── When would you introduce a Facade vs calling services directly?
+    ├── How is Facade different from a God Class?
+    └── Can Facade violate SRP? How do you prevent it?
+```
+
 ## Problem Without the Pattern
 
 The client knows and orchestrates every subsystem:

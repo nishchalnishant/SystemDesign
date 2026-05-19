@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Distributed Message Queue (Kafka)
+├── Problem Constraints
+│   ├── Scale → 1M messages/sec throughput; 7-day retention = 604TB raw (1.8PB with RF=3); millions of consumers
+│   ├── Latency target → publish p99 < 10ms; end-to-end < 100ms for real-time consumers
+│   └── Core hardness → exactly-once delivery + consumer group coordination + partition rebalancing without data loss
+├── Architecture Derivation
+│   ├── Step 1 → Single message store → write bottleneck; no parallelism; single consumer = sequential processing
+│   ├── Step 2 → Partitions → topic split into N ordered partitions; producers write to partition (by key hash); parallel consumers
+│   ├── Step 3 → Replication → each partition has leader + RF-1 followers; ISR (In-Sync Replicas) must ack before leader commits
+│   └── Step 4 → Exactly-once = idempotent producer (dedup by sequence no.) + transactions (atomic multi-partition write) + read_committed isolation
+├── Core Components
+│   ├── Partitions → ordered immutable log; each message has offset; N partitions = N parallel consumers in a group
+│   ├── ISR (In-Sync Replicas) → followers that are caught up (< replica.lag.time.max.ms behind); leader only acks when ISR acks
+│   ├── Consumer Groups → each group independently tracks offsets; N consumers per group ≤ N partitions (extras idle)
+│   ├── KRaft → replaces ZooKeeper for metadata; controller quorum manages partition leadership + cluster topology
+│   └── Log compaction → for changelog topics: retain only latest value per key; old offsets garbage-collected
+├── Data Model
+│   ├── Log segment files → {topic}-{partition}/{base_offset}.log + .index + .timeindex; immutable once closed
+│   └── Consumer offset store → "__consumer_offsets" internal topic; (group_id, topic, partition) → committed_offset
+├── APIs
+│   ├── Producer: send(topic, key, value, headers) → RecordMetadata(partition, offset, timestamp)
+│   ├── Consumer: subscribe(topics) + poll(timeout) → ConsumerRecords; commitSync()/commitAsync()
+│   └── Admin: createTopic(name, partitions, replication_factor); describeConsumerGroups(group_ids)
+├── Critical Trade-offs
+│   ├── At-least-once vs exactly-once → exactly-once via idempotent producer + transactions; 10-20% throughput cost
+│   ├── acks=all vs acks=1 → acks=all (wait for all ISR) for durability; acks=1 for throughput (risk losing message if leader dies)
+│   └── Partition count → more partitions = more parallelism but higher latency for rebalance; rule of thumb: 10-50 partitions/topic
+├── Failure Scenarios
+│   ├── Leader failure → ISR election in < 30s (unclean.leader.election.enable=false prevents data loss); brief unavailability
+│   ├── Consumer crash mid-processing → uncommitted offset means message re-delivered; idempotent consumer must handle duplicate
+│   └── Consumer lag explosion → add consumers up to partition count; beyond that, add partitions (requires topic recreation or reassignment)
+└── Interview Angles
+    ├── LinkedIn → "Design Kafka" → partitions + ISR + consumer groups + KRaft = core; exactly-once as advanced topic
+    ├── Uber → "How does Kafka enable real-time trip events?" → per-trip partition key ensures ordered events per trip
+    └── Follow-up → "What is log compaction?" → keeps latest value per key; enables Kafka as durable change log for DB replication
+```
+
+---
+
 ## Problem Statement
 
 Design a distributed message queue like Apache Kafka that:

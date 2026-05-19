@@ -4,6 +4,56 @@
 
 ---
 
+## File Mindmap
+
+```
+Database Scaling Deep Dive
+├── Why It Exists
+│   ├── Problem → single Postgres node becomes bottleneck at scale: write throughput, connection limits, query latency
+│   └── Physical limit → disk I/O ceiling, max ~500 active connections per node (context-switch cost)
+├── PostgreSQL WAL Internals
+│   ├── Sequential write to WAL first → flush → ack client → async data page write
+│   ├── Checkpoint → dirty pages flushed to disk; crash recovery replays WAL since last checkpoint
+│   └── Scaling insight: WAL is the replication stream for read replicas
+├── MVCC
+│   ├── Each row has xmin (created by txn) + xmax (deleted by txn)
+│   ├── Readers never block writers → snapshot isolation
+│   └── Cost: dead tuples accumulate → VACUUM reclaims space
+├── Connection Pooling (PgBouncer)
+│   ├── Problem → 10,000 app instances × 1 connection = Postgres OOM
+│   ├── PgBouncer modes: session (safe) / transaction (efficient) / statement
+│   └── pool_size in pgbouncer.ini → typically 20-100 per DB
+├── Index Strategies
+│   ├── B-tree → default, O(log N), equality + range queries
+│   ├── Partial index → WHERE clause reduces index size (active users only)
+│   ├── Expression index → index on lower(email) for case-insensitive lookups
+│   ├── GIN → inverted index for arrays, JSONB, full-text search
+│   └── Covering index → INCLUDE columns to avoid heap fetch
+├── Read Replicas
+│   ├── Streaming WAL replication → async by default, sync available
+│   ├── Use for: reporting queries, analytics, geographic distribution
+│   └── Risk: replication lag → stale reads; route time-sensitive reads to primary
+├── Write Sharding
+│   ├── Shard key selection → high cardinality, even distribution, no hot spots
+│   ├── Hash sharding → ConsistentHashRouter; resharding moves ~1/N data
+│   ├── Range sharding → time-series workloads; risk: monotonic key creates hot shard
+│   └── Resharding process: double-write → backfill → verify checksums → cut over
+├── Time-Series at Scale
+│   ├── TimescaleDB → hypertables auto-partition by time, compression, continuous aggregates
+│   └── ClickHouse → columnar, MergeTree engine, millions of rows/sec insert
+├── Managed Scale-Out
+│   ├── Aurora → auto-scaling storage (10GB→128TB), up to 15 read replicas, auto-failover <30s
+│   └── Vitess → MySQL sharding middleware; used by YouTube, Slack
+├── Trade-offs
+│   ├── Pro: read replicas scale read throughput linearly
+│   ├── Con: cross-shard queries require scatter-gather or denormalization
+│   └── Con: resharding is operationally complex and slow
+└── Interview Angles
+    ├── "Our DB is slow" → diagnose: reads vs writes; add replicas vs shard vs index
+    ├── "How do you shard a user table?" → hash on user_id, virtual nodes for rebalance
+    └── Follow-up: hot key problem → salting or directory-based sharding
+```
+
 ## 1. PostgreSQL Internals That Matter for Scaling
 
 ### Write-Ahead Log (WAL)

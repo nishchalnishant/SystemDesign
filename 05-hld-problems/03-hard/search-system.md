@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+Search System (Web / Product Search)
+├── Problem Constraints
+│   ├── Scale → 10B documents, 100K QPS, 60-90TB index; document updates within seconds of crawl
+│   ├── Latency target → query p99 < 200ms; indexing lag < 30s
+│   └── Core hardness → two-phase ranking (recall at scale + precision at top-K) + real-time index updates + doc-based sharding
+├── Architecture Derivation
+│   ├── Step 1 → SQL LIKE query on 10B rows → full table scan; seconds per query; unusable
+│   ├── Step 2 → Inverted index → term → posting list (doc_id, tf, positions); O(1) lookup per term; merge posting lists for multi-term
+│   ├── Step 3 → BM25 first-stage on 10B docs → too slow for 100K QPS; WAND early termination prunes posting lists by score threshold
+│   └── Step 4 → Two-phase: BM25 retrieves top-200 candidates; neural cross-encoder re-ranks top-200 → top-10 for display
+├── Core Components
+│   ├── Inverted index → term → [(doc_id, tf, positions)]; doc-based sharding across 1000 nodes; each node indexes 10M docs
+│   ├── BM25 scorer → TF-IDF variant with document length normalization; WAND pruning skips docs below running threshold
+│   ├── Neural re-ranker → cross-encoder BERT model; features: BM25 score, CTR, freshness, user context; runs on GPU cluster
+│   ├── Kafka indexing pipeline → document crawled → Kafka "docs" topic → indexer workers → update posting lists on shard
+│   └── Query coordinator → parses query → fans out to all shards → merges top-K results → sends to re-ranker
+├── Data Model
+│   ├── Posting list → term_id → [(doc_id, term_freq, field_weight, positions[])]; stored in columnar format on SSD
+│   └── Document store → (doc_id, url, title, body_snippet, page_rank, crawl_timestamp, click_through_rate)
+├── APIs
+│   ├── GET /search?q=&page=&filters= → [{doc_id, title, url, snippet, score}] + facets
+│   ├── POST /index → {doc_id, url, content, metadata} → {index_id, lag_ms}
+│   └── GET /search/explain?q=&doc_id= → BM25 breakdown + re-rank features for debugging
+├── Critical Trade-offs
+│   ├── Doc-based vs term-based sharding → doc-based chosen; simpler fan-out; term-based requires routing per term (complex)
+│   ├── BM25 vs dense retrieval → BM25 first-stage for recall (fast, interpretable); cross-encoder for precision (slow, accurate)
+│   └── WAND early termination → 10-50× speedup by skipping low-scoring docs; requires sorted posting lists by doc score
+├── Failure Scenarios
+│   ├── Shard down → query coordinator skips failed shard; result quality degrades (missing 1/1000th of index); alert ops
+│   ├── Indexing lag spike → Kafka consumer falls behind; stale results served; add indexer consumers; auto-scale on lag metric
+│   └── Re-ranker GPU failure → fall back to BM25-only ranking; quality drops but search remains available
+└── Interview Angles
+    ├── Google → "Design web search" → inverted index + WAND + two-phase ranking + real-time Kafka indexing pipeline
+    ├── Amazon → "Design product search" → same index; add in-stock filter + price range + personalized boost by purchase history
+    └── Follow-up → "How does spell correction work?" → edit distance on query terms against dictionary; suggest closest valid term
+```
+
+---
+
 ## Problem Statement
 
 Design a search system where:

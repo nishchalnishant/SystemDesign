@@ -7,6 +7,48 @@
 
 ---
 
+## Problem Mindmap
+
+```
+RAG System (Retrieval-Augmented Generation)
+├── Problem Constraints
+│   ├── Scale → 1M documents, 50M chunks, 300GB vector index, 10K QPS retrieval
+│   ├── Latency target → retrieval p99 < 100ms; end-to-end (retrieval + LLM) < 3s
+│   └── Core hardness → hybrid search (keyword + semantic) + re-ranking accuracy + multi-tenant isolation
+├── Architecture Derivation
+│   ├── Step 1 → Full-text search only → misses semantic matches ("automobile" vs "car"); poor recall for paraphrased queries
+│   ├── Step 2 → Dense vector search only → poor for exact keyword matches (names, IDs, codes); Achilles heel of embeddings
+│   ├── Step 3 → Hybrid: BM25 (sparse) + HNSW ANN (dense) → merge via Reciprocal Rank Fusion (RRF); best of both worlds
+│   └── Step 4 → Cross-encoder re-ranking on top-50 candidates → full attention on (query, chunk) pair; precise but slow; only run on top-50
+├── Core Components
+│   ├── Ingestion Pipeline → document → chunker (512 tokens, 50-token overlap) → embedding model → vector DB + BM25 index
+│   ├── Vector DB → HNSW index (Qdrant/Weaviate/Pinecone); approximate nearest-neighbor; 300GB in RAM; namespace per tenant
+│   ├── BM25 Index → Elasticsearch; keyword matching; sparse retrieval; complements dense ANN
+│   ├── RRF Merger → Reciprocal Rank Fusion: score = Σ(1/(k+rank_i)); k=60 standard; merges BM25 and ANN result lists
+│   └── Cross-encoder Re-ranker → BERT-based model; scores (query, chunk) pair with full attention; top-50→top-5; runs on GPU
+├── Data Model
+│   ├── chunks → (chunk_id UUID, doc_id, tenant_id, text, embedding VECTOR(1536), metadata{page, section, created_at})
+│   └── documents → PostgreSQL (doc_id, tenant_id, source_url, title, ingestion_status, chunk_count, indexed_at, content_hash)
+├── APIs
+│   ├── POST /ingest → {tenant_id, document_url, metadata} → {job_id}; async webhook on completion
+│   ├── POST /query → {tenant_id, question, top_k, filters{}} → {chunks: [{text, score, source}], answer_context}
+│   └── DELETE /documents/{doc_id} → remove chunks from vector DB + BM25 index; tombstone in PostgreSQL
+├── Critical Trade-offs
+│   ├── BM25 + ANN vs ANN only → hybrid chosen; BM25 handles exact terms; ANN handles semantic; RRF fusion outperforms either alone
+│   ├── Cross-encoder vs bi-encoder re-ranking → cross-encoder more accurate (joint attention); bi-encoder faster (independent encoding)
+│   └── Chunk size 512 tokens → balances recall (too small = loses context) vs precision (too large = dilutes relevance score)
+├── Failure Scenarios
+│   ├── Vector DB OOM → HNSW graph evicted to disk; query latency spikes; scale out nodes; index sharded by tenant_id
+│   ├── Embedding model unavailable → ingestion queued in Kafka; retrieval falls back to BM25-only (lower quality but available)
+│   └── Stale index on document update → webhook triggers re-ingestion on doc change; old chunks tombstoned; incremental re-index
+└── Interview Angles
+    ├── Microsoft Copilot → "Design an enterprise RAG system" → hybrid search + multi-tenant namespace isolation + re-ranking = core
+    ├── Glean → "How do you retrieve from millions of enterprise documents?" → BM25+ANN hybrid; RBAC filter pre-retrieval
+    └── Follow-up → "How does chunking strategy affect quality?" → semantic chunking (split at paragraph boundaries) > fixed-size for coherence
+```
+
+---
+
 ## Problem Statement
 
 Design a RAG system that:
