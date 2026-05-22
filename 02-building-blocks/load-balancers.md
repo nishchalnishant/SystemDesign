@@ -118,6 +118,46 @@ Load Balancers
 
 - **IP Hash**: Room assignment is based on the guest's home country ZIP code. Same ZIP → same floor, every time. Predictable but can cause imbalance if guests from one ZIP code dominate.
 
+### Power of Two Choices (P2C)
+
+A probabilistic algorithm that dramatically outperforms both round-robin and least-connections with minimal overhead.
+
+**Algorithm**:
+1. Pick **two servers at random** from the pool
+2. Of the two, send the request to the one with **fewer active connections**
+
+That's it. Two random choices, pick the lesser-loaded one.
+
+**Why it works** — the math:
+
+- Pure random selection: a heavily loaded server is selected with probability 1/N (proportional to its share of the pool). Under high load, requests pile up unevenly.
+- Least-connections: O(N) scan or O(log N) priority queue to find the minimum every request. Under high concurrency, this becomes a contention bottleneck.
+- P2C: the expected maximum load on any server is **O(log log N)** instead of **O(log N / log log N)** for random. This is the "power of two choices" theorem — a tiny improvement in information (seeing 2 servers instead of 1) gives an exponential improvement in load distribution.
+
+**Intuition**: You don't need to see all servers. Seeing just two and picking the better one is enough to break symmetry and avoid hot spots. Like choosing the shorter of two checkout lines at a grocery store — you don't need to check all lines.
+
+**Performance comparison** (1000 servers, 10000 requests/server target load):
+
+| Algorithm | Max overload factor | Overhead |
+|---|---|---|
+| Random | ~7x (Θ(log N / log log N)) | O(1) |
+| P2C | ~2x (Θ(log log N)) | O(1), 2 random lookups |
+| Least-connections | ~1.1x | O(log N) per request |
+
+P2C achieves near least-connections quality with O(1) overhead. Used by: Nginx (upstream random with `two`), Envoy, NGINX Plus, Finagle (Twitter's RPC library).
+
+```
+# Nginx upstream config for P2C
+upstream backend {
+    random two least_conn;
+    server backend1.example.com;
+    server backend2.example.com;
+    server backend3.example.com;
+}
+```
+
+**When not to use P2C**: when you need strict session affinity (consistent hash is better) or when servers have vastly different capacities (weighted least-connections is better).
+
 ### Health Checks
 
 - **Active**: LB periodically sends HTTP/TCP checks to each server.

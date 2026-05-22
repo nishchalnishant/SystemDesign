@@ -172,6 +172,111 @@ Read side:    Event Processor reads events → updates Read DB (denormalized, op
 
 **When NOT to use:** simple CRUD — CQRS adds complexity without benefit.
 
+#### CQRS Projection Rebuild
+
+A projection (read model) is a derived view built by replaying events. Rebuilding it from scratch is a core operational procedure — you must design for it from day one.
+
+**When you need to rebuild a projection**:
+- A bug in the projection builder produced incorrect read-model data
+- A new feature requires a different shape of the read model (new fields, new aggregations)
+- The read-model datastore is corrupted or migrated to a new technology
+- A new projection type is added (e.g., adding a mobile-specific view)
+
+**Rebuild procedure**:
+
+```
+Step 1: Spin up a new projection builder instance
+        (old instance continues serving from current read model)
+
+Step 2: New instance reads Kafka topic (or event store) from offset 0
+        → processes all historical events
+        → writes to a NEW read-model table (e.g., orders_v2) or a shadow index
+
+Step 3: Monitor rebuild progress:
+        events_processed / total_events = % complete
+        For 100M events at 50K events/sec: ~33 minutes
+
+Step 4: When new instance catches up to current offset (lag < 1 second):
+        - Atomic swap: route read queries to new table
+        - Stop old projection builder
+
+Step 5: Drop old read-model table after verification
+```
+
+**Key design requirements for rebuild-ability**:
+
+1. **Events must be durable and ordered**: Use Kafka with `retention.bytes=-1` and `cleanup.policy=delete` (not compacted) for event-sourced topics. Or an explicit event store (EventStoreDB, custom PostgreSQL table).
+
+2. **Projection builder must be stateless per event**: Each event produces a deterministic read-model update. No side effects to external systems during rebuild (disable emails, notifications during rebuild).
+
+3. **Idempotent writes**: The projection builder's writes are `UPSERT` operations. If the rebuild crashes and restarts from a checkpoint, re-processing an event produces the same read-model state.
+
+4. **Zero-downtime rebuild**: Blue/green approach — build new read model in parallel, swap atomically. Old read model serves traffic throughout.
+
+**Rebuild time estimation**:
+```
+100M events × average_event_size (1KB) = 100GB of event log
+Processing rate: 50K events/sec
+Rebuild time: 100M / 50K = 2000 seconds ≈ 33 minutes
+(scale horizontally: 10 parallel rebuild workers = ~3 minutes)
+```
+
+Partition the event log by entity ID and run one rebuild worker per partition for parallelism.
+
+#### Event Schema Evolution and Upcasting
+
+Events are immutable once written. But schemas change. An event written in 2022 may need to be read in 2026 by code that expects a different structure.
+
+**Backward incompatible change examples**:
+- Rename field: `user_id` → `userId`
+- Remove field: delete `deprecated_flag` from event
+- Add required field: add `currency_code` (old events don't have it)
+- Split field: `full_name` → `first_name` + `last_name`
+
+**Upcasting** is the pattern for handling these: transform old event shapes to new shapes at read time, without modifying historical events.
+
+```java
+// Upcaster: transforms V1 OrderPlaced → V2 OrderPlaced
+public class OrderPlacedV1ToV2Upcaster implements Upcaster<OrderPlacedV1, OrderPlacedV2> {
+    
+    @Override
+    public OrderPlacedV2 upcast(OrderPlacedV1 v1) {
+        return OrderPlacedV2.builder()
+            .orderId(v1.getOrderId())
+            .userId(v1.getUser_id())    // rename: user_id → userId
+            .currencyCode("USD")         // default for old events (pre-multi-currency)
+            .firstName(splitFirst(v1.getFullName()))  // split full_name
+            .lastName(splitLast(v1.getFullName()))
+            .build();
+    }
+    
+    private String splitFirst(String fullName) {
+        int space = fullName.indexOf(' ');
+        return space >= 0 ? fullName.substring(0, space) : fullName;
+    }
+}
+```
+
+**Upcaster chain**: if you have V1 → V2 → V3 changes, chain the upcasters:
+
+```
+V1 event → V1ToV2Upcaster → V2 event → V2ToV3Upcaster → V3 event → handler
+```
+
+Each upcaster only handles one version transition. The chain composes them.
+
+**Implementation options**:
+
+1. **In the event deserializer** (recommended): Event reader applies upcasters before returning the event to the handler. Handler always sees the current version.
+
+2. **At write time (migration)**: Rewrite old events to new format in the store. Not recommended — violates event immutability, risky for large event logs.
+
+3. **In a separate migration service**: Read old events, transform, write to a new topic. Appropriate when migrating between event stores.
+
+**Schema Registry + Avro approach**: Store schema version ID alongside each event. Deserializer fetches the schema for that version from the registry. Avro's `default` field values handle missing fields automatically for additive changes. Use upcasters only for renaming, splitting, or removing fields.
+
+**Rule of thumb**: additive changes (new optional fields with defaults) are automatically backward-compatible in Avro. Structural changes (renames, splits, type changes) require explicit upcasters.
+
 ### Outbox Pattern
 
 **Question**: Your Order Service places an order: it writes a row to the `orders` table and publishes an `OrderPlaced` event to Kafka. You do the DB write first, then the Kafka publish. The DB write succeeds but the Kafka publish fails (broker briefly unreachable). The order exists in the database but no downstream service ever heard about it — inventory was never reserved, email was never sent. How do you make the DB write and the event publish atomic without a distributed transaction?

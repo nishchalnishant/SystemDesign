@@ -113,6 +113,33 @@ Every production system lives and dies on four axes. When you're designing a sys
 
 **Production generalization**: Consistency is a spectrum, not a binary. Strong consistency (every read reflects the latest write) requires coordination, which costs latency. Eventual consistency (reads may be stale briefly) allows replicas to operate independently, which improves availability and latency. The right choice depends on domain: bank balances require strong consistency; social media like-counts tolerate eventual. This is the heart of the CAP theorem. → Deep dive: [Distributed Systems](../04-advanced-topics/distributed-systems.md)
 
+**PACELC — Beyond CAP**:
+
+CAP theorem only describes what happens *during a network partition* (P): choose Availability or Consistency. But network partitions are rare. What about normal operation?
+
+PACELC (Daniel Abadi, 2012) extends CAP:
+- **P** (partition) → choose **A** (availability) or **C** (consistency) — same as CAP
+- **E** (else, normal operation) → choose **L** (low latency) or **C** (consistency)
+
+```
+PACELC Matrix:
+
+System              Partition     Normal Ops     Notes
+────────────────────────────────────────────────────────────────────
+DynamoDB            PA            EL             Eventual by default; strong read adds latency
+Cassandra           PA            EL             LOCAL_QUORUM adds latency; choose per query
+CockroachDB         PC            EC             Raft consensus on every write; strong always
+Spanner             PC            EC             TrueTime sync; external consistency
+MongoDB (default)   PA            EL             Single-node reads (eventual)
+MongoDB (majority)  PC            EC             Majority read/write; higher latency
+Zookeeper/etcd      PC            EC             Consensus-based; not available under partition
+HBase               PC            EC             Strong consistency via HDFS WAL
+```
+
+**The key insight PACELC adds**: even without a partition, a system must decide between low latency (serve from local replica, possibly stale) and consistency (coordinate across replicas, adds latency). DynamoDB is PA/EL: it prioritizes availability under partition AND low latency in normal ops. Spanner is PC/EC: it provides consistency in both cases, at the cost of latency.
+
+**Interview question framing**: "We use Cassandra for our user profile store. We've chosen PA/EL — during a partition we remain available with eventual consistency, and in normal ops we use `LOCAL_ONE` for low latency. If we need stronger guarantees for account balance reads, we switch to `LOCAL_QUORUM` — moving to PA/EC for that specific query."
+
 ### Performance (Latency & Throughput)
 
 **Question**: Your API returns in 50ms at P50, but in 2,000ms at P99. Half your users have a fine experience. One in a hundred users gets a two-second wait. Which number do you optimize, and why does the P99 exist at all?

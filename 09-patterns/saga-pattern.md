@@ -359,3 +359,112 @@ public void reserve(String orderId, List<Item> items) {
 
 **Q: "What if a compensating transaction fails?"**
 > "We must make compensating transactions retryable (idempotent). We log every compensation attempt in the saga state. If compensation fails: retry with exponential backoff. For cases where compensation is truly impossible (money already processed by payment provider), we fall back to human intervention + manual refund. This is why saga state records are so critical — the on-call engineer can see exactly what state the saga is in and what needs to be compensated manually."
+
+---
+
+## Compensation Failure and Dead Letter Queue (DLQ) Strategy
+
+### Why Compensations Fail
+
+Compensating transactions are not always idempotent-safe or permanently available:
+
+1. **Service is permanently down**: Inventory Service crashes and never recovers — `releaseInventory()` can never execute
+2. **External side effect is irreversible**: Payment was sent via SWIFT wire transfer, cannot be recalled programmatically
+3. **Timeout exceeded**: Compensation retried for 48 hours, downstream still unavailable; retry budget exhausted
+4. **Data has mutated**: The record the compensation needs to modify has been updated by another saga; compensation precondition check fails
+
+### Retry Strategy for Compensations
+
+```
+Attempt 1:  immediate
+Attempt 2:  +30 seconds
+Attempt 3:  +2 minutes
+Attempt 4:  +10 minutes
+Attempt 5:  +1 hour
+Attempt 6:  +6 hours
+Attempt 7:  +24 hours
+→ If still failing after 48 hours: move to DLQ
+```
+
+All retry attempts must use the same idempotency key (saga ID + step ID) to prevent double-compensation.
+
+### Dead Letter Queue Architecture
+
+```
+Normal Compensation Flow:
+  Orchestrator → CompensateInventory message → Inventory Service
+                                                      │
+                                              success → saga state = COMPENSATED
+                                              failure → retry queue (with delay)
+
+After max retries:
+  Retry queue → DLQ (e.g., Kafka topic: saga.compensations.dlq)
+                 │
+                 ▼
+         DLQ Monitor Service
+                 │
+         ┌───────┴──────────┐
+         ▼                  ▼
+   Alert on-call       Create Jira ticket
+   (PagerDuty)         with full saga context
+```
+
+**DLQ message must contain**:
+- `saga_id` — identifies the full saga
+- `saga_type` — which workflow (ORDER_SAGA, BOOKING_SAGA)
+- `failed_step` — which compensation failed
+- `compensation_payload` — all data needed to manually execute the compensation
+- `failed_at` — timestamp
+- `attempt_count` — how many times it was retried
+- `last_error` — exception message and stack trace
+
+### Manual Resolution Runbook
+
+When a compensation lands in the DLQ:
+
+1. **Assess reversibility**: Can the compensation still be performed? Is the target service up now?
+   - If yes: manually trigger compensation via admin endpoint, mark DLQ message as resolved
+   - If no: proceed to step 2
+
+2. **Determine financial/data impact**: Did the user pay? Was inventory double-allocated?
+
+3. **Business decision**: Options vary by domain:
+   - Full manual refund via payment provider dashboard
+   - Credit to user account (compensating business action, not technical rollback)
+   - Mark saga as `PERMANENTLY_FAILED`, notify customer via email
+   - Operational data fix (DBA updates inventory count manually)
+
+4. **Update saga state**: Mark saga record as `MANUAL_RESOLUTION` + add resolution notes
+
+5. **Post-mortem**: Why did the compensation fail? Is this a recurring issue? Should the retry budget be adjusted? Should this compensation be designed to be more resilient?
+
+### Pivot Transactions (Non-Compensatable Steps)
+
+Some steps in a saga are **pivot transactions** — once completed, they cannot be undone:
+
+```
+Order Saga:
+  RESERVE_INVENTORY   ← compensatable (release reservation)
+  VALIDATE_PAYMENT    ← compensatable (void authorization)
+  CHARGE_PAYMENT      ← PIVOT (money moved; may require human process to refund)
+  SEND_CONFIRMATION   ← retriable but not rollback-able (email already sent)
+  UPDATE_ORDER_STATUS ← compensatable (update back to FAILED)
+```
+
+**Design rule**: minimize the number of pivot transactions. Place them as late as possible in the saga. Everything before the pivot can be rolled back automatically; everything after must succeed or require manual intervention.
+
+### DLQ Monitoring and SLO
+
+```
+Alert: DLQ message count > 0 for > 5 minutes
+Severity: P1 (financial impact possible)
+On-call: payments team
+
+Dashboard metrics:
+  - dlq_messages_total (counter, by saga_type and failed_step)
+  - dlq_age_seconds (gauge: how long oldest DLQ message has been waiting)
+  - compensation_retry_attempts (histogram)
+  - manual_resolution_count (counter)
+
+SLO: 95% of DLQ messages resolved within 4 hours (human response SLO)
+```

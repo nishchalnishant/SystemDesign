@@ -322,12 +322,99 @@ This is automatic, background self-healing.
 
 ---
 
-## Anti-Entropy Repair
+## Gossip Protocol: Epidemic Algorithm
+
+Cassandra uses a gossip protocol for nodes to discover each other's state (alive/dead, load, schema version) without a centralized coordinator. Every second, each node gossips with up to 3 other nodes.
+
+### Epidemic Spreading Mechanics
+
+```
+Round 0: Node A has new information X
+Round 1: A gossips to {B, C, D} → A, B, C, D know X
+Round 2: B gossips to {E, F, G}, C gossips to {H, I, J}, D gossips to {K, L, M}
+         → 13 nodes know X
+Round 3: 13 informed nodes each gossip to 3 more → ~34 nodes know X
+
+Convergence: O(log N) rounds for N nodes
+At 1000 nodes: log₃(1000) ≈ 6.3 rounds × 1s = ~7 seconds to reach all nodes
+```
+
+**Fanout=3 balances speed vs bandwidth.** Doubling fanout halves rounds but quadruples traffic.
+
+### Gossip Message Exchange
+
+```
+1. Node A → Node B: GossipDigestSyn
+   { nodeA: generation=1234, version=500 }    ← A's view of itself
+   { nodeC: generation=1200, version=300 }    ← A's view of nodeC
+
+2. Node B → Node A: GossipDigestAck
+   { nodeB: full state }   ← B sends full state (A is behind on B)
+   { nodeA: version=498 }  ← B is behind on A (needs update)
+
+3. Node A → Node B: GossipDigestAck2
+   { nodeA: full state }   ← A sends its full state to update B
+```
+
+**State gossipped**: disk load, schema version, datacenter, rack, vnode tokens, status (NORMAL/LEAVING/JOINING).
+
+### Failure Detection: Phi Accrual
+
+Instead of a hard timeout, Cassandra uses the **Phi Accrual Failure Detector** — outputs a continuous suspicion score φ based on inter-arrival time history.
+
+```
+φ = -log₁₀(P[node still alive | last heartbeat delay])
+
+φ < threshold (default 8): node UP
+φ > threshold:             node DOWN
+
+Adaptive: slow-but-alive nodes have rising φ that stays below threshold
+          suddenly-dead nodes have φ spike rapidly past threshold
+```
+
+Config: `phi_convict_threshold: 8` in `cassandra.yaml` (higher = more tolerant of slow nodes).
+
+---
+
+## Anti-Entropy Repair: Merkle Trees
 
 For nodes that have been down long enough to miss Hinted Handoff, or for tables with low read traffic (no Read Repair triggered), run `nodetool repair`.
 
-- Compares **Merkle Trees** (hash trees of data ranges) between replicas.
-- Instead of sending entire datasets, only the rows that differ are synced.
+### Merkle Tree Construction and Comparison
+
+```
+Partition range: tokens [0, 1000000]
+Build tree by splitting ranges recursively:
+
+         [hash(all data 0-1M)]
+        /                      \
+  [hash(0-500K)]            [hash(500K-1M)]
+  /       \                   /          \
+[h(0-250K)] [h(250-500K)]  [h(500-750K)] [h(750-1M)]
+
+Compare top-down between Node A and Node B:
+  Root hashes match? → identical data, done (O(1) comparison!)
+  Root hashes differ? → descend to children:
+    Left subtrees match → skip entire left half
+    Right subtrees differ → recurse right half
+
+  Until leaf nodes → identify exact token ranges that differ
+  Stream only differing rows (based on highest timestamp wins)
+```
+
+**Network savings**: instead of streaming 100GB to compare, exchange O(depth × 1KB) hashes, then stream only the differing MB.
+
+### Repair Modes
+
+| Mode | Behavior | When to Use |
+|------|----------|-------------|
+| `nodetool repair` | Full repair, all owned ranges | Weekly maintenance |
+| `nodetool repair -pr` | Primary-range only | Cron across all nodes, avoids duplicate work |
+| Incremental repair | Only un-repaired SSTables (marks with `repairedAt`) | Cassandra 4.0+; reduces repair time 90%+ |
+| Sub-range repair | One token subrange at a time | Spread load across hours |
+
+**Critical**: run repair within `gc_grace_seconds` (10 days default). If a node misses repair for >10 days and tombstones expire, deleted rows resurrect on reconnect.
+
 - Should run weekly for tables without frequent reads.
 
 ---

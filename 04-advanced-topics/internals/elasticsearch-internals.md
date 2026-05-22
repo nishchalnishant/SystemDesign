@@ -277,6 +277,90 @@ Doc1 scores higher
 
 ---
 
+## BKD Trees (Block K-D Trees)
+
+**Why Elasticsearch uses BKD trees for numeric and geo queries, not B-Trees.**
+
+### The Problem with B-Trees for Multi-Dimensional Data
+
+B-Trees excel at one-dimensional range queries: `age BETWEEN 25 AND 35`. They maintain sorted order on a single key, so a range scan is a sequential read.
+
+For multi-dimensional queries — `latitude BETWEEN 37.7 AND 37.8 AND longitude BETWEEN -122.5 AND -122.4` — a B-Tree on latitude gives you all lat∈[37.7, 37.8] rows but still requires scanning all of them to filter by longitude. You've reduced one dimension but done nothing for the other.
+
+**Multi-dimensional problem**: a B-Tree on (lat, lon) sorts first by lat, then by lon within the same lat. A bounding-box query on both lat and lon can't be answered with a contiguous B-Tree scan — it degenerates to a range scan on lat followed by a linear filter on lon: O(results per lat band) I/O.
+
+### K-D Tree Basics
+
+A K-D tree partitions k-dimensional space recursively. At each level, split on a different dimension:
+
+```
+Level 0 (root): split on latitude  (median lat = 37.75)
+  Left subtree:  lat < 37.75
+  Right subtree: lat >= 37.75
+
+Level 1: split on longitude (median lon of each half)
+Level 2: split on latitude again
+...
+```
+
+A range query prunes entire subtrees: if a subtree's bounding box doesn't intersect the query box, skip all its nodes. Expected query time: O(k × N^(1-1/k)) — much better than linear scan for k=2 or k=3.
+
+**Problem with in-memory K-D trees**: each node is accessed by pointer — poor cache locality. On-disk, random pointer chasing is catastrophic (one disk seek per node = milliseconds per level).
+
+### BKD Tree: Block K-D Tree (Lucene 6+, Elasticsearch 5+)
+
+**Key innovation**: store the K-D tree in large, sequential disk blocks. Leaves hold many points (block size = ~512 or 1024 points). Navigating the tree requires few block reads, not one seek per point.
+
+```
+BKD Tree structure:
+                      [Internal node: split lat=37.75]
+                     /                                \
+      [Internal: split lon=-122.4]        [Internal: split lon=-122.3]
+          /        \                          /        \
+  [Leaf block]  [Leaf block]          [Leaf block]  [Leaf block]
+  512 points    512 points            512 points    512 points
+  (seq. read)   (seq. read)           (seq. read)   (seq. read)
+```
+
+**Query algorithm**:
+1. Start at root, prune subtrees whose bounding box doesn't intersect query box
+2. At each internal node: recurse into matching children
+3. At leaves: sequential scan of ~512 points (fits in L2 cache) to check exact bounds
+4. Return matching document IDs as a bitset (DocIdSet)
+
+**Performance** (compared to B-Tree for geo-range):
+
+| Approach | 1M points, 0.01° bbox | Notes |
+|----------|----------------------|-------|
+| B-Tree on lat | O(N) per dimension | Must filter lon separately |
+| BKD Tree | O(matching_blocks + k) | Prunes non-matching branches |
+| BKD typical | ~3-10 block reads | For small result sets |
+
+### What Elasticsearch Indexes as BKD
+
+- **Numeric fields** (`integer`, `long`, `float`, `double`): range queries (`gte`, `lte`)
+- **Date fields** (`date`): date range queries
+- **Geo fields** (`geo_point`): bounding box, distance radius, geo polygon queries
+- **IP fields** (`ip`): CIDR range queries
+
+**Mapping impact**: fields mapped as `keyword` use inverted index (exact match). Fields mapped as `integer`/`long` use BKD (range queries). Don't map numeric IDs as `integer` if you only do exact lookups — `keyword` is more efficient for equality.
+
+```json
+PUT /products/_mapping
+{
+  "properties": {
+    "price": {"type": "float"},          // BKD: enables range queries
+    "category_id": {"type": "keyword"},  // inverted index: exact match only
+    "location": {"type": "geo_point"},   // BKD: enables geo bbox/distance
+    "created_at": {"type": "date"}       // BKD: enables date range queries
+  }
+}
+```
+
+**Interview insight**: "Elasticsearch uses BKD trees (not B-Trees) for numeric and geo fields because B-Trees can only efficiently answer one-dimensional range queries. BKD trees partition multi-dimensional space recursively and store data in large sequential blocks for cache-friendly I/O, enabling fast bounding-box and range queries across multiple numeric dimensions simultaneously."
+
+---
+
 ## Sharding Strategy
 
 ### Number of Shards

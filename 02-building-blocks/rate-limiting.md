@@ -134,18 +134,93 @@ This is the most common algorithm in practice (used by AWS API Gateway, Stripe, 
 
 Regardless of how fast requests arrive, they're processed at a fixed output rate. The bucket fills during a burst. If it overflows, requests are dropped. Useful when you need perfectly smooth output — e.g. sending SMS messages to a carrier that accepts exactly 10/second.
 
-### Sliding Window vs Fixed Window
+### Sliding Window vs Fixed Window — Mathematical Analysis
+
+**Fixed Window boundary spike — exact numbers**:
 
 ```
-  Fixed window boundary spike:
-  [0:00–0:59]  100 requests allowed → 100 at 0:59 ✓
-  [1:00–1:59]  100 requests allowed → 100 at 1:00 ✓
-  → 200 requests in 2 seconds around the boundary
+Limit: 100 requests per 60-second window
+Windows: [0:00–0:59], [1:00–1:59], [2:00–2:59], ...
 
-  Sliding window:
-  At 1:00, window = [0:00–1:00] → the 100 from 0:59 still count
-  → blocks the second burst until they roll out of the window
+Attack:
+  0:59.000 → send 100 requests (fills window 1 entirely)   ✓ allowed
+  1:00.001 → send 100 requests (window 2 just started)      ✓ allowed
+  → 200 requests in 0.002 seconds: 2× the rate limit
+
+Why this matters: at 1000 req/min limit, an attacker can send 2000 req in
+2ms at every window boundary. Your downstream DB sees 2000 QPS for 2ms.
 ```
+
+**Token Bucket — rate math**:
+
+```
+Config: capacity = 100 tokens, refill_rate = 10 tokens/second
+
+Initial state: 100 tokens (full bucket)
+t=0:    send 100 requests → 0 tokens remain
+t=1s:   10 tokens refilled → can send 10 requests
+t=5s:   50 tokens → can send 50 requests
+t=10s:  100 tokens (full again)
+
+Burst formula: max burst = bucket_capacity
+Sustained rate formula: requests/second ≤ refill_rate
+Effective limit: 100 immediate burst + 10/second sustained
+
+For capacity = C, refill_rate = r:
+  max_burst = C
+  sustained_rate = r
+  over_t_seconds = C + r×t (capped at C)
+```
+
+**Sliding Window Log — exact but expensive**:
+
+```
+Store timestamps of all requests in last N seconds (Redis sorted set).
+On each request:
+  1. ZREMRANGEBYSCORE window:{key} 0 (now - 60s)  ← remove old entries
+  2. ZCARD window:{key}                             ← count recent requests
+  3. If count < limit: ZADD window:{key} now now → allow
+  4. Else: reject
+
+Memory cost: O(requests_per_window_per_key)
+At 1000 req/min: store 1000 timestamps per user → ~16KB per user
+At 1M users: 16GB just for rate limit state
+
+Solution for scale: Sliding Window Counter approximation
+```
+
+**Sliding Window Counter — approximate but O(1) space**:
+
+```
+Two fixed-window counters: current window and previous window.
+Approximate count = prev_count × (overlap_fraction) + curr_count
+
+Example at 0:45 (45 seconds into current window):
+  prev_window count = 80 (0:00–0:59)
+  curr_window count = 30 (1:00–1:59)
+  overlap = 15 seconds out of 60 = 0.25 fraction in previous window
+  
+  estimated_count = 80 × 0.25 + 30 = 50
+
+This approximation has ≤ 1/window_size error rate (< 0.4% error for 60s window).
+Used by: Redis-Cell module, Kong rate limiting plugin.
+```
+
+**Algorithm Comparison**:
+
+| Algorithm | Boundary Spike | Burst Control | Space | Accuracy |
+|---|---|---|---|---|
+| Fixed Window | ❌ 2× spike | ❌ No | O(1) | Exact per window |
+| Token Bucket | ✅ None | ✅ Configurable | O(1) | Exact |
+| Leaky Bucket | ✅ None | ✅ No burst allowed | O(queue_size) | Exact |
+| Sliding Window Log | ✅ None | ✅ Configurable | O(N) | Exact |
+| Sliding Window Counter | ✅ Mostly | ✅ Mostly | O(1) | ~99.6% |
+
+**Recommendation**:
+- User-facing APIs: Token Bucket (allows bursts, easy to tune)
+- Financial/billing: Sliding Window Log (exact, no boundary spikes)
+- High-scale (millions of keys): Sliding Window Counter (O(1) space, ~exact)
+- Smoothing (outbound SMS to carrier): Leaky Bucket (constant output rate)
 
 ### Where to Enforce
 

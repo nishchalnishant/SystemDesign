@@ -267,6 +267,182 @@ public class Worker implements Runnable {
 
 ---
 
+## Java Memory Model (JMM) and Happens-Before
+
+**Question**: Thread A sets `flag = true` and writes `data = 42`. Thread B reads `flag == true` and then reads `data`. Is it guaranteed to see `data == 42`?
+
+Without explicit synchronization: **no guarantee**. The CPU can reorder instructions. The compiler can cache values in registers. Each core has its own L1/L2 cache. Thread B may see a stale value of `data` even after observing `flag == true`.
+
+The Java Memory Model (JMM, JSR-133, Java 5+) defines a **happens-before** relation. If action A happens-before action B, A's effects are visible to B.
+
+### Happens-Before Rules
+
+| Rule | Explanation |
+|------|-------------|
+| **Program order** | Each action in a thread happens-before every subsequent action in the same thread |
+| **Monitor lock** | `unlock()` on a monitor happens-before any subsequent `lock()` on the same monitor |
+| **Volatile write** | A write to a `volatile` field happens-before every subsequent read of that field |
+| **Thread start** | `thread.start()` happens-before any action in the started thread |
+| **Thread join** | All actions in a thread happen-before `thread.join()` returns |
+| **Transitivity** | If A hb B and B hb C, then A hb C |
+
+### Why Double-Checked Locking Requires volatile
+
+```java
+// BROKEN without volatile (Java 1.4 and earlier / without volatile)
+public class Singleton {
+    private static Singleton instance;  // NOT volatile
+
+    public static Singleton getInstance() {
+        if (instance == null) {                    // check 1 — no lock
+            synchronized (Singleton.class) {
+                if (instance == null) {            // check 2 — with lock
+                    instance = new Singleton();    // PROBLEM HERE
+                }
+            }
+        }
+        return instance;
+    }
+}
+```
+
+**Why it breaks**: `instance = new Singleton()` compiles to three steps:
+1. Allocate memory
+2. Initialize object (run constructor)
+3. Assign reference to `instance`
+
+The JVM/CPU can reorder steps 2 and 3: assign the reference **before** the constructor runs. Thread B checks `instance != null` (step 3 happened), reads `instance`, and calls a method on a **partially constructed object** (step 2 not done yet). Crash or silent corruption.
+
+```java
+// CORRECT: volatile prevents reordering
+public class Singleton {
+    private static volatile Singleton instance;  // volatile guarantees ordering
+
+    public static Singleton getInstance() {
+        if (instance == null) {
+            synchronized (Singleton.class) {
+                if (instance == null) {
+                    instance = new Singleton();
+                    // volatile write: happens-before any subsequent volatile read
+                    // Thread B's volatile read of instance sees fully constructed object
+                }
+            }
+        }
+        return instance;
+    }
+}
+```
+
+**What `volatile` gives you**:
+- Visibility: every write is immediately visible to all threads (no CPU cache stale reads)
+- Ordering: no reordering of instructions around the volatile write/read
+- Does NOT give atomicity: `count++` is still not atomic with volatile
+
+### CAS and ABA Problem
+
+**CAS (Compare-And-Swap)**: atomic instruction `CMPXCHG` on x86. Reads current value, compares to expected, writes new value only if match — all atomically. Basis of all lock-free algorithms.
+
+```java
+AtomicInteger counter = new AtomicInteger(0);
+// CAS: only increments if current value is 5
+boolean swapped = counter.compareAndSet(5, 6);
+
+// Under the hood: CMPXCHG instruction
+// No locking — CPU-level atomic operation
+```
+
+**ABA Problem**: Thread 1 reads value A. Thread 2 changes A→B→A. Thread 1's CAS(A, C) succeeds but operates on a different "A" than it read.
+
+```
+Thread 1: reads head = NodeA (value=1)
+Thread 2: pops NodeA, pushes NodeB, pushes NodeA back (reuses same object)
+Thread 1: CAS(head, NodeA, newNode) succeeds — but NodeB is now lost!
+```
+
+**Fix**: `AtomicStampedReference<T>` — pairs the reference with a monotonically increasing stamp (version).
+
+```java
+AtomicStampedReference<Node> head = new AtomicStampedReference<>(sentinel, 0);
+
+// On CAS: must match BOTH the reference AND the stamp
+int[] stampHolder = new int[1];
+Node current = head.get(stampHolder);
+int stamp = stampHolder[0];
+
+// Only succeeds if both reference and stamp match — ABA impossible
+head.compareAndSet(current, newNode, stamp, stamp + 1);
+```
+
+### ThreadPoolExecutor Parameters
+
+```java
+ThreadPoolExecutor executor = new ThreadPoolExecutor(
+    4,                              // corePoolSize: always-alive threads
+    16,                             // maximumPoolSize: max threads under load
+    60, TimeUnit.SECONDS,           // keepAliveTime: idle non-core thread lifetime
+    new ArrayBlockingQueue<>(100),  // workQueue: bounded = backpressure
+    new ThreadPoolExecutor.CallerRunsPolicy()  // rejection policy
+);
+```
+
+**Parameter semantics**:
+1. If threads < `corePoolSize`: create new thread (even if idle threads exist)
+2. If threads ≥ `corePoolSize` and queue not full: enqueue task
+3. If queue full and threads < `maxPoolSize`: create new thread
+4. If queue full and threads = `maxPoolSize`: apply **rejection policy**
+
+**Rejection policies**:
+- `AbortPolicy` (default): throw `RejectedExecutionException` — caller must handle
+- `CallerRunsPolicy`: caller thread runs the task — natural backpressure (caller slows down)
+- `DiscardPolicy`: silently drop task — use only when task loss is acceptable
+- `DiscardOldestPolicy`: drop head of queue (oldest task), enqueue new one
+
+**Sizing rule of thumb**:
+- CPU-bound tasks: `corePoolSize` = number of CPU cores
+- I/O-bound tasks: `corePoolSize` = cores × (1 + wait_time / compute_time) — more threads since most are blocked on I/O
+
+### ForkJoinPool and Work Stealing
+
+`ForkJoinPool` is designed for recursive divide-and-conquer tasks (e.g. merge sort, parallel streams).
+
+**Work stealing**: each worker thread has a deque (double-ended queue) of tasks. Idle threads steal from the tail of other threads' deques. Stealers take from the tail (LIFO order avoids stealing freshly forked tasks), owners take from the head (FIFO for fairness to large tasks).
+
+```java
+ForkJoinPool pool = ForkJoinPool.commonPool();  // shared pool used by parallel streams
+
+// Custom pool to avoid starving common pool
+ForkJoinPool custom = new ForkJoinPool(8);
+
+// RecursiveTask: returns a result
+class SumTask extends RecursiveTask<Long> {
+    private final int[] arr;
+    private final int lo, hi;
+
+    @Override
+    protected Long compute() {
+        if (hi - lo <= 1000) {
+            // base case: compute sequentially
+            long sum = 0;
+            for (int i = lo; i < hi; i++) sum += arr[i];
+            return sum;
+        }
+        int mid = (lo + hi) / 2;
+        SumTask left = new SumTask(arr, lo, mid);
+        SumTask right = new SumTask(arr, mid, hi);
+        left.fork();              // submit left to pool asynchronously
+        long rightResult = right.compute();  // compute right in this thread
+        long leftResult = left.join();       // wait for left
+        return leftResult + rightResult;
+    }
+}
+```
+
+**When to use ForkJoinPool vs ThreadPoolExecutor**:
+- ForkJoinPool: recursive tasks with fine-grained parallelism, work stealing reduces idle time
+- ThreadPoolExecutor: independent tasks, I/O-bound work, explicit queue management needed
+
+---
+
 ## Pattern Decision Matrix
 
 | Need | Use |

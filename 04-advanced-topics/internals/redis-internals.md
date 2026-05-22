@@ -362,6 +362,130 @@ RAM is significantly more expensive than SSD/HDD. Do not store large, rarely acc
 
 Redis with persistence is still primarily an in-memory store. Use it as a cache, session store, or real-time data layer — not as the authoritative, durable record for mission-critical data. Keep the primary database (Postgres, MySQL, Cassandra) as the source of truth.
 
+### RESP Protocol (Redis Serialization Protocol)
+
+Redis clients communicate with the server over TCP using RESP — a simple, human-readable text protocol. Understanding RESP explains pipelining and why Redis is so fast at the network layer.
+
+**RESP wire format**:
+
+```
+Simple Strings:  +OK\r\n
+Errors:          -ERR unknown command 'FLURB'\r\n
+Integers:        :1000\r\n
+Bulk Strings:    $6\r\nfoobar\r\n        ← $<length>\r\n<data>\r\n
+Null Bulk:       $-1\r\n                 ← nil response (key not found)
+Arrays:          *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+                 ^ 3 elements: SET, foo, bar
+```
+
+**Command on the wire (SET foo bar)**:
+```
+Client sends:   *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+Server replies: +OK\r\n
+```
+
+**GET response (key exists)**:
+```
+Client sends:   *2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n
+Server replies: $3\r\nbar\r\n
+```
+
+**GET response (key missing)**:
+```
+Client sends:   *2\r\n$3\r\nGET\r\n$7\r\nmissing\r\n
+Server replies: $-1\r\n
+```
+
+### Pipelining: RTT Amortization
+
+**Problem**: Every Redis command incurs a network round-trip (RTT). At 1ms RTT, you can do at most 1,000 commands/second per connection regardless of how fast Redis processes them.
+
+**Pipelining**: Send N commands without waiting for responses. Redis processes them in order and sends all N responses at once.
+
+```
+Without pipelining (10 commands, 1ms RTT each):
+  → cmd1 → wait 1ms → response1
+  → cmd2 → wait 1ms → response2
+  ...
+  Total: 10ms
+
+With pipelining (10 commands in 1 batch):
+  → [cmd1, cmd2, ..., cmd10] → wait 1ms → [resp1, resp2, ..., resp10]
+  Total: 1ms  (10x speedup)
+```
+
+**RTT math**:
+- Without pipeline: throughput = 1 / RTT = 1000 ops/s at 1ms RTT
+- With pipeline (batch 100): throughput = 100 / RTT = 100,000 ops/s at 1ms RTT
+- With pipeline (batch 1000): throughput = 1M ops/s at 1ms RTT (approaches Redis's in-memory limit)
+
+**Java pipelining**:
+```java
+// Jedis pipelining
+Pipeline pipeline = jedis.pipelined();
+for (String userId : userIds) {
+    pipeline.get("user:" + userId);  // queued, not sent yet
+}
+List<Object> responses = pipeline.syncAndReturnAll();  // sends all, receives all
+```
+
+**Pipelining vs Transactions (MULTI/EXEC)**:
+- Pipelining: client batches; server processes as they arrive; not atomic
+- MULTI/EXEC: all commands queued server-side; executed atomically in one step; no interleaving
+
+**Pipelining vs Lua scripts**:
+- Both amortize RTT to 1 round-trip
+- Lua: atomic (no other commands between Lua steps); arbitrary logic in Lua
+- Pipeline: non-atomic; each command individually atomic but not as a group
+
+### Cluster Gossip Protocol
+
+Redis Cluster nodes discover each other and exchange cluster state using a gossip protocol over a dedicated cluster bus port (data port + 10000, e.g. 6379 → 16379).
+
+**CLUSTER MEET** (bootstrapping):
+```
+Node A: CLUSTER MEET <IP-B> <PORT-B>
+  → A and B become aware of each other
+  → A gossips B's existence to C, D, E
+  → B gossips A's existence to C, D, E
+  → Within O(log N) rounds, all nodes know all nodes
+```
+
+**PING/PONG gossip**:
+```
+Every 100ms: each node selects a random subset of known nodes
+  → sends PING with:
+     - sender's view of cluster state
+     - random sample of other nodes' state (gossip payload)
+  → receiver responds PONG with its own view
+  → both sides update their cluster state table
+
+Information propagation: O(log N) rounds to reach all N nodes
+At 1000 nodes: ~10 rounds × 100ms = ~1 second for full propagation
+```
+
+**Failure detection**:
+```
+If node A doesn't receive PONG from B within cluster-node-timeout (default 15s):
+  → A marks B as PFAIL (probable failure)
+  → A gossips B's PFAIL to all nodes
+  → If majority of masters mark B as PFAIL within timeout:
+  → B is marked FAIL (confirmed failure)
+  → Failover starts: B's replica requests votes for promotion
+```
+
+**Hash slot gossip**:
+- Each PING/PONG includes a compact representation of which node owns which hash slots
+- After resharding (slot migration), new slot ownership propagates within O(log N) × 100ms
+- During migration: `ASK` redirect (temporary) vs `MOVED` redirect (permanent slot reassignment)
+
+```
+MOVED 7638 127.0.0.1:6380    ← slot 7638 permanently lives at 6380
+ASK   7638 127.0.0.1:6380    ← slot 7638 is being migrated; retry at 6380
+```
+
+---
+
 ### Single-Threaded Event Loop
 
 Redis is single-threaded for command processing. This means:

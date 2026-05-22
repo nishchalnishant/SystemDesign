@@ -241,6 +241,60 @@ XA flow:
 ### 6.4 Heuristic Decisions (Last Resort)
 If a participant is blocked for too long, a DBA can manually issue a **heuristic commit or rollback**. This is called a "heuristic decision" and can cause inconsistency if it conflicts with coordinator's decision. Must be logged and reconciled manually.
 
+### 6.5 Coordinator Crash Timeline — All 6 Scenarios
+
+This is the question interviewers ask to test real depth. Coordinator can crash at 6 distinct points:
+
+```
+Timeline:  [Phase 1 Prepare] ─────────────── [Phase 1 Complete] ─── [Phase 2 Commit]
+
+Crash Point A: Before sending any Prepare
+Crash Point B: After sending Prepare to some (not all) participants
+Crash Point C: After receiving all votes, before writing COMMIT to WAL
+Crash Point D: After writing COMMIT to WAL, before sending any COMMIT
+Crash Point E: After sending COMMIT to some (not all) participants
+Crash Point F: After all participants ACK (transaction complete)
+```
+
+| Crash Point | WAL State | What Happens on Coordinator Restart | Consistency |
+|---|---|---|---|
+| **A** | No record | Coordinator has no record of this txn; participants time out and abort | ✅ Consistent (all abort) |
+| **B** | No record | Some participants received Prepare, will time out and abort. Others never received it. Coordinator restarts with no WAL entry, ignores txn. | ✅ Consistent (all abort) |
+| **C** | PREPARED (received all votes, not yet decided) | Coordinator sees PREPARED state: safe to ABORT (since it hasn't told anyone to COMMIT yet). Sends ABORT to all. | ✅ Consistent (all abort) |
+| **D** | COMMIT written | Coordinator MUST commit. It re-sends COMMIT to all participants on restart. | ✅ Consistent (all commit) — but participants were BLOCKED during coordinator downtime |
+| **E** | COMMIT written | Coordinator restarts, sees COMMIT in WAL, re-sends COMMIT to participants that hadn't ACKed. Some participants already committed, others now will. | ✅ Consistent (all commit eventually) — again, latency from blocking |
+| **F** | COMMIT + all ACKs | Transaction is already complete. Coordinator restart is a no-op for this txn. | ✅ Consistent |
+
+**The blocking problem is at D and E**: participants that voted YES are in PREPARED state. They hold locks and cannot proceed or rollback until they hear from the coordinator. If the coordinator is dead for hours (disk failure, no standby), those participants are locked for hours. This is the fundamental flaw of 2PC — it is a **blocking protocol**.
+
+**Crash Point C is the safe harbor**: if the coordinator dies before writing its COMMIT decision to WAL, all participants will eventually time out and abort. This is the only crash scenario that is fully non-blocking.
+
+### 6.6 Three-Phase Commit — Non-Blocking Alternative
+
+3PC adds a **Pre-Commit** phase between Phase 1 and Phase 2 to eliminate the blocking problem:
+
+```
+Phase 1: Prepare (same as 2PC)
+  Coordinator → Prepare → All participants
+  All participants → Vote(YES/NO) → Coordinator
+
+Phase 2: Pre-Commit (new)
+  Coordinator writes PRE-COMMIT to WAL
+  Coordinator → PreCommit → All participants
+  Participants write PRE-COMMIT to their WAL, ACK coordinator
+  (Now: if coordinator crashes, participants know decision is COMMIT)
+
+Phase 3: Commit (same as 2PC)
+  Coordinator → Commit → All participants
+```
+
+**Why 3PC is non-blocking**: After Phase 2, every participant knows the coordinator decided to commit. If the coordinator crashes, participants can elect a new coordinator — they all tell it "we received PreCommit", so the new coordinator knows to send Commit. No blocking.
+
+**Why 3PC is not widely used**:
+1. It requires synchronous network with no partitions. Under a partition after Pre-Commit: participants that received PreCommit assume COMMIT; coordinator that can't reach them must ABORT for correctness. Result: split-brain inconsistency.
+2. It adds a full RTT of latency (3 instead of 2 network round trips).
+3. In practice, use Saga (with compensation) or Paxos-based coordinator replication to eliminate the coordinator SPOF — both are safer than 3PC.
+
 ---
 
 ## 7. Performance Numbers

@@ -112,6 +112,78 @@ In Kafka:
 
 When a consumer joins or leaves a group, the Group Coordinator triggers a **rebalance** — redistributing partitions among active consumers. This causes a **"stop-the-world" pause** in processing. Mention this in interviews the same way you would mention Garbage Collection pauses in JVM systems.
 
+### Eager Rebalancing (Default Before Kafka 2.4)
+
+The original rebalancing protocol:
+
+1. Group Coordinator detects membership change (consumer joins, leaves, or heartbeat times out)
+2. Group Coordinator sends **RevokAll** — every consumer revokes **all** its partitions
+3. All consumers rejoin the group (send `JoinGroup` request)
+4. Group Coordinator collects all `JoinGroup` responses, elects a **Group Leader** (first to respond)
+5. Group Leader runs the partition assignment algorithm and sends result back via `SyncGroup`
+6. All consumers receive their new partition assignments and resume consuming
+
+**Stop-the-world duration**: steps 2-6 = typically 3-30 seconds for large consumer groups. During this window, **no consumer in the group processes any messages**.
+
+**Rebalancing storm**: if consumers crash frequently (JVM GC pauses, rolling deployment, network hiccups), rebalances chain together. A new consumer joining at step 4 triggers another full rebalance. In extreme cases, a group of 100 consumers can spend more time rebalancing than consuming.
+
+### Cooperative (Incremental) Rebalancing (Kafka 2.4+)
+
+Introduced to eliminate the stop-the-world pause:
+
+1. Group Coordinator detects membership change
+2. **Round 1**: Group Leader assigns partitions and marks only the **delta** (changed assignments) as to-be-revoked. Consumers that need to revoke partitions do so; others keep consuming.
+3. **Round 2**: Only revoked partitions are reassigned. Consumers that never lost their partitions **never stopped consuming**.
+
+```
+Eager (100 partitions, 10 consumers, 1 consumer added):
+  All 100 partitions revoked → all consumers pause → 100 partitions reassigned
+  Pause: 100% of throughput lost for 5-30 seconds
+
+Cooperative (same scenario):
+  ~9 partitions moved from existing consumers to new consumer
+  Only those 9 partitions have a brief gap
+  91 partitions: zero interruption
+  Throughput loss: ~9%
+```
+
+**Configuration**:
+```properties
+partition.assignment.strategy=org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+```
+
+### Sticky Assignment
+
+Both eager and cooperative protocols support **sticky assignment** — the assignor tries to keep consumers assigned to the same partitions they had before the rebalance. This minimizes state reload overhead for consumers that maintain per-partition state (e.g., aggregation windows, join buffers).
+
+```properties
+# For eager + sticky:
+partition.assignment.strategy=org.apache.kafka.clients.consumer.StickyAssignor
+
+# For cooperative + sticky (recommended):
+partition.assignment.strategy=org.apache.kafka.clients.consumer.CooperativeStickyAssignor
+```
+
+### `__consumer_offsets` — The Offset Commit Topic
+
+Kafka stores committed consumer offsets in an internal compacted topic named `__consumer_offsets` with 50 partitions. Every `consumer.commitSync()` or `consumer.commitAsync()` call writes to this topic.
+
+- Each consumer group's offsets land in a specific partition determined by `hash(group_id) % 50`
+- The Group Coordinator for a consumer group is the leader of that `__consumer_offsets` partition
+- On consumer restart: fetch committed offset from `__consumer_offsets` → resume from that position
+
+**Consumer lag**: the difference between the latest offset in the partition and the consumer's committed offset. Monitored via `kafka-consumer-groups.sh --describe` or JMX metric `records-lag-max`.
+
+### When to Use Which Rebalancing Protocol
+
+| Scenario | Recommendation |
+|---|---|
+| Rolling deployments of consumer services | Cooperative sticky — minimize throughput loss |
+| Short-lived consumers (batch jobs) | Eager is fine — no long-lived state |
+| Consumers with partition-local state (aggregations) | Cooperative sticky — preserve state locality |
+| Consumer groups with > 50 consumers | Cooperative sticky — stop-the-world cost is too high |
+| Kafka < 2.4 | Eager only (cooperative not available) |
+
 ---
 
 ## 3. Delivery Guarantees

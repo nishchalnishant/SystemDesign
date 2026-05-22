@@ -748,6 +748,145 @@ public Report generateReport(long accountId) {
 
 ---
 
+## MVCC: How Isolation Is Actually Implemented
+
+**Question**: How does PostgreSQL allow 1,000 concurrent readers and writers without blocking each other at Read Committed or Repeatable Read isolation, while still showing each reader a consistent snapshot?
+
+The answer is MVCC (Multi-Version Concurrency Control). Instead of locking rows on read, the database keeps multiple versions of each row and shows each transaction the version that was current at the appropriate point in time. Readers never block writers; writers never block readers.
+
+### PostgreSQL: xmin and xmax
+
+Every row in PostgreSQL has two hidden system columns:
+
+```sql
+SELECT *, xmin, xmax FROM orders LIMIT 5;
+-- xmin: transaction ID that inserted this row version
+-- xmax: transaction ID that deleted (or updated) this row version; 0 = not deleted
+```
+
+```
+Row lifecycle:
+  INSERT: creates row with xmin=<inserting_txn_id>, xmax=0
+  UPDATE: creates NEW row version (xmin=<updating_txn_id>); marks OLD version xmax=<updating_txn_id>
+  DELETE: marks row xmax=<deleting_txn_id>
+
+At any point, a row can have multiple versions in the heap:
+  Old version: xmin=100, xmax=150  (inserted by txn 100, updated/deleted by txn 150)
+  New version: xmin=150, xmax=0    (current, created by txn 150)
+```
+
+**Visibility rule** (simplified): Transaction T with snapshot at time S sees a row version if:
+- `xmin` committed before S started (the row was inserted before my snapshot), AND
+- `xmax = 0` OR `xmax` started after S (the row was not deleted before my snapshot)
+
+```sql
+-- See the hidden columns:
+SELECT xmin, xmax, id, status FROM orders WHERE id = 42;
+-- xmin=1234, xmax=0   → currently visible (not deleted)
+-- xmin=1234, xmax=1500 → deleted by txn 1500
+```
+
+### Snapshot Isolation
+
+At **Repeatable Read** level, PostgreSQL takes a snapshot of committed transaction IDs at the start of your transaction. Your transaction only sees rows where `xmin` is in the "committed before my snapshot" set.
+
+```
+Active transactions when T begins: {txn200, txn201, txn202}
+T's snapshot: "see all transactions committed before txn200 started"
+
+txn205 commits and inserts a row → T does not see it (committed after T's snapshot)
+txn198 committed before → T sees its rows
+
+This is snapshot isolation: T sees a consistent point-in-time view for the entire transaction duration.
+```
+
+**Non-repeatable read prevention**: since T's snapshot never changes within the transaction, reading the same row twice always returns the same version. This is why Repeatable Read prevents non-repeatable reads without locking.
+
+**Phantom read in PostgreSQL**: PostgreSQL's Repeatable Read also prevents phantoms (unlike the SQL standard which only requires Serializable for phantom prevention). A new row inserted by another transaction won't appear in T's range scan because the new row's `xmin` is after T's snapshot.
+
+### SSI: Serializable Snapshot Isolation (PostgreSQL 9.1+)
+
+**Problem with Snapshot Isolation**: it prevents most anomalies but not all. The **write skew** anomaly:
+
+```
+Doctors on call: Alice and Bob (minimum 1 must always be on call)
+T1 (Alice): reads doctors_on_call → [Alice, Bob] (2 doctors)
+            sees ≥ 2, decides to take herself off call
+T2 (Bob):   reads doctors_on_call → [Alice, Bob] (2 doctors)
+            sees ≥ 2, decides to take himself off call
+T1 commits: removes Alice from on-call
+T2 commits: removes Bob from on-call
+Result: 0 doctors on call — violated the invariant!
+
+Both transactions read a consistent snapshot and wrote non-overlapping rows.
+Snapshot isolation allows both to commit. → WRITE SKEW ANOMALY.
+```
+
+**SSI solution**: PostgreSQL tracks read-write dependencies between concurrent transactions. If a dependency cycle is detected (T1 read something T2 will write; T2 read something T1 will write), one transaction is aborted with `ERROR: could not serialize access due to read/write dependencies`.
+
+```java
+// Java: handle SSI serialization failure with retry
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public void updateDoctorOnCall(String doctorId) {
+    try {
+        int onCallCount = doctorRepo.countOnCall();
+        if (onCallCount > 1) {
+            doctorRepo.removeFromOnCall(doctorId);
+        }
+    } catch (CannotSerializeTransactionException e) {
+        // SSI detected a conflict — retry the transaction
+        throw new RetryableException("Serialization conflict, retry");
+    }
+}
+```
+
+**SSI performance**: much better than 2PL (Two-Phase Locking, the traditional Serializable implementation). SSI uses optimistic concurrency — transactions proceed without locking, conflicts detected at commit. Under low-contention workloads (most production apps), SSI abort rate is very low.
+
+### Isolation Level → Implementation Mapping
+
+| Isolation Level | Implementation | What It Does |
+|-----------------|---------------|--------------|
+| Read Uncommitted | Same as RC in PG | PostgreSQL never reads dirty data regardless |
+| Read Committed | Per-statement snapshot | Each SQL statement sees latest committed state |
+| Repeatable Read | Per-transaction snapshot | Snapshot taken at transaction start; held for duration |
+| Serializable (SSI) | Snapshot + dependency tracking | Detects and aborts transactions in dependency cycles |
+
+### MVCC Overhead: Table Bloat and VACUUM
+
+**The cost of MVCC**: old row versions accumulate in the heap. PostgreSQL's `VACUUM` process cleans them up.
+
+```
+High-UPDATE workload on 1M row table:
+  Each update creates a new row version → old version stays until VACUUM
+  1M updates/hour × 100 bytes/row = 100MB/hour of dead tuples
+
+autovacuum: runs automatically when dead tuple ratio > 20% (default)
+  Reclaims space, updates pg_statistic, prevents transaction ID wraparound
+
+Manual: VACUUM ANALYZE table_name
+  VACUUM FULL: rewrites the table (blocking), reclaims disk space back to OS
+```
+
+**Transaction ID wraparound** (xid wraparound): PostgreSQL uses 32-bit transaction IDs. After 2 billion transactions, IDs wrap around. Rows with old xmins look "in the future" to new transactions — PostgreSQL forcibly prevents wraparound with autovacuum (freezes old tuples). Let autovacuum fall behind → `VACUUM` becomes mandatory (emergency outage).
+
+**Monitoring**:
+```sql
+-- Find tables with most dead tuples
+SELECT relname, n_dead_tup, n_live_tup,
+       n_dead_tup::float / nullif(n_live_tup + n_dead_tup, 0) AS dead_ratio
+FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC
+LIMIT 10;
+
+-- Check transaction ID age (proximity to wraparound)
+SELECT datname, age(datfrozenxid) AS xid_age
+FROM pg_database
+ORDER BY age(datfrozenxid) DESC;
+-- Alert if xid_age approaches 1.5 billion
+```
+
+---
+
 ## Distributed Transactions
 
 > **Analogy:** Two-phase commit (2PC) is like a wedding officiant asking "Does everyone agree?" before pronouncing you married. Phase 1 (prepare): everyone says "yes, I'm ready." Phase 2 (commit): officiant says "done." If anyone hesitates in Phase 1, the whole thing is called off. The downside: if the officiant disappears between phases, everyone is frozen waiting for a decision.

@@ -480,6 +480,108 @@ if (response.getStatus() == 500 || durationMs > 1000) {
 
 **Interview talking point**: "I prefer tail-based sampling for most services: we capture 100% of error traces and slow outliers, which are exactly what you need to debug. Head-based sampling at 1% might miss a rare but critical failure pattern."
 
+### Tail-Based Sampling Deep-Dive
+
+**Problem with head-based sampling**: The 1% sample decision is made at the very first span of a trace, before you know if the request will succeed, fail, or be slow. A critical error that happens 0.001% of the time may never appear in your 1% sample.
+
+**Tail-based sampling mechanics**:
+
+```
+Architecture:
+  All services emit 100% of spans → Collector (buffer)
+                                         │
+                                    Wait for trace to complete
+                                    (tail latency budget: e.g. 30s)
+                                         │
+                                    Evaluate: keep or drop?
+                                    ┌───────────────────────────────┐
+                                    │ Keep if:                       │
+                                    │   status == ERROR              │
+                                    │   duration > 1000ms (slow)     │
+                                    │   sampled_flag == true (1%)    │
+                                    └───────────────────────────────┘
+                                         │
+                                    Keep → forward to trace backend
+                                    Drop → discard
+```
+
+**Collector buffering requirement**: Tail-based sampling requires the collector to buffer all spans of a trace until the trace is "complete" (all spans received). This means:
+- All spans of one trace must route to the **same collector instance** (sticky routing by `trace_id`)
+- Collector needs memory proportional to: `active_traces × avg_spans_per_trace × avg_span_size`
+- Example: 10K req/s × 100ms avg duration × 10 spans × 1KB = 10MB buffer
+
+**Tail sampling policy** (OpenTelemetry Collector config):
+
+```yaml
+processors:
+  tail_sampling:
+    decision_wait: 30s           # wait up to 30s for all spans of a trace
+    num_traces: 100000           # buffer up to 100K traces in memory
+    policies:
+      - name: errors             # keep all error traces
+        type: status_code
+        status_code: {status_codes: [ERROR]}
+      - name: slow               # keep traces > 1s
+        type: latency
+        latency: {threshold_ms: 1000}
+      - name: baseline_1pct      # keep 1% of healthy traces for baseline metrics
+        type: probabilistic
+        probabilistic: {sampling_percentage: 1}
+```
+
+### Cardinality Explosion
+
+**What high-cardinality labels do to Prometheus**:
+
+Every unique combination of label values creates a new time series in Prometheus. Prometheus stores each time series in memory.
+
+```
+Metric: http_requests_total{method, status, path, user_id}
+
+method values:  GET, POST, PUT, DELETE   → 4
+status values:  200, 400, 404, 500       → 4
+path values:    /api/*, /health, ...     → ~100
+user_id values: 1, 2, 3, ... 10,000,000 → 10M  ← HIGH CARDINALITY
+
+Total time series = 4 × 4 × 100 × 10M = 16 BILLION time series
+
+Prometheus memory: ~3KB per time series = 48 PETABYTES
+→ Prometheus crashes at ~1-10M series (depending on RAM)
+```
+
+**The `user_id` label is the classic mistake**. Each user is a unique label value. Adding `user_id` to any metric multiplies the series count by the number of users.
+
+**Detection**:
+```
+# Prometheus query: which metrics have the most series?
+topk(10, count by(__name__)({__name__=~".+"}))
+
+# Alert on cardinality explosion
+- alert: HighCardinalityMetric
+  expr: count by(job) (count by(job, __name__)({__name__=~".+"})) > 100000
+  for: 5m
+```
+
+**Rules**:
+- Labels should have **bounded, low cardinality**: `method`, `status_code`, `endpoint_pattern` (not full URL with query params)
+- **Never**: user_id, session_id, request_id, trace_id, IP address as Prometheus labels
+- For per-user metrics: use logs (Loki) or distributed tracing (Jaeger), not Prometheus counters
+
+**Safe cardinality guidelines**:
+| Label | Cardinality | Safe? |
+|-------|------------|-------|
+| `method` (GET/POST/etc) | ~5 | ✅ |
+| `status_code` | ~20 | ✅ |
+| `service_name` | ~100 | ✅ |
+| `http_path` (raw) | Unbounded | ❌ |
+| `user_id` | Millions | ❌ |
+| `request_id` | Billions | ❌ |
+
+**Fix for high-cardinality needs**:
+- Pattern `http_path`: normalize to `http_route` (e.g. `/users/{id}` not `/users/12345`)
+- Per-user metrics: aggregate at collection time (histogram of latencies per user_tier, not per user)
+- High-cardinality debugging: use exemplars (Prometheus 2.26+) — link a trace_id to a metric sample without creating a new series
+
 ---
 
 ## Alerting Best Practices

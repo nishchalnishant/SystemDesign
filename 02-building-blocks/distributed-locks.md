@@ -109,12 +109,71 @@ Imagine the key has a version number stamped on it: `v1`. You take the key (v1),
 
 In practice: etcd or ZooKeeper return a monotonically increasing token when a lock is granted. The guarded resource checks the token and rejects operations from holders with a lower token number.
 
+### Redlock: Why It Is Unsafe (Kleppmann's Critique)
+
+Redlock acquires a lock across N independent Redis nodes (typically 5): acquire from majority (3/5) within a timeout window. Claims to tolerate up to 2 node failures.
+
+**Kleppmann's argument** (2016): Redlock cannot guarantee mutual exclusion under process pauses or clock skew.
+
+**Failure scenario — process pause**:
+
+```
+t=0:  Client A acquires Redlock. Lock TTL = 30s.
+t=1:  Client A paused (JVM GC stop-the-world, 32 seconds).
+t=31: Lock expires on all Redis nodes.
+t=32: Client B acquires Redlock successfully.
+      Client B executing critical section.
+t=33: Client A resumes — still believes it holds the lock.
+      Both A and B are in critical section simultaneously. ← UNSAFE
+```
+
+JVM GC pauses of 30+ seconds are a real production occurrence without GC tuning. OS can preempt any process arbitrarily. AWS EC2 can pause VMs for live migration.
+
+**Failure scenario — clock skew**:
+
+```
+Redis node 3's clock runs +10s fast.
+Client A acquires lock on all 5 nodes with 30s TTL.
+  → node 3's lock expires after 20 real seconds (clock hits 30s sooner).
+At t=20: Client B acquires lock on {node3, node4, node5} (majority).
+At t=20: Client A still believes it holds lock (expires at t=30 by its clock).
+         Both A and B in critical section. ← UNSAFE
+```
+
+**Conclusion**: For safety-critical use, use etcd or ZooKeeper (CP systems). Redlock is acceptable only when occasional double-execution is tolerable (job deduplication, not financial operations).
+
+### Fencing Tokens: The Correct Defense
+
+Even if the lock algorithm fails, the **guarded resource** can self-protect using fencing tokens — monotonically increasing numbers returned with each lock grant. The resource rejects requests with stale tokens.
+
+```
+t=0:  Client A acquires lock → fencing token = 33
+t=1:  Client A paused (GC, 32 seconds)
+t=31: Lock expires. Client B acquires → fencing token = 34
+t=32: Client B writes with token=34. Resource records max_seen_token=34.
+t=33: Client A resumes. Writes with token=33.
+      Resource: 33 < 34 → REJECT Client A's write. ✓
+```
+
+```sql
+-- Resource-side fencing (database)
+UPDATE resource_guard
+SET max_token = $1
+WHERE resource_id = $2 AND max_token < $1;
+-- 0 rows affected = token is stale, reject
+```
+
+etcd revision numbers and ZooKeeper zxids are naturally monotonically increasing — use them directly as fencing tokens. For Redis: `INCR lock:version` atomically before granting lock.
+
 ### Implementation Patterns
 
-**1. Redis (single or Redlock)**
-- `SET key unique_value NX PX ttl` to acquire; delete key to release.
-- **Redlock**: Use multiple Redis instances and acquire on majority to tolerate single-node failure.
-- **Caveat**: Clock skew and network delays can break safety in edge cases.
+**1. Redis (single node — best effort)**
+- `SET key unique_value NX PX ttl` to acquire; Lua check-and-delete to release.
+- Safe for: job deduplication, scheduled tasks where occasional double-execution is tolerable.
+- **Not safe for**: financial transactions, billing, anything requiring strict mutual exclusion.
+
+**Redlock (5-node Redis)**: see critique above. Use etcd for safety-critical locks instead.
+- **Caveat**: Clock skew and process pauses can cause split-brain. Use fencing tokens at the guarded resource regardless.
 
 **2. ZooKeeper / etcd**
 - Create **ephemeral** node (e.g. `/lock/resource-123`). Lowest sequence number wins.
