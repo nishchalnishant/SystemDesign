@@ -1,3 +1,8 @@
+---
+module: 06-lld
+status: unread
+tags: [06-lld, system-design, lld]
+---
 # Table of contents
 
 * [Introduction](README.md)

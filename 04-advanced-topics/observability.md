@@ -1,3 +1,8 @@
+---
+module: 04-advanced-topics
+status: unread
+tags: [04-advanced-topics, system-design, advanced-topics]
+---
 # Observability - Monitoring, Metrics, and Tracing
 
 > **Production-focused guide for SDE-3: How to ensure your systems are working correctly**

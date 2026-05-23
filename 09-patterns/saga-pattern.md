@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # Saga Pattern
 
 > **Distributed transactions without 2PC: coordinating multi-service workflows through a sequence of local transactions with compensating actions.**

@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # CQRS + Event Sourcing
 
 > **Two patterns that work well independently and are transformative when combined.**

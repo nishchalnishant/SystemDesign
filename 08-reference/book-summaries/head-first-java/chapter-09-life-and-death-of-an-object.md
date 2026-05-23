@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Java
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Ch 09: Life and Death of an Object
 
 **Source**: Head First Java, Second Edition | **Pages**: 269-306

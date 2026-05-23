@@ -1,3 +1,9 @@
+---
+module: 04-advanced-topics
+topic: Internals
+status: unread
+tags: [04-advanced-topics, system-design, internals]
+---
 # Redis Internals
 
 ## The Big Picture: An Index Card Box at the Library Reference Desk

@@ -1,3 +1,8 @@
+---
+module: root
+status: unread
+tags: [root, system-design, summary]
+---
 # Table of contents
 
 * [System Design - SDE-3 Guide](README.md)

@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Message Brokers
 
 > **Middleware that enables asynchronous messaging between services via queues or pub/sub.**

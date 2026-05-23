@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Easy
+status: unread
+tags: [05-hld-problems, system-design, easy]
+---
 # Design a Real-Time Leaderboard
 
 > **Difficulty**: Easy-Medium

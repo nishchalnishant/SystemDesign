@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Hard
+status: unread
+tags: [05-hld-problems, system-design, hard]
+---
 # Design a CDN (Content Delivery Network)
 
 > Serve static and dynamic content to global users with < 20 ms latency and petabyte-scale throughput by caching content at geographically distributed edge servers close to users.

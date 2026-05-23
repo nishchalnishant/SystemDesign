@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Problems
+status: unread
+tags: [06-lld, system-design, problems]
+---
 # Design Internet Download Manager (IDM)
 
 > **Difficulty**: Hard

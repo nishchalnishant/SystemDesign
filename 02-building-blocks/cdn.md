@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # CDN (Content Delivery Network)
 
 > **Geographically distributed edge caches that serve content close to users for lower latency and higher availability.**

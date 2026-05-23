@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Oop Fundamentals
+status: unread
+tags: [06-lld, system-design, oop-fundamentals]
+---
 # OOP Introduction
 
 **Question**: You have a 5,000-line program in one file. You need to add a feature. Where do you start? How do you make sure your addition doesn't break the ten things it touches?

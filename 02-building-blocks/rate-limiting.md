@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Rate Limiting
 
 > **Limit the number of requests a user, API key, or IP can make in a time window to protect availability and fairness.**

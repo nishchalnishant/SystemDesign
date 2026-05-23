@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # Monitoring, SLO, and Observability Template
 
 ## Framework: What to Answer When Asked About Reliability

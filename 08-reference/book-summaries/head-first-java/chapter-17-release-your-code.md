@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Java
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Ch 17: Release Your Code
 
 **Source**: Head First Java, Second Edition | **Pages**: 615-640

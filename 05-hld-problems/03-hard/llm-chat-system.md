@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Hard
+status: unread
+tags: [05-hld-problems, system-design, hard]
+---
 # Design a ChatGPT-like LLM Chat System
 
 > **Difficulty**: Hard

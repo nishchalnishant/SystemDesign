@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Java
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Ch 12: A Very Graphic Story
 
 **Source**: Head First Java, Second Edition | **Pages**: 387-432

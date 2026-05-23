@@ -1,3 +1,8 @@
+---
+module: 08-reference
+status: unread
+tags: [08-reference, system-design, reference]
+---
 # Cloud Services Cheat Sheet
 
 > **AWS vs GCP vs Azure service equivalents — know the right tool in any cloud.**

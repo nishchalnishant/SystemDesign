@@ -1,3 +1,8 @@
+---
+module: 06-lld
+status: unread
+tags: [06-lld, system-design, lld]
+---
 # UML Diagrams
 
 Unified modeling language, there are multiple places where this is used.

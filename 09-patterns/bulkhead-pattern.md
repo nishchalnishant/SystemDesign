@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # Bulkhead Pattern
 
 > Isolate components into pools so that if one fails or becomes slow, the failure cannot cascade and exhaust shared resources, sinking the entire system.

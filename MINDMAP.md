@@ -1,3 +1,8 @@
+---
+module: root
+status: unread
+tags: [root, system-design, mindmap]
+---
 # System Design Repository — Master Mindmap & Study Framework
 
 > Last updated: May 2026 | Use this as your navigation anchor across the entire repo.

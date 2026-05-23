@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # Architecture by Scale: Capacity → Decision Framework
 
 > **At each scale inflection point, a different bottleneck dominates. The architecture must match the actual bottleneck, not the imagined future one.**

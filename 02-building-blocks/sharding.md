@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Sharding
 
 > **Partitioning data across multiple databases or nodes to scale writes and storage beyond a single machine.**

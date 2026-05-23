@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Hard
+status: unread
+tags: [05-hld-problems, system-design, hard]
+---
 # Distributed Job Scheduler
 
 > Design a fault-tolerant cron-at-scale system that runs 10M scheduled jobs exactly-once without a single point of failure.

@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # The Outbox Pattern
 
 > **Solving the dual-write problem: atomically writing to a database AND publishing an event.**

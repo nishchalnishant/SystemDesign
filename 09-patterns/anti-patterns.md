@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # System Design Anti-Patterns
 
 > **The most common architectural mistakes in distributed systems and how to avoid them. Knowing what NOT to build is as important as knowing what to build.**

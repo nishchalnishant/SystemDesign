@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # Failure Recovery Playbook
 
 ## Framework: Answering "What Happens When X Fails?"

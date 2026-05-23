@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # Two-Phase Commit (2PC)
 
 > A distributed coordination protocol that guarantees atomic commit across multiple databases — all nodes commit or all roll back, with no partial success.

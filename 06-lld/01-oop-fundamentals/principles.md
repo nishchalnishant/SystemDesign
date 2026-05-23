@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Oop Fundamentals
+status: unread
+tags: [06-lld, system-design, oop-fundamentals]
+---
 # OOP Principles
 
 A comprehensive reference covering all key OOP concepts with Java examples, real-world analogies, and the major software design principles (DRY, KISS, YAGNI, Law of Demeter).

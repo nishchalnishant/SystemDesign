@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Hard
+status: unread
+tags: [05-hld-problems, system-design, hard]
+---
 # Metrics & Monitoring System
 
 > Design a system that ingests 1M+ data points/sec from 10,000 services, stores them for 10+ years, and serves real-time queries and alerts.

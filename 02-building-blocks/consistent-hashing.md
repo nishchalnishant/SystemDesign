@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Consistent Hashing
 
 > Distributes keys across nodes so that adding or removing a node remaps only K/N keys instead of all keys.

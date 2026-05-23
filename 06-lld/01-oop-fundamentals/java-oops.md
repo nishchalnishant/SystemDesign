@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Oop Fundamentals
+status: unread
+tags: [06-lld, system-design, oop-fundamentals]
+---
 # JAVA OOPs
 
 Here is a Java OOPs Revision Guide: Part 1 focused on the absolute fundamentals: Syntax, Classes, and Objects.

@@ -1,3 +1,8 @@
+---
+module: root
+status: unread
+tags: [root, system-design, flowcharts]
+---
 # System Design Repository — Topic Flowcharts for Recall
 
 > How to use: Glance before reading a topic to predict structure. After reading, close and redraw from memory. Before an interview, only redraw — if you can draw it, you can explain it.

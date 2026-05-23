@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Medium
+status: unread
+tags: [05-hld-problems, system-design, medium]
+---
 # Typeahead / Autocomplete Search
 
 > Return ranked suggestions for a partial query prefix in under 100 ms for 100M+ daily active users.

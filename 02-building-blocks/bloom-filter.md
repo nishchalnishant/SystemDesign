@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Bloom Filter
 
 > **A space-efficient probabilistic data structure that answers "is this element in the set?" — with zero false negatives and a controllable false positive rate.**

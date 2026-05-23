@@ -1,3 +1,8 @@
+---
+module: 08-reference
+status: unread
+tags: [08-reference, system-design, reference]
+---
 # System Design Glossary
 
 > **Essential vocabulary for SDE-3 level system design interviews. Master these terms to speak with authority about distributed systems.**

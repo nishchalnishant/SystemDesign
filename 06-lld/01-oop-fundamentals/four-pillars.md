@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Oop Fundamentals
+status: unread
+tags: [06-lld, system-design, oop-fundamentals]
+---
 # Four Pillars of OOP — Complete Reference
 
 > This is the single authoritative file for OOP concepts: what OOP is, the four pillars, IS-A vs HAS-A, and the software design principles that shape how you apply them.

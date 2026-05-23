@@ -1,3 +1,9 @@
+---
+module: 08-reference
+topic: Book Summaries
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Designing Data-Intensive Applications (DDIA) - Summary
 
 > **The "Bible" of System Design by Martin Kleppmann**

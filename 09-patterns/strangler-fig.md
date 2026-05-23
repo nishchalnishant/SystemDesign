@@ -1,3 +1,8 @@
+---
+module: 09-patterns
+status: unread
+tags: [09-patterns, system-design, patterns]
+---
 # The Strangler Fig Pattern
 
 > **Incrementally migrate a monolith to microservices without a big-bang rewrite.**

@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Service Discovery
 
 > **Mechanism for services to find and communicate with instances of other services in a dynamic environment (e.g. containers, autoscaling).**

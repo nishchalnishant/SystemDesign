@@ -1,3 +1,8 @@
+---
+module: 08-reference
+status: unread
+tags: [08-reference, system-design, reference]
+---
 # Numbers Every Engineer Should Know
 
 > **Critical reference for system design interviews - memorize these!**

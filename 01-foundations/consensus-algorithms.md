@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # Consensus Algorithms
 
 ## Why Consensus Is Hard

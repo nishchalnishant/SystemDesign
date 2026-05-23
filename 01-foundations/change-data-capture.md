@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # Change Data Capture (CDC)
 
 ## What Is CDC?

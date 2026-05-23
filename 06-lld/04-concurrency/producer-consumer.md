@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Concurrency
+status: unread
+tags: [06-lld, system-design, concurrency]
+---
 # Producer-Consumer Pattern
 
 ## Question

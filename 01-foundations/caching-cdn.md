@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # Caching & CDN — Concepts and Decision Framework
 
 > **The conceptual layer: why caching exists, when to use it, and how to think about it.**

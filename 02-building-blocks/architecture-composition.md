@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # How Systems Actually Scale: Composing the Building Blocks
 
 Most system design resources teach building blocks in isolation. This guide shows how they snap together into a real architecture — and, critically, *when* each piece earns its place. Every addition below is a response to a specific failure mode. Nothing is added speculatively.

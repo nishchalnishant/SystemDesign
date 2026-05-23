@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Reverse Proxy
 
 > **A server that sits in front of application servers and forwards client requests, often providing SSL, caching, and routing.**

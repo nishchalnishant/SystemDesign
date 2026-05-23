@@ -1,3 +1,9 @@
+---
+module: 04-advanced-topics
+topic: Internals
+status: unread
+tags: [04-advanced-topics, system-design, internals]
+---
 # Cassandra Internals
 
 ## The Big Picture: A Global Amazon Warehouse Network

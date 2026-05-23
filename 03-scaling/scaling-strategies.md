@@ -1,3 +1,8 @@
+---
+module: 03-scaling
+status: unread
+tags: [03-scaling, system-design, scaling]
+---
 # Scaling Strategies
 
 > **How to scale systems: horizontal vs vertical, database scaling, replication, partitioning, caching, queues, and async processing.**

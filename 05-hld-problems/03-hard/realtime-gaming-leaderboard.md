@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Hard
+status: unread
+tags: [05-hld-problems, system-design, hard]
+---
 # Real-time Gaming Leaderboard
 
 > Design a leaderboard for 10M concurrent players where score updates and rank queries respond in under 10ms.

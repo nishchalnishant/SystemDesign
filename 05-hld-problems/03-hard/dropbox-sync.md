@@ -1,3 +1,9 @@
+---
+module: 05-hld-problems
+topic: Hard
+status: unread
+tags: [05-hld-problems, system-design, hard]
+---
 # System Design: Dropbox File Sync
 
 > **Design a file synchronization service that keeps files consistent across multiple devices, handles offline changes, and resolves conflicts when the same file is edited on two devices simultaneously.**

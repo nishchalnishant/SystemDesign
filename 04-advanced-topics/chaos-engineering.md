@@ -1,3 +1,8 @@
+---
+module: 04-advanced-topics
+status: unread
+tags: [04-advanced-topics, system-design, advanced-topics]
+---
 # Chaos Engineering & Resilience
 
 > **For SDE-3 Interview Preparation**  

@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Caching Layer
 
 > **In-memory store (e.g. Redis, Memcached) used to serve hot data with low latency and reduce load on the primary store.**

@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Replication
 
 > **Copying data across multiple nodes for availability, read scaling, and durability.**

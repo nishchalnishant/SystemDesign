@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # Consistency Models and Conflict Resolution
 
 > **When multiple nodes update shared data concurrently, how do you detect conflicts, order events, and converge to a consistent state?**

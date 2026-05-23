@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Ooand
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Ch 10: The OOA\&D Lifecycle
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 518-591

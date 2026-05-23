@@ -1,3 +1,8 @@
+---
+module: 03-scaling
+status: unread
+tags: [03-scaling, system-design, scaling]
+---
 # Global Distribution & Multi-Region Architecture
 
 > **How to architect systems that operate across geographies with low latency, high availability, and data sovereignty compliance.**

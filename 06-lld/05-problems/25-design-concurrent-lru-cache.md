@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Problems
+status: unread
+tags: [06-lld, system-design, problems]
+---
 # LLD: Design a Concurrent LRU Cache
 
 > **Implement a thread-safe LRU cache that supports concurrent reads and writes with O(1) get and put, minimizing lock contention for high-throughput scenarios.**

@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Load Balancers
 
 > **Distribute incoming traffic across multiple servers to improve availability, throughput, and latency.**

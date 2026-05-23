@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # Capacity Estimation Cheat Sheet
 
 > **Quick reference for back-of-envelope calculations in system design interviews**

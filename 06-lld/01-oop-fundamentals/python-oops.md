@@ -1,3 +1,9 @@
+---
+module: 06-lld
+topic: Oop Fundamentals
+status: unread
+tags: [06-lld, system-design, oop-fundamentals]
+---
 # Python OOPS mislanious
 
 ## Topic Mindmap

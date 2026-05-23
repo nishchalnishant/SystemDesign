@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Distributed Locks
 
 > **Coordinate exclusive access to a shared resource across multiple processes or nodes.**

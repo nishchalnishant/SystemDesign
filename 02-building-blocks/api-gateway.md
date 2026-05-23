@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # API Gateway
 
 > **Single entry point for API traffic: routing, authentication, rate limiting, and protocol translation.**

@@ -1,3 +1,8 @@
+---
+module: 02-building-blocks
+status: unread
+tags: [02-building-blocks, system-design, building-blocks]
+---
 # Circuit Breaker
 
 > Stops cascading failures by short-circuiting calls to a failing downstream service until it recovers.

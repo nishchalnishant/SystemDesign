@@ -1,3 +1,8 @@
+---
+module: 03-scaling
+status: unread
+tags: [03-scaling, system-design, scaling]
+---
 # LSM Trees vs B-Trees
 
 ## The Core Trade-off

@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # System Design: The Mental Model
 
 This is the entry point. Read this first, then follow the study path at the bottom to go deep on each topic.

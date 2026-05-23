@@ -1,3 +1,9 @@
+---
+module: 04-advanced-topics
+topic: Internals
+status: unread
+tags: [04-advanced-topics, system-design, internals]
+---
 # MySQL / InnoDB Internals
 
 > InnoDB stores data in a B+ tree clustered index, uses a buffer pool for I/O reduction, MVCC for non-blocking reads, and WAL (redo log) for crash recovery — understanding these is the foundation of database performance tuning.

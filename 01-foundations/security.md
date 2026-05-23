@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # Security - System Design Guide
 
 > **For SDE-3 Interview Preparation**  

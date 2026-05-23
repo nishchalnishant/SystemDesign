@@ -1,3 +1,9 @@
+---
+module: 04-advanced-topics
+topic: Internals
+status: unread
+tags: [04-advanced-topics, system-design, internals]
+---
 # DynamoDB Internals
 
 > DynamoDB is a fully managed key-value and document database that delivers single-digit millisecond performance at any scale by combining consistent hashing, SSD storage, and adaptive capacity.

@@ -1,3 +1,8 @@
+---
+module: root
+status: unread
+tags: [root, system-design, system-design-interview-framew]
+---
 # System Design Interview Framework
 
 > **How to approach a system design interview** — A step-by-step framework for SDE-3 / Senior Software Engineer interviews

@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # System Design Trade-offs Cheat Sheet
 
 > **Quick decision guide for senior/staff engineer level system design interviews**

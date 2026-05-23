@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # Database Selection Decision Tree
 
 > **Choose the database that matches your access patterns, consistency requirements, and operational constraints — not the one you're most familiar with.**

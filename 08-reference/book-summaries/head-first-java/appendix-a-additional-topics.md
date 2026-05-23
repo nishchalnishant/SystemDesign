@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Java
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Appendix: Additional Topics
 
 **Source**: Head First Java, Second Edition | **Pages**: 693-722

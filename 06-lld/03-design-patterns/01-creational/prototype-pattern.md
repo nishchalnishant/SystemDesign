@@ -1,3 +1,10 @@
+---
+module: 06-lld
+topic: Design Patterns
+subtopic: Creational
+status: unread
+tags: [06-lld, system-design, design-patterns]
+---
 # Prototype Pattern
 
 ## Question

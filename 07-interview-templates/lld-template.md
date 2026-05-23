@@ -1,3 +1,8 @@
+---
+module: 07-interview-templates
+status: unread
+tags: [07-interview-templates, system-design, interview-templates]
+---
 # LLD Interview Framework (45-60 min)
 
 ## The Mental Model

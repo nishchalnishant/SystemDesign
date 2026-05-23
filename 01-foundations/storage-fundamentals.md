@@ -1,3 +1,8 @@
+---
+module: 01-foundations
+status: unread
+tags: [01-foundations, system-design, foundations]
+---
 # Storage Fundamentals
 
 > Physical storage hierarchy from CPU cache to cloud object storage — the layer every database, filesystem, and cache sits on top of. Understanding IOPS, throughput, and latency numbers at each tier separates engineers who guess from engineers who calculate.

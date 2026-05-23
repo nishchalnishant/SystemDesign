@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Java
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Ch 06: Using the Java Library
 
 **Source**: Head First Java, Second Edition | **Pages**: 159-198

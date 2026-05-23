@@ -1,3 +1,8 @@
+---
+module: 03-scaling
+status: unread
+tags: [03-scaling, system-design, scaling]
+---
 # Database Scaling Deep Dive
 
 > **From a single Postgres to a globally distributed data tier: WAL internals, MVCC, connection pooling, index strategies, and sharding at scale.**

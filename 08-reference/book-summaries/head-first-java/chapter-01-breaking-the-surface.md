@@ -1,3 +1,10 @@
+---
+module: 08-reference
+topic: Book Summaries
+subtopic: Head First Java
+status: unread
+tags: [08-reference, system-design, book-summaries]
+---
 # Ch 01: Breaking the Surface
 
 **Source**: Head First Java, Second Edition | **Pages**: 35-60
@@ -22,7 +29,9 @@ Java basics and first program
 
 ### 1. Java platform basics
 
-You’ll type a source code file, compile it using thejavac compiler, then run the compiled bytecodeon a Java virtual machine.
+You’ll type a source code file, compile it using the
+javac compiler, then run the compiled bytecode
+on a Java virtual machine.
 
 **source —** create a source document party.java
 
