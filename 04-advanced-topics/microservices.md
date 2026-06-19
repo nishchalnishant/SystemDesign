@@ -299,6 +299,184 @@ This is the foundation of a **service mesh** (Istio, Linkerd).
 
 ---
 
+## Deep Dive: Istio VirtualService, DestinationRule, and Canary Deployments
+
+Istio is a service mesh built on Envoy sidecars. The two most important Istio resources for interviews are **VirtualService** (traffic routing rules) and **DestinationRule** (what to do with traffic once it arrives at a subset of pods).
+
+### Core Concepts
+
+```
+VirtualService  → "where does traffic go?" (routing rules, traffic splits, retries, timeouts)
+DestinationRule → "how do we treat each destination?" (subsets, load balancing, circuit breaking, mTLS)
+```
+
+Together they answer: route 90% of `/orders` traffic to stable pods and 10% to canary pods, with mTLS and circuit breaking on both.
+
+---
+
+### DestinationRule — Define Subsets
+
+A subset maps to a set of pods selected by labels. You must define subsets in DestinationRule before you can reference them in VirtualService.
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: orders-destination
+  namespace: production
+spec:
+  host: orders-service          # Kubernetes Service name
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL        # Enforce mTLS for all traffic to this service
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:           # Circuit breaker: eject unhealthy pods
+      consecutive5xxErrors: 5   # After 5 consecutive 5xx errors...
+      interval: 10s             # ...within 10 seconds...
+      baseEjectionTime: 30s     # ...eject pod for 30 seconds
+      maxEjectionPercent: 50    # Never eject more than 50% of pods
+  subsets:
+    - name: stable              # Label selector for stable pods
+      labels:
+        version: stable
+      trafficPolicy:
+        loadBalancer:
+          simple: ROUND_ROBIN
+    - name: canary              # Label selector for canary pods
+      labels:
+        version: canary
+      trafficPolicy:
+        loadBalancer:
+          simple: LEAST_CONN    # Canary uses least-connections (fewer pods)
+```
+
+---
+
+### VirtualService — Traffic Splitting (Canary Deployment)
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: orders-routing
+  namespace: production
+spec:
+  hosts:
+    - orders-service
+  http:
+    - match:
+        - headers:
+            x-canary-user:
+              exact: "true"    # Specific users always get canary (internal testers)
+      route:
+        - destination:
+            host: orders-service
+            subset: canary
+            port:
+              number: 8080
+
+    - route:                    # Default route: weighted traffic split
+        - destination:
+            host: orders-service
+            subset: stable
+            port:
+              number: 8080
+          weight: 90            # 90% to stable
+        - destination:
+            host: orders-service
+            subset: canary
+            port:
+              number: 8080
+          weight: 10            # 10% to canary
+      timeout: 5s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: "5xx,reset,connect-failure"
+```
+
+**Canary rollout progression:**
+```
+Start:  stable=100, canary=0  (deploy canary pods, no traffic yet)
+Step 1: stable=90,  canary=10  (monitor error rate, latency p99)
+Step 2: stable=50,  canary=50  (if metrics healthy, continue)
+Step 3: stable=0,   canary=100 (full cutover; rename canary→stable)
+Rollback: stable=100, canary=0  (instant, no pod restart needed)
+```
+
+---
+
+### VirtualService — Fault Injection (Chaos Testing)
+
+Istio can inject faults at the mesh layer without changing any service code:
+
+```yaml
+http:
+  - fault:
+      delay:
+        percentage:
+          value: 10.0           # 10% of requests
+        fixedDelay: 500ms       # get a 500ms artificial delay
+      abort:
+        percentage:
+          value: 5.0            # 5% of requests
+        httpStatus: 503         # get an immediate 503
+    route:
+      - destination:
+          host: inventory-service
+          subset: stable
+```
+
+Use this in pre-production to validate that your circuit breakers and timeouts are configured correctly.
+
+---
+
+### mTLS Mode Configuration
+
+```yaml
+# Strict: all traffic must be mTLS (rejects plain HTTP)
+spec:
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL   # Istio manages cert rotation automatically
+
+# Permissive: accepts both mTLS and plain HTTP (use during migration)
+spec:
+  trafficPolicy:
+    tls:
+      mode: DISABLE        # or leave mode unset = permissive default
+
+# PeerAuthentication: enforce mesh-wide or namespace-wide policy
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: production
+spec:
+  mtls:
+    mode: STRICT           # All services in 'production' namespace require mTLS
+```
+
+**Migration path:** Start with `PERMISSIVE` (accepts both). Once all sidecars are injected and verified, switch to `STRICT`. No certificate rotation code needed — Istio rotates certs automatically via SPIFFE/SPIRE.
+
+---
+
+### Interview Talking Points
+
+**"How do you do a canary deployment with zero code changes?"**
+> "With Istio, I define a DestinationRule with two subsets — `stable` and `canary` — mapped to pod label selectors. A VirtualService routes 90% of traffic to `stable` and 10% to `canary`. To promote, I change the weight to 50/50, then 100/0. Rollback is instant — just flip the weight back. The services themselves have no routing logic."
+
+**"How does mTLS work in a service mesh?"**
+> "Each pod gets an Envoy sidecar injected automatically. The sidecar intercepts all inbound and outbound TCP traffic. Istio's control plane issues a SPIFFE certificate to each sidecar based on the pod's Kubernetes service account. When Order Service calls Payment Service, Order's sidecar presents its cert, Payment's sidecar verifies it. The application code sends plain HTTP — it never knows TLS is happening. The mesh handles cert rotation every 24 hours automatically."
+
+**"How does Istio circuit breaking differ from Resilience4j?"**
+> "Resilience4j is in-process — it only protects calls from one specific service. If 20 services call Payment Service, each needs its own circuit breaker configured. Istio's `outlierDetection` in DestinationRule operates at the mesh layer — it monitors real traffic across all callers and ejects a Payment pod after N consecutive errors, regardless of which service sent the request. Mesh-level circuit breaking is uniform and zero-code."
+
+---
+
 ## Communication: Sync vs Async
 
 ### Synchronous (REST / gRPC)

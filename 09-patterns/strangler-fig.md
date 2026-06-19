@@ -158,11 +158,173 @@ This is the hardest part. Strategies:
 
 ---
 
+## Deep Dive: Database Decomposition Walkthrough
+
+This is always the follow-up question in interviews: **"The code routing is clear — but how do you split the database?"**
+
+### The Problem
+
+The monolith has one large shared database. The Orders module and the Users module both read and write the same DB. If you extract Orders Service but leave it reading the monolith's DB, you have a **distributed monolith** — microservices shape with monolith coupling. Any schema change requires coordinating two teams, and the DB becomes a shared bottleneck.
+
+### The 6-Step DB Decomposition
+
+Use the Orders table as the concrete example (monolith `orders` table → Orders Service DB).
+
+---
+
+**Step 1: Schema Analysis — Identify Data Ownership**
+
+Before writing any code, map every column in the shared table to a domain owner:
+
+```
+orders table (monolith DB):
+  id              → Orders owns
+  user_id         → reference to Users domain (foreign key to users table)
+  product_id      → reference to Products domain
+  status          → Orders owns
+  total_amount    → Orders owns
+  shipping_addr   → Orders owns (or Shipping domain)
+  promo_code_id   → Promotions domain (foreign key)
+  created_at      → Orders owns
+```
+
+Result: Orders Service should own `id, status, total_amount, shipping_addr, created_at`. References to other domains become event-based (store the ID, not a FK).
+
+**Decision rule:** A table is owned by the domain that most frequently writes to it and that has the most business logic around it. FK relationships → become event subscriptions in the target architecture.
+
+---
+
+**Step 2: Create the New Schema in Orders Service DB**
+
+```sql
+-- Orders Service DB (separate PostgreSQL instance)
+CREATE TABLE orders (
+  id            UUID PRIMARY KEY,
+  user_id       UUID NOT NULL,          -- no FK constraint; Users DB is separate
+  status        TEXT NOT NULL,
+  total_amount  DECIMAL(10,2),
+  shipping_addr JSONB,
+  created_at    TIMESTAMP
+);
+-- No promo_code_id FK; promotions data denormalized at write time if needed
+```
+
+Key change: no cross-service foreign keys. Store IDs, not references. If Orders needs user name for display, it either fetches it from Users Service at read time or denormalizes it at write time.
+
+---
+
+**Step 3: Dual-Write Phase (Both DBs Written)**
+
+The Orders module in the monolith continues to write to the monolith DB. Simultaneously, the monolith (or a new Orders Service) writes to the Orders Service DB. Both writes happen on every order creation/update.
+
+```
+                    ┌─────────────────────────────────────────┐
+Order Create ──────▶│  Monolith (Orders module still active)  │
+                    └─────────────┬───────────────────────────┘
+                                  │
+                    ┌─────────────┴────────────────────────┐
+                    │                                      │
+            ┌───────▼──────┐                    ┌──────────▼──────────┐
+            │ Monolith DB  │                    │  Orders Service DB  │
+            │ (orders tbl) │                    │   (new, separate)   │
+            └──────────────┘                    └─────────────────────┘
+```
+
+**Source of truth during this phase: Monolith DB.** If a write to Orders Service DB fails, log the failure but don't fail the user request. A reconciliation job catches up async.
+
+**Outbox pattern for reliability:**
+Instead of a synchronous dual-write (which risks partial failure), write only to the monolith DB but include an `outbox` table entry. A CDC process (Debezium) reads the outbox and replicates to Orders Service DB. This guarantees eventual consistency without distributed transactions.
+
+```sql
+-- Monolith DB: outbox table (written in same transaction as orders)
+INSERT INTO outbox (event_type, payload, created_at)
+VALUES ('ORDER_CREATED', '{"id":"...", "user_id":"...", ...}', NOW());
+
+-- Debezium → Kafka → Orders Service consumer → INSERT into Orders Service DB
+```
+
+---
+
+**Step 4: Read Cutover (New Service Reads from New DB)**
+
+Once Orders Service DB is verified to be in sync (compare row counts, spot-check values):
+
+1. Orders Service starts serving **read** traffic from its own DB
+2. Monolith still handles writes (dual-write continues)
+3. Run for 1–2 weeks, monitoring read discrepancies
+
+```
+Read  /orders/{id} ──────▶ Orders Service ──────▶ Orders Service DB ✓
+Write /orders       ──────▶ Monolith       ──────▶ Both DBs (dual-write)
+```
+
+If read discrepancies are detected → fall back to monolith DB reads. Fix the sync bug. Retry.
+
+---
+
+**Step 5: Write Cutover (New Service Owns Writes)**
+
+Once reads are stable for 2+ weeks:
+
+1. Orders Service takes over **write** traffic
+2. Monolith stops writing to `orders` table
+3. Dual-write reversed: Orders Service DB is now source of truth; monolith reads from Orders Service API if it still needs order data
+
+```
+Write /orders ──────▶ Orders Service ──────▶ Orders Service DB ✓
+              (Monolith no longer writes to monolith DB orders table)
+```
+
+Keep the monolith DB `orders` table alive but read-only for 2 more weeks (rollback safety net).
+
+---
+
+**Step 6: Remove Shared Access — Delete the Monolith Table Reference**
+
+After 2–4 weeks of stable Orders Service ownership:
+
+1. Remove all DB access to `orders` table from monolith code
+2. Rename/archive the monolith `orders` table (don't drop immediately)
+3. Remove dual-write code from monolith
+4. Drop `outbox` entries for ORDER_* events if no other consumer needs them
+
+```sql
+-- After validation period
+ALTER TABLE orders RENAME TO orders_archived_2026_07;
+-- Drop in 30 days if no rollback needed
+```
+
+**Done.** Orders domain is fully extracted with its own DB. No shared schema. The monolith no longer knows the Orders table exists.
+
+---
+
+### Why Not Just Do It All at Once?
+
+| Big-Bang DB Split | Incremental (6 Steps) |
+|---|---|
+| Zero validation before cutover | Each step validated with real traffic |
+| Rollback = restore entire DB backup | Rollback = revert one step |
+| Dual-write bugs discovered at go-live | Bugs caught during step 3 when stakes are low |
+| Migration takes 1 weekend with team freeze | Migration runs over weeks with zero downtime |
+
+---
+
+### Common Failure Mode: Distributed Monolith
+
+**Sign:** Orders Service has its own deployment, but still reads directly from monolith DB using a shared DB connection string.
+
+**Why it's bad:** Any monolith DB migration must now coordinate with Orders team. Monolith DB goes down → Orders Service goes down. You have microservices operational complexity without the independence benefit.
+
+**Fix:** Never allow a service to directly read another service's DB. All cross-service data access must go through the owning service's API.
+
+---
+
 ## Relation to Other Patterns
 
 - **Outbox Pattern**: use to sync data from monolith DB to new service during migration
 - **Saga Pattern**: replace monolith transactions that span extracted modules
 - **API Gateway**: the routing layer that makes strangler fig routing possible without client changes
+- **Change Data Capture**: Debezium reads monolith DB WAL log → publishes events to Kafka → target service consumes
 
 ---
 

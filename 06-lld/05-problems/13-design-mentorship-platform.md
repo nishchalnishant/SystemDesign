@@ -335,6 +335,86 @@ public class BookingSystem {
 
 ---
 
+## Concurrency Depth
+
+### ReentrantReadWriteLock for Availability
+
+The current implementation uses `ReentrantLock` (exclusive lock) on the mentor object for all operations. Availability reads (`isAvailable`, listing slots) can be served concurrently — only writes (add/remove slot, set booking) need exclusivity. Replace with `ReentrantReadWriteLock`:
+
+```java
+class Mentor {
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final List<TimeSlot> availability = new ArrayList<>();
+
+    public boolean isAvailable(TimeSlot requested) {
+        rwLock.readLock().lock();
+        try {
+            return availability.stream().anyMatch(s -> s.overlaps(requested));
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
+    public List<TimeSlot> getAvailability() {
+        rwLock.readLock().lock();
+        try { return new ArrayList<>(availability); }
+        finally { rwLock.readLock().unlock(); }
+    }
+
+    public void removeAvailability(TimeSlot slot) {
+        rwLock.writeLock().lock();
+        try { availability.remove(slot); }
+        finally { rwLock.writeLock().unlock(); }
+    }
+}
+```
+
+**Why:** a high-traffic platform has 10× more availability reads (mentee search) than writes (mentor editing schedule). Under `ReentrantLock`, concurrent reads queue behind each other unnecessarily. `ReentrantReadWriteLock` allows N concurrent reads; only writes are exclusive.
+
+### Semaphore for Bounded Concurrent Bookings
+
+Limit how many simultaneous booking transactions can be in-flight system-wide to prevent DB connection pool exhaustion:
+
+```java
+public class BookingSystem {
+    // Allow at most 50 booking transactions concurrently (matches DB pool size)
+    private final Semaphore bookingPermits = new Semaphore(50, true); // fair
+
+    public Booking bookSlot(Mentee mentee, Mentor mentor, TimeSlot slot) {
+        bookingPermits.acquire(); // blocks if 50 already in-flight
+        try {
+            return doBook(mentee, mentor, slot); // acquire per-mentor lock, validate, persist
+        } finally {
+            bookingPermits.release();
+        }
+    }
+}
+```
+
+**Why:** without a bound, 500 concurrent booking requests each acquire a DB connection → connection pool (size 50) exhausted → timeouts cascade. The Semaphore is a back-pressure valve: excess requests wait in the Semaphore queue rather than timing out on the DB.
+
+### Thread-Pool Sizing for Notification Dispatch
+
+Notification sending (email/SMS) is I/O-bound. Size the executor using Little's Law:
+
+```java
+// Formula: N_threads = N_cpu × (1 + wait_time / compute_time)
+// Notification sending: 95% wait (network RTT ~200ms), 5% compute
+// N_cpu = 4 → N_threads = 4 × (1 + 200ms/10ms) = 4 × 21 = 84
+// Cap at a reasonable max to avoid socket exhaustion
+
+int cpus = Runtime.getRuntime().availableProcessors();
+int threads = Math.min(cpus * 20, 100); // I/O-heavy: 20× multiplier
+ExecutorService notificationExecutor = Executors.newFixedThreadPool(threads);
+```
+
+**Rule of thumb:**
+- CPU-bound tasks: `N_threads = N_cpu + 1` (one extra for preemption jitter)
+- I/O-bound tasks: `N_threads = N_cpu × (1 + wait_time / compute_time)`
+- Mixed: profile wait ratio; err toward more threads since blocking is the bottleneck
+
+---
+
 ## SOLID Principles
 - **S**: `BookingSystem` coordinates, `Mentor` manages availability, `Booking` owns state.
 - **O**: New booking types (group sessions, webinars) extend `Booking` without changing `BookingSystem`.

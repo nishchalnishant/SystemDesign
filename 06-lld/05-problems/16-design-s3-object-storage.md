@@ -407,6 +407,90 @@ A background `LifecycleJob` (runs daily) scans object metadata for keys matching
 
 ---
 
+## Concurrency Depth
+
+### ReentrantReadWriteLock for Bucket Metadata
+
+The `Bucket` class uses `ConcurrentHashMap` for metadata — correct for concurrent access. For the `listKeys` operation (prefix scan), a full iteration under concurrent modifications can produce inconsistent results. Protect with `ReentrantReadWriteLock`:
+
+```java
+class Bucket {
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final Map<String, S3ObjectMetadata> metadata = new HashMap<>();
+
+    public S3ObjectMetadata getMetadata(String key) {
+        rwLock.readLock().lock();
+        try { return metadata.get(key); }
+        finally { rwLock.readLock().unlock(); }
+    }
+
+    public void putMetadata(String key, S3ObjectMetadata meta) {
+        rwLock.writeLock().lock();
+        try { metadata.put(key, meta); }
+        finally { rwLock.writeLock().unlock(); }
+    }
+
+    public List<String> listKeys(String prefix) {
+        rwLock.readLock().lock();           // shared: N concurrent lists are fine
+        try {
+            return metadata.keySet().stream()
+                .filter(k -> prefix == null || k.startsWith(prefix))
+                .sorted()
+                .collect(Collectors.toList());
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+}
+```
+
+**Why over ConcurrentHashMap:** `ConcurrentHashMap.keySet()` iteration is weakly consistent — it may reflect mutations that happened after iteration started. For a list-objects API that must be internally consistent (all keys from the snapshot moment), `readLock` provides a point-in-time view.
+
+### Semaphore for Multipart Upload Concurrency
+
+Cap how many in-flight multipart uploads exist simultaneously to prevent memory/handle exhaustion:
+
+```java
+public class S3Service {
+    // Each in-flight multipart upload buffers parts in memory; cap at 100 concurrent uploads
+    private final Semaphore multipartPermits = new Semaphore(100, true);
+    private final ConcurrentHashMap<String, MultipartUpload> activeUploads = new ConcurrentHashMap<>();
+
+    public String createMultipartUpload(String bucket, String key) {
+        multipartPermits.acquire(); // blocks if 100 uploads already active
+        String uploadId = UUID.randomUUID().toString();
+        activeUploads.put(uploadId, new MultipartUpload(bucket, key));
+        return uploadId;
+    }
+
+    public void completeMultipartUpload(String uploadId) {
+        try {
+            MultipartUpload upload = activeUploads.remove(uploadId);
+            upload.assemble(); // merge parts, write final object
+        } finally {
+            multipartPermits.release(); // always release, even on failure
+        }
+    }
+}
+```
+
+### Thread-Pool Sizing for Storage I/O Workers
+
+```java
+// Storage operations are pure I/O: disk latency ~1ms, network block storage ~10ms
+// N_threads = N_cpu × (1 + wait_time / compute_time)
+// For network block storage: 4 × (1 + 10ms/0.1ms) = 4 × 101 = 404 threads
+// In practice: bound by storage backend's connection limit (e.g., 200 connections)
+
+int storageThreads = Math.min(
+    Runtime.getRuntime().availableProcessors() * 100,
+    storageBackend.maxConnections()
+);
+ExecutorService storageExecutor = Executors.newFixedThreadPool(storageThreads);
+```
+
+---
+
 ## SOLID Principles
 - **S**: `StorageBackend` handles bytes; `BucketManager` handles metadata; `S3Service` handles coordination.
 - **O**: Add `GlacierBackend` by implementing `StorageBackend` — zero changes to `S3Service`.

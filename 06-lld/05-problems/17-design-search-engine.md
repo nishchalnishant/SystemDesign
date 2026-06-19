@@ -394,6 +394,96 @@ New documents go into an in-memory **segment** (a small inverted index). The bac
 
 ---
 
+## Concurrency Depth
+
+### ReentrantReadWriteLock for the Inverted Index
+
+The inverted index is a classic read-heavy data structure: queries (reads) happen 100× more often than indexing (writes). `ConcurrentHashMap` on the outer map is correct, but individual posting-list mutations need coordination:
+
+```java
+class InvertedIndex {
+    // Per-term ReadWriteLock: reads on different terms don't block each other
+    private final ConcurrentHashMap<String, ReentrantReadWriteLock> termLocks =
+        new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, List<Posting>> index = new ConcurrentHashMap<>();
+
+    private ReentrantReadWriteLock lockFor(String term) {
+        return termLocks.computeIfAbsent(term, k -> new ReentrantReadWriteLock());
+    }
+
+    public List<Posting> getPostings(String term) {
+        ReentrantReadWriteLock lock = lockFor(term);
+        lock.readLock().lock();
+        try {
+            List<Posting> postings = index.get(term);
+            return postings == null ? List.of() : new ArrayList<>(postings); // defensive copy
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public void addDocument(int docId, List<String> tokens) {
+        Map<String, Integer> termFreq = computeTermFrequencies(tokens);
+        for (Map.Entry<String, Integer> entry : termFreq.entrySet()) {
+            String term = entry.getKey();
+            ReentrantReadWriteLock lock = lockFor(term);
+            lock.writeLock().lock();
+            try {
+                index.computeIfAbsent(term, k -> new ArrayList<>())
+                     .add(new Posting(docId, entry.getValue()));
+            } finally {
+                lock.writeLock().unlock();
+            }
+        }
+    }
+}
+```
+
+**Why per-term locks:** a global `ReentrantReadWriteLock` on the entire index would serialize all writes — indexing "apple" blocks indexing "orange". Per-term locks allow independent terms to be indexed concurrently (fine-grained locking).
+
+### Semaphore for Bounded Query Concurrency
+
+Search query execution is CPU-intensive (posting list intersection, scoring). Cap concurrent queries to prevent CPU saturation:
+
+```java
+public class SearchEngine {
+    // 2× CPU count: queries have some I/O (disk reads for large posting lists)
+    private final Semaphore queryPermits =
+        new Semaphore(Runtime.getRuntime().availableProcessors() * 2, true);
+
+    public List<Document> search(String queryText) {
+        queryPermits.acquire();
+        try {
+            return executeQuery(queryText);
+        } finally {
+            queryPermits.release();
+        }
+    }
+}
+```
+
+### Thread-Pool Sizing for Parallel Segment Search
+
+In a multi-segment index (Lucene-style), query each segment in parallel:
+
+```java
+// Query execution: mostly CPU (posting list merge + scoring), some disk I/O
+// Segments typically fit in OS page cache → effectively CPU-bound
+// N_threads = N_cpu + 1 (CPU-bound)
+int segmentThreads = Runtime.getRuntime().availableProcessors() + 1;
+ExecutorService segmentSearchExecutor = Executors.newFixedThreadPool(segmentThreads);
+
+public List<Document> search(String query) {
+    List<Future<List<Document>>> futures = segments.stream()
+        .map(seg -> segmentSearchExecutor.submit(() -> seg.search(query)))
+        .collect(Collectors.toList());
+    // Merge results from all segments, re-rank globally
+    return mergeAndRank(futures.stream().map(this::getResult).collect(Collectors.toList()));
+}
+```
+
+---
+
 ## SOLID Principles
 - **S**: `InvertedIndex` owns data structure operations; `SearchEngine` owns query orchestration; `Ranker` owns scoring.
 - **O**: New ranking algorithms extend `Ranker` interface — no existing code changes.

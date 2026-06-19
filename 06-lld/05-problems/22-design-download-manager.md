@@ -405,6 +405,97 @@ Monitor per-segment throughput in the progress reporter. If a segment's throughp
 
 ---
 
+## Concurrency Depth
+
+### Why RandomAccessFile + seek Is Safe for Concurrent Writes
+
+This is the subtle insight in the download manager. Each `ChunkDownloader` calls:
+
+```java
+synchronized (raf) {
+    raf.seek(segment.start + segment.downloaded);
+    raf.write(buffer, 0, bytesRead);
+}
+```
+
+**Why the synchronized block is necessary:** `seek` + `write` is NOT atomic on `RandomAccessFile`. Without synchronization: thread A calls `seek(1000)`, thread B calls `seek(2000)`, then thread A calls `write()` — it writes at offset 2000 (B's position), corrupting both segments.
+
+**Why it's still safe despite synchronized:** each thread holds the lock only for the duration of one `write` call (a few microseconds). Threads block each other at the I/O level, but since they write to non-overlapping byte ranges, the ORDER of writes doesn't matter — the result is always correct. The `synchronized` prevents seek/write interleaving, not the writes themselves.
+
+### Semaphore for Concurrent Download Limit (Multi-File)
+
+When the manager handles multiple simultaneous file downloads, cap total concurrent HTTP connections:
+
+```java
+public class DownloadManager {
+    // Total HTTP connections across all downloads: bounded by OS socket limit and server rate limits
+    private final Semaphore connectionPermits = new Semaphore(200, true);
+
+    private ChunkDownloader createWorker(Segment segment, RandomAccessFile raf, CountDownLatch latch) {
+        return new ChunkDownloader(segment, raf, latch, connectionPermits);
+    }
+}
+
+class ChunkDownloader implements Runnable {
+    private final Semaphore permits;
+
+    public void run() {
+        permits.acquire(); // wait for a connection slot
+        try {
+            // open HTTP connection, download chunk
+        } finally {
+            permits.release();
+        }
+    }
+}
+```
+
+**Why:** without a bound, downloading 50 files × 8 threads = 400 concurrent HTTP connections. Most servers rate-limit by IP; 400 connections triggers throttling. The Semaphore enforces a system-wide connection budget.
+
+### Thread-Pool Sizing for Download Workers
+
+```java
+// Chunk downloading is pure I/O: waiting on network (RTT ~50-200ms), compute is negligible
+// N_threads = N_cpu × (1 + wait_time / compute_time)
+// Network I/O: wait = 200ms, compute = 0.5ms → multiplier = 401
+// In practice: bound by bandwidth / per-connection throughput
+// Rule: numThreads = min(numSegments, bandwidth_mbps / expected_throughput_per_thread_mbps)
+
+// For most users: 8 threads per file is empirically optimal (HTTP server concurrency limit)
+// For LAN/local network: more threads help → dynamically pick based on RTT measurement
+int threads = detectOptimalThreadCount(url);
+ExecutorService pool = Executors.newFixedThreadPool(threads);
+```
+
+**Key interview point:** for download managers, the right thread count is NOT derived purely from Little's Law — it's bounded by server-side concurrency limits and network bandwidth saturation. Profile, then cap.
+
+### ReentrantReadWriteLock for Shared Segment State
+
+The progress reporter thread reads segment progress while workers write it:
+
+```java
+class Segment {
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private long downloaded = 0;
+
+    public void incrementDownloaded(int bytes) {
+        rwLock.writeLock().lock();
+        try { downloaded += bytes; }
+        finally { rwLock.writeLock().unlock(); }
+    }
+
+    public long getDownloaded() {
+        rwLock.readLock().lock();
+        try { return downloaded; }
+        finally { rwLock.readLock().unlock(); }
+    }
+}
+```
+
+(Alternatively: use `AtomicLong` — simpler for a single `long` value. Use `ReentrantReadWriteLock` when guarding a struct with multiple fields that must be read/written atomically together.)
+
+---
+
 ## SOLID Principles
 - **S**: `ChunkDownloader` downloads bytes; `DownloadManager` coordinates segments and state; `Segment` holds progress metadata.
 - **O**: Add `FTPChunkDownloader` or `TorrentChunkDownloader` by implementing the same `Runnable` interface — manager submits them identically.

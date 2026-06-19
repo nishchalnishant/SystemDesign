@@ -374,6 +374,71 @@ Instead of free-text messages, log `Map<String, Object>` payloads. Handlers seri
 
 ---
 
+## Concurrency Depth
+
+### Why BlockingQueue Beats synchronized on Sinks
+
+The current design: `log()` enqueues to `LinkedBlockingQueue`; a single consumer thread drains to handlers. This is correct and the canonical pattern. Here's why alternatives fail:
+
+```java
+// WRONG: synchronized on each write
+class Logger {
+    public synchronized void log(LogLevel level, String msg) {
+        handlers.forEach(h -> h.handle(new LogRecord(level, msg))); // I/O inside lock!
+    }
+}
+// Problem: all caller threads block each other waiting for I/O (file write, network).
+// With 100 concurrent callers and FileHandler taking 1ms, throughput = 1000 logs/sec.
+// With BlockingQueue + single consumer: log() = CAS enqueue (~10ns); throughput = 100M/sec.
+```
+
+**Key insight:** move I/O entirely off the critical path. `log()` never does I/O — it only touches the queue.
+
+### Semaphore for Bounded Queue Backpressure
+
+`LinkedBlockingQueue` defaults to `Integer.MAX_VALUE` capacity — memory grows unboundedly under log bursts. Use a bounded queue with explicit Semaphore for caller backpressure:
+
+```java
+public class Logger {
+    private final int CAPACITY = 10_000;
+    // Fair semaphore: under backpressure, callers wait in FIFO order (prevents starvation)
+    private final Semaphore queuePermits = new Semaphore(CAPACITY, true);
+    private final BlockingQueue<LogRecord> queue = new LinkedBlockingQueue<>(CAPACITY);
+
+    public void log(LogLevel level, String msg) {
+        queuePermits.acquire(); // blocks caller if queue is full (backpressure)
+        queue.offer(new LogRecord(level, msg, ...));
+    }
+
+    private void drain() {
+        while (true) {
+            LogRecord record = queue.take();
+            queuePermits.release(); // unblock a waiting caller
+            chain.handle(record);
+        }
+    }
+}
+```
+
+**Alternative (non-blocking):** if queue is full, drop the record or sample (1-in-N). Use this for high-throughput metrics logging where losing 0.01% of logs is acceptable. Use the Semaphore approach for audit logs where no record can be dropped.
+
+### Thread-Pool Sizing for Async Sink Dispatch
+
+If each handler writes to a different destination and you want parallel sink dispatch (instead of chained):
+
+```java
+// I/O-bound sinks: DB write ~50ms, file write ~1ms, network ~100ms
+// On 4-CPU machine, for DB handler: 4 × (1 + 50ms/1ms) = 4 × 51 = 204 threads
+// Cap at 50 — more threads doesn't help if DB connection pool is 50
+int dbHandlerThreads = Math.min(
+    Runtime.getRuntime().availableProcessors() * (1 + 50),
+    dbConnectionPoolSize  // don't exceed pool size
+);
+ExecutorService dbSinkExecutor = Executors.newFixedThreadPool(dbHandlerThreads);
+```
+
+---
+
 ## SOLID Principles
 - **S**: `LogHandler` handles routing/filtering; concrete classes handle the actual write destination.
 - **O**: New sinks extend `LogHandler` — no existing code modified.

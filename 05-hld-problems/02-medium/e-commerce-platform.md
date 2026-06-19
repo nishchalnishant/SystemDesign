@@ -333,6 +333,141 @@ Facets sidebar:
 
 ---
 
+## Deep Dive: Inventory Reservation Saga
+
+The checkout flow is a 3-step saga. Each step has a compensating transaction for rollback.
+
+```
+Step 1 — Reserve Inventory
+  Action:      DECR Redis counter + INSERT reservation row (status='PENDING', expires_at=now+15min)
+  Compensate:  INCR Redis counter + DELETE reservation row
+
+Step 2 — Process Payment
+  Action:      POST to payment gateway (idempotency_key = checkout_session_id)
+  Compensate:  POST /refund to payment gateway
+
+Step 3 — Confirm Order
+  Action:      INSERT orders row + UPDATE inventory (available -= qty, reserved -= qty)
+  Compensate:  (nothing — Step 3 is the commit point; failures here need manual reconciliation)
+```
+
+**Failure scenarios:**
+
+| Failure Point | What Happens | Recovery |
+|---|---|---|
+| Step 1 fails (Redis unavailable) | No reservation made; user sees error | Retry safe — no state created |
+| Step 2 fails (payment declined) | Compensate Step 1: INCR Redis + delete reservation | Inventory restored; user can retry |
+| Step 2 timeout (no response from gateway) | Check payment status by idempotency_key before compensating | Avoid false refund on partial success |
+| Step 3 fails after payment succeeds | Saga stuck in paid-but-not-confirmed state | Reconciliation job polls for orphan reservations with payment_id |
+| Redis crashes mid-sale | Counter lost | Re-seed from PostgreSQL: `SET inventory:sku:X (DB_available - active_reservations)` |
+
+**Idempotency key mechanics:**
+```
+checkout_session_id = UUID generated at Step 1 initiation
+Sent to payment gateway as idempotency_key
+
+If network timeout on Step 2:
+  → Retry POST /charge with same checkout_session_id
+  → Gateway returns cached result (no double charge)
+  → Payment service checks: was this already charged? Return existing payment_id
+```
+
+**Reservation expiry (abandoned checkouts):**
+```sql
+-- Background job, runs every 60 seconds
+UPDATE reservations
+SET status = 'EXPIRED'
+WHERE status = 'PENDING' AND expires_at < NOW();
+
+-- For each expired reservation:
+-- INCR Redis counter (restore unit)
+-- Notify user (push/email: "Your reservation expired")
+```
+
+---
+
+## Deep Dive: Flash Sale Hot-Key Sharding
+
+A flash sale with 10M users competing for 1,000 units has a **hot key problem**: all 10M requests hit `inventory:flash:product_123` — a single Redis key on a single shard.
+
+Even though Redis is single-threaded and `DECR` is O(1), a single Redis node handles ~500K commands/sec. At 2M requests/sec (peak flash sale), one node is the bottleneck.
+
+### Strategy: Counter Sharding
+
+Shard the inventory counter across N Redis keys. Each key holds `total / N` units.
+
+```
+N = 10 shards
+Total inventory = 1,000 units
+Each shard: SET inventory:flash:product_123:shard:{0..9}  100
+
+On purchase request:
+  shard = random.randint(0, 9)    # or hash(user_id) % 10
+  remaining = DECR inventory:flash:product_123:shard:{shard}
+  if remaining >= 0:
+    → proceed to reservation
+  else:
+    INCR inventory:flash:product_123:shard:{shard}   # rollback
+    → try another shard (up to 3 retries)
+    → if all shards exhausted: return "Sold out"
+```
+
+**Shard capacity imbalance problem:** Some shards sell out before others. User hits sold-out shard but other shards still have units → false "Sold out."
+
+**Fix: redistribution on near-depletion:**
+```
+Background job (runs every 5 seconds during sale):
+  sum = SUM(all shard counters)
+  if any_shard < 5% of (total/N):
+    redistribute: set all shards to sum / N
+    (uses Redis MULTI/EXEC for atomic cross-shard update)
+```
+
+**Simpler fix for interviews:** Accept a small overcount. Use `DECR` across shards. When a shard hits 0, mark it sold-out. Users hitting that shard try another. Final sold count = 1,000 ± small rounding. For flash sales, this is operationally acceptable.
+
+### Alternative: Virtual Queue (Fairness Over Speed)
+
+Instead of a race, put all users in a queue:
+
+```
+On sale start:
+  All "Buy Now" clicks → INSERT into queue (user_id, timestamp, position = INCR queue_counter)
+  Return: "You're position #4,231. Estimated wait: 2 minutes."
+
+Background worker:
+  Processes queue entries FIFO
+  For each entry: reserve_inventory() → send_checkout_link(user, TTL=10min)
+  Rate: process at max checkout completion rate (~500/sec)
+```
+
+**Advantage:** Fairer than pure speed; users in slow networks aren't disadvantaged.
+**Disadvantage:** Users wait; "sold out by the time your turn comes" disappointment still exists.
+**Who uses it:** Ticketmaster's virtual waiting room; Nike SNKRS app limited drops.
+
+### Infrastructure for Flash Sale Traffic
+
+```
+1. Pre-warm:
+   - Spin up extra API server pods 30 min before sale (avoid cold-start lag)
+   - Pre-populate Redis inventory counters from DB
+   - Pre-heat CDN for product images and static pages
+
+2. Rate limiting:
+   - Per-user: max 5 buy-attempts per minute (prevent scripted bots)
+   - Global: admission control at API Gateway — queue excess above 1M RPS
+
+3. Read path (product page during sale):
+   - Product page served from CDN (static HTML with inventory status updated via polling/SSE)
+   - Avoid DB reads for product display during peak — stale cache (60s TTL) is acceptable
+
+4. Post-sale reconciliation:
+   - Compare Redis final counter with PostgreSQL confirmed orders
+   - Restock if any reservation expired without payment
+   - Report: units sold, revenue, peak RPS, error rate
+```
+
+---
+
 ## Interview Talking Points
 
 **Q: "How do you handle the flash sale stampede?"**
