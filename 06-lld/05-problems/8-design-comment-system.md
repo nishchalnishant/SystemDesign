@@ -157,228 +157,210 @@ NewSort  TopSort       HotSort
 
 ## Phase 5: Key Java Implementation
 
-```java
-import java.time.Instant;
-import java.util.*;
-import java.util.stream.Collectors;
+```python
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Callable
 
-// ── Composite Interface ────────────────────────────────────────────────────
+# ── Composite Interface ────────────────────────────────────────────────────
 
-interface CommentComponent {
-    String getId();
-    String getContent();
-    int getScore();
-    int getDepth();
-    List<CommentComponent> getChildren();
-    void display(int indent);
-}
+class CommentComponent(ABC):
+    @abstractmethod
+    def get_id(self) -> str: ...
+    @abstractmethod
+    def get_content(self) -> str: ...
+    @abstractmethod
+    def get_score(self) -> int: ...
+    @abstractmethod
+    def get_depth(self) -> int: ...
+    @abstractmethod
+    def get_children(self) -> list[CommentComponent]: ...
+    @abstractmethod
+    def display(self, indent: int) -> None: ...
 
-// ── Composite Node ─────────────────────────────────────────────────────────
+# ── Composite Node ─────────────────────────────────────────────────────────
 
-class CommentNode implements CommentComponent {
-    private final String id;
-    private final String postId;
-    private final String authorId;
-    private String content;
-    private int score;
-    private final int depth;
-    private final Instant createdAt;
-    private final List<CommentComponent> children = new ArrayList<>();
+class CommentNode(CommentComponent):
+    def __init__(self, id: str, post_id: str | None, author_id: str, content: str, depth: int):
+        self._id        = id
+        self._post_id   = post_id
+        self._author_id = author_id
+        self._content   = content
+        self._depth     = depth
+        self._score     = 0
+        self._created_at = datetime.now(timezone.utc)
+        self._children: list[CommentComponent] = []
+        self._deleted   = False
 
-    CommentNode(String id, String postId, String authorId, String content, int depth) {
-        this.id        = id;
-        this.postId    = postId;
-        this.authorId  = authorId;
-        this.content   = content;
-        this.depth     = depth;
-        this.score     = 0;
-        this.createdAt = Instant.now();
-    }
+    def get_id(self)       -> str:  return self._id
+    def get_content(self)  -> str:  return self._content
+    def get_score(self)    -> int:  return self._score
+    def get_depth(self)    -> int:  return self._depth
+    def get_created_at(self) -> datetime: return self._created_at
+    def get_children(self) -> list[CommentComponent]: return self._children
 
-    public String getId()      { return id; }
-    public String getContent() { return content; }
-    public int getScore()      { return score; }
-    public int getDepth()      { return depth; }
-    public Instant getCreatedAt() { return createdAt; }
-    public List<CommentComponent> getChildren() { return children; }
+    def add_reply(self, child: CommentComponent) -> None:
+        self._children.append(child)
 
-    public void addReply(CommentComponent child) { children.add(child); }
+    def upvote(self)   -> None: self._score += 1
+    def downvote(self) -> None: self._score -= 1
 
-    public void upvote()   { score++; }
-    public void downvote() { score--; }
+    # Soft delete: keep node so children remain visible
+    def soft_delete(self) -> None:
+        self._content = "[deleted]"
+        self._deleted = True
 
-    // Soft delete: keep node so children remain visible
-    public void softDelete() { this.content = "[deleted]"; this.authorId_deleted = true; }
-    private boolean authorId_deleted = false;
+    def display(self, indent: int) -> None:
+        pad = "  " * indent
+        print(f"{pad}[{self._depth}] {self._content} | score: {self._score}")
+        for child in self._children:
+            child.display(indent + 1)
 
-    public void display(int indent) {
-        String pad = "  ".repeat(indent);
-        System.out.printf("%s[%d] %s | score: %d%n", pad, depth, content, score);
-        for (CommentComponent child : children) {
-            child.display(indent + 1);
-        }
-    }
-}
+# ── Sort Strategy ──────────────────────────────────────────────────────────
 
-// ── Sort Strategy ──────────────────────────────────────────────────────────
+class SortStrategy(ABC):
+    @abstractmethod
+    def sort(self, comments: list[CommentComponent]) -> list[CommentComponent]: ...
 
-interface SortStrategy {
-    List<CommentComponent> sort(List<CommentComponent> comments);
-}
+class NewSort(SortStrategy):
+    def sort(self, comments: list[CommentComponent]) -> list[CommentComponent]:
+        def key(c: CommentComponent):
+            return c.get_created_at() if isinstance(c, CommentNode) else datetime.min.replace(tzinfo=timezone.utc)
+        return sorted(comments, key=key, reverse=True)
 
-class NewSort implements SortStrategy {
-    public List<CommentComponent> sort(List<CommentComponent> comments) {
-        return comments.stream()
-                .sorted(Comparator.comparing(c -> {
-                    if (c instanceof CommentNode cn) return cn.getCreatedAt();
-                    return Instant.MIN;
-                }, Comparator.reverseOrder()))
-                .collect(Collectors.toList());
-    }
-}
+class TopSort(SortStrategy):
+    def sort(self, comments: list[CommentComponent]) -> list[CommentComponent]:
+        return sorted(comments, key=lambda c: c.get_score(), reverse=True)
 
-class TopSort implements SortStrategy {
-    public List<CommentComponent> sort(List<CommentComponent> comments) {
-        return comments.stream()
-                .sorted(Comparator.comparingInt(CommentComponent::getScore).reversed())
-                .collect(Collectors.toList());
-    }
-}
+class HotSort(SortStrategy):
+    # Time-decayed score: score / (age_in_hours + 2)^1.5
+    def sort(self, comments: list[CommentComponent]) -> list[CommentComponent]:
+        return sorted(comments, key=lambda c: -self._hot_score(c))
 
-class HotSort implements SortStrategy {
-    // Time-decayed score: score / (age_in_hours + 2)^1.5
-    public List<CommentComponent> sort(List<CommentComponent> comments) {
-        return comments.stream()
-                .sorted(Comparator.comparingDouble(c -> -hotScore(c)))
-                .collect(Collectors.toList());
-    }
+    def _hot_score(self, c: CommentComponent) -> float:
+        if not isinstance(c, CommentNode):
+            return 0.0
+        age_hours = (datetime.now(timezone.utc) - c.get_created_at()).total_seconds() / 3600
+        return c.get_score() / (age_hours + 2) ** 1.5
 
-    private double hotScore(CommentComponent c) {
-        if (!(c instanceof CommentNode cn)) return 0;
-        long ageHours = (Instant.now().getEpochSecond() - cn.getCreatedAt().getEpochSecond()) / 3600;
-        return cn.getScore() / Math.pow(ageHours + 2, 1.5);
-    }
-}
+# ── Vote Registry ──────────────────────────────────────────────────────────
 
-// ── Vote Registry ──────────────────────────────────────────────────────────
+class VoteDirection(Enum):
+    UP   = "UP"
+    DOWN = "DOWN"
 
-enum VoteDirection { UP, DOWN }
+class VoteRegistry:
+    def __init__(self):
+        # key: commentId + ":" + userId
+        self._votes: dict[str, VoteDirection] = {}
 
-class VoteRegistry {
-    // key: commentId + ":" + userId
-    private final Map<String, VoteDirection> votes = new HashMap<>();
+    def record_vote(self, comment_id: str, user_id: str, direction: VoteDirection,
+                    comment: CommentNode) -> None:
+        key = f"{comment_id}:{user_id}"
+        existing = self._votes.get(key)
 
-    public void recordVote(String commentId, String userId, VoteDirection dir,
-                           CommentNode comment) {
-        String key = commentId + ":" + userId;
-        VoteDirection existing = votes.get(key);
+        if existing is None:
+            self._votes[key] = direction
+            comment.upvote() if direction == VoteDirection.UP else comment.downvote()
+        elif existing == direction:
+            # Toggle off
+            del self._votes[key]
+            comment.downvote() if direction == VoteDirection.UP else comment.upvote()
+        else:
+            # Flip direction
+            self._votes[key] = direction
+            if direction == VoteDirection.UP:
+                comment.upvote(); comment.upvote()
+            else:
+                comment.downvote(); comment.downvote()
 
-        if (existing == null) {
-            votes.put(key, dir);
-            if (dir == VoteDirection.UP) comment.upvote(); else comment.downvote();
-        } else if (existing == dir) {
-            // Toggle off
-            votes.remove(key);
-            if (dir == VoteDirection.UP) comment.downvote(); else comment.upvote();
-        } else {
-            // Flip direction
-            votes.put(key, dir);
-            if (dir == VoteDirection.UP) { comment.upvote(); comment.upvote(); }
-            else                         { comment.downvote(); comment.downvote(); }
-        }
-    }
-}
+# ── Comment Service ────────────────────────────────────────────────────────
 
-// ── Comment Service ────────────────────────────────────────────────────────
+class CommentService:
+    def __init__(self):
+        # post_id → root-level comments
+        self._threads: dict[str, list[CommentComponent]] = {}
+        # comment_id → node (for O(1) lookup when replying)
+        self._node_index: dict[str, CommentNode] = {}
+        self._vote_registry = VoteRegistry()
+        self._id_counter = 0
 
-public class CommentService {
-    // postId → root-level comments
-    private final Map<String, List<CommentComponent>> threads = new HashMap<>();
-    // commentId → node (for O(1) lookup when replying)
-    private final Map<String, CommentNode> nodeIndex = new HashMap<>();
-    private final VoteRegistry voteRegistry = new VoteRegistry();
-    private long idCounter = 0;
+    def _generate_id(self) -> str:
+        self._id_counter += 1
+        return f"c{self._id_counter}"
 
-    private String generateId() { return "c" + (++idCounter); }
+    def post_comment(self, post_id: str, author_id: str, content: str) -> CommentNode:
+        id_ = self._generate_id()
+        node = CommentNode(id_, post_id, author_id, content, 0)
+        self._node_index[id_] = node
+        self._threads.setdefault(post_id, []).append(node)
+        return node
 
-    public CommentNode postComment(String postId, String authorId, String content) {
-        String id = generateId();
-        CommentNode node = new CommentNode(id, postId, authorId, content, 0);
-        nodeIndex.put(id, node);
-        threads.computeIfAbsent(postId, k -> new ArrayList<>()).add(node);
-        return node;
-    }
+    def reply_to(self, parent_id: str, author_id: str, content: str) -> CommentNode:
+        parent = self._node_index.get(parent_id)
+        if parent is None:
+            raise ValueError(f"Parent not found: {parent_id}")
+        id_ = self._generate_id()
+        child = CommentNode(id_, None, author_id, content, parent.get_depth() + 1)
+        self._node_index[id_] = child
+        parent.add_reply(child)
+        return child
 
-    public CommentNode replyTo(String parentId, String authorId, String content) {
-        CommentNode parent = nodeIndex.get(parentId);
-        if (parent == null) throw new IllegalArgumentException("Parent not found: " + parentId);
+    def vote(self, comment_id: str, user_id: str, direction: VoteDirection) -> None:
+        node = self._node_index.get(comment_id)
+        if node is None:
+            raise ValueError(f"Comment not found: {comment_id}")
+        self._vote_registry.record_vote(comment_id, user_id, direction, node)
 
-        String id = generateId();
-        CommentNode child = new CommentNode(id, null, authorId, content, parent.getDepth() + 1);
-        nodeIndex.put(id, child);
-        parent.addReply(child);
-        return child;
-    }
+    # Fetch thread with sorting applied at each level
+    def get_thread(self, post_id: str, strategy: SortStrategy,
+                   page: int, page_size: int) -> list[CommentComponent]:
+        roots  = self._threads.get(post_id, [])
+        sorted_ = strategy.sort(roots)
 
-    public void vote(String commentId, String userId, VoteDirection direction) {
-        CommentNode node = nodeIndex.get(commentId);
-        if (node == null) throw new IllegalArgumentException("Comment not found: " + commentId);
-        voteRegistry.recordVote(commentId, userId, direction, node);
-    }
+        # Pagination on top-level only
+        from_ = page * page_size
+        to_   = min(from_ + page_size, len(sorted_))
+        page_results = sorted_[from_:to_]
 
-    // Fetch thread with sorting applied at each level
-    public List<CommentComponent> getThread(String postId, SortStrategy strategy, int page, int pageSize) {
-        List<CommentComponent> roots = threads.getOrDefault(postId, Collections.emptyList());
-        List<CommentComponent> sorted = strategy.sort(roots);
+        return self._apply_sort_recursively(page_results, strategy)
 
-        // Pagination on top-level only
-        int from = page * pageSize;
-        int to   = Math.min(from + pageSize, sorted.size());
-        List<CommentComponent> page_results = sorted.subList(from, to);
+    def _apply_sort_recursively(self, nodes: list[CommentComponent],
+                                strategy: SortStrategy) -> list[CommentComponent]:
+        for node in nodes:
+            if isinstance(node, CommentNode) and node.get_children():
+                sorted_children = strategy.sort(node.get_children())
+                node.get_children().clear()
+                node.get_children().extend(self._apply_sort_recursively(sorted_children, strategy))
+        return nodes
 
-        // Apply sort recursively to children
-        return applySortRecursively(page_results, strategy);
-    }
+    def display_thread(self, post_id: str, strategy: SortStrategy) -> None:
+        thread = self.get_thread(post_id, strategy, 0, 2**31)
+        for c in thread:
+            c.display(0)
 
-    private List<CommentComponent> applySortRecursively(List<CommentComponent> nodes, SortStrategy strategy) {
-        for (CommentComponent node : nodes) {
-            if (node instanceof CommentNode cn && !cn.getChildren().isEmpty()) {
-                List<CommentComponent> sortedChildren = strategy.sort(cn.getChildren());
-                cn.getChildren().clear();
-                cn.getChildren().addAll(applySortRecursively(sortedChildren, strategy));
-            }
-        }
-        return nodes;
-    }
+# ── Demo ───────────────────────────────────────────────────────────────────
 
-    public void displayThread(String postId, SortStrategy strategy) {
-        List<CommentComponent> thread = getThread(postId, strategy, 0, Integer.MAX_VALUE);
-        for (CommentComponent c : thread) c.display(0);
-    }
-}
+if __name__ == "__main__":
+    service = CommentService()
 
-// ── Demo ───────────────────────────────────────────────────────────────────
+    c1 = service.post_comment("post1", "alice",   "First top-level comment")
+    c2 = service.post_comment("post1", "bob",     "Second top-level comment")
+    r1 = service.reply_to(c1.get_id(), "charlie", "Reply to Alice")
+    r2 = service.reply_to(r1.get_id(), "alice",   "Reply to Charlie (nested)")
 
-class CommentDemo {
-    public static void main(String[] args) throws InterruptedException {
-        CommentService service = new CommentService();
+    service.vote(c2.get_id(), "alice", VoteDirection.UP)
+    service.vote(c2.get_id(), "dave",  VoteDirection.UP)
+    service.vote(c1.get_id(), "eve",   VoteDirection.UP)
 
-        CommentNode c1 = service.postComment("post1", "alice", "First top-level comment");
-        CommentNode c2 = service.postComment("post1", "bob",   "Second top-level comment");
-        CommentNode r1 = service.replyTo(c1.getId(), "charlie", "Reply to Alice");
-        CommentNode r2 = service.replyTo(r1.getId(), "alice",   "Reply to Charlie (nested)");
+    print("=== TOP sort ===")
+    service.display_thread("post1", TopSort())
 
-        service.vote(c2.getId(), "alice",   VoteDirection.UP);
-        service.vote(c2.getId(), "dave",    VoteDirection.UP);
-        service.vote(c1.getId(), "eve",     VoteDirection.UP);
-
-        System.out.println("=== TOP sort ===");
-        service.displayThread("post1", new TopSort());
-
-        System.out.println("\n=== NEW sort ===");
-        service.displayThread("post1", new NewSort());
-    }
-}
+    print("\n=== NEW sort ===")
+    service.display_thread("post1", NewSort())
 ```
 
 ---
@@ -418,14 +400,18 @@ CREATE INDEX idx_thread ON comments (post_id, path);
 Return `hasMore: true` flag per comment node. Client fetches `GET /comments/{id}/replies?page=2` lazily when user clicks "load more replies".
 
 **Score computation (Wilson score for ranking):**
-```java
-// Wilson lower bound — more statistically robust than raw score
-double wilsonScore(int upvotes, int total) {
-    if (total == 0) return 0;
-    double z = 1.96; // 95% confidence
-    double pHat = (double) upvotes / total;
-    return (pHat + z*z/(2*total) - z * Math.sqrt((pHat*(1-pHat) + z*z/(4*total))/total))
-           / (1 + z*z/total);
-}
+```python
+import math
+
+def wilson_score(upvotes: int, total: int) -> float:
+    """Wilson lower bound — more statistically robust than raw score."""
+    if total == 0:
+        return 0.0
+    z    = 1.96  # 95% confidence
+    p_hat = upvotes / total
+    return (
+        p_hat + z*z / (2*total)
+        - z * math.sqrt((p_hat * (1 - p_hat) + z*z / (4*total)) / total)
+    ) / (1 + z*z / total)
 ```
 Use as `HotSort` comparator for production-quality ranking.

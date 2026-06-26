@@ -57,33 +57,29 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```java
-class VendingMachine {
-    private String state = "IDLE";
+```python
+class VendingMachine:
+    def __init__(self):
+        self._state = "IDLE"
 
-    public void insertCoin() {
-        if (state.equals("IDLE")) {
-            state = "HAS_COIN";
-            System.out.println("Coin accepted");
-        } else if (state.equals("HAS_COIN")) {
-            System.out.println("Coin already inserted");
-        } else if (state.equals("DISPENSING")) {
-            System.out.println("Please wait, dispensing");
-        } else if (state.equals("OUT_OF_STOCK")) {
-            System.out.println("Machine out of stock");
-        }
-    }
+    def insert_coin(self) -> None:
+        if self._state == "IDLE":
+            self._state = "HAS_COIN"
+            print("Coin accepted")
+        elif self._state == "HAS_COIN":
+            print("Coin already inserted")
+        elif self._state == "DISPENSING":
+            print("Please wait, dispensing")
+        elif self._state == "OUT_OF_STOCK":
+            print("Machine out of stock")
 
-    public void selectProduct() {
-        if (state.equals("IDLE")) {
-            System.out.println("Please insert coin first");
-        } else if (state.equals("HAS_COIN")) {
-            state = "DISPENSING";
-        }
-        // ... more branches
-    }
-    // dispense() — another full set of branches
-}
+    def select_product(self) -> None:
+        if self._state == "IDLE":
+            print("Please insert coin first")
+        elif self._state == "HAS_COIN":
+            self._state = "DISPENSING"
+        # ... more branches
+    # dispense() — another full set of branches
 ```
 
 **What breaks**:
@@ -98,43 +94,51 @@ class VendingMachine {
 
 The constraint: **each state should own its own behavior, and the machine delegates to the current state**.
 
-Step 1 — extract a `State` interface where each action is a method:
-```java
-interface State {
-    void insertCoin();
-    void selectProduct();
-    void dispense();
-}
+Step 1 — extract a `State` ABC where each action is a method:
+```python
+from abc import ABC, abstractmethod
+
+class State(ABC):
+    @abstractmethod
+    def insert_coin(self) -> None: ...
+
+    @abstractmethod
+    def select_product(self) -> None: ...
+
+    @abstractmethod
+    def dispense(self) -> None: ...
 ```
 
 Step 2 — each state is its own class that owns the logic for that state:
-```java
-class IdleState implements State {
-    private VendingMachine machine;
-    public void insertCoin()    { machine.setState(machine.getHasCoinState()); }
-    public void selectProduct() { System.out.println("Insert coin first"); }
-    public void dispense()      { System.out.println("Insert coin first"); }
-}
+```python
+class IdleState(State):
+    def __init__(self, machine: "VendingMachine"):
+        self._machine = machine
 
-class HasCoinState implements State {
-    private VendingMachine machine;
-    public void insertCoin()    { System.out.println("Coin already inserted"); }
-    public void selectProduct() { machine.setState(machine.getDispensingState()); }
-    public void dispense()      { System.out.println("Select product first"); }
-}
+    def insert_coin(self) -> None:    self._machine.set_state(self._machine.has_coin_state)
+    def select_product(self) -> None: print("Insert coin first")
+    def dispense(self) -> None:       print("Insert coin first")
+
+class HasCoinState(State):
+    def __init__(self, machine: "VendingMachine"):
+        self._machine = machine
+
+    def insert_coin(self) -> None:    print("Coin already inserted")
+    def select_product(self) -> None: self._machine.set_state(self._machine.dispensing_state)
+    def dispense(self) -> None:       print("Select product first")
 ```
 
 Step 3 — the machine holds a reference to the current state and delegates:
-```java
-class VendingMachine {
-    private State currentState;
+```python
+class VendingMachine:
+    def __init__(self):
+        self._current_state: State = ...  # set in subclass/factory
 
-    public void insertCoin()    { currentState.insertCoin(); }
-    public void selectProduct() { currentState.selectProduct(); }
-    public void dispense()      { currentState.dispense(); }
+    def insert_coin(self) -> None:    self._current_state.insert_coin()
+    def select_product(self) -> None: self._current_state.select_product()
+    def dispense(self) -> None:       self._current_state.dispense()
 
-    public void setState(State s) { currentState = s; }
-}
+    def set_state(self, s: State) -> None: self._current_state = s
 ```
 
 Adding `MAINTENANCE` is now one new `MaintenanceState` class. The existing states are untouched.
@@ -172,18 +176,16 @@ The traffic light object is the same object throughout. But its behavior changes
 
 Bad code — state as a string, logic spread everywhere:
 
-```java
-public void insertCoin() {
-    if (state.equals("Idle")) accept();
-    else if (state.equals("HasCoin")) reject();
-    else if (state.equals("OutOfStock")) reject();
-}
+```python
+def insert_coin(self) -> None:
+    if self._state == "Idle":      self._accept()
+    elif self._state == "HasCoin": self._reject()
+    elif self._state == "OutOfStock": self._reject()
 
-public void pressButton() {
-    if (state.equals("Idle")) System.out.println("Insert coin first");
-    else if (state.equals("HasCoin")) dispense(); // + transition to Idle
-    else if (state.equals("OutOfStock")) System.out.println("Out of stock");
-}
+def press_button(self) -> None:
+    if self._state == "Idle":      print("Insert coin first")
+    elif self._state == "HasCoin": self._dispense()  # + transition to Idle
+    elif self._state == "OutOfStock": print("Out of stock")
 ```
 
 **Problems**: Adding a new state (`Dispensing`, `Refunding`) requires modifying every method. The state transition logic is spread across all methods. Violates OCP.
@@ -192,100 +194,67 @@ public void pressButton() {
 
 ## Solution: State Pattern
 
-```java
-// 1. State Interface
-interface State {
-    void insertCoin();
-    void pressButton();
-    void dispense();
-}
+```python
+from abc import ABC, abstractmethod
 
-// 2. Context (The Machine)
-class VendingMachine {
-    private State idleState;
-    private State hasCoinState;
-    private State currentState;
-    
-    public VendingMachine() {
-        this.idleState = new IdleState(this);
-        this.hasCoinState = new HasCoinState(this);
-        this.currentState = this.idleState;
-    }
-    
-    public void setState(State state) {
-        this.currentState = state;
-    }
-    
-    public void insertCoin() {
-        currentState.insertCoin();
-    }
-    
-    public void pressButton() {
-        currentState.pressButton();
-    }
-   
-    public State getIdleState() { return idleState; }
-    public State getHasCoinState() { return hasCoinState; }
-}
+# 1. State ABC
+class State(ABC):
+    @abstractmethod
+    def insert_coin(self) -> None: ...
 
-// 3. Concrete States — each state knows its own rules and transitions
-class IdleState implements State {
-    private VendingMachine machine;
-    
-    public IdleState(VendingMachine machine) {
-        this.machine = machine;
-    }
-    
-    @Override
-    public void insertCoin() {
-        System.out.println("Coin inserted");
-        machine.setState(machine.getHasCoinState());  // Transition built into the state
-    }
-    
-    @Override
-    public void pressButton() {
-        System.out.println("Insert coin first");
-    }
-    
-    @Override
-    public void dispense() {
-        System.out.println("Insert coin first");
-    }
-}
+    @abstractmethod
+    def press_button(self) -> None: ...
 
-class HasCoinState implements State {
-    private VendingMachine machine;
-    
-    public HasCoinState(VendingMachine machine) {
-        this.machine = machine;
-    }
-    
-    @Override
-    public void insertCoin() {
-        System.out.println("Coin already inserted");
-    }
-    
-    @Override
-    public void pressButton() {
-        System.out.println("Button pressed — dispensing...");
-        machine.setState(machine.getIdleState());  // Transition back to Idle
-    }
-    
-    @Override
-    public void dispense() {
-        System.out.println("Dispensing...");
-    }
-}
+    @abstractmethod
+    def dispense(self) -> None: ...
 
-// Client
-public class Main {
-    public static void main(String[] args) {
-        VendingMachine vm = new VendingMachine();
-        vm.insertCoin();   // State changes to HasCoin
-        vm.pressButton();  // Action allowed, state reverts to Idle
-        vm.pressButton();  // "Insert coin first" — correct behavior for Idle state
-    }
-}
+# 2. Context (The Machine)
+class VendingMachine:
+    def __init__(self):
+        self.idle_state     = IdleState(self)
+        self.has_coin_state = HasCoinState(self)
+        self._current_state: State = self.idle_state
+
+    def set_state(self, state: State) -> None:
+        self._current_state = state
+
+    def insert_coin(self) -> None:  self._current_state.insert_coin()
+    def press_button(self) -> None: self._current_state.press_button()
+
+# 3. Concrete States — each state knows its own rules and transitions
+class IdleState(State):
+    def __init__(self, machine: VendingMachine):
+        self._machine = machine
+
+    def insert_coin(self) -> None:
+        print("Coin inserted")
+        self._machine.set_state(self._machine.has_coin_state)  # transition built into state
+
+    def press_button(self) -> None:
+        print("Insert coin first")
+
+    def dispense(self) -> None:
+        print("Insert coin first")
+
+class HasCoinState(State):
+    def __init__(self, machine: VendingMachine):
+        self._machine = machine
+
+    def insert_coin(self) -> None:
+        print("Coin already inserted")
+
+    def press_button(self) -> None:
+        print("Button pressed — dispensing...")
+        self._machine.set_state(self._machine.idle_state)  # transition back to Idle
+
+    def dispense(self) -> None:
+        print("Dispensing...")
+
+# Client
+vm = VendingMachine()
+vm.insert_coin()    # state changes to HasCoin
+vm.press_button()   # action allowed, state reverts to Idle
+vm.press_button()   # "Insert coin first" — correct behavior for Idle state
 ```
 
 ### Class Diagram

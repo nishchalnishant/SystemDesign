@@ -16,46 +16,42 @@ tags: [06-lld, system-design, problems]
 
 **Option A — Use only a `HashMap`**:
 
-```java
-class LRUCache {
-    private final int capacity;
-    private final Map<Integer, Integer> map = new HashMap<>();
+```python
+class LRUCache:
+    def __init__(self, capacity: int):
+        self._capacity = capacity
+        self._map: dict[int, int] = {}
 
-    public int get(int key) {
-        return map.getOrDefault(key, -1);
-    }
+    def get(self, key: int) -> int:
+        return self._map.get(key, -1)
 
-    public void put(int key, int value) {
-        if (map.size() >= capacity && !map.containsKey(key)) {
-            // Which key do we evict? HashMap has no order — we cannot know
-            // which key was used least recently. We'd have to scan all keys.
-            Integer lruKey = ???; // O(N) scan — and even then, no usage order is tracked
-            map.remove(lruKey);
-        }
-        map.put(key, value);
-    }
-}
+    def put(self, key: int, value: int) -> None:
+        if len(self._map) >= self._capacity and key not in self._map:
+            # Which key do we evict? dict has no usage order — we cannot know
+            # which key was used least recently. We'd have to scan all keys.
+            lru_key = None  # ??? O(N) scan — and even then, no usage order is tracked
+            del self._map[lru_key]
+        self._map[key] = value
 ```
 
 **Failure**: `HashMap` has no insertion or access order. You cannot identify the least recently used key without an external data structure. Any attempt to evict requires O(N) scanning the entire map.
 
 **Option B — Use only a `LinkedList` (ordered by recency)**:
 
-```java
-class LRUCache {
-    private final LinkedList<int[]> list = new LinkedList<>(); // [key, value] pairs in LRU order
+```python
+from collections import deque
 
-    public int get(int key) {
-        for (int[] entry : list) {        // O(N) scan to find key
-            if (entry[0] == key) {
-                list.remove(entry);        // O(N) removal
-                list.addFirst(entry);      // move to front
-                return entry[1];
-            }
-        }
-        return -1;
-    }
-}
+class LRUCache:
+    def __init__(self):
+        self._list: deque[list] = deque()  # [key, value] pairs in LRU order
+
+    def get(self, key: int) -> int:
+        for entry in self._list:           # O(N) scan to find key
+            if entry[0] == key:
+                self._list.remove(entry)   # O(N) removal
+                self._list.appendleft(entry)  # move to front
+                return entry[1]
+        return -1
 ```
 
 **Failure**: Finding a key requires O(N) linear scan. The cache is O(N) per operation — useless at scale.
@@ -237,109 +233,98 @@ classDiagram
 
 ### Java Implementation
 
-```java
-import java.util.*;
+```python
+from __future__ import annotations
+import threading
+from typing import Generic, TypeVar
 
-// 1. Double Linked List Node
-class Node<K, V> {
-    K key;
-    V value;
-    Node<K, V> prev;
-    Node<K, V> next;
+K = TypeVar("K")
+V = TypeVar("V")
 
-    public Node(K key, V value) {
-        this.key = key;
-        this.value = value;
-    }
-}
+# 1. Doubly Linked List Node
+class Node(Generic[K, V]):
+    def __init__(self, key: K | None, value: V | None):
+        self.key   = key
+        self.value = value
+        self.prev: Node[K, V] | None = None
+        self.next: Node[K, V] | None = None
 
-// 2. LRU Cache
-public class LRUCache<K, V> {
-    private final int capacity;
-    private final Map<K, Node<K, V>> map;
-    private final Node<K, V> head;  // Dummy head — MRU side
-    private final Node<K, V> tail;  // Dummy tail — LRU side
+# 2. LRU Cache
+class LRUCache(Generic[K, V]):
+    def __init__(self, capacity: int):
+        self._capacity = capacity
+        self._map: dict[K, Node[K, V]] = {}
 
-    public LRUCache(int capacity) {
-        this.capacity = capacity;
-        this.map = new HashMap<>();
-        
-        // Dummy head/tail to avoid null checks on every add/remove
-        // Real nodes always live between head and tail
-        this.head = new Node<>(null, null);
-        this.tail = new Node<>(null, null);
-        head.next = tail;
-        tail.prev = head;
-    }
+        # Dummy head/tail to avoid null checks on every add/remove
+        # Real nodes always live between head and tail
+        self._head: Node[K, V] = Node(None, None)   # Dummy head — MRU side
+        self._tail: Node[K, V] = Node(None, None)   # Dummy tail — LRU side
+        self._head.next = self._tail
+        self._tail.prev = self._head
+        self._lock = threading.Lock()
 
-    // O(1): HashMap lookup + DLL move to front
-    public synchronized V get(K key) {
-        if (!map.containsKey(key)) return null;
+    # O(1): dict lookup + DLL move to front
+    def get(self, key: K) -> V | None:
+        with self._lock:
+            if key not in self._map:
+                return None
+            node = self._map[key]
+            # Move to head = mark as most recently used
+            self._remove(node)
+            self._add_first(node)
+            return node.value
 
-        Node<K, V> node = map.get(key);
-        // Move to head = mark as most recently used
-        remove(node);
-        addFirst(node);
-        return node.value;
-    }
+    # O(1): dict insert/update + DLL insert at front + optional tail eviction
+    def put(self, key: K, value: V) -> None:
+        with self._lock:
+            if key in self._map:
+                # Update existing — move to front
+                node = self._map[key]
+                node.value = value
+                self._remove(node)
+                self._add_first(node)
+            else:
+                if len(self._map) >= self._capacity:
+                    # Evict LRU: the node just before the dummy tail
+                    lru = self._tail.prev
+                    self._remove(lru)
+                    del self._map[lru.key]   # Key stored in node — why Node stores key
+                new_node = Node(key, value)
+                self._add_first(new_node)
+                self._map[key] = new_node
 
-    // O(1): HashMap insert/update + DLL insert at front + optional tail eviction
-    public synchronized void put(K key, V value) {
-        if (map.containsKey(key)) {
-            // Update existing — move to front
-            Node<K, V> node = map.get(key);
-            node.value = value;
-            remove(node);
-            addFirst(node);
-        } else {
-            if (map.size() >= capacity) {
-                // Evict LRU: the node just before the dummy tail
-                Node<K, V> lru = tail.prev;
-                remove(lru);
-                map.remove(lru.key);  // Key stored in node is used here — why Node stores key
-            }
-            Node<K, V> newNode = new Node<>(key, value);
-            addFirst(newNode);
-            map.put(key, newNode);
-        }
-    }
+    # Helper: Insert node immediately after dummy head (MRU position)
+    # Before: head <-> old_first
+    # After:  head <-> node <-> old_first
+    def _add_first(self, node: Node[K, V]) -> None:
+        node.prev          = self._head
+        node.next          = self._head.next
+        self._head.next.prev = node   # old_first.prev = node
+        self._head.next    = node     # head.next = node
 
-    // Helper: Insert node immediately after dummy head (MRU position)
-    // Before: head <-> oldFirst
-    // After:  head <-> node <-> oldFirst
-    private void addFirst(Node<K, V> node) {
-        node.prev = head;
-        node.next = head.next;
-        head.next.prev = node;  // oldFirst.prev = node
-        head.next = node;       // head.next = node
-    }
+    # Helper: Remove node from wherever it is in the list (O(1) — doubly linked)
+    # Before: prev <-> node <-> next
+    # After:  prev <-> next
+    def _remove(self, node: Node[K, V]) -> None:
+        node.prev.next = node.next
+        node.next.prev = node.prev
 
-    // Helper: Remove node from wherever it is in the list (O(1) due to doubly linked)
-    // Before: prev <-> node <-> next
-    // After:  prev <-> next
-    private void remove(Node<K, V> node) {
-        node.prev.next = node.next;
-        node.next.prev = node.prev;
-    }
+# Demo
+if __name__ == "__main__":
+    cache: LRUCache[int, str] = LRUCache(2)
 
-    // Demo
-    public static void main(String[] args) {
-        LRUCache<Integer, String> cache = new LRUCache<>(2);
-        
-        cache.put(1, "Data1");
-        cache.put(2, "Data2");
-        // List: head <-> [2:Data2] <-> [1:Data1] <-> tail
-        
-        System.out.println("Get 1: " + cache.get(1)); // "Data1", 1 is now MRU
-        // List: head <-> [1:Data1] <-> [2:Data2] <-> tail
-        
-        cache.put(3, "Data3"); // Capacity full: evict LRU = 2 (tail.prev)
-        // List: head <-> [3:Data3] <-> [1:Data1] <-> tail
-        
-        System.out.println("Get 2: " + cache.get(2)); // null — evicted
-        System.out.println("Get 3: " + cache.get(3)); // "Data3"
-    }
-}
+    cache.put(1, "Data1")
+    cache.put(2, "Data2")
+    # List: head <-> [2:Data2] <-> [1:Data1] <-> tail
+
+    print("Get 1:", cache.get(1))  # "Data1", 1 is now MRU
+    # List: head <-> [1:Data1] <-> [2:Data2] <-> tail
+
+    cache.put(3, "Data3")  # Capacity full: evict LRU = 2 (tail.prev)
+    # List: head <-> [3:Data3] <-> [1:Data1] <-> tail
+
+    print("Get 2:", cache.get(2))  # None — evicted
+    print("Get 3:", cache.get(3))  # "Data3"
 ```
 
 **Why does `Node` store the key?**: When evicting the LRU node (`tail.prev`), we need to remove its entry from the HashMap. We only have the node reference at this point — not the key. By storing `key` in the `Node`, we can call `map.remove(lru.key)` in O(1) without any reverse lookup.

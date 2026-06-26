@@ -65,15 +65,15 @@ Try it before reading on.
 
 The subclass-for-every-combination approach:
 
-```java
-class CheesePizza extends Pizza { ... }
-class MushroomPizza extends Pizza { ... }
-class OlivePizza extends Pizza { ... }
-class CheeseMushroomPizza extends Pizza { ... }
-class CheeseOlivePizza extends Pizza { ... }
-class MushroomOlivePizza extends Pizza { ... }
-class CheeseMushroomOlivePizza extends Pizza { ... }
-// 3 toppings → 7 classes. 4 toppings → 15 classes. N toppings → 2^N - 1 classes.
+```python
+class CheesePizza(Pizza): ...
+class MushroomPizza(Pizza): ...
+class OlivePizza(Pizza): ...
+class CheeseMushroomPizza(Pizza): ...
+class CheeseOlivePizza(Pizza): ...
+class MushroomOlivePizza(Pizza): ...
+class CheeseMushroomOlivePizza(Pizza): ...
+# 3 toppings → 7 classes. 4 toppings → 15 classes. N toppings → 2^N - 1 classes.
 ```
 
 **What breaks**:
@@ -87,44 +87,42 @@ class CheeseMushroomOlivePizza extends Pizza { ... }
 
 The constraint: **wrap behavior dynamically at runtime, not statically at compile time**.
 
-Step 1 — ensure every pizza and every topping share the same interface:
-```java
-interface Pizza {
-    double getCost();
-    String getDescription();
-}
+Step 1 — ensure every pizza and every topping share the same ABC:
+```python
+from abc import ABC, abstractmethod
 
-class PlainPizza implements Pizza {
-    public double getCost()        { return 5.0; }
-    public String getDescription() { return "Plain pizza"; }
-}
+class Pizza(ABC):
+    @abstractmethod
+    def get_cost(self) -> float: ...
+
+    @abstractmethod
+    def get_description(self) -> str: ...
+
+class PlainPizza(Pizza):
+    def get_cost(self) -> float:        return 5.0
+    def get_description(self) -> str:   return "Plain pizza"
 ```
 
-Step 2 — a decorator wraps a `Pizza`, adds its cost, and delegates everything else to the wrapped object:
-```java
-abstract class ToppingDecorator implements Pizza {
-    protected Pizza pizza;
-    public ToppingDecorator(Pizza pizza) { this.pizza = pizza; }
-}
+Step 2 — a decorator wraps a `Pizza`, adds its cost, and delegates everything else:
+```python
+class ToppingDecorator(Pizza, ABC):
+    def __init__(self, pizza: Pizza):
+        self._pizza = pizza
 
-class CheeseTopping extends ToppingDecorator {
-    public CheeseTopping(Pizza pizza) { super(pizza); }
-    public double getCost()        { return pizza.getCost() + 1.0; }
-    public String getDescription() { return pizza.getDescription() + ", Cheese"; }
-}
+class CheeseTopping(ToppingDecorator):
+    def get_cost(self) -> float:        return self._pizza.get_cost() + 1.0
+    def get_description(self) -> str:   return self._pizza.get_description() + ", Cheese"
 
-class MushroomTopping extends ToppingDecorator {
-    public MushroomTopping(Pizza pizza) { super(pizza); }
-    public double getCost()        { return pizza.getCost() + 1.5; }
-    public String getDescription() { return pizza.getDescription() + ", Mushroom"; }
-}
+class MushroomTopping(ToppingDecorator):
+    def get_cost(self) -> float:        return self._pizza.get_cost() + 1.5
+    def get_description(self) -> str:   return self._pizza.get_description() + ", Mushroom"
 ```
 
 Step 3 — compose at runtime by nesting wrappers:
-```java
-Pizza order = new CheeseTopping(new MushroomTopping(new PlainPizza()));
-// cost = 5.0 + 1.5 + 1.0 = 7.5
-// description = "Plain pizza, Mushroom, Cheese"
+```python
+order = CheeseTopping(MushroomTopping(PlainPizza()))
+# cost = 5.0 + 1.5 + 1.0 = 7.5
+# description = "Plain pizza, Mushroom, Cheese"
 ```
 
 Adding jalapeño is one new `JalapenoTopping` class. Zero changes to existing classes.
@@ -157,88 +155,64 @@ Without Decorator, you'd need: `MargheritaWithCheese`, `MargheritaWithOlives`, `
 
 ## Implementation
 
-```java
-// 1. Component Interface — the base contract
-interface Pizza {
-    String getDesc();
-    double getCost();
-}
+```python
+from abc import ABC, abstractmethod
 
-// 2. Concrete Components — the base items
-class Margherita implements Pizza {
-    public String getDesc() { return "Margherita"; }
-    public double getCost() { return 100; }
-}
+# 1. Component ABC — the base contract
+class Pizza(ABC):
+    @abstractmethod
+    def get_desc(self) -> str: ...
 
-class VegDelight implements Pizza {
-    public String getDesc() { return "Veg Delight"; }
-    public double getCost() { return 150; }
-}
+    @abstractmethod
+    def get_cost(self) -> float: ...
 
-// 3. Decorator Base — implements same interface, holds a Pizza
-abstract class PizzaDecorator implements Pizza {
-    protected Pizza pizza;  // The wrapped object
-    
-    public PizzaDecorator(Pizza pizza) {
-        this.pizza = pizza;
-    }
-    
-    // Default: delegate to wrapped pizza
-    public String getDesc() { return pizza.getDesc(); }
-    public double getCost() { return pizza.getCost(); }
-}
+# 2. Concrete Components — the base items
+class Margherita(Pizza):
+    def get_desc(self) -> str:   return "Margherita"
+    def get_cost(self) -> float: return 100
 
-// 4. Concrete Decorators — each adds its own behavior
-class ExtraCheese extends PizzaDecorator {
-    public ExtraCheese(Pizza pizza) { super(pizza); }
-    
-    @Override
-    public String getDesc() { return pizza.getDesc() + ", Extra Cheese"; }
-    
-    @Override
-    public double getCost() { return pizza.getCost() + 50; }
-}
+class VegDelight(Pizza):
+    def get_desc(self) -> str:   return "Veg Delight"
+    def get_cost(self) -> float: return 150
 
-class Olives extends PizzaDecorator {
-    public Olives(Pizza pizza) { super(pizza); }
-    
-    @Override
-    public String getDesc() { return pizza.getDesc() + ", Olives"; }
-    
-    @Override
-    public double getCost() { return pizza.getCost() + 20; }
-}
+# 3. Decorator Base — implements same ABC, holds a Pizza
+class PizzaDecorator(Pizza, ABC):
+    def __init__(self, pizza: Pizza):
+        self._pizza = pizza  # the wrapped object
 
-class Mushroom extends PizzaDecorator {
-    public Mushroom(Pizza pizza) { super(pizza); }
-    
-    @Override
-    public String getDesc() { return pizza.getDesc() + ", Mushroom"; }
-    
-    @Override
-    public double getCost() { return pizza.getCost() + 30; }
-}
+    # Default: delegate to wrapped pizza
+    def get_desc(self) -> str:   return self._pizza.get_desc()
+    def get_cost(self) -> float: return self._pizza.get_cost()
 
-// 5. Client — chain decorators in any combination
-public class Main {
-    public static void main(String[] args) {
-        Pizza myPizza = new Margherita();           // Cost: 100
-        myPizza = new ExtraCheese(myPizza);         // Cost: 150
-        myPizza = new Olives(myPizza);              // Cost: 170
-        
-        System.out.println(myPizza.getDesc() + " = $" + myPizza.getCost());
-        // Output: Margherita, Extra Cheese, Olives = $170.0
-        
-        // Different combination, zero new classes
-        Pizza fancyPizza = new VegDelight();        // Cost: 150
-        fancyPizza = new ExtraCheese(fancyPizza);   // Cost: 200
-        fancyPizza = new Mushroom(fancyPizza);      // Cost: 230
-        fancyPizza = new Olives(fancyPizza);        // Cost: 250
-        
-        System.out.println(fancyPizza.getDesc() + " = $" + fancyPizza.getCost());
-        // Output: Veg Delight, Extra Cheese, Mushroom, Olives = $250.0
-    }
-}
+# 4. Concrete Decorators — each adds its own behavior
+class ExtraCheese(PizzaDecorator):
+    def get_desc(self) -> str:   return self._pizza.get_desc() + ", Extra Cheese"
+    def get_cost(self) -> float: return self._pizza.get_cost() + 50
+
+class Olives(PizzaDecorator):
+    def get_desc(self) -> str:   return self._pizza.get_desc() + ", Olives"
+    def get_cost(self) -> float: return self._pizza.get_cost() + 20
+
+class Mushroom(PizzaDecorator):
+    def get_desc(self) -> str:   return self._pizza.get_desc() + ", Mushroom"
+    def get_cost(self) -> float: return self._pizza.get_cost() + 30
+
+# 5. Client — chain decorators in any combination
+my_pizza: Pizza = Margherita()           # Cost: 100
+my_pizza = ExtraCheese(my_pizza)         # Cost: 150
+my_pizza = Olives(my_pizza)              # Cost: 170
+
+print(f"{my_pizza.get_desc()} = ${my_pizza.get_cost()}")
+# Output: Margherita, Extra Cheese, Olives = $170
+
+# Different combination, zero new classes
+fancy_pizza: Pizza = VegDelight()        # Cost: 150
+fancy_pizza = ExtraCheese(fancy_pizza)   # Cost: 200
+fancy_pizza = Mushroom(fancy_pizza)      # Cost: 230
+fancy_pizza = Olives(fancy_pizza)        # Cost: 250
+
+print(f"{fancy_pizza.get_desc()} = ${fancy_pizza.get_cost()}")
+# Output: Veg Delight, Extra Cheese, Mushroom, Olives = $250
 ```
 
 ### Class Diagram
@@ -307,18 +281,20 @@ Decorator is **dynamic composition** — you add behavior at runtime, in any com
 
 ## Real-World Example: Java I/O Streams
 
-Java's I/O library is a canonical Decorator example:
+Python's `io` library is a canonical Decorator example:
 
-```java
-// FileInputStream is the base component
-// BufferedInputStream is a Decorator (adds buffering)
-// DataInputStream is a Decorator (adds type-aware reading)
+```python
+import io
 
-InputStream base     = new FileInputStream("data.bin");
-InputStream buffered = new BufferedInputStream(base);   // Decorator: adds buffer
-DataInputStream data = new DataInputStream(buffered);   // Decorator: adds readInt(), readDouble()
+# FileIO is the base component
+# BufferedReader is a Decorator (adds buffering)
+# TextIOWrapper is a Decorator (adds text decoding)
 
-int value = data.readInt();  // Reads a buffered, typed integer from a file
+raw   = open("data.bin", "rb")                # base: raw binary IO
+buf   = io.BufferedReader(raw)                # Decorator: adds buffering
+text  = io.TextIOWrapper(buf, encoding="utf-8")  # Decorator: adds text decoding
+
+line = text.readline()  # Reads a buffered, decoded text line from a file
 ```
 
 Each wrapper adds behavior without modifying the original.

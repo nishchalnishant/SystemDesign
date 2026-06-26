@@ -59,19 +59,19 @@ Write the `PaymentProcessor.pay(amount)` method for all four types before readin
 
 ## Problem Without the Pattern
 
-```java
-class PaymentProcessor {
-    public void pay(String type, double amount) {
-        if (type.equals("STRIPE")) {
-            // 20 lines of Stripe SDK setup and API calls
-        } else if (type.equals("PAYPAL")) {
-            // 20 lines of PayPal OAuth and API calls
-        } else if (type.equals("CRYPTO")) {
-            // 20 lines of wallet address resolution and broadcast
-        }
-        // 4th type: edit this method
-    }
-}
+```python
+class PaymentProcessor:
+    def pay(self, type_: str, amount: float) -> None:
+        if type_ == "STRIPE":
+            # 20 lines of Stripe SDK setup and API calls
+            pass
+        elif type_ == "PAYPAL":
+            # 20 lines of PayPal OAuth and API calls
+            pass
+        elif type_ == "CRYPTO":
+            # 20 lines of wallet address resolution and broadcast
+            pass
+        # 4th type: edit this method
 ```
 
 **What breaks**:
@@ -86,36 +86,32 @@ class PaymentProcessor {
 
 The constraint: **the algorithm (how to pay) must be swappable without changing the class that uses it**.
 
-Step 1 — extract the varying part (the payment algorithm) behind an interface:
-```java
-interface PaymentStrategy {
-    void pay(double amount);
-}
+Step 1 — extract the varying part (the payment algorithm) behind an ABC:
+```python
+from abc import ABC, abstractmethod
+
+class PaymentStrategy(ABC):
+    @abstractmethod
+    def pay(self, amount: float) -> None: ...
 ```
 
 Step 2 — each algorithm is its own class:
-```java
-class StripeStrategy implements PaymentStrategy {
-    public void pay(double amount) { /* Stripe logic */ }
-}
-class PayPalStrategy implements PaymentStrategy {
-    public void pay(double amount) { /* PayPal logic */ }
-}
+```python
+class StripeStrategy(PaymentStrategy):
+    def pay(self, amount: float) -> None: ...  # Stripe logic
+
+class PayPalStrategy(PaymentStrategy):
+    def pay(self, amount: float) -> None: ...  # PayPal logic
 ```
 
-Step 3 — the context holds a reference to the interface, not a concrete class:
-```java
-class PaymentProcessor {
-    private PaymentStrategy strategy;
+Step 3 — the context holds a reference to the ABC, not a concrete class:
+```python
+class PaymentProcessor:
+    def __init__(self, strategy: PaymentStrategy):
+        self._strategy = strategy
 
-    public PaymentProcessor(PaymentStrategy strategy) {
-        this.strategy = strategy;
-    }
-
-    public void pay(double amount) {
-        strategy.pay(amount);   // delegates — no branching
-    }
-}
+    def pay(self, amount: float) -> None:
+        self._strategy.pay(amount)  # delegates — no branching
 ```
 
 Adding the 4th payment type is now one new class, zero edits to `PaymentProcessor`. That is the pattern.
@@ -152,95 +148,73 @@ If Google needed to add "Avoid Highways" in the future, they'd add a new strateg
 
 Without Strategy, adding payment methods requires modifying the core class:
 
-```java
-// Bad! Every new payment method requires modifying this class
-class PaymentProcessor {
-    public void pay(String type, int amount) {
-        if (type.equals("credit_card")) {
-            // Validate card, call bank API...
-        } else if (type.equals("paypal")) {
-            // Login to PayPal, charge...
-        } else if (type.equals("crypto")) {
-            // Validate wallet, broadcast transaction...
-        }
-        // Adding "UPI" means editing this method — violates OCP
-    }
-}
+```python
+# Bad! Every new payment method requires modifying this class
+class PaymentProcessor:
+    def pay(self, type_: str, amount: int) -> None:
+        if type_ == "credit_card":
+            pass  # validate card, call bank API...
+        elif type_ == "paypal":
+            pass  # login to PayPal, charge...
+        elif type_ == "crypto":
+            pass  # validate wallet, broadcast transaction...
+        # Adding "UPI" means editing this method — violates OCP
 ```
 
 ---
 
 ## Solution: Strategy Pattern
 
-```java
-// 1. Strategy Interface — the contract all algorithms must fulfill
-interface PaymentStrategy {
-    void pay(int amount);
-}
+```python
+from abc import ABC, abstractmethod
 
-// 2. Concrete Strategies — each algorithm is its own class
-class CreditCardStrategy implements PaymentStrategy {
-    private String cardNumber;
-    
-    public CreditCardStrategy(String cardNumber) {
-        this.cardNumber = cardNumber;
-    }
-    
-    @Override
-    public void pay(int amount) {
-        System.out.println("Paid " + amount + " using Credit Card " + cardNumber);
-    }
-}
+# 1. Strategy ABC — the contract all algorithms must fulfill
+class PaymentStrategy(ABC):
+    @abstractmethod
+    def pay(self, amount: int) -> None: ...
 
-class PayPalStrategy implements PaymentStrategy {
-    private String email;
-    
-    public PayPalStrategy(String email) {
-        this.email = email;
-    }
-    
-    @Override
-    public void pay(int amount) {
-        System.out.println("Paid " + amount + " using PayPal " + email);
-    }
-}
+# 2. Concrete Strategies — each algorithm is its own class
+class CreditCardStrategy(PaymentStrategy):
+    def __init__(self, card_number: str):
+        self._card_number = card_number
 
-class CryptoStrategy implements PaymentStrategy {
-    @Override
-    public void pay(int amount) {
-        System.out.println("Paid " + amount + " using Bitcoin");
-    }
-}
+    def pay(self, amount: int) -> None:
+        print(f"Paid {amount} using Credit Card {self._card_number}")
 
-// 3. Context — holds a reference to the current strategy, delegates to it
-class ShoppingCart {
-    private PaymentStrategy paymentStrategy;
-    
-    public void setPaymentStrategy(PaymentStrategy strategy) {
-        this.paymentStrategy = strategy;
-    }
-    
-    public void checkout(int amount) {
-        paymentStrategy.pay(amount);  // Delegate — doesn't know or care which strategy
-    }
-}
+class PayPalStrategy(PaymentStrategy):
+    def __init__(self, email: str):
+        self._email = email
 
-// Usage
-public class Main {
-    public static void main(String[] args) {
-        ShoppingCart cart = new ShoppingCart();
+    def pay(self, amount: int) -> None:
+        print(f"Paid {amount} using PayPal {self._email}")
 
-        // Use Credit Card
-        cart.setPaymentStrategy(new CreditCardStrategy("1234-5678"));
-        cart.checkout(100);
+class CryptoStrategy(PaymentStrategy):
+    def pay(self, amount: int) -> None:
+        print(f"Paid {amount} using Bitcoin")
 
-        // Switch to PayPal at runtime — same cart, different algorithm
-        cart.setPaymentStrategy(new PayPalStrategy("user@example.com"));
-        cart.checkout(200);
-        
-        // Adding UPI later requires zero changes to ShoppingCart
-    }
-}
+# 3. Context — holds a reference to the current strategy, delegates to it
+class ShoppingCart:
+    def __init__(self):
+        self._strategy: PaymentStrategy | None = None
+
+    def set_payment_strategy(self, strategy: PaymentStrategy) -> None:
+        self._strategy = strategy
+
+    def checkout(self, amount: int) -> None:
+        self._strategy.pay(amount)  # delegate — doesn't know or care which strategy
+
+# Usage
+cart = ShoppingCart()
+
+# Use Credit Card
+cart.set_payment_strategy(CreditCardStrategy("1234-5678"))
+cart.checkout(100)
+
+# Switch to PayPal at runtime — same cart, different algorithm
+cart.set_payment_strategy(PayPalStrategy("user@example.com"))
+cart.checkout(200)
+
+# Adding UPI later requires zero changes to ShoppingCart
 ```
 
 ### Class Diagram
@@ -282,17 +256,20 @@ classDiagram
 
 ## Real-World Examples
 
-### 1. Sorting (Java Collections)
-```java
-List<String> names = Arrays.asList("John", "Alice", "Bob");
+### 1. Sorting (Python `key` / `sorted`)
+```python
+names = ["John", "Alice", "Bob"]
 
-// Strategy 1: Natural Order
-Collections.sort(names);
+# Strategy 1: Natural order
+sorted_names = sorted(names)
 
-// Strategy 2: Custom Comparator (Strategy injected via lambda)
-Collections.sort(names, (a, b) -> b.compareTo(a)); // Reverse order
+# Strategy 2: Reverse order (strategy passed as callable)
+sorted_names = sorted(names, key=lambda s: s, reverse=True)
+
+# Strategy 3: Sort by length
+sorted_names = sorted(names, key=len)
 ```
-`Comparator` is literally the Strategy interface in Java.
+The `key` callable is the Strategy in Python's sort API.
 
 ### 2. Navigation Apps (Route Planning)
 - `FastestRouteStrategy`: Optimize for shortest time.

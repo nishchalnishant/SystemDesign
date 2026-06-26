@@ -1,16 +1,15 @@
 # Interview Templates
 
-Templates and cheat sheets for **system design** and **low-level design** interviews.
+Templates and cheat sheets for HLD interviews.
 
 ## Contents
 
 | Template | File | Use when |
 |----------|------|----------|
-| **HLD Template** | [hld-template.md](hld-template.md) | Practicing or running a high-level design interview (45–60 min) |
-| **LLD Template** | [lld-template.md](lld-template.md) | Practicing or running a low-level design interview |
-| **Capacity Estimation** | [capacity-estimation.md](capacity-estimation.md) | Doing back-of-envelope QPS, storage, bandwidth |
-| **Trade-offs Cheat Sheet** | [trade-offs-cheat-sheet.md](trade-offs-cheat-sheet.md) | Deciding SQL vs NoSQL, sync vs async, etc. |
-
-See also **[SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md](../SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md)** at the repo root for the seven-phase interview approach.
-
-These are linked from **5. Interview Templates** in the main [SUMMARY](../SUMMARY.md) (via 5.-07-interview-templates/README.md).
+| **HLD Template** | [hld-template.md](hld-template.md) | Running through a high-level design interview (45–60 min) |
+| **Capacity Estimation** | [capacity-estimation.md](capacity-estimation.md) | Back-of-envelope QPS, storage, bandwidth |
+| **Database Selection** | [database-selection-tree.md](database-selection-tree.md) | Choosing SQL vs NoSQL vs cache |
+| **API Design** | [api-design-template.md](api-design-template.md) | REST vs gRPC, versioning, pagination |
+| **Architecture by Scale** | [architecture-by-scale.md](architecture-by-scale.md) | Scale inflection points and bottlenecks |
+| **Mock Problems** | [mock-interview-problems.md](mock-interview-problems.md) | 45-min timed practice problems |
+| **Follow-Up Question Bank** | [interview-question-bank.md](interview-question-bank.md) | Drilling interviewer follow-up questions |

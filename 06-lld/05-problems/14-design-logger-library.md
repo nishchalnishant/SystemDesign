@@ -14,26 +14,20 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class Logger {
-    public static void log(String level, String message) {
-        if (level.equals("DEBUG") || level.equals("INFO") 
-            || level.equals("WARN") || level.equals("ERROR")) {
-            // write to console
-            System.out.println("[" + level + "] " + message);
-        }
-        if (level.equals("WARN") || level.equals("ERROR")) {
-            // write to file
-            try (FileWriter fw = new FileWriter("app.log", true)) {
-                fw.write("[" + level + "] " + message + "\n");
-            } catch (IOException e) { e.printStackTrace(); }
-        }
-        if (level.equals("ERROR")) {
-            // write to DB
-            DB.execute("INSERT INTO logs VALUES ('" + level + "', '" + message + "')");
-        }
-    }
-}
+```python
+class Logger:
+    @staticmethod
+    def log(level: str, message: str) -> None:
+        if level in ("DEBUG", "INFO", "WARN", "ERROR"):
+            # write to console
+            print(f"[{level}] {message}")
+        if level in ("WARN", "ERROR"):
+            # write to file
+            with open("app.log", "a") as f:
+                f.write(f"[{level}] {message}\n")
+        if level == "ERROR":
+            # write to DB
+            db.execute(f"INSERT INTO logs VALUES ('{level}', '{message}')")
 ```
 
 **Concrete failures**:
@@ -210,144 +204,143 @@ classDiagram
 
 The interesting parts are (a) the `handle()` method that passes the record down the chain regardless of whether this handler processed it, and (b) the async queue that decouples callers from I/O.
 
-```java
-import java.time.Instant;
-import java.util.concurrent.*;
+```python
+import threading
+import queue
+import datetime
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import IntEnum
 
-// --- Log Level ---
-enum LogLevel {
-    DEBUG(0), INFO(1), WARN(2), ERROR(3);
-    final int priority;
-    LogLevel(int p) { this.priority = p; }
-}
+# --- Log Level ---
+class LogLevel(IntEnum):
+    DEBUG = 0
+    INFO  = 1
+    WARN  = 2
+    ERROR = 3
 
-// --- Immutable Log Record ---
-record LogRecord(LogLevel level, String message, long timestamp, String threadName) {
-    static LogRecord of(LogLevel level, String message) {
-        return new LogRecord(level, message, Instant.now().toEpochMilli(), Thread.currentThread().getName());
-    }
-}
+# --- Immutable Log Record ---
+@dataclass(frozen=True)
+class LogRecord:
+    level: LogLevel
+    message: str
+    timestamp: float        # epoch seconds
+    thread_name: str
 
-// --- Abstract Handler (Chain of Responsibility node) ---
-abstract class LogHandler {
-    private final LogLevel minLevel;
-    private LogHandler next;
+    @staticmethod
+    def of(level: LogLevel, message: str) -> "LogRecord":
+        return LogRecord(
+            level=level,
+            message=message,
+            timestamp=datetime.datetime.now().timestamp(),
+            thread_name=threading.current_thread().name,
+        )
 
-    protected LogHandler(LogLevel minLevel) { this.minLevel = minLevel; }
+# --- Abstract Handler (Chain of Responsibility node) ---
+class LogHandler(ABC):
+    def __init__(self, min_level: LogLevel) -> None:
+        self._min_level = min_level
+        self._next: LogHandler | None = None
 
-    // Fluent builder for chaining: ConsoleHandler.then(FileHandler).then(DBHandler)
-    public LogHandler then(LogHandler next) { this.next = next; return next; }
+    # Fluent builder: console.then_(file_handler).then_(alert_handler)
+    def then_(self, next_handler: "LogHandler") -> "LogHandler":
+        self._next = next_handler
+        return next_handler
 
-    public final void handle(LogRecord record) {
-        if (record.level().priority >= this.minLevel.priority) {
-            write(record);
-        }
-        // Always forward — one message can be processed by multiple handlers
-        if (next != null) next.handle(record);
-    }
+    def handle(self, record: LogRecord) -> None:
+        if record.level >= self._min_level:
+            self._write(record)
+        # Always forward — one message can be processed by multiple handlers
+        if self._next is not None:
+            self._next.handle(record)
 
-    protected abstract void write(LogRecord record);
-}
+    @abstractmethod
+    def _write(self, record: LogRecord) -> None: ...
 
-// --- Concrete Handlers ---
-class ConsoleHandler extends LogHandler {
-    ConsoleHandler() { super(LogLevel.DEBUG); }
+# --- Concrete Handlers ---
+class ConsoleHandler(LogHandler):
+    def __init__(self) -> None:
+        super().__init__(LogLevel.DEBUG)
 
-    @Override
-    protected void write(LogRecord r) {
-        System.out.printf("[%s][%s][%s] %s%n",
-            r.level(), r.threadName(),
-            Instant.ofEpochMilli(r.timestamp()), r.message());
-    }
-}
+    def _write(self, r: LogRecord) -> None:
+        ts = datetime.datetime.fromtimestamp(r.timestamp)
+        print(f"[{r.level.name}][{r.thread_name}][{ts}] {r.message}")
 
-class FileHandler extends LogHandler {
-    FileHandler() { super(LogLevel.WARN); }
+class FileHandler(LogHandler):
+    def __init__(self) -> None:
+        super().__init__(LogLevel.WARN)
 
-    @Override
-    protected void write(LogRecord r) {
-        // In production: BufferedWriter to a rotating log file
-        System.out.printf("[FILE] %s: %s%n", r.level(), r.message());
-    }
-}
+    def _write(self, r: LogRecord) -> None:
+        # In production: rotating file writer
+        print(f"[FILE] {r.level.name}: {r.message}")
 
-class AlertHandler extends LogHandler {
-    AlertHandler() { super(LogLevel.ERROR); }
+class AlertHandler(LogHandler):
+    def __init__(self) -> None:
+        super().__init__(LogLevel.ERROR)
 
-    @Override
-    protected void write(LogRecord r) {
-        // In production: POST to PagerDuty / Slack webhook
-        System.out.printf("[ALERT] Firing on-call page: %s%n", r.message());
-    }
-}
+    def _write(self, r: LogRecord) -> None:
+        # In production: POST to PagerDuty / Slack webhook
+        print(f"[ALERT] Firing on-call page: {r.message}")
 
-// --- Logger: Singleton + Async Queue ---
-public class Logger {
-    private static volatile Logger instance;
-    private final LogHandler chain;
-    // Bounded queue: if full, oldest messages are dropped rather than blocking the caller
-    private final BlockingQueue<LogRecord> queue = new LinkedBlockingQueue<>(10_000);
+# --- Logger: Singleton + Async Queue ---
+class Logger:
+    _instance: "Logger | None" = None
+    _instance_lock = threading.Lock()
 
-    private Logger() {
-        // Build chain: Console (all) → File (WARN+) → Alert (ERROR+)
-        ConsoleHandler console = new ConsoleHandler();
-        console.then(new FileHandler()).then(new AlertHandler());
-        this.chain = console;
+    def __new__(cls) -> "Logger":
+        raise RuntimeError("Use Logger.get_instance()")
 
-        // Single background I/O thread — keeps I/O off the hot path
-        Thread consumer = new Thread(this::drain, "logger-consumer");
-        consumer.setDaemon(true);
-        consumer.start();
-    }
+    @classmethod
+    def get_instance(cls) -> "Logger":
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    obj = object.__new__(cls)
+                    obj._init()
+                    cls._instance = obj
+        return cls._instance
 
-    public static Logger getInstance() {
-        if (instance == null) {
-            synchronized (Logger.class) {
-                if (instance == null) instance = new Logger();
-            }
-        }
-        return instance;
-    }
+    def _init(self) -> None:
+        # Build chain: Console (all) → File (WARN+) → Alert (ERROR+)
+        console = ConsoleHandler()
+        console.then_(FileHandler()).then_(AlertHandler())
+        self._chain = console
+        # Bounded queue: non-blocking enqueue; drops if full
+        self._queue: queue.Queue[LogRecord] = queue.Queue(maxsize=10_000)
+        consumer = threading.Thread(target=self._drain, name="logger-consumer", daemon=True)
+        consumer.start()
 
-    // Non-blocking enqueue — caller is never delayed by I/O
-    private void log(LogLevel level, String message) {
-        queue.offer(LogRecord.of(level, message));
-    }
+    def _log(self, level: LogLevel, message: str) -> None:
+        try:
+            self._queue.put_nowait(LogRecord.of(level, message))
+        except queue.Full:
+            pass  # drop rather than block caller
 
-    public void debug(String msg) { log(LogLevel.DEBUG, msg); }
-    public void info(String msg)  { log(LogLevel.INFO,  msg); }
-    public void warn(String msg)  { log(LogLevel.WARN,  msg); }
-    public void error(String msg) { log(LogLevel.ERROR, msg); }
+    def debug(self, msg: str) -> None: self._log(LogLevel.DEBUG, msg)
+    def info(self,  msg: str) -> None: self._log(LogLevel.INFO,  msg)
+    def warn(self,  msg: str) -> None: self._log(LogLevel.WARN,  msg)
+    def error(self, msg: str) -> None: self._log(LogLevel.ERROR, msg)
 
-    // Background thread: drain queue and dispatch through handler chain
-    private void drain() {
-        while (true) {
-            try {
-                LogRecord record = queue.take(); // Blocks when queue is empty
-                chain.handle(record);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-    }
+    def _drain(self) -> None:
+        while True:
+            record = self._queue.get()  # blocks when queue is empty
+            self._chain.handle(record)
 
-    // Demo
-    public static void main(String[] args) throws InterruptedException {
-        Logger logger = Logger.getInstance();
+# Demo
+if __name__ == "__main__":
+    import time
+    logger = Logger.get_instance()
 
-        logger.debug("Connection pool initialized (8 connections)");
-        logger.info("User 42 logged in");
-        logger.warn("Response time 450ms exceeds 400ms SLA");
-        logger.error("DB write failed: connection refused");
+    logger.debug("Connection pool initialized (8 connections)")
+    logger.info("User 42 logged in")
+    logger.warn("Response time 450ms exceeds 400ms SLA")
+    logger.error("DB write failed: connection refused")
 
-        Thread.sleep(200); // Let async consumer flush
-        // Expected:
-        // Console: all 4 messages
-        // File:    WARN + ERROR
-        // Alert:   ERROR only
-    }
-}
+    time.sleep(0.2)  # let async consumer flush
+    # Expected:
+    # Console: all 4 messages
+    # File:    WARN + ERROR
+    # Alert:   ERROR only
 ```
 
 ---
@@ -380,16 +373,16 @@ Instead of free-text messages, log `Map<String, Object>` payloads. Handlers seri
 
 The current design: `log()` enqueues to `LinkedBlockingQueue`; a single consumer thread drains to handlers. This is correct and the canonical pattern. Here's why alternatives fail:
 
-```java
-// WRONG: synchronized on each write
-class Logger {
-    public synchronized void log(LogLevel level, String msg) {
-        handlers.forEach(h -> h.handle(new LogRecord(level, msg))); // I/O inside lock!
-    }
-}
-// Problem: all caller threads block each other waiting for I/O (file write, network).
-// With 100 concurrent callers and FileHandler taking 1ms, throughput = 1000 logs/sec.
-// With BlockingQueue + single consumer: log() = CAS enqueue (~10ns); throughput = 100M/sec.
+```python
+# WRONG: lock on each write
+class Logger:
+    def log(self, level: LogLevel, msg: str) -> None:
+        with self._lock:  # I/O inside lock!
+            for h in self._handlers:
+                h.handle(LogRecord.of(level, msg))
+# Problem: all caller threads block each other waiting for I/O (file write, network).
+# With 100 concurrent callers and FileHandler taking 1ms, throughput = 1000 logs/sec.
+# With Queue + single consumer: log() = queue.put_nowait (~10ns); throughput = 100M/sec.
 ```
 
 **Key insight:** move I/O entirely off the critical path. `log()` never does I/O — it only touches the queue.
@@ -398,26 +391,27 @@ class Logger {
 
 `LinkedBlockingQueue` defaults to `Integer.MAX_VALUE` capacity — memory grows unboundedly under log bursts. Use a bounded queue with explicit Semaphore for caller backpressure:
 
-```java
-public class Logger {
-    private final int CAPACITY = 10_000;
-    // Fair semaphore: under backpressure, callers wait in FIFO order (prevents starvation)
-    private final Semaphore queuePermits = new Semaphore(CAPACITY, true);
-    private final BlockingQueue<LogRecord> queue = new LinkedBlockingQueue<>(CAPACITY);
+```python
+import threading
+import queue
 
-    public void log(LogLevel level, String msg) {
-        queuePermits.acquire(); // blocks caller if queue is full (backpressure)
-        queue.offer(new LogRecord(level, msg, ...));
-    }
+class Logger:
+    CAPACITY = 10_000
 
-    private void drain() {
-        while (true) {
-            LogRecord record = queue.take();
-            queuePermits.release(); // unblock a waiting caller
-            chain.handle(record);
-        }
-    }
-}
+    def _init(self) -> None:
+        # Fair semaphore: under backpressure, callers wait in FIFO order (prevents starvation)
+        self._queue_permits = threading.Semaphore(self.CAPACITY)
+        self._queue: queue.Queue[LogRecord] = queue.Queue(maxsize=self.CAPACITY)
+
+    def log(self, level: LogLevel, msg: str) -> None:
+        self._queue_permits.acquire()  # blocks caller if queue is full (backpressure)
+        self._queue.put_nowait(LogRecord.of(level, msg))
+
+    def _drain(self) -> None:
+        while True:
+            record = self._queue.get()
+            self._queue_permits.release()  # unblock a waiting caller
+            self._chain.handle(record)
 ```
 
 **Alternative (non-blocking):** if queue is full, drop the record or sample (1-in-N). Use this for high-throughput metrics logging where losing 0.01% of logs is acceptable. Use the Semaphore approach for audit logs where no record can be dropped.
@@ -426,15 +420,16 @@ public class Logger {
 
 If each handler writes to a different destination and you want parallel sink dispatch (instead of chained):
 
-```java
-// I/O-bound sinks: DB write ~50ms, file write ~1ms, network ~100ms
-// On 4-CPU machine, for DB handler: 4 × (1 + 50ms/1ms) = 4 × 51 = 204 threads
-// Cap at 50 — more threads doesn't help if DB connection pool is 50
-int dbHandlerThreads = Math.min(
-    Runtime.getRuntime().availableProcessors() * (1 + 50),
-    dbConnectionPoolSize  // don't exceed pool size
-);
-ExecutorService dbSinkExecutor = Executors.newFixedThreadPool(dbHandlerThreads);
+```python
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+# I/O-bound sinks: DB write ~50ms, file write ~1ms, network ~100ms
+# On 4-CPU machine, for DB handler: 4 × (1 + 50ms/1ms) = 4 × 51 = 204 threads
+# Cap at 50 — more threads doesn't help if DB connection pool is 50
+cpu_count = os.cpu_count() or 1
+db_handler_threads = min(cpu_count * (1 + 50), db_connection_pool_size)
+db_sink_executor = ThreadPoolExecutor(max_workers=db_handler_threads)
 ```
 
 ---

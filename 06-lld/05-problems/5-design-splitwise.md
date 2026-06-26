@@ -14,40 +14,33 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class Splitwise {
-    // One God class with all data and logic
-    private Map<String, Map<String, Double>> balances = new HashMap<>();
-    // balances[userA][userB] = amount A owes B
+```python
+class Splitwise:
+    # One God class with all data and logic
+    def __init__(self) -> None:
+        self._balances: dict[str, dict[str, float]] = {}
+        # balances[user_a][user_b] = amount a owes b
 
-    public void addExpense(String payer, List<String> participants,
-                           double amount, String splitType, double[] values) {
-        if (splitType.equals("EQUAL")) {
-            double share = amount / participants.size();
-            for (String p : participants) {
-                if (!p.equals(payer)) {
-                    // update nested map
-                    balances.computeIfAbsent(p, k -> new HashMap<>())
-                            .merge(payer, share, Double::sum);
-                }
-            }
-        } else if (splitType.equals("EXACT")) {
-            for (int i = 0; i < participants.size(); i++) {
-                if (!participants.get(i).equals(payer)) {
-                    balances.computeIfAbsent(participants.get(i), k -> new HashMap<>())
-                            .merge(payer, values[i], Double::sum);
-                }
-            }
-        } else if (splitType.equals("PERCENT")) {
-            // validate sum of percentages == 100 inline in this method
-            double total = 0;
-            for (double v : values) total += v;
-            if (Math.abs(total - 100) > 0.01) throw new IllegalArgumentException("Bad %");
-            // split logic inline...
-        }
-        // Adding a 4th split type requires editing this method
-    }
-}
+    def add_expense(self, payer: str, participants: list[str],
+                    amount: float, split_type: str, values: list[float]) -> None:
+        if split_type == "EQUAL":
+            share = amount / len(participants)
+            for p in participants:
+                if p != payer:
+                    # update nested dict
+                    self._balances.setdefault(p, {})
+                    self._balances[p][payer] = self._balances[p].get(payer, 0) + share
+        elif split_type == "EXACT":
+            for i, p in enumerate(participants):
+                if p != payer:
+                    self._balances.setdefault(p, {})
+                    self._balances[p][payer] = self._balances[p].get(payer, 0) + values[i]
+        elif split_type == "PERCENT":
+            # validate sum of percentages == 100 inline in this method
+            if abs(sum(values) - 100) > 0.01:
+                raise ValueError("Bad %")
+            # split logic inline...
+        # Adding a 4th split type requires editing this method
 ```
 
 **Concrete failures**:
@@ -216,133 +209,98 @@ classDiagram
 
 ## Phase 5: Code Key Methods
 
-### Java Implementation
+### Python Implementation
 
-```java
-import java.util.*;
+```python
+from __future__ import annotations
+from dataclasses import dataclass, field
+from abc import ABC
 
-// 1. Core Entities
-class User {
-    String id;
-    String name;
-    public User(String id, String name) { this.id = id; this.name = name; }
-}
+# 1. Core Entities
+@dataclass
+class User:
+    user_id: str
+    name: str
 
-abstract class Split {
-    User user;
-    double amount;
-    public Split(User user) { this.user = user; }
-    public double getAmount() { return amount; }
-    public void setAmount(double amount) { this.amount = amount; }
-}
+class Split(ABC):
+    def __init__(self, user: User) -> None:
+        self.user = user
+        self.amount: float = 0.0
 
-class EqualSplit extends Split {
-    public EqualSplit(User user) { super(user); }
-}
+class EqualSplit(Split):
+    def __init__(self, user: User) -> None:
+        super().__init__(user)
 
-class ExactSplit extends Split {
-    public ExactSplit(User user, double amount) { super(user); this.amount = amount; }
-}
+class ExactSplit(Split):
+    def __init__(self, user: User, amount: float) -> None:
+        super().__init__(user)
+        self.amount = amount
 
-// 2. Expense Models
-class Expense {
-    String id;
-    double amount;
-    User paidBy;
-    List<Split> splits;
-    
-    public Expense(double amount, User paidBy, List<Split> splits) {
-        this.amount = amount;
-        this.paidBy = paidBy;
-        this.splits = splits;
-    }
-}
+# 2. Expense Model
+@dataclass
+class Expense:
+    amount: float
+    paid_by: User
+    splits: list[Split]
 
-// 3. Managers
-class ExpenseManager {
-    List<Expense> expenses;
-    Map<String, Map<String, Double>> balanceSheet; // UserID -> (OwedUserID -> Amount)
+# 3. Manager
+class ExpenseManager:
+    def __init__(self) -> None:
+        self._expenses: list[Expense] = []
+        self._balance_sheet: dict[str, dict[str, float]] = {}  # user_id → (owed_user_id → amount)
 
-    public ExpenseManager() {
-        expenses = new ArrayList<>();
-        balanceSheet = new HashMap<>();
-    }
+    def add_expense(self, amount: float, paid_by: User, splits: list[Split]) -> None:
+        expense = Expense(amount=amount, paid_by=paid_by, splits=splits)
+        self._expenses.append(expense)
 
-    public void addExpense(double amount, User paidBy, List<Split> splits) {
-        Expense expense = new Expense(amount, paidBy, splits);
-        expenses.add(expense);
+        for split in splits:
+            paid_to = split.user.user_id
+            payer_id = paid_by.user_id
 
-        for (Split split : splits) {
-            String paidTo = split.user.id;
-            Map<String, Double> balances = balanceSheet.computeIfAbsent(paidBy.id, k -> new HashMap<>());
-            
-            // Current User (paidBy) receives (+amount) from split user
-            if (!balances.containsKey(paidTo)) balances.put(paidTo, 0.0);
-            balances.put(paidTo, balances.get(paidTo) + split.getAmount());
+            # payer receives (+amount) from split user
+            payer_row = self._balance_sheet.setdefault(payer_id, {})
+            payer_row[paid_to] = payer_row.get(paid_to, 0.0) + split.amount
 
-            // Split User (paidTo) owes (-amount) to paidBy
-            Map<String, Double> debtorBalances = balanceSheet.computeIfAbsent(paidTo, k -> new HashMap<>());
-            if (!debtorBalances.containsKey(paidBy.id)) debtorBalances.put(paidBy.id, 0.0);
-            debtorBalances.put(paidBy.id, debtorBalances.get(paidBy.id) - split.getAmount());
-        }
-    }
+            # split user owes (-amount) to payer
+            debtor_row = self._balance_sheet.setdefault(paid_to, {})
+            debtor_row[payer_id] = debtor_row.get(payer_id, 0.0) - split.amount
 
-    public void showBalance(String userId) {
-        System.out.println("Balance for " + userId + ":");
-        Map<String, Double> balances = balanceSheet.get(userId);
-        if (balances == null) {
-            System.out.println("No balances.");
-            return;
-        }
-        
-        for (Map.Entry<String, Double> entry : balances.entrySet()) {
-            if (entry.getValue() != 0) {
-                printBalance(userId, entry.getKey(), entry.getValue());
-            }
-        }
-    }
+    def show_balance(self, user_id: str) -> None:
+        print(f"Balance for {user_id}:")
+        balances = self._balance_sheet.get(user_id)
+        if not balances:
+            print("No balances.")
+            return
+        for other_id, amount in balances.items():
+            if amount != 0:
+                self._print_balance(user_id, other_id, amount)
 
-    private void printBalance(String user1, String user2, double amount) {
-        if (amount < 0) {
-            System.out.println(user1 + " owes " + user2 + ": " + Math.abs(amount));
-        } else if (amount > 0) {
-            System.out.println(user2 + " owes " + user1 + ": " + amount);
-        }
-    }
-}
+    def _print_balance(self, user1: str, user2: str, amount: float) -> None:
+        if amount < 0:
+            print(f"{user1} owes {user2}: {abs(amount)}")
+        elif amount > 0:
+            print(f"{user2} owes {user1}: {amount}")
 
-// 4. Client
-public class SplitwiseDemo {
-    public static void main(String[] args) {
-        User u1 = new User("u1", "Alice");
-        User u2 = new User("u2", "Bob");
-        User u3 = new User("u3", "Charlie");
+# 4. Client
+if __name__ == "__main__":
+    u1 = User("u1", "Alice")
+    u2 = User("u2", "Bob")
+    u3 = User("u3", "Charlie")
 
-        ExpenseManager manager = new ExpenseManager();
+    manager = ExpenseManager()
 
-        // 1. Equal Split: Alice paid 300 for Alice, Bob, Charlie (100 each)
-        // Note: The logic to divide 300 by 3 would be in the Service layer before creating EqualSplit objects
-        
-        List<Split> splits = new ArrayList<>();
-        // Alice pays 300 total.
-        // Alice owes herself 100 (net 0 effect usually filtered, but kept for logic)
-        // Bob owes Alice 100
-        // Charlie owes Alice 100
-        
-        Split s2 = new EqualSplit(u2); s2.setAmount(100);
-        Split s3 = new EqualSplit(u3); s3.setAmount(100);
-        splits.add(s2); splits.add(s3);
+    # Equal Split: Alice paid 300 for Alice, Bob, Charlie (100 each)
+    # Note: The logic to divide 300 by 3 would be in the Service layer before creating EqualSplit objects
 
-        // We only add splits for others to the manager typically, or handle self-split logic internally.
-        // For simplicity here, Alice paid 300 total, covering 100 for Bob and 100 for Charlie.
-        // We register the debt for Bob and Charlie.
-        
-        manager.addExpense(300, u1, splits);
-        
-        manager.showBalance("u2"); // Bob owes ...
-        manager.showBalance("u1"); // Alice is owed ...
-    }
-}
+    # Alice pays 300 total.
+    # Bob owes Alice 100; Charlie owes Alice 100.
+    s2 = EqualSplit(u2); s2.amount = 100
+    s3 = EqualSplit(u3); s3.amount = 100
+
+    manager.add_expense(300, u1, [s2, s3])
+
+    manager.show_balance("u2")  # Bob owes ...
+    manager.show_balance("u1")  # Alice is owed ...
 ```
 
 ---
@@ -373,95 +331,77 @@ The naive approach (pay each debt individually) results in up to N*(N-1) transac
 
 **Why this minimizes transactions**: Greedy matching of the largest debtor against the largest creditor ensures each transaction either fully clears one party (removing them from the heap) or both parties. In the worst case, N-1 transactions settle N users.
 
-```java
-import java.util.*;
+```python
+import heapq
 
-class DebtSimplifier {
-    
-    /**
-     * Given a balanceSheet: userId -> (otherUserId -> netAmount)
-     * Positive amount means "otherUser owes userId".
-     * Negative amount means "userId owes otherUser".
-     * 
-     * Returns the minimum list of transactions to settle all debts.
-     */
-    public List<String> simplifyDebts(Map<String, Map<String, Double>> balanceSheet) {
-        // Step 1: Compute net balance per user
-        Map<String, Double> netBalance = new HashMap<>();
-        for (Map.Entry<String, Map<String, Double>> outer : balanceSheet.entrySet()) {
-            String user = outer.getKey();
-            for (Map.Entry<String, Double> inner : outer.getValue().entrySet()) {
-                // positive = user is owed, negative = user owes
-                netBalance.merge(user, inner.getValue(), Double::sum);
-            }
-        }
+class DebtSimplifier:
+    """
+    Given a balance_sheet: user_id -> (other_user_id -> net_amount)
+    Positive amount means "other_user owes user_id".
+    Negative amount means "user_id owes other_user".
 
-        // Step 2: Separate into creditors (positive) and debtors (negative)
-        // MaxHeap for creditors: [netAmount, userId] — largest creditor first
-        PriorityQueue<double[]> creditors = new PriorityQueue<>((a, b) -> Double.compare(b[0], a[0]));
-        // MaxHeap for debtors by absolute value: [-netAmount, userId] — largest debtor first
-        PriorityQueue<double[]> debtors = new PriorityQueue<>((a, b) -> Double.compare(b[0], a[0]));
-        
-        List<String> userIds = new ArrayList<>(netBalance.keySet());
-        Map<Double, String> indexToUser = new HashMap<>();
-        
-        // Simplified version using arrays [amount, index]
-        // In a real implementation, store userId alongside the amount
-        List<double[]> creditList = new ArrayList<>(); // [netAmount]
-        List<double[]> debtList = new ArrayList<>();   // [absDebt]
-        List<String> creditUsers = new ArrayList<>();
-        List<String> debtUsers = new ArrayList<>();
-        
-        for (Map.Entry<String, Double> entry : netBalance.entrySet()) {
-            double net = entry.getValue();
-            if (Math.abs(net) < 0.01) continue; // skip zero balances
-            if (net > 0) {
-                creditUsers.add(entry.getKey());
-                creditors.offer(new double[]{net, creditUsers.size() - 1});
-            } else {
-                debtUsers.add(entry.getKey());
-                debtors.offer(new double[]{-net, debtUsers.size() - 1}); // store positive abs value
-            }
-        }
+    Returns the minimum list of transactions to settle all debts.
+    """
 
-        // Step 3: Greedy matching
-        List<String> transactions = new ArrayList<>();
-        while (!creditors.isEmpty() && !debtors.isEmpty()) {
-            double[] maxCreditor = creditors.poll(); // [amount, idx]
-            double[] maxDebtor = debtors.poll();     // [absAmount, idx]
-            
-            double settle = Math.min(maxCreditor[0], maxDebtor[0]);
-            String creditorName = creditUsers.get((int) maxCreditor[1]);
-            String debtorName = debtUsers.get((int) maxDebtor[1]);
-            
-            transactions.add(debtorName + " pays " + creditorName + ": $" + String.format("%.2f", settle));
-            
-            maxCreditor[0] -= settle;
-            maxDebtor[0] -= settle;
-            
-            if (maxCreditor[0] > 0.01) creditors.offer(maxCreditor); // creditor still owed
-            if (maxDebtor[0] > 0.01) debtors.offer(maxDebtor);       // debtor still owes
-        }
-        
-        return transactions;
+    def simplify_debts(self, balance_sheet: dict[str, dict[str, float]]) -> list[str]:
+        # Step 1: Compute net balance per user
+        net_balance: dict[str, float] = {}
+        for user, others in balance_sheet.items():
+            for amount in others.values():
+                # positive = user is owed, negative = user owes
+                net_balance[user] = net_balance.get(user, 0.0) + amount
+
+        # Step 2: Separate into creditors (positive) and debtors (negative)
+        # Max-heap via negation (Python only has min-heap)
+        creditors: list[tuple[float, str]] = []  # (-net, user_id) — largest creditor first
+        debtors: list[tuple[float, str]] = []    # (-abs_debt, user_id) — largest debtor first
+
+        for user, net in net_balance.items():
+            if abs(net) < 0.01:
+                continue  # skip zero balances
+            if net > 0:
+                heapq.heappush(creditors, (-net, user))
+            else:
+                heapq.heappush(debtors, (net, user))  # already negative → min-heap = most negative first
+
+        # Step 3: Greedy matching
+        transactions: list[str] = []
+        while creditors and debtors:
+            neg_credit, creditor = heapq.heappop(creditors)
+            debt, debtor = heapq.heappop(debtors)
+
+            credit = -neg_credit       # positive amount creditor is owed
+            abs_debt = -debt           # positive amount debtor owes
+
+            settle = min(credit, abs_debt)
+            transactions.append(f"{debtor} pays {creditor}: ${settle:.2f}")
+
+            remaining_credit = credit - settle
+            remaining_debt = abs_debt - settle
+
+            if remaining_credit > 0.01:
+                heapq.heappush(creditors, (-remaining_credit, creditor))
+            if remaining_debt > 0.01:
+                heapq.heappush(debtors, (-remaining_debt, debtor))
+
+        return transactions
+
+
+if __name__ == "__main__":
+    # Example: Alice paid for Bob ($100) and Charlie ($50)
+    # Bob paid for Charlie ($80)
+    # Net: Alice +150, Bob -100+80 = -20, Charlie -50-80 = -130...
+    # (simplified manual example)
+
+    sheet: dict[str, dict[str, float]] = {
+        "Alice":   {"Bob": 100.0, "Charlie": 50.0},
+        "Bob":     {"Alice": -100.0, "Charlie": 80.0},
+        "Charlie": {"Alice": -50.0, "Bob": -80.0},
     }
 
-    public static void main(String[] args) {
-        // Example: Alice paid for Bob ($100) and Charlie ($50)
-        // Bob paid for Charlie ($80)
-        // Net: Alice +150, Bob -100+80 = -20, Charlie -50-80 = -130... 
-        // (simplified manual example)
-        
-        Map<String, Map<String, Double>> sheet = new HashMap<>();
-        sheet.put("Alice", Map.of("Bob", 100.0, "Charlie", 50.0));
-        sheet.put("Bob", Map.of("Alice", -100.0, "Charlie", 80.0));
-        sheet.put("Charlie", Map.of("Alice", -50.0, "Bob", -80.0));
-        
-        DebtSimplifier simplifier = new DebtSimplifier();
-        List<String> result = simplifier.simplifyDebts(sheet);
-        result.forEach(System.out::println);
-    }
-}
+    simplifier = DebtSimplifier()
+    for tx in simplifier.simplify_debts(sheet):
+        print(tx)
 ```
 
 **Complexity**:

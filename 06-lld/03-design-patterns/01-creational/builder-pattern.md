@@ -59,24 +59,23 @@ Try it before reading on.
 
 The first approach — a constructor with all fields:
 
-```java
-class User {
-    public User(String name, String email, int age, 
-                String address, String phone, String picture) { ... }
-}
+```python
+class User:
+    def __init__(self, name: str, email: str, age: int,
+                 address: str, phone: str, picture: str): ...
 
-// Caller:
-User u = new User("Alice", "alice@x.com", 0, null, null, null);
-//                                         ^^  ^^^^  ^^^^  ^^^^
-//                  what do these nulls mean? which is phone vs address?
+# Caller:
+u = User("Alice", "alice@x.com", 0, None, None, None)
+#                                 ^^  ^^^^  ^^^^  ^^^^
+#        what do these Nones mean? which is phone vs address?
 ```
 
 Or the telescoping constructor approach:
-```java
-User u1 = new User("Alice", "alice@x.com");
-User u2 = new User("Alice", "alice@x.com", 30);
-User u3 = new User("Alice", "alice@x.com", 30, "123 Main St");
-// Need a separate constructor for every combination of optional fields
+```python
+u1 = User("Alice", "alice@x.com")
+u2 = User("Alice", "alice@x.com", age=30)
+u3 = User("Alice", "alice@x.com", age=30, address="123 Main St")
+# Need a separate overload or default-param combination for every case
 ```
 
 **What breaks**:
@@ -91,48 +90,43 @@ User u3 = new User("Alice", "alice@x.com", 30, "123 Main St");
 
 The constraint: **separate the step-by-step configuration from the final construction**.
 
-Step 1 — make the outer class constructor private, require only mandatory fields:
-```java
-class User {
-    private final String name;   // required
-    private final String email;  // required
-    private final int age;       // optional
-    private final String phone;  // optional
+Step 1 — make construction private, require only mandatory fields via the builder:
+```python
+from dataclasses import dataclass, field
 
-    private User(Builder b) {
-        this.name  = b.name;
-        this.email = b.email;
-        this.age   = b.age;
-        this.phone = b.phone;
-    }
-}
+@dataclass(frozen=True)
+class User:
+    name: str        # required
+    email: str       # required
+    age: int = 0     # optional
+    phone: str = ""  # optional
 ```
 
-Step 2 — inner `Builder` class holds the state during configuration:
-```java
-static class Builder {
-    private final String name;   // required → constructor param
-    private final String email;  // required → constructor param
-    private int age;
-    private String phone;
+Step 2 — a `Builder` class holds mutable state during configuration:
+```python
+class UserBuilder:
+    def __init__(self, name: str, email: str):
+        self._name = name    # required → constructor param
+        self._email = email  # required → constructor param
+        self._age: int = 0
+        self._phone: str = ""
 
-    public Builder(String name, String email) {
-        this.name = name; this.email = email;
-    }
+    def age(self, a: int) -> "UserBuilder":
+        self._age = a
+        return self
 
-    public Builder age(int a)      { this.age = a; return this; }
-    public Builder phone(String p) { this.phone = p; return this; }
+    def phone(self, p: str) -> "UserBuilder":
+        self._phone = p
+        return self
 
-    public User build() { return new User(this); }
-}
+    def build(self) -> User:
+        return User(name=self._name, email=self._email,
+                    age=self._age, phone=self._phone)
 ```
 
 Step 3 — callsite is now readable and validated:
-```java
-User u = new User.Builder("Alice", "alice@x.com")
-    .age(30)
-    .phone("555-1234")
-    .build();
+```python
+u = UserBuilder("Alice", "alice@x.com").age(30).phone("555-1234").build()
 ```
 
 That's the entire pattern — a fluent inner builder that returns `this` for chaining, and a `build()` that calls the private outer constructor.
@@ -175,90 +169,72 @@ BurgerMeal meal = new BurgerMeal("wheat", "veg", null, null, false);
 
 ## The Solution: Builder Pattern
 
-```java
-import java.util.List;
-import java.util.ArrayList;
+```python
+from __future__ import annotations
+from dataclasses import dataclass, field
 
-public class BurgerMeal {
-    // Required components
-    private final String bunType;
-    private final String patty;
 
-    // Optional components
-    private final boolean hasCheese;
-    private final List<String> toppings;
-    private final String side;
-    private final String drink;
+@dataclass(frozen=True)
+class BurgerMeal:
+    # Required components
+    bun_type: str
+    patty: str
+    # Optional components
+    has_cheese: bool = False
+    toppings: tuple[str, ...] = ()
+    side: str | None = None
+    drink: str | None = None
 
-    // Private constructor — only the Builder can create BurgerMeal
-    private BurgerMeal(BurgerBuilder builder) {
-        this.bunType   = builder.bunType;
-        this.patty     = builder.patty;
-        this.hasCheese = builder.hasCheese;
-        this.toppings  = builder.toppings;
-        this.side      = builder.side;
-        this.drink     = builder.drink;
-    }
 
-    // Static nested Builder class
-    public static class BurgerBuilder {
-        // Required fields
-        private final String bunType;
-        private final String patty;
+class BurgerBuilder:
+    def __init__(self, bun_type: str, patty: str):
+        self._bun_type = bun_type
+        self._patty = patty
+        self._has_cheese: bool = False
+        self._toppings: list[str] = []
+        self._side: str | None = None
+        self._drink: str | None = None
 
-        // Optional fields (with sane defaults)
-        private boolean hasCheese = false;
-        private List<String> toppings = new ArrayList<>();
-        private String side = null;
-        private String drink = null;
+    def with_cheese(self, has_cheese: bool = True) -> BurgerBuilder:
+        self._has_cheese = has_cheese
+        return self  # returns builder for chaining
 
-        // Builder constructor requires only mandatory fields
-        public BurgerBuilder(String bunType, String patty) {
-            this.bunType = bunType;
-            this.patty   = patty;
-        }
+    def with_toppings(self, toppings: list[str]) -> BurgerBuilder:
+        self._toppings = toppings
+        return self
 
-        public BurgerBuilder withCheese(boolean hasCheese) {
-            this.hasCheese = hasCheese;
-            return this;  // Returns builder for chaining
-        }
+    def with_side(self, side: str) -> BurgerBuilder:
+        self._side = side
+        return self
 
-        public BurgerBuilder withToppings(List<String> toppings) {
-            this.toppings = toppings;
-            return this;
-        }
+    def with_drink(self, drink: str) -> BurgerBuilder:
+        self._drink = drink
+        return self
 
-        public BurgerBuilder withSide(String side) {
-            this.side = side;
-            return this;
-        }
+    def build(self) -> BurgerMeal:
+        return BurgerMeal(
+            bun_type=self._bun_type,
+            patty=self._patty,
+            has_cheese=self._has_cheese,
+            toppings=tuple(self._toppings),
+            side=self._side,
+            drink=self._drink,
+        )
 
-        public BurgerBuilder withDrink(String drink) {
-            this.drink = drink;
-            return this;
-        }
 
-        public BurgerMeal build() {
-            return new BurgerMeal(this);
-        }
-    }
-}
+# Usage — readable, flexible, no Nones
+plain_burger = BurgerBuilder("wheat", "veg").build()
 
-// Usage — readable, flexible, no nulls
-BurgerMeal plainBurger = new BurgerMeal.BurgerBuilder("wheat", "veg")
-    .build();
+burger_with_cheese = BurgerBuilder("wheat", "veg").with_cheese().build()
 
-BurgerMeal burgerWithCheese = new BurgerMeal.BurgerBuilder("wheat", "veg")
-    .withCheese(true)
-    .build();
-
-List<String> toppings = List.of("lettuce", "onion", "jalapeno");
-BurgerMeal loadedBurger = new BurgerMeal.BurgerBuilder("multigrain", "chicken")
-    .withCheese(true)
-    .withToppings(toppings)
-    .withSide("fries")
-    .withDrink("coke")
-    .build();
+loaded_burger = (
+    BurgerBuilder("multigrain", "chicken")
+    .with_cheese()
+    .with_toppings(["lettuce", "onion", "jalapeno"])
+    .with_side("fries")
+    .with_drink("coke")
+    .build()
+)
 ```
 
 ### Class Diagram
@@ -310,13 +286,15 @@ classDiagram
 
 ## Real-World Products Using Builder Pattern
 
-**HTTP Request Building** (OkHttp, Retrofit):
-```java
-Request request = new Request.Builder()
-    .url("https://api.example.com/users")
-    .addHeader("Authorization", "Bearer " + token)
-    .post(requestBody)
-    .build();
+**HTTP Request Building** (httpx, requests):
+```python
+import httpx
+
+response = httpx.post(
+    "https://api.example.com/users",
+    headers={"Authorization": f"Bearer {token}"},
+    content=request_body,
+)
 ```
 
 **Amazon Cart Configuration**: Items in a cart have quantity, size, color, delivery option, gift wrap, discount tags — all optional. Builder lets each combination be expressed clearly without constructor explosion.

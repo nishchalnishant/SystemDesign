@@ -14,32 +14,31 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class RateLimiter {
-    private Map<String, Integer> requestCounts = new HashMap<>();
-    private Map<String, Long> windowStarts = new HashMap<>();
-    private final int limit = 10;
-    private final long windowMs = 1000;
+```python
+import time
 
-    public boolean allow(String userId) {
-        long now = System.currentTimeMillis();
-        long windowStart = windowStarts.getOrDefault(userId, now);
+class RateLimiter:
+    def __init__(self) -> None:
+        self._request_counts: dict[str, int] = {}
+        self._window_starts: dict[str, float] = {}
+        self._limit = 10
+        self._window_s = 1.0
 
-        if (now - windowStart > windowMs) {
-            // Reset window
-            windowStarts.put(userId, now);
-            requestCounts.put(userId, 1);
-            return true;
-        }
+    def allow(self, user_id: str) -> bool:
+        now = time.time()
+        window_start = self._window_starts.get(user_id, now)
 
-        int count = requestCounts.getOrDefault(userId, 0);
-        if (count < limit) {
-            requestCounts.put(userId, count + 1);
-            return true;
-        }
-        return false;
-    }
-}
+        if now - window_start > self._window_s:
+            # Reset window
+            self._window_starts[user_id] = now
+            self._request_counts[user_id] = 1
+            return True
+
+        count = self._request_counts.get(user_id, 0)
+        if count < self._limit:
+            self._request_counts[user_id] = count + 1
+            return True
+        return False
 ```
 
 **Concrete failures**:
@@ -229,96 +228,81 @@ on allow():
     return DENIED
 ```
 
-### Java Implementation (Thread-Safe Token Bucket)
+### Python Implementation (Thread-Safe Token Bucket)
 
-```java
-import java.util.*;
-import java.util.concurrent.*;
+```python
+import time
+import threading
+from abc import ABC, abstractmethod
 
-// 1. Core Bucket Entity
-class TokenBucket {
-    private final long capacity;
-    private final double refillRate; // Tokens per second
-    private double tokens;
-    private long lastRefillTimestamp;
+# 1. Core Bucket Entity
+class TokenBucket:
+    def __init__(self, capacity: int, refill_rate: float) -> None:
+        self._capacity = capacity
+        self._refill_rate = refill_rate  # tokens per second
+        self._tokens = float(capacity)
+        self._last_refill = time.monotonic()
+        self._lock = threading.Lock()
 
-    public TokenBucket(long capacity, double refillRate) {
-        this.capacity = capacity;
-        this.refillRate = refillRate;
-        this.tokens = capacity;
-        this.lastRefillTimestamp = System.nanoTime();
-    }
+    # Critical section: calculating and updating tokens must be atomic
+    def allow(self) -> bool:
+        with self._lock:
+            self._refill()
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return True
+            return False
 
-    // Critical section: Calculating and updating tokens must be atomic
-    public synchronized boolean allow() {
-        refill();
-        if (tokens >= 1) {
-            tokens -= 1;
-            return true;
-        }
-        return false;
-    }
+    def _refill(self) -> None:
+        now = time.monotonic()
+        elapsed = now - self._last_refill
+        tokens_to_add = elapsed * self._refill_rate
+        if tokens_to_add > 0:
+            self._tokens = min(self._capacity, self._tokens + tokens_to_add)
+            self._last_refill = now
+            # Note: update timestamp only when tokens are added.
+            # For strict precision track sub-second remainder separately,
+            # but this lazy-refill approach is standard.
 
-    private void refill() {
-        long now = System.nanoTime();
-        double elapsedSeconds = (now - lastRefillTimestamp) / 1_000_000_000.0;
-        double tokensToAdd = elapsedSeconds * refillRate;
-        
-        if (tokensToAdd > 0) {
-            tokens = Math.min(capacity, tokens + tokensToAdd);
-            lastRefillTimestamp = now; 
-            // Note: Update timestamp only when tokens are added relative to the previous fill point
-            // For strict precision, you might track 'lastRefillTimestamp' differently, but this is standard for lazy refill.
-        }
-    }
-}
+# 2. Strategy Interface
+class RateLimiter(ABC):
+    @abstractmethod
+    def allow_request(self, user_id: str) -> bool: ...
 
-// 2. Strategy Interface
-interface RateLimiter {
-    boolean allowRequest(String userId);
-}
+# 3. Concrete Strategy
+class TokenBucketRateLimiter(RateLimiter):
+    def __init__(self, capacity: int, refill_rate: float) -> None:
+        self._capacity = capacity
+        self._refill_rate = refill_rate
+        self._user_buckets: dict[str, TokenBucket] = {}
+        self._map_lock = threading.Lock()
 
-// 3. Concrete Strategy
-class TokenBucketRateLimiter implements RateLimiter {
-    // ConcurrentHashMap handles thread-safe retrieval/insertion of buckets
-    private final Map<String, TokenBucket> userBuckets = new ConcurrentHashMap<>();
-    private final long capacity;
-    private final double refillRate;
+    def allow_request(self, user_id: str) -> bool:
+        # Double-checked pattern ensures only one bucket created per user
+        bucket = self._user_buckets.get(user_id)
+        if bucket is None:
+            with self._map_lock:
+                bucket = self._user_buckets.setdefault(
+                    user_id, TokenBucket(self._capacity, self._refill_rate)
+                )
+        return bucket.allow()
 
-    public TokenBucketRateLimiter(long capacity, double refillRate) {
-        this.capacity = capacity;
-        this.refillRate = refillRate;
-    }
+# 4. Client Code
+if __name__ == "__main__":
+    # 10 tokens max, refill 1 token/sec
+    limiter: RateLimiter = TokenBucketRateLimiter(10, 1)
+    user = "User1"
 
-    @Override
-    public boolean allowRequest(String userId) {
-        // computeIfAbsent is atomic: ensures only one bucket created per user even with concurrent first requests
-        TokenBucket bucket = userBuckets.computeIfAbsent(userId, k -> new TokenBucket(capacity, refillRate));
-        return bucket.allow();
-    }
-}
+    # Simulate bursts
+    print("Processing burst...")
+    for i in range(12):
+        allowed = limiter.allow_request(user)
+        print(f"Request {i + 1}: {'Allowed' if allowed else 'Denied'}")
 
-// 4. Client Code
-public class RateLimiterService {
-    public static void main(String[] args) throws InterruptedException {
-        // 10 tokens max, refill 1 token/sec
-        RateLimiter limiter = new TokenBucketRateLimiter(10, 1);
-
-        String user = "User1";
-        
-        // Simulate bursts
-        System.out.println("Processing burst...");
-        for (int i = 0; i < 12; i++) {
-            boolean allowed = limiter.allowRequest(user);
-            System.out.println("Request " + (i+1) + ": " + (allowed ? "Allowed" : "Denied"));
-        }
-        
-        // Wait and retry
-        System.out.println("Waiting 2 seconds...");
-        Thread.sleep(2000); // Wait 2s -> Refill 2 tokens
-        System.out.println("Request after wait: " + (limiter.allowRequest(user) ? "Allowed" : "Denied"));
-    }
-}
+    # Wait and retry
+    print("Waiting 2 seconds...")
+    time.sleep(2)  # Wait 2s → refill 2 tokens
+    print(f"Request after wait: {'Allowed' if limiter.allow_request(user) else 'Denied'}")
 ```
 
 ---

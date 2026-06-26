@@ -58,21 +58,22 @@ Try to identify every failure mode before reading on.
 
 ## Race Conditions Without Synchronization
 
-```java
-List<Task> buffer = new ArrayList<>(); // shared, unsynchronized
+```python
+import threading
 
-// Thread A — Producer:
-while (true) {
-    buffer.add(generate()); // no check on size
-}
+buffer = []  # shared, unsynchronized
 
-// Thread B — Consumer:
-while (true) {
-    if (!buffer.isEmpty()) {
-        Task t = buffer.remove(0); // concurrent modification
-        process(t);
-    }
-}
+# Thread A — Producer:
+def producer():
+    while True:
+        buffer.append(generate())  # no check on size
+
+# Thread B — Consumer:
+def consumer():
+    while True:
+        if buffer:
+            t = buffer.pop(0)  # concurrent modification
+            process(t)
 ```
 
 **Concrete failures**:
@@ -111,112 +112,78 @@ while (true) {
 
 ## Implementation
 
-### 1. Using `BlockingQueue` (Simplest & Best in Java)
+### 1. Using `queue.Queue` (Simplest & Best in Python)
 
-Java's `java.util.concurrent` package solves this automatically.
+Python's `queue` module solves this automatically.
 
-```java
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ArrayBlockingQueue;
+```python
+import queue
+import threading
+import time
 
-public class ProducerConsumerExample {
+_STOP = object()  # Poison pill sentinel
 
-    public static void main(String[] args) {
-        // Shared buffer with capacity 10
-        BlockingQueue<Integer> queue = new ArrayBlockingQueue<>(10);
-        
-        // Start Producer
-        new Thread(new Producer(queue)).start();
-        
-        // Start Consumer
-        new Thread(new Consumer(queue)).start();
-    }
-}
+def producer(q: queue.Queue) -> None:
+    for i in range(20):
+        print(f"Produced: {i}")
+        q.put(i)           # BLOCKS if full
+        time.sleep(0.1)
+    q.put(_STOP)           # Poison pill to stop consumer
 
-class Producer implements Runnable {
-    private BlockingQueue<Integer> queue;
-    
-    public Producer(BlockingQueue<Integer> queue) { this.queue = queue; }
-    
-    @Override
-    public void run() {
-        try {
-            for (int i = 0; i < 20; i++) {
-                System.out.println("Produced: " + i);
-                queue.put(i); // BLOCKS if full
-                Thread.sleep(100);
-            }
-            queue.put(-1); // Poison pill to stop consumer
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-}
+def consumer(q: queue.Queue) -> None:
+    while True:
+        value = q.get()    # BLOCKS if empty
+        if value is _STOP:
+            break
+        print(f"Consumed: {value}")
+        time.sleep(0.2)    # Simulate slow processing
 
-class Consumer implements Runnable {
-    private BlockingQueue<Integer> queue;
-    
-    public Consumer(BlockingQueue<Integer> queue) { this.queue = queue; }
-    
-    @Override
-    public void run() {
-        try {
-            while (true) {
-                Integer value = queue.take(); // BLOCKS if empty
-                if (value == -1) break; // Poison pill (stop signal)
-                System.out.println("Consumed: " + value);
-                Thread.sleep(200); // Simulate slow processing
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-}
+if __name__ == "__main__":
+    q: queue.Queue = queue.Queue(maxsize=10)  # Shared buffer with capacity 10
+    t_prod = threading.Thread(target=producer, args=(q,))
+    t_cons = threading.Thread(target=consumer, args=(q,))
+    t_prod.start()
+    t_cons.start()
+    t_prod.join()
+    t_cons.join()
 ```
 
 ---
 
-### 2. Using `wait()` and `notify()` (Low-Level)
+### 2. Using `threading.Condition` (Low-Level)
 
 Implementing from scratch to understand under the hood.
 
-```java
-import java.util.LinkedList;
-import java.util.Queue;
+```python
+import threading
+from collections import deque
 
-class SharedBuffer {
-    private Queue<Integer> queue = new LinkedList<>();
-    private int capacity;
-    
-    public SharedBuffer(int capacity) { this.capacity = capacity; }
-    
-    public synchronized void produce(int value) throws InterruptedException {
-        // while loop crucial (spurious wakeups)
-        while (queue.size() == capacity) {
-            wait(); // Release lock, wait for space
-        }
-        
-        queue.add(value);
-        System.out.println("Produced: " + value);
-        
-        notifyAll(); // Notify waiting consumers
-    }
-    
-    public synchronized int consume() throws InterruptedException {
-        while (queue.isEmpty()) {
-            wait(); // Release lock, wait for data
-        }
-        
-        int value = queue.remove();
-        System.out.println("Consumed: " + value);
-        
-        notifyAll(); // Notify waiting producers
-        return value;
-    }
-}
+class SharedBuffer:
+    def __init__(self, capacity: int) -> None:
+        self._queue: deque = deque()
+        self._capacity = capacity
+        self._cond = threading.Condition()
+
+    def produce(self, value: int) -> None:
+        with self._cond:
+            # while loop crucial (spurious wakeups)
+            while len(self._queue) == self._capacity:
+                self._cond.wait()  # Release lock, wait for space
+            self._queue.append(value)
+            print(f"Produced: {value}")
+            self._cond.notify_all()  # Notify waiting consumers
+
+    def consume(self) -> int:
+        with self._cond:
+            while not self._queue:
+                self._cond.wait()  # Release lock, wait for data
+            value = self._queue.popleft()
+            print(f"Consumed: {value}")
+            self._cond.notify_all()  # Notify waiting producers
+            return value
 ```
 
-**Key Concept**: `wait()` releases the lock. `notifyAll()` wakes up threads but doesn't release lock immediately (synch block must exit).
+**Key Concept**: `wait()` releases the lock. `notify_all()` wakes up threads but doesn't release the lock immediately (the `with` block must exit first).
 
 ---
 

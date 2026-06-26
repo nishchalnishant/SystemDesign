@@ -14,47 +14,43 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class SnakeAndLadder {
-    private int[] playerPositions; // indexed by playerId
-    private int currentPlayer = 0;
-    // Snakes: head → tail. Ladders: foot → top. Hardcoded.
-    private int[] snakeHeads   = {99, 70, 54, 36};
-    private int[] snakeTails   = {2,  32, 19, 6};
-    private int[] ladderFeet   = {3,  22, 42, 54};
-    private int[] ladderTops   = {38, 58, 65, 80};
+```python
+import random
 
-    public void playTurn() {
-        int roll = (int)(Math.random() * 6) + 1;
-        playerPositions[currentPlayer] += roll;
+class SnakeAndLadder:
+    def __init__(self):
+        self.player_positions: list[int] = []  # indexed by player_id
+        self.current_player: int = 0
+        # Snakes: head → tail. Ladders: foot → top. Hardcoded.
+        self.snake_heads = [99, 70, 54, 36]
+        self.snake_tails = [2,  32, 19, 6]
+        self.ladder_feet = [3,  22, 42, 54]
+        self.ladder_tops = [38, 58, 65, 80]
 
-        if (playerPositions[currentPlayer] > 100) {
-            playerPositions[currentPlayer] -= roll; // undo overshoot
-            return;
-        }
+    def play_turn(self) -> None:
+        roll = random.randint(1, 6)
+        self.player_positions[self.current_player] += roll
 
-        // Check snake
-        for (int i = 0; i < snakeHeads.length; i++) {
-            if (playerPositions[currentPlayer] == snakeHeads[i]) {
-                playerPositions[currentPlayer] = snakeTails[i];
-                break;
-            }
-        }
-        // Check ladder
-        for (int i = 0; i < ladderFeet.length; i++) {
-            if (playerPositions[currentPlayer] == ladderFeet[i]) {
-                playerPositions[currentPlayer] = ladderTops[i];
-                break;
-            }
-        }
+        if self.player_positions[self.current_player] > 100:
+            self.player_positions[self.current_player] -= roll  # undo overshoot
+            return
 
-        if (playerPositions[currentPlayer] == 100) {
-            System.out.println("Player " + currentPlayer + " wins!");
-        }
+        # Check snake
+        for i, head in enumerate(self.snake_heads):
+            if self.player_positions[self.current_player] == head:
+                self.player_positions[self.current_player] = self.snake_tails[i]
+                break
 
-        currentPlayer = (currentPlayer + 1) % playerPositions.length;
-    }
-}
+        # Check ladder
+        for i, foot in enumerate(self.ladder_feet):
+            if self.player_positions[self.current_player] == foot:
+                self.player_positions[self.current_player] = self.ladder_tops[i]
+                break
+
+        if self.player_positions[self.current_player] == 100:
+            print(f"Player {self.current_player} wins!")
+
+        self.current_player = (self.current_player + 1) % len(self.player_positions)
 ```
 
 **Concrete failures**:
@@ -209,196 +205,155 @@ A snake from 99→10 and a ladder from 4→38 are both "if you land on X, go to 
 
 ## Phase 5: Key Java Implementation
 
-```java
-import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
+```python
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from collections import deque
+from dataclasses import dataclass, field
+import random
 
-// ── Player ─────────────────────────────────────────────────────────────────
+# ── Player ─────────────────────────────────────────────────────────────────
 
-class Player {
-    final String id;
-    int currentPosition;
+@dataclass
+class Player:
+    id: str
+    current_position: int = 0
 
-    Player(String id) { this.id = id; this.currentPosition = 0; }
-}
+# ── Dice with Strategy Interface ───────────────────────────────────────────
 
-// ── Dice with Strategy Interface ───────────────────────────────────────────
+class DiceStrategy(ABC):
+    @abstractmethod
+    def roll(self) -> int: ...
 
-interface DiceStrategy {
-    int roll();
-}
+class StandardDice(DiceStrategy):
+    def __init__(self, count: int):
+        self._count = count
 
-class StandardDice implements DiceStrategy {
-    private final int count;
-    StandardDice(int count) { this.count = count; }
+    def roll(self) -> int:
+        return sum(random.randint(1, 6) for _ in range(self._count))
 
-    public int roll() {
-        int total = 0;
-        for (int i = 0; i < count; i++)
-            total += ThreadLocalRandom.current().nextInt(1, 7);
-        return total;
-    }
-}
+# ── Board ──────────────────────────────────────────────────────────────────
 
-// ── Board ──────────────────────────────────────────────────────────────────
+class Board:
+    def __init__(self, size: int):
+        self._size = size
+        # Maps landing cell → destination cell (both snakes and ladders)
+        self._jump_map: dict[int, int] = {}
 
-class Board {
-    private final int size;
-    // Maps landing cell → destination cell (both snakes and ladders)
-    private final Map<Integer, Integer> jumpMap = new HashMap<>();
+    # Add a snake (start > end) or ladder (start < end)
+    def add_jump(self, from_: int, to: int) -> None:
+        if not (0 < from_ <= self._size and 0 < to <= self._size):
+            raise ValueError(f"Jump out of bounds: {from_}→{to}")
+        if from_ in self._jump_map:
+            raise ValueError(f"Cell {from_} already has a jump.")
+        self._jump_map[from_] = to
 
-    Board(int size) {
-        this.size = size;
-    }
+    def get_jump_destination(self, position: int) -> int:
+        return self._jump_map.get(position, position)
 
-    // Add a snake (start > end) or ladder (start < end)
-    public void addJump(int from, int to) {
-        if (from <= 0 || from > size || to <= 0 || to > size)
-            throw new IllegalArgumentException("Jump out of bounds: " + from + "→" + to);
-        if (jumpMap.containsKey(from))
-            throw new IllegalArgumentException("Cell " + from + " already has a jump.");
-        jumpMap.put(from, to);
-    }
+    def get_size(self) -> int:
+        return self._size
 
-    public int getJumpDestination(int position) {
-        return jumpMap.getOrDefault(position, position);
-    }
+    # Cycle detection: ensure no infinite loop A→B→C→A
+    def validate_no_cycles(self) -> None:
+        for start in self._jump_map:
+            visited: set[int] = set()
+            curr = start
+            while curr in self._jump_map:
+                if curr in visited:
+                    raise RuntimeError(f"Cycle detected at cell {curr}")
+                visited.add(curr)
+                curr = self._jump_map[curr]
 
-    public int getSize() { return size; }
+# ── Memento (Game Save) ────────────────────────────────────────────────────
 
-    // Cycle detection: ensure no infinite loop A→B→C→A
-    public void validateNoCycles() {
-        for (int start : jumpMap.keySet()) {
-            Set<Integer> visited = new HashSet<>();
-            int curr = start;
-            while (jumpMap.containsKey(curr)) {
-                if (!visited.add(curr))
-                    throw new IllegalStateException("Cycle detected at cell " + curr);
-                curr = jumpMap.get(curr);
-            }
-        }
-    }
-}
+@dataclass(frozen=True)
+class GameMemento:
+    player_positions: dict[str, int]   # immutable snapshot
+    turn_order: tuple[str, ...]
 
-// ── Memento (Game Save) ────────────────────────────────────────────────────
+# ── Game Orchestrator ──────────────────────────────────────────────────────
 
-class GameMemento {
-    private final Map<String, Integer> playerPositions;
-    private final List<String> turnOrder;
+class Game:
+    def __init__(self, board: Board, dice: DiceStrategy):
+        self._board  = board
+        self._dice   = dice
+        self._players: deque[Player] = deque()
+        self._winner: Player | None  = None
+        board.validate_no_cycles()
 
-    GameMemento(Map<String, Integer> positions, List<String> turnOrder) {
-        this.playerPositions = new HashMap<>(positions);
-        this.turnOrder       = new ArrayList<>(turnOrder);
-    }
+    def add_player(self, p: Player) -> None:
+        self._players.append(p)
 
-    Map<String, Integer> getPositions() { return Collections.unmodifiableMap(playerPositions); }
-    List<String> getTurnOrder()          { return Collections.unmodifiableList(turnOrder); }
-}
+    def start_game(self) -> None:
+        while self._winner is None:
+            active = self._players.popleft()
 
-// ── Game Orchestrator ──────────────────────────────────────────────────────
+            roll         = self._dice.roll()
+            new_position = active.current_position + roll
 
-public class Game {
-    private final Board board;
-    private final DiceStrategy dice;
-    private final Deque<Player> players = new ArrayDeque<>();
-    private Player winner;
+            if new_position > self._board.get_size():
+                # Overshoot: stay put
+                print(f"{active.id} rolled {roll} → overshoots! Stays at {active.current_position}")
+                self._players.append(active)
+                continue
 
-    public Game(Board board, DiceStrategy dice) {
-        this.board = board;
-        this.dice  = dice;
-        board.validateNoCycles();
-    }
+            final_position = self._board.get_jump_destination(new_position)
 
-    public void addPlayer(Player p) { players.addLast(p); }
+            if final_position != new_position:
+                jump_type = "LADDER" if final_position > new_position else "SNAKE"
+                print(f"{active.id} rolled {roll} → {new_position}, then {jump_type} to {final_position}")
+            else:
+                print(f"{active.id} rolled {roll} → {new_position}")
 
-    public void startGame() {
-        while (winner == null) {
-            Player active = players.removeFirst();
+            active.current_position = final_position
 
-            int roll        = dice.roll();
-            int newPosition = active.currentPosition + roll;
+            if final_position == self._board.get_size():
+                self._winner = active
+                print(f"WINNER: {self._winner.id}")
+                return
 
-            if (newPosition > board.getSize()) {
-                // Overshoot: stay put
-                System.out.printf("%s rolled %d → overshoots! Stays at %d%n",
-                        active.id, roll, active.currentPosition);
-                players.addLast(active);
-                continue;
-            }
+            self._players.append(active)
 
-            int finalPosition = board.getJumpDestination(newPosition);
+    # ── Memento: Save ─────────────────────────────────────────────────────
 
-            if (finalPosition != newPosition) {
-                String jumpType = finalPosition > newPosition ? "LADDER" : "SNAKE";
-                System.out.printf("%s rolled %d → %d, then %s to %d%n",
-                        active.id, roll, newPosition, jumpType, finalPosition);
-            } else {
-                System.out.printf("%s rolled %d → %d%n", active.id, roll, newPosition);
-            }
+    def save_game(self) -> GameMemento:
+        positions  = {p.id: p.current_position for p in self._players}
+        turn_order = tuple(p.id for p in self._players)
+        return GameMemento(player_positions=positions, turn_order=turn_order)
 
-            active.currentPosition = finalPosition;
+    # ── Memento: Restore ──────────────────────────────────────────────────
 
-            if (finalPosition == board.getSize()) {
-                winner = active;
-                System.out.println("WINNER: " + winner.id);
-                return;
-            }
+    def load_game(self, memento: GameMemento, player_registry: dict[str, Player]) -> None:
+        self._players.clear()
+        self._winner = None
+        for id_ in memento.turn_order:
+            p = player_registry[id_]
+            p.current_position = memento.player_positions[id_]
+            self._players.append(p)
+        print("Game state restored.")
 
-            players.addLast(active);
-        }
-    }
+# ── Demo ───────────────────────────────────────────────────────────────────
 
-    // ── Memento: Save ─────────────────────────────────────────────────────
+if __name__ == "__main__":
+    board = Board(100)
+    # Ladders
+    board.add_jump(4,  38)
+    board.add_jump(8,  30)
+    board.add_jump(28, 84)
+    # Snakes
+    board.add_jump(99, 10)
+    board.add_jump(62, 19)
+    board.add_jump(54, 34)
 
-    public GameMemento saveGame() {
-        Map<String, Integer> positions = new HashMap<>();
-        List<String> turnOrder         = new ArrayList<>();
-        for (Player p : players) {
-            positions.put(p.id, p.currentPosition);
-            turnOrder.add(p.id);
-        }
-        return new GameMemento(positions, turnOrder);
-    }
+    game = Game(board, StandardDice(1))
+    p1 = Player("Alice")
+    p2 = Player("Bob")
+    game.add_player(p1)
+    game.add_player(p2)
 
-    // ── Memento: Restore ──────────────────────────────────────────────────
-
-    public void loadGame(GameMemento memento, Map<String, Player> playerRegistry) {
-        players.clear();
-        winner = null;
-        Map<String, Integer> positions = memento.getPositions();
-        for (String id : memento.getTurnOrder()) {
-            Player p = playerRegistry.get(id);
-            p.currentPosition = positions.get(id);
-            players.addLast(p);
-        }
-        System.out.println("Game state restored.");
-    }
-}
-
-// ── Demo ───────────────────────────────────────────────────────────────────
-
-class SnakeLadderDemo {
-    public static void main(String[] args) {
-        Board board = new Board(100);
-        // Ladders
-        board.addJump(4,  38);
-        board.addJump(8,  30);
-        board.addJump(28, 84);
-        // Snakes
-        board.addJump(99, 10);
-        board.addJump(62, 19);
-        board.addJump(54, 34);
-
-        Game game = new Game(board, new StandardDice(1));
-        Player p1 = new Player("Alice");
-        Player p2 = new Player("Bob");
-        game.addPlayer(p1);
-        game.addPlayer(p2);
-
-        // Save state after a few turns would call: GameMemento m = game.saveGame();
-        game.startGame();
-    }
-}
+    # Save state after a few turns would call: memento = game.save_game()
+    game.start_game()
 ```
 
 ---
@@ -417,14 +372,19 @@ class SnakeLadderDemo {
 ### Extensions
 
 **Special cells (freeze, double roll):**
-```java
-interface CellEffect {
-    int apply(Player player, int landedPosition);
-}
-class FreezeCellEffect implements CellEffect {
-    // Skip player's next turn by marking them
-}
-// Board holds Map<Integer, CellEffect> alongside jumpMap
+```python
+from abc import ABC, abstractmethod
+
+class CellEffect(ABC):
+    @abstractmethod
+    def apply(self, player: Player, landed_position: int) -> int: ...
+
+class FreezeCellEffect(CellEffect):
+    def apply(self, player: Player, landed_position: int) -> int:
+        player.frozen = True   # Skip player's next turn by marking them
+        return landed_position
+
+# Board holds dict[int, CellEffect] alongside jump_map
 ```
 Use Chain of Responsibility: each handler checks if it applies, then passes to next.
 

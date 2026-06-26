@@ -14,32 +14,33 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class TicTacToe {
-    private char[][] board = new char[3][3]; // '\0' = empty
-    private char currentPlayer = 'X';
-    private boolean gameOver = false;
+```python
+class TicTacToe:
+    def __init__(self) -> None:
+        self._board: list[list[str | None]] = [[None] * 3 for _ in range(3)]  # None = empty
+        self._current_player = "X"
+        self._game_over = False
 
-    public void makeMove(int row, int col) {
-        if (gameOver || board[row][col] != '\0') return;
+    def make_move(self, row: int, col: int) -> None:
+        if self._game_over or self._board[row][col] is not None:
+            return
 
-        board[row][col] = currentPlayer;
+        self._board[row][col] = self._current_player
 
-        // Check win: scan entire board
-        for (int r = 0; r < 3; r++) {
-            if (board[r][0] == currentPlayer && board[r][1] == currentPlayer
-                && board[r][2] == currentPlayer) { gameOver = true; return; }
-        }
-        for (int c = 0; c < 3; c++) {
-            if (board[0][c] == currentPlayer && board[1][c] == currentPlayer
-                && board[2][c] == currentPlayer) { gameOver = true; return; }
-        }
-        if (board[0][0] == currentPlayer && board[1][1] == currentPlayer
-            && board[2][2] == currentPlayer) { gameOver = true; return; }
+        # Check win: scan entire board
+        for r in range(3):
+            if all(self._board[r][c] == self._current_player for c in range(3)):
+                self._game_over = True
+                return
+        for c in range(3):
+            if all(self._board[r][c] == self._current_player for r in range(3)):
+                self._game_over = True
+                return
+        if all(self._board[i][i] == self._current_player for i in range(3)):
+            self._game_over = True
+            return
 
-        currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
-    }
-}
+        self._current_player = "O" if self._current_player == "X" else "X"
 ```
 
 **Concrete failures**:
@@ -193,179 +194,170 @@ Think of a chess tournament referee. The referee needs to: track whose turn it i
 
 ---
 
-## Phase 5: Key Java Implementation
+## Phase 5: Key Python Implementation
 
-```java
-import java.util.*;
+```python
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from collections import deque
+from enum import Enum, auto
+from dataclasses import dataclass
 
-// ── Enums ──────────────────────────────────────────────────────────────────
+# ── Enums ──────────────────────────────────────────────────────────────────
 
-enum PieceType { X, O }
+class PieceType(Enum):
+    X = auto()
+    O = auto()
 
-enum GameState { ONGOING, WON, DRAW }
+class GameState(Enum):
+    ONGOING = auto()
+    WON = auto()
+    DRAW = auto()
 
-// ── Piece & Players ────────────────────────────────────────────────────────
+# ── Piece & Players ────────────────────────────────────────────────────────
 
-class PlayingPiece {
-    final PieceType type;
-    PlayingPiece(PieceType type) { this.type = type; }
-}
+@dataclass
+class PlayingPiece:
+    piece_type: PieceType
 
-interface Player {
-    String getName();
-    PlayingPiece getPiece();
-    int[] chooseMove(Board board); // returns [row, col]
-}
+class Player(ABC):
+    @property
+    @abstractmethod
+    def name(self) -> str: ...
 
-class HumanPlayer implements Player {
-    private final String name;
-    private final PlayingPiece piece;
+    @property
+    @abstractmethod
+    def piece(self) -> PlayingPiece: ...
 
-    HumanPlayer(String name, PieceType type) {
-        this.name = name;
-        this.piece = new PlayingPiece(type);
-    }
+    @abstractmethod
+    def choose_move(self, board: "Board") -> tuple[int, int]: ...
 
-    public String getName() { return name; }
-    public PlayingPiece getPiece() { return piece; }
+class HumanPlayer(Player):
+    def __init__(self, name: str, piece_type: PieceType) -> None:
+        self._name = name
+        self._piece = PlayingPiece(piece_type)
 
-    public int[] chooseMove(Board board) {
-        Scanner sc = new Scanner(System.in);
-        System.out.print(name + ", enter row,col: ");
-        String[] parts = sc.nextLine().split(",");
-        return new int[]{ Integer.parseInt(parts[0]), Integer.parseInt(parts[1]) };
-    }
-}
+    @property
+    def name(self) -> str:
+        return self._name
 
-// ── Command Pattern: Move ──────────────────────────────────────────────────
+    @property
+    def piece(self) -> PlayingPiece:
+        return self._piece
 
-class MoveCommand {
-    final int row, col;
-    final PlayingPiece piece;
+    def choose_move(self, board: "Board") -> tuple[int, int]:
+        raw = input(f"{self._name}, enter row,col: ")
+        r, c = raw.split(",")
+        return int(r), int(c)
 
-    MoveCommand(int row, int col, PlayingPiece piece) {
-        this.row = row;
-        this.col = col;
-        this.piece = piece;
-    }
+# ── Command Pattern: Move ──────────────────────────────────────────────────
 
-    void execute(Board board) { board.setCell(row, col, piece); }
-    void undo(Board board)    { board.setCell(row, col, null);  }
-}
+@dataclass
+class MoveCommand:
+    row: int
+    col: int
+    piece: PlayingPiece
 
-// ── Board ──────────────────────────────────────────────────────────────────
+    def execute(self, board: "Board") -> None:
+        board.set_cell(self.row, self.col, self.piece)
 
-class Board {
-    final int size;
-    private final PlayingPiece[][] grid;
+    def undo(self, board: "Board") -> None:
+        board.set_cell(self.row, self.col, None)
 
-    Board(int size) {
-        this.size = size;
-        this.grid = new PlayingPiece[size][size];
-    }
+# ── Board ──────────────────────────────────────────────────────────────────
 
-    boolean addPiece(int row, int col, PlayingPiece piece) {
-        if (row < 0 || row >= size || col < 0 || col >= size) return false;
-        if (grid[row][col] != null) return false;
-        grid[row][col] = piece;
-        return true;
-    }
+class Board:
+    def __init__(self, size: int) -> None:
+        self.size = size
+        self._grid: list[list[PlayingPiece | None]] = [[None] * size for _ in range(size)]
 
-    void setCell(int row, int col, PlayingPiece piece) {
-        grid[row][col] = piece;
-    }
+    def add_piece(self, row: int, col: int, piece: PlayingPiece) -> bool:
+        if not (0 <= row < self.size and 0 <= col < self.size):
+            return False
+        if self._grid[row][col] is not None:
+            return False
+        self._grid[row][col] = piece
+        return True
 
-    PlayingPiece getCell(int row, int col) { return grid[row][col]; }
+    def set_cell(self, row: int, col: int, piece: PlayingPiece | None) -> None:
+        self._grid[row][col] = piece
 
-    List<int[]> getFreeCells() {
-        List<int[]> free = new ArrayList<>();
-        for (int i = 0; i < size; i++)
-            for (int j = 0; j < size; j++)
-                if (grid[i][j] == null) free.add(new int[]{i, j});
-        return free;
-    }
+    def get_cell(self, row: int, col: int) -> PlayingPiece | None:
+        return self._grid[row][col]
 
-    void print() {
-        for (int i = 0; i < size; i++) {
-            for (int j = 0; j < size; j++) {
-                System.out.print(grid[i][j] == null ? " ." : " " + grid[i][j].type);
-            }
-            System.out.println();
-        }
-    }
-}
+    def get_free_cells(self) -> list[tuple[int, int]]:
+        return [
+            (i, j)
+            for i in range(self.size)
+            for j in range(self.size)
+            if self._grid[i][j] is None
+        ]
 
-// ── Game Controller ────────────────────────────────────────────────────────
+    def print(self) -> None:
+        for row in self._grid:
+            print(" ".join("." if cell is None else cell.piece_type.name for cell in row))
 
-public class TicTacToeGame {
-    private final Board board;
-    private final Deque<Player> players;
-    private final Deque<MoveCommand> moveHistory = new ArrayDeque<>();
-    private GameState state = GameState.ONGOING;
+# ── Game Controller ────────────────────────────────────────────────────────
 
-    public TicTacToeGame(int size, List<Player> playerList) {
-        this.board = new Board(size);
-        this.players = new ArrayDeque<>(playerList);
-    }
+class TicTacToeGame:
+    def __init__(self, size: int, player_list: list[Player]) -> None:
+        self._board = Board(size)
+        self._players: deque[Player] = deque(player_list)
+        self._move_history: deque[MoveCommand] = deque()
+        self._state = GameState.ONGOING
 
-    public String startGame() {
-        while (state == GameState.ONGOING) {
-            board.print();
-            Player current = players.peekFirst();
+    def start_game(self) -> str:
+        while self._state == GameState.ONGOING:
+            self._board.print()
+            current = self._players[0]
 
-            int[] move = current.chooseMove(board);
-            int row = move[0], col = move[1];
+            row, col = current.choose_move(self._board)
 
-            boolean placed = board.addPiece(row, col, current.getPiece());
-            if (!placed) {
-                System.out.println("Invalid move — try again.");
-                continue;
-            }
+            if not self._board.add_piece(row, col, current.piece):
+                print("Invalid move — try again.")
+                continue
 
-            // Record for undo
-            MoveCommand cmd = new MoveCommand(row, col, current.getPiece());
-            moveHistory.push(cmd);
+            # Record for undo
+            cmd = MoveCommand(row, col, current.piece)
+            self._move_history.append(cmd)
 
-            if (isWinner(row, col, current.getPiece().type)) {
-                state = GameState.WON;
-                return current.getName() + " wins!";
-            }
-            if (board.getFreeCells().isEmpty()) {
-                state = GameState.DRAW;
-                return "It's a draw.";
-            }
+            if self._is_winner(row, col, current.piece.piece_type):
+                self._state = GameState.WON
+                return f"{current.name} wins!"
+            if not self._board.get_free_cells():
+                self._state = GameState.DRAW
+                return "It's a draw."
 
-            // Rotate players
-            players.addLast(players.removeFirst());
-        }
-        return "Game over.";
-    }
+            # Rotate players
+            self._players.rotate(-1)
 
-    // O(N) — only checks the row/column/diagonals touched by this move
-    boolean isWinner(int row, int col, PieceType type) {
-        int n = board.size;
-        boolean rowWin = true, colWin = true, diagWin = true, antiWin = true;
+        return "Game over."
 
-        for (int i = 0; i < n; i++) {
-            if (board.getCell(row, i) == null || board.getCell(row, i).type != type) rowWin = false;
-            if (board.getCell(i, col) == null || board.getCell(i, col).type != type) colWin = false;
-            if (board.getCell(i, i) == null || board.getCell(i, i).type != type)     diagWin = false;
-            if (board.getCell(i, n-1-i) == null || board.getCell(i, n-1-i).type != type) antiWin = false;
-        }
-        return rowWin || colWin || diagWin || antiWin;
-    }
+    # O(N) — only checks the row/column/diagonals touched by this move
+    def _is_winner(self, row: int, col: int, piece_type: PieceType) -> bool:
+        n = self._board.size
 
-    // Undo last move and give the turn back to previous player
-    public void undoLastMove() {
-        if (moveHistory.isEmpty()) { System.out.println("Nothing to undo."); return; }
-        MoveCommand last = moveHistory.pop();
-        last.undo(board);
-        // Rotate players back
-        players.addFirst(players.removeLast());
-        state = GameState.ONGOING;
-        System.out.println("Move undone.");
-    }
-}
+        def cell_matches(r: int, c: int) -> bool:
+            cell = self._board.get_cell(r, c)
+            return cell is not None and cell.piece_type == piece_type
+
+        row_win  = all(cell_matches(row, i) for i in range(n))
+        col_win  = all(cell_matches(i, col) for i in range(n))
+        diag_win = all(cell_matches(i, i) for i in range(n))
+        anti_win = all(cell_matches(i, n - 1 - i) for i in range(n))
+        return row_win or col_win or diag_win or anti_win
+
+    # Undo last move and give the turn back to the previous player
+    def undo_last_move(self) -> None:
+        if not self._move_history:
+            print("Nothing to undo.")
+            return
+        last = self._move_history.pop()
+        last.undo(self._board)
+        # Rotate players back
+        self._players.rotate(1)
+        self._state = GameState.ONGOING
+        print("Move undone.")
 ```
 
 ---
@@ -386,14 +378,19 @@ public class TicTacToeGame {
 Pass `winLength` to `isWinner` and check only a sliding window of size K instead of full lines.
 
 **AI opponent (Minimax):**
-```java
-class MinimaxStrategy implements MoveStrategy {
-    public int[] chooseMove(Board board, PieceType myType) {
-        // For each free cell: simulate move, recurse, score, backtrack
-        // Alpha-beta pruning cuts branches where outcome is already determined
-        // O(b^d) base, O(b^(d/2)) with alpha-beta
-    }
-}
+```python
+from abc import ABC, abstractmethod
+
+class MoveStrategy(ABC):
+    @abstractmethod
+    def choose_move(self, board: Board, my_type: PieceType) -> tuple[int, int]: ...
+
+class MinimaxStrategy(MoveStrategy):
+    def choose_move(self, board: Board, my_type: PieceType) -> tuple[int, int]:
+        # For each free cell: simulate move, recurse, score, backtrack
+        # Alpha-beta pruning cuts branches where outcome is already determined
+        # O(b^d) base, O(b^(d/2)) with alpha-beta
+        ...
 ```
 Wire it into `AIPlayer` via constructor injection — zero changes to the game loop.
 

@@ -154,257 +154,245 @@ XL                 OUT_OF_SERVICE
 
 ## Phase 5: Key Java Implementation
 
-```java
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+```python
+from __future__ import annotations
+import math
+import secrets
+import threading
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+from enum import Enum
 
-// ── Size & State Enums ─────────────────────────────────────────────────────
+# ── Size & State Enums ─────────────────────────────────────────────────────
 
-enum SlotSize  { SMALL, MEDIUM, LARGE, XL }
-enum SlotState { FREE, RESERVED, OCCUPIED, OUT_OF_SERVICE }
+class SlotSize(Enum):
+    SMALL  = 0
+    MEDIUM = 1
+    LARGE  = 2
+    XL     = 3
 
-// ── Package ────────────────────────────────────────────────────────────────
+class SlotState(Enum):
+    FREE           = "FREE"
+    RESERVED       = "RESERVED"
+    OCCUPIED       = "OCCUPIED"
+    OUT_OF_SERVICE = "OUT_OF_SERVICE"
 
-class Package {
-    final String orderId;
-    final String customerId;
-    final SlotSize requiredSize;
+# ── Package ────────────────────────────────────────────────────────────────
 
-    Package(String orderId, String customerId, SlotSize size) {
-        this.orderId      = orderId;
-        this.customerId   = customerId;
-        this.requiredSize = size;
-    }
-}
+@dataclass
+class Package:
+    order_id:      str
+    customer_id:   str
+    required_size: SlotSize
 
-// ── Slot ───────────────────────────────────────────────────────────────────
+# ── Slot ───────────────────────────────────────────────────────────────────
 
-class Slot {
-    private final String id;
-    private final SlotSize size;
-    private SlotState state;
-    private Package currentPackage;
-    private String accessCode;
-    private Instant depositedAt;
+class Slot:
+    EXPIRY_DAYS = 3
 
-    private static final int EXPIRY_DAYS = 3;
+    def __init__(self, id: str, size: SlotSize):
+        self._id              = id
+        self._size            = size
+        self._state           = SlotState.FREE
+        self._current_package: Package | None  = None
+        self._access_code:     str | None      = None
+        self._deposited_at:    datetime | None = None
+        self._lock            = threading.Lock()
 
-    Slot(String id, SlotSize size) {
-        this.id    = id;
-        this.size  = size;
-        this.state = SlotState.FREE;
-    }
+    @property
+    def id(self) -> str:          return self._id
+    @property
+    def size(self) -> SlotSize:   return self._size
+    @property
+    def state(self) -> SlotState: return self._state
 
-    String getId()      { return id; }
-    SlotSize getSize()  { return size; }
-    SlotState getState(){ return state; }
+    # Can this slot physically hold a package of the given size?
+    def can_fit(self, pkg_size: SlotSize) -> bool:
+        return self._size.value >= pkg_size.value
 
-    // Can this slot physically hold a package of the given size?
-    boolean canFit(SlotSize pkgSize) {
-        return size.ordinal() >= pkgSize.ordinal();
-    }
+    # Step 1: Reserve at order time (before package arrives)
+    def reserve(self) -> None:
+        with self._lock:
+            if self._state != SlotState.FREE:
+                raise RuntimeError(f"Slot {self._id} not FREE")
+            self._state = SlotState.RESERVED
 
-    // Step 1: Reserve at order time (before package arrives)
-    synchronized void reserve() {
-        if (state != SlotState.FREE) throw new IllegalStateException("Slot " + id + " not FREE");
-        state = SlotState.RESERVED;
-    }
+    # Step 2: Delivery agent deposits package → generates and stores one-time code
+    def occupy(self, pkg: Package) -> str:
+        with self._lock:
+            if self._state != SlotState.RESERVED:
+                raise RuntimeError(f"Slot {self._id} not RESERVED")
+            self._current_package = pkg
+            self._state           = SlotState.OCCUPIED
+            self._deposited_at    = datetime.now(timezone.utc)
+            self._access_code     = self._generate_code()
+            return self._access_code
 
-    // Step 2: Delivery agent deposits package → generates and stores one-time code
-    synchronized String occupy(Package pkg) {
-        if (state != SlotState.RESERVED)
-            throw new IllegalStateException("Slot " + id + " not RESERVED");
-        this.currentPackage = pkg;
-        this.state          = SlotState.OCCUPIED;
-        this.depositedAt    = Instant.now();
-        this.accessCode     = generateCode();
-        return accessCode;
-    }
+    # Step 3: Customer unlocks with code
+    def unlock(self, code: str) -> bool:
+        with self._lock:
+            if self._state != SlotState.OCCUPIED:
+                return False
+            if self._access_code != code:
+                return False
+            self._release()
+            return True
 
-    // Step 3: Customer unlocks with code
-    synchronized boolean unlock(String code) {
-        if (state != SlotState.OCCUPIED) return false;
-        if (!this.accessCode.equals(code)) return false;
-        release();
-        return true;
-    }
+    def _release(self) -> None:
+        self._current_package = None
+        self._access_code     = None
+        self._deposited_at    = None
+        self._state           = SlotState.FREE
 
-    synchronized void release() {
-        currentPackage = null;
-        accessCode     = null;
-        depositedAt    = null;
-        state          = SlotState.FREE;
-    }
+    def is_expired(self) -> bool:
+        return (
+            self._state == SlotState.OCCUPIED
+            and self._deposited_at is not None
+            and datetime.now(timezone.utc) - self._deposited_at > timedelta(days=self.EXPIRY_DAYS)
+        )
 
-    boolean isExpired() {
-        return state == SlotState.OCCUPIED
-                && depositedAt != null
-                && depositedAt.plus(EXPIRY_DAYS, ChronoUnit.DAYS).isBefore(Instant.now());
-    }
+    # Cryptographically random 6-digit code (100000–999999)
+    def _generate_code(self) -> str:
+        return f"{100000 + secrets.randbelow(900000):06d}"
 
-    // Cryptographically random 6-digit code (100000–999999)
-    private String generateCode() {
-        SecureRandom rng = new SecureRandom();
-        return String.format("%06d", 100000 + rng.nextInt(900000));
-    }
-}
+# ── Kiosk ──────────────────────────────────────────────────────────────────
 
-// ── Kiosk ──────────────────────────────────────────────────────────────────
+@dataclass
+class Location:
+    lat: float
+    lng: float
 
-class Location {
-    final double lat, lng;
-    Location(double lat, double lng) { this.lat = lat; this.lng = lng; }
+    def distance_to(self, other: Location) -> float:
+        # Simplified Euclidean; production uses Haversine formula
+        return math.sqrt((self.lat - other.lat) ** 2 + (self.lng - other.lng) ** 2)
 
-    double distanceTo(Location other) {
-        // Simplified Euclidean; production uses Haversine formula
-        double dlat = lat - other.lat, dlng = lng - other.lng;
-        return Math.sqrt(dlat*dlat + dlng*dlng);
-    }
-}
+class Kiosk:
+    def __init__(self, id: str, location: Location):
+        self.id       = id
+        self.location = location
+        self._slots:  list[Slot] = []
 
-class Kiosk {
-    final String id;
-    final Location location;
-    private final List<Slot> slots = new ArrayList<>();
+    def add_slot(self, s: Slot) -> None:
+        self._slots.append(s)
 
-    Kiosk(String id, Location location) { this.id = id; this.location = location; }
+    def get_slots(self) -> list[Slot]:
+        return list(self._slots)
 
-    void addSlot(Slot s) { slots.add(s); }
+# ── Allocation Strategy ────────────────────────────────────────────────────
 
-    List<Slot> getSlots() { return Collections.unmodifiableList(slots); }
-}
+class AllocationStrategy(ABC):
+    @abstractmethod
+    def find_slot(self, kiosk: Kiosk, package_size: SlotSize) -> Slot | None: ...
 
-// ── Allocation Strategy ────────────────────────────────────────────────────
+class BestFitStrategy(AllocationStrategy):
+    def find_slot(self, kiosk: Kiosk, package_size: SlotSize) -> Slot | None:
+        candidates = [
+            s for s in kiosk.get_slots()
+            if s.state == SlotState.FREE and s.can_fit(package_size)
+        ]
+        return min(candidates, key=lambda s: s.size.value, default=None)
 
-interface AllocationStrategy {
-    Slot findSlot(Kiosk kiosk, SlotSize packageSize);
-}
+# ── Code Registry ──────────────────────────────────────────────────────────
 
-class BestFitStrategy implements AllocationStrategy {
-    public Slot findSlot(Kiosk kiosk, SlotSize packageSize) {
-        Slot best = null;
-        for (Slot s : kiosk.getSlots()) {
-            if (s.getState() == SlotState.FREE && s.canFit(packageSize)) {
-                if (best == null || s.getSize().ordinal() < best.getSize().ordinal()) {
-                    best = s;
-                }
-            }
-        }
-        return best;
-    }
-}
+class CodeRegistry:
+    def __init__(self):
+        # Maps one-time code → slot_id
+        self._code_to_slot: dict[str, str] = {}
+        self._lock = threading.Lock()
 
-// ── Code Registry ──────────────────────────────────────────────────────────
+    def register(self, code: str, slot_id: str) -> None:
+        with self._lock: self._code_to_slot[code] = slot_id
 
-class CodeRegistry {
-    // Maps one-time code → slotId
-    private final Map<String, String> codeToSlotId = new ConcurrentHashMap<>();
+    def resolve(self, code: str) -> str | None:
+        with self._lock: return self._code_to_slot.get(code)
 
-    void register(String code, String slotId) { codeToSlotId.put(code, slotId); }
-    String resolve(String code)               { return codeToSlotId.get(code);  }
-    void invalidate(String code)              { codeToSlotId.remove(code);      }
-}
+    def invalidate(self, code: str) -> None:
+        with self._lock: self._code_to_slot.pop(code, None)
 
-// ── Locker Service ─────────────────────────────────────────────────────────
+# ── Locker Service ─────────────────────────────────────────────────────────
 
-public class LockerService {
-    private final List<Kiosk> kiosks          = new ArrayList<>();
-    private final Map<String, Slot> slotIndex = new ConcurrentHashMap<>();
-    private final CodeRegistry codeRegistry   = new CodeRegistry();
-    private final AllocationStrategy strategy;
+class LockerService:
+    def __init__(self, strategy: AllocationStrategy):
+        self._kiosks:        list[Kiosk]     = []
+        self._slot_index:    dict[str, Slot] = {}
+        self._code_registry  = CodeRegistry()
+        self._strategy       = strategy
 
-    LockerService(AllocationStrategy strategy) { this.strategy = strategy; }
+    def add_kiosk(self, kiosk: Kiosk) -> None:
+        self._kiosks.append(kiosk)
+        for s in kiosk.get_slots():
+            self._slot_index[s.id] = s
 
-    public void addKiosk(Kiosk kiosk) {
-        kiosks.add(kiosk);
-        for (Slot s : kiosk.getSlots()) slotIndex.put(s.getId(), s);
-    }
+    # UC1 + UC2: Find best slot and reserve it
+    def assign_locker(self, user_location: Location, package_size: SlotSize) -> Slot | None:
+        sorted_kiosks = sorted(self._kiosks, key=lambda k: k.location.distance_to(user_location))
+        for kiosk in sorted_kiosks:
+            slot = self._strategy.find_slot(kiosk, package_size)
+            if slot is not None:
+                slot.reserve()
+                print(f"Assigned slot {slot.id} ({slot.size.name}) at kiosk {kiosk.id}")
+                return slot
+        print("No available locker found.")
+        return None
 
-    // UC1 + UC2: Find best slot and reserve it
-    public Slot assignLocker(Location userLocation, SlotSize packageSize) {
-        List<Kiosk> sorted = new ArrayList<>(kiosks);
-        sorted.sort(Comparator.comparingDouble(k -> k.location.distanceTo(userLocation)));
+    # UC2: Delivery agent confirms deposit; returns code for customer
+    def confirm_deposit(self, slot_id: str, pkg: Package) -> str:
+        slot = self._slot_index.get(slot_id)
+        if slot is None:
+            raise ValueError(f"Slot not found: {slot_id}")
+        code = slot.occupy(pkg)
+        self._code_registry.register(code, slot_id)
+        print(f"Package deposited. Code sent to customer: {code}")
+        return code
 
-        for (Kiosk kiosk : sorted) {
-            Slot slot = strategy.findSlot(kiosk, packageSize);
-            if (slot != null) {
-                slot.reserve();
-                System.out.printf("Assigned slot %s (%s) at kiosk %s%n",
-                        slot.getId(), slot.getSize(), kiosk.id);
-                return slot;
-            }
-        }
-        System.out.println("No available locker found.");
-        return null;
-    }
+    # UC3: Customer enters code
+    def unlock_slot(self, code: str) -> bool:
+        slot_id = self._code_registry.resolve(code)
+        if slot_id is None:
+            print("Invalid code.")
+            return False
+        slot   = self._slot_index[slot_id]
+        opened = slot.unlock(code)
+        if opened:
+            self._code_registry.invalidate(code)
+            print(f"Slot {slot_id} opened. Package retrieved.")
+        else:
+            print(f"Failed to unlock slot {slot_id}")
+        return opened
 
-    // UC2: Delivery agent confirms deposit; returns code for customer
-    public String confirmDeposit(String slotId, Package pkg) {
-        Slot slot = slotIndex.get(slotId);
-        if (slot == null) throw new IllegalArgumentException("Slot not found: " + slotId);
-        String code = slot.occupy(pkg);
-        codeRegistry.register(code, slotId);
-        System.out.println("Package deposited. Code sent to customer: " + code);
-        return code;
-    }
+    # UC4: Expiration sweep (run by scheduler)
+    def run_expiration_check(self) -> None:
+        for slot in self._slot_index.values():
+            if slot.is_expired():
+                print(f"Slot {slot.id} expired — flagging for return pickup.")
+                # In production: create ReturnRequest, notify delivery service
+                # After agent collects: slot._release()
 
-    // UC3: Customer enters code
-    public boolean unlockSlot(String code) {
-        String slotId = codeRegistry.resolve(code);
-        if (slotId == null) { System.out.println("Invalid code."); return false; }
-        Slot slot = slotIndex.get(slotId);
-        boolean opened = slot.unlock(code);
-        if (opened) {
-            codeRegistry.invalidate(code);
-            System.out.println("Slot " + slotId + " opened. Package retrieved.");
-        } else {
-            System.out.println("Failed to unlock slot " + slotId);
-        }
-        return opened;
-    }
+# ── Demo ───────────────────────────────────────────────────────────────────
 
-    // UC4: Expiration sweep (run by scheduler)
-    public void runExpirationCheck() {
-        for (Slot slot : slotIndex.values()) {
-            if (slot.isExpired()) {
-                System.out.println("Slot " + slot.getId() + " expired — flagging for return pickup.");
-                // In production: create ReturnRequest, notify delivery service
-                // After agent collects: slot.release();
-            }
-        }
-    }
-}
+if __name__ == "__main__":
+    service = LockerService(BestFitStrategy())
 
-// ── Demo ───────────────────────────────────────────────────────────────────
+    kiosk = Kiosk("Kiosk-Downtown", Location(40.712, -74.006))
+    kiosk.add_slot(Slot("S1", SlotSize.SMALL))
+    kiosk.add_slot(Slot("M1", SlotSize.MEDIUM))
+    kiosk.add_slot(Slot("L1", SlotSize.LARGE))
+    service.add_kiosk(kiosk)
 
-class LockerDemo {
-    public static void main(String[] args) {
-        LockerService service = new LockerService(new BestFitStrategy());
+    # Order placed: MEDIUM package for customer near downtown
+    assigned = service.assign_locker(Location(40.714, -74.008), SlotSize.MEDIUM)
+    # Best fit: M1 (MEDIUM fits, SMALL does not, LARGE would waste space)
 
-        Kiosk kiosk = new Kiosk("Kiosk-Downtown", new Location(40.712, -74.006));
-        kiosk.addSlot(new Slot("S1", SlotSize.SMALL));
-        kiosk.addSlot(new Slot("M1", SlotSize.MEDIUM));
-        kiosk.addSlot(new Slot("L1", SlotSize.LARGE));
-        service.addKiosk(kiosk);
+    # Delivery agent deposits package
+    pkg  = Package("ORD-001", "cust-42", SlotSize.MEDIUM)
+    code = service.confirm_deposit(assigned.id, pkg)
 
-        // Order placed: MEDIUM package for customer near downtown
-        Slot assigned = service.assignLocker(new Location(40.714, -74.008), SlotSize.MEDIUM);
-        // Best fit: M1 (MEDIUM fits, SMALL does not, LARGE would waste space)
+    # Customer picks up
+    service.unlock_slot(code)
 
-        // Delivery agent deposits package
-        Package pkg = new Package("ORD-001", "cust-42", SlotSize.MEDIUM);
-        String code = service.confirmDeposit(assigned.getId(), pkg);
-
-        // Customer picks up
-        service.unlockSlot(code);
-
-        // Code reuse attempt → fails
-        service.unlockSlot(code);
-    }
-}
+    # Code reuse attempt → fails
+    service.unlock_slot(code)
 ```
 
 ---
@@ -426,24 +414,38 @@ class LockerDemo {
 Instead of linear scan + sort, use a `QuadTree` or `R-Tree` spatial index. Query: "find all kiosks within radius R of user location". Libraries: Google S2, H3 (Uber), PostGIS for DB.
 
 **Refrigerated lockers:**
-```java
-class RefrigeratedSlot extends Slot {
-    boolean isCoolingActive;
-    // Override occupy() to also activate cooling
-    // Add temperature monitoring
-}
+```python
+class RefrigeratedSlot(Slot):
+    def __init__(self, id: str, size: SlotSize):
+        super().__init__(id, size)
+        self.is_cooling_active = False
+
+    def occupy(self, pkg: Package) -> str:
+        code = super().occupy(pkg)
+        self.is_cooling_active = True   # activate cooling on deposit
+        # Add temperature monitoring here
+        return code
 ```
 
 **Return handling:**
-```java
-class ReturnRequest {
-    String slotId;
-    String orderId;
-    Instant expiredAt;
-    ReturnStatus status; // PENDING, PICKED_UP
-}
-// Scheduler creates ReturnRequest for expired slots
-// Delivery agent scans barcode → ReturnRequest.status = PICKED_UP → slot.release()
+```python
+from enum import Enum
+from dataclasses import dataclass, field
+from datetime import datetime
+
+class ReturnStatus(Enum):
+    PENDING   = "PENDING"
+    PICKED_UP = "PICKED_UP"
+
+@dataclass
+class ReturnRequest:
+    slot_id:    str
+    order_id:   str
+    expired_at: datetime
+    status:     ReturnStatus = ReturnStatus.PENDING
+
+# Scheduler creates ReturnRequest for expired slots
+# Delivery agent scans barcode → request.status = ReturnStatus.PICKED_UP → slot._release()
 ```
 
 **Concurrency at scale:**

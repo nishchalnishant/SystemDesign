@@ -143,332 +143,295 @@ CouponValidator                  ───────────────�
 
 ## Phase 5: Key Java Implementation
 
-```java
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
+```python
+from __future__ import annotations
+import threading
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal
+from typing import Callable
 
-// ── Cart Model ─────────────────────────────────────────────────────────────
+# ── Cart Model ─────────────────────────────────────────────────────────────
 
-class CartItem {
-    final String name;
-    final String category;
-    final BigDecimal price;
-    final int quantity;
+@dataclass
+class CartItem:
+    name:     str
+    category: str
+    price:    Decimal
+    quantity: int
 
-    CartItem(String name, String category, BigDecimal price, int qty) {
-        this.name = name; this.category = category;
-        this.price = price; this.quantity = qty;
-    }
-}
+class Cart:
+    def __init__(self, shipping_cost: Decimal = Decimal("9.99")):
+        self._items:         list[CartItem] = []
+        self._shipping_cost: Decimal        = shipping_cost
 
-class Cart {
-    private final List<CartItem> items     = new ArrayList<>();
-    private BigDecimal shippingCost = new BigDecimal("9.99");
+    def add_item(self, item: CartItem) -> None:
+        self._items.append(item)
 
-    void addItem(CartItem item) { items.add(item); }
+    def get_total(self) -> Decimal:
+        return sum((i.price * i.quantity for i in self._items), Decimal(0))
 
-    BigDecimal getTotal() {
-        return items.stream()
-                .map(i -> i.price.multiply(BigDecimal.valueOf(i.quantity)))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
+    def get_shipping_cost(self) -> Decimal:
+        return self._shipping_cost
 
-    BigDecimal getShippingCost()  { return shippingCost; }
-    List<CartItem> getItems()     { return Collections.unmodifiableList(items); }
+    def get_items(self) -> list[CartItem]:
+        return list(self._items)
 
-    boolean hasCategory(String cat) {
-        return items.stream().anyMatch(i -> i.category.equalsIgnoreCase(cat));
-    }
+    def has_category(self, cat: str) -> bool:
+        return any(i.category.lower() == cat.lower() for i in self._items)
 
-    List<CartItem> getItemsByCategory(String cat) {
-        return items.stream().filter(i -> i.category.equalsIgnoreCase(cat)).toList();
-    }
-}
+    def get_items_by_category(self, cat: str) -> list[CartItem]:
+        return [i for i in self._items if i.category.lower() == cat.lower()]
 
-// ── Validation ─────────────────────────────────────────────────────────────
+# ── Validation ─────────────────────────────────────────────────────────────
 
-class ValidationResult {
-    static final ValidationResult OK = new ValidationResult(true, null);
-    final boolean valid;
-    final String reason;
-    ValidationResult(boolean valid, String reason) { this.valid = valid; this.reason = reason; }
-    static ValidationResult fail(String reason)    { return new ValidationResult(false, reason); }
-}
+@dataclass
+class ValidationResult:
+    valid:  bool
+    reason: str | None = None
 
-// Chain of Responsibility: each validator delegates to next if own check passes
-abstract class CouponValidator {
-    private CouponValidator next;
+    @staticmethod
+    def ok() -> ValidationResult:
+        return ValidationResult(True)
 
-    CouponValidator setNext(CouponValidator n) { this.next = n; return n; }
+    @staticmethod
+    def fail(reason: str) -> ValidationResult:
+        return ValidationResult(False, reason)
 
-    ValidationResult validateNext(Cart cart, String userId, Coupon coupon) {
-        return next != null ? next.validate(cart, userId, coupon) : ValidationResult.OK;
-    }
+# Chain of Responsibility: each validator delegates to next if own check passes
+class CouponValidator(ABC):
+    def __init__(self):
+        self._next: CouponValidator | None = None
 
-    abstract ValidationResult validate(Cart cart, String userId, Coupon coupon);
-}
+    def set_next(self, n: CouponValidator) -> CouponValidator:
+        self._next = n
+        return n
 
-class ExpiryValidator extends CouponValidator {
-    public ValidationResult validate(Cart cart, String userId, Coupon coupon) {
-        if (coupon.expiryDate != null && LocalDate.now().isAfter(coupon.expiryDate))
-            return ValidationResult.fail("Coupon expired on " + coupon.expiryDate);
-        return validateNext(cart, userId, coupon);
-    }
-}
+    def _validate_next(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        return self._next.validate(cart, user_id, coupon) if self._next else ValidationResult.ok()
 
-class MinOrderValidator extends CouponValidator {
-    public ValidationResult validate(Cart cart, String userId, Coupon coupon) {
-        if (coupon.minOrderValue != null && cart.getTotal().compareTo(coupon.minOrderValue) < 0)
-            return ValidationResult.fail("Minimum order value: " + coupon.minOrderValue);
-        return validateNext(cart, userId, coupon);
-    }
-}
+    @abstractmethod
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult: ...
 
-class CategoryValidator extends CouponValidator {
-    public ValidationResult validate(Cart cart, String userId, Coupon coupon) {
-        if (coupon.requiredCategory != null && !cart.hasCategory(coupon.requiredCategory))
-            return ValidationResult.fail("Coupon valid only for: " + coupon.requiredCategory);
-        return validateNext(cart, userId, coupon);
-    }
-}
+class ExpiryValidator(CouponValidator):
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        if coupon.expiry_date is not None and date.today() > coupon.expiry_date:
+            return ValidationResult.fail(f"Coupon expired on {coupon.expiry_date}")
+        return self._validate_next(cart, user_id, coupon)
 
-class GlobalLimitValidator extends CouponValidator {
-    public ValidationResult validate(Cart cart, String userId, Coupon coupon) {
-        if (coupon.maxGlobalUsage > 0 && coupon.globalUsageCount.get() >= coupon.maxGlobalUsage)
-            return ValidationResult.fail("Coupon usage limit reached.");
-        return validateNext(cart, userId, coupon);
-    }
-}
+class MinOrderValidator(CouponValidator):
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        if coupon.min_order_value is not None and cart.get_total() < coupon.min_order_value:
+            return ValidationResult.fail(f"Minimum order value: {coupon.min_order_value}")
+        return self._validate_next(cart, user_id, coupon)
 
-class PerUserLimitValidator extends CouponValidator {
-    public ValidationResult validate(Cart cart, String userId, Coupon coupon) {
-        int used = coupon.perUserUsage.getOrDefault(userId, 0);
-        if (coupon.maxPerUserUsage > 0 && used >= coupon.maxPerUserUsage)
-            return ValidationResult.fail("You have already used this coupon " + used + " time(s).");
-        return validateNext(cart, userId, coupon);
-    }
-}
+class CategoryValidator(CouponValidator):
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        if coupon.required_category is not None and not cart.has_category(coupon.required_category):
+            return ValidationResult.fail(f"Coupon valid only for: {coupon.required_category}")
+        return self._validate_next(cart, user_id, coupon)
 
-// ── Discount Strategies ────────────────────────────────────────────────────
+class GlobalLimitValidator(CouponValidator):
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        if coupon.max_global_usage > 0 and coupon.global_usage_count >= coupon.max_global_usage:
+            return ValidationResult.fail("Coupon usage limit reached.")
+        return self._validate_next(cart, user_id, coupon)
 
-interface DiscountStrategy {
-    BigDecimal calculate(Cart cart);
-}
+class PerUserLimitValidator(CouponValidator):
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        used = coupon.per_user_usage.get(user_id, 0)
+        if coupon.max_per_user_usage > 0 and used >= coupon.max_per_user_usage:
+            return ValidationResult.fail(f"You have already used this coupon {used} time(s).")
+        return self._validate_next(cart, user_id, coupon)
 
-class PercentageOffStrategy implements DiscountStrategy {
-    private final BigDecimal percentage;
-    private final BigDecimal maxDiscount; // cap; null = uncapped
+# ── Discount Strategies ────────────────────────────────────────────────────
 
-    PercentageOffStrategy(BigDecimal percentage, BigDecimal maxDiscount) {
-        this.percentage  = percentage;
-        this.maxDiscount = maxDiscount;
-    }
+class DiscountStrategy(ABC):
+    @abstractmethod
+    def calculate(self, cart: Cart) -> Decimal: ...
 
-    public BigDecimal calculate(Cart cart) {
-        BigDecimal discount = cart.getTotal().multiply(percentage).divide(BigDecimal.valueOf(100));
-        if (maxDiscount != null) discount = discount.min(maxDiscount);
-        return discount;
-    }
-}
+class PercentageOffStrategy(DiscountStrategy):
+    def __init__(self, percentage: Decimal, max_discount: Decimal | None = None):
+        self._percentage   = percentage
+        self._max_discount = max_discount  # cap; None = uncapped
 
-class FlatOffStrategy implements DiscountStrategy {
-    private final BigDecimal amount;
-    FlatOffStrategy(BigDecimal amount) { this.amount = amount; }
-    public BigDecimal calculate(Cart cart) {
-        return amount.min(cart.getTotal()); // cannot exceed cart total
-    }
-}
+    def calculate(self, cart: Cart) -> Decimal:
+        discount = cart.get_total() * self._percentage / Decimal(100)
+        if self._max_discount is not None:
+            discount = min(discount, self._max_discount)
+        return discount
 
-class FreeShippingStrategy implements DiscountStrategy {
-    public BigDecimal calculate(Cart cart) { return cart.getShippingCost(); }
-}
+class FlatOffStrategy(DiscountStrategy):
+    def __init__(self, amount: Decimal):
+        self._amount = amount
 
-class BuyXGetYStrategy implements DiscountStrategy {
-    private final int buyX;
-    private final int getY;
-    private final String category;
+    def calculate(self, cart: Cart) -> Decimal:
+        return min(self._amount, cart.get_total())  # cannot exceed cart total
 
-    BuyXGetYStrategy(int buyX, int getY, String category) {
-        this.buyX = buyX; this.getY = getY; this.category = category;
-    }
+class FreeShippingStrategy(DiscountStrategy):
+    def calculate(self, cart: Cart) -> Decimal:
+        return cart.get_shipping_cost()
 
-    public BigDecimal calculate(Cart cart) {
-        List<CartItem> items = cart.getItemsByCategory(category);
-        // Sort ascending by price; free items are the cheapest
-        List<BigDecimal> prices = items.stream()
-                .flatMap(i -> Collections.nCopies(i.quantity, i.price).stream())
-                .sorted()
-                .toList();
-        BigDecimal discount = BigDecimal.ZERO;
-        int totalQty = prices.size();
-        int setSize  = buyX + getY;
-        int sets     = totalQty / setSize;
-        for (int s = 0; s < sets; s++) {
-            // The Y cheapest items in each set are free
-            for (int y = 0; y < getY; y++) {
-                discount = discount.add(prices.get(s * setSize + y));
-            }
-        }
-        return discount;
-    }
-}
+class BuyXGetYStrategy(DiscountStrategy):
+    def __init__(self, buy_x: int, get_y: int, category: str):
+        self._buy_x    = buy_x
+        self._get_y    = get_y
+        self._category = category
 
-// ── Coupon ─────────────────────────────────────────────────────────────────
+    def calculate(self, cart: Cart) -> Decimal:
+        items = cart.get_items_by_category(self._category)
+        # Expand to individual unit prices, sort ascending (cheapest are free)
+        prices = sorted(
+            (item.price for item in items for _ in range(item.quantity))
+        )
+        discount = Decimal(0)
+        set_size = self._buy_x + self._get_y
+        sets     = len(prices) // set_size
+        for s in range(sets):
+            # The Y cheapest items in each set are free
+            for y in range(self._get_y):
+                discount += prices[s * set_size + y]
+        return discount
 
-class Coupon {
-    final String code;
-    final DiscountStrategy reward;
-    private final CouponValidator validatorChain;
+# ── Coupon ─────────────────────────────────────────────────────────────────
 
-    // Constraint fields (read by validators)
-    LocalDate expiryDate;
-    BigDecimal minOrderValue;
-    String requiredCategory;
-    int maxGlobalUsage;
-    int maxPerUserUsage;
+class Coupon:
+    def __init__(self, code: str, reward: DiscountStrategy, validator_chain: CouponValidator):
+        self.code            = code
+        self._reward         = reward
+        self._validator_chain = validator_chain
 
-    // Usage tracking
-    final AtomicInteger globalUsageCount = new AtomicInteger(0);
-    final Map<String, Integer> perUserUsage = new ConcurrentHashMap<>();
+        # Constraint fields (read by validators)
+        self.expiry_date:       date | None    = None
+        self.min_order_value:   Decimal | None = None
+        self.required_category: str | None     = None
+        self.max_global_usage:  int            = 0
+        self.max_per_user_usage: int           = 0
 
-    Coupon(String code, DiscountStrategy reward, CouponValidator validatorChain) {
-        this.code           = code;
-        this.reward         = reward;
-        this.validatorChain = validatorChain;
-    }
+        # Usage tracking (thread-safe)
+        self._lock                  = threading.Lock()
+        self.global_usage_count:    int              = 0
+        self.per_user_usage:        dict[str, int]   = {}
 
-    ValidationResult validate(Cart cart, String userId) {
-        return validatorChain.validate(cart, userId, this);
-    }
+    def validate(self, cart: Cart, user_id: str) -> ValidationResult:
+        return self._validator_chain.validate(cart, user_id, self)
 
-    BigDecimal calculateDiscount(Cart cart) {
-        return reward.calculate(cart);
-    }
+    def calculate_discount(self, cart: Cart) -> Decimal:
+        return self._reward.calculate(cart)
 
-    // Atomically increment usage counters after successful application
-    void recordUsage(String userId) {
-        globalUsageCount.incrementAndGet();
-        perUserUsage.merge(userId, 1, Integer::sum);
-    }
-}
+    # Thread-safely increment usage counters after successful application
+    def record_usage(self, user_id: str) -> None:
+        with self._lock:
+            self.global_usage_count += 1
+            self.per_user_usage[user_id] = self.per_user_usage.get(user_id, 0) + 1
 
-// ── Coupon Builder ─────────────────────────────────────────────────────────
+# ── Coupon Builder ─────────────────────────────────────────────────────────
 
-class CouponBuilder {
-    private String code;
-    private DiscountStrategy reward;
-    private LocalDate expiryDate;
-    private BigDecimal minOrderValue;
-    private String requiredCategory;
-    private int maxGlobalUsage;
-    private int maxPerUserUsage;
+class CouponBuilder:
+    def __init__(self):
+        self._code:               str | None            = None
+        self._reward:             DiscountStrategy | None = None
+        self._expiry_date:        date | None           = None
+        self._min_order_value:    Decimal | None        = None
+        self._required_category:  str | None            = None
+        self._max_global_usage:   int                   = 0
+        self._max_per_user_usage: int                   = 0
 
-    CouponBuilder code(String c)                 { this.code = c; return this; }
-    CouponBuilder reward(DiscountStrategy r)     { this.reward = r; return this; }
-    CouponBuilder expiresOn(LocalDate d)         { this.expiryDate = d; return this; }
-    CouponBuilder minOrder(BigDecimal v)         { this.minOrderValue = v; return this; }
-    CouponBuilder category(String cat)           { this.requiredCategory = cat; return this; }
-    CouponBuilder globalLimit(int n)             { this.maxGlobalUsage = n; return this; }
-    CouponBuilder perUserLimit(int n)            { this.maxPerUserUsage = n; return this; }
+    def code(self, c: str) -> CouponBuilder:              self._code = c;                    return self
+    def reward(self, r: DiscountStrategy) -> CouponBuilder: self._reward = r;                return self
+    def expires_on(self, d: date) -> CouponBuilder:        self._expiry_date = d;            return self
+    def min_order(self, v: Decimal) -> CouponBuilder:      self._min_order_value = v;        return self
+    def category(self, cat: str) -> CouponBuilder:         self._required_category = cat;    return self
+    def global_limit(self, n: int) -> CouponBuilder:       self._max_global_usage = n;       return self
+    def per_user_limit(self, n: int) -> CouponBuilder:     self._max_per_user_usage = n;     return self
 
-    Coupon build() {
-        // Build chain: Expiry → MinOrder → Category → GlobalLimit → PerUserLimit
-        CouponValidator head = new ExpiryValidator();
-        head.setNext(new MinOrderValidator())
-            .setNext(new CategoryValidator())
-            .setNext(new GlobalLimitValidator())
-            .setNext(new PerUserLimitValidator());
+    def build(self) -> Coupon:
+        # Build chain: Expiry → MinOrder → Category → GlobalLimit → PerUserLimit
+        head = ExpiryValidator()
+        head.set_next(MinOrderValidator()) \
+            .set_next(CategoryValidator()) \
+            .set_next(GlobalLimitValidator()) \
+            .set_next(PerUserLimitValidator())
 
-        Coupon c = new Coupon(code, reward, head);
-        c.expiryDate       = expiryDate;
-        c.minOrderValue    = minOrderValue;
-        c.requiredCategory = requiredCategory;
-        c.maxGlobalUsage   = maxGlobalUsage;
-        c.maxPerUserUsage  = maxPerUserUsage;
-        return c;
-    }
-}
+        c = Coupon(self._code, self._reward, head)
+        c.expiry_date        = self._expiry_date
+        c.min_order_value    = self._min_order_value
+        c.required_category  = self._required_category
+        c.max_global_usage   = self._max_global_usage
+        c.max_per_user_usage = self._max_per_user_usage
+        return c
 
-// ── Coupon Service ─────────────────────────────────────────────────────────
+# ── Coupon Service ─────────────────────────────────────────────────────────
 
-public class CouponService {
-    private final Map<String, Coupon> coupons = new HashMap<>();
+class CouponService:
+    def __init__(self):
+        self._coupons: dict[str, Coupon] = {}
 
-    void registerCoupon(Coupon c) { coupons.put(c.code, c); }
+    def register_coupon(self, c: Coupon) -> None:
+        self._coupons[c.code] = c
 
-    // Apply one coupon to cart; returns discount amount or throws
-    BigDecimal applyCoupon(String code, Cart cart, String userId) {
-        Coupon coupon = coupons.get(code);
-        if (coupon == null) throw new IllegalArgumentException("Unknown coupon: " + code);
+    # Apply one coupon to cart; returns discount amount or raises
+    def apply_coupon(self, code: str, cart: Cart, user_id: str) -> Decimal:
+        coupon = self._coupons.get(code)
+        if coupon is None:
+            raise ValueError(f"Unknown coupon: {code}")
 
-        ValidationResult result = coupon.validate(cart, userId);
-        if (!result.valid) throw new IllegalStateException("Coupon invalid: " + result.reason);
+        result = coupon.validate(cart, user_id)
+        if not result.valid:
+            raise RuntimeError(f"Coupon invalid: {result.reason}")
 
-        BigDecimal discount = coupon.calculateDiscount(cart);
-        coupon.recordUsage(userId);
-        System.out.printf("Coupon %s applied. Discount: %s. Final total: %s%n",
-                code, discount, cart.getTotal().subtract(discount));
-        return discount;
-    }
+        discount = coupon.calculate_discount(cart)
+        coupon.record_usage(user_id)
+        print(f"Coupon {code} applied. Discount: {discount}. Final total: {cart.get_total() - discount}")
+        return discount
 
-    // Stack multiple coupons sequentially
-    BigDecimal stackCoupons(List<String> codes, Cart cart, String userId) {
-        BigDecimal totalDiscount = BigDecimal.ZERO;
-        for (String code : codes) {
-            try {
-                totalDiscount = totalDiscount.add(applyCoupon(code, cart, userId));
-            } catch (Exception e) {
-                System.out.println("Skipping coupon " + code + ": " + e.getMessage());
-            }
-        }
-        return totalDiscount;
-    }
-}
+    # Stack multiple coupons sequentially
+    def stack_coupons(self, codes: list[str], cart: Cart, user_id: str) -> Decimal:
+        total_discount = Decimal(0)
+        for code in codes:
+            try:
+                total_discount += self.apply_coupon(code, cart, user_id)
+            except Exception as e:
+                print(f"Skipping coupon {code}: {e}")
+        return total_discount
 
-// ── Demo ───────────────────────────────────────────────────────────────────
+# ── Demo ───────────────────────────────────────────────────────────────────
 
-class CouponDemo {
-    public static void main(String[] args) {
-        Cart cart = new Cart();
-        cart.addItem(new CartItem("MacBook", "Electronics", new BigDecimal("2000"), 1));
-        cart.addItem(new CartItem("Headphones", "Electronics", new BigDecimal("300"),  2));
+if __name__ == "__main__":
+    cart = Cart()
+    cart.add_item(CartItem("MacBook",    "Electronics", Decimal("2000"), 1))
+    cart.add_item(CartItem("Headphones", "Electronics", Decimal("300"),  2))
 
-        // Coupon 1: 10% off, capped at $150, min order $500, Electronics only
-        Coupon techDiscount = new CouponBuilder()
-                .code("TECH10")
-                .reward(new PercentageOffStrategy(new BigDecimal("10"), new BigDecimal("150")))
-                .minOrder(new BigDecimal("500"))
-                .category("Electronics")
-                .expiresOn(LocalDate.of(2026, 12, 31))
-                .perUserLimit(1)
-                .globalLimit(1000)
-                .build();
+    # Coupon 1: 10% off, capped at $150, min order $500, Electronics only
+    tech_discount = (
+        CouponBuilder()
+        .code("TECH10")
+        .reward(PercentageOffStrategy(Decimal("10"), Decimal("150")))
+        .min_order(Decimal("500"))
+        .category("Electronics")
+        .expires_on(date(2026, 12, 31))
+        .per_user_limit(1)
+        .global_limit(1000)
+        .build()
+    )
 
-        // Coupon 2: Free shipping
-        Coupon freeShip = new CouponBuilder()
-                .code("FREESHIP")
-                .reward(new FreeShippingStrategy())
-                .build();
+    # Coupon 2: Free shipping
+    free_ship = CouponBuilder().code("FREESHIP").reward(FreeShippingStrategy()).build()
 
-        CouponService service = new CouponService();
-        service.registerCoupon(techDiscount);
-        service.registerCoupon(freeShip);
+    service = CouponService()
+    service.register_coupon(tech_discount)
+    service.register_coupon(free_ship)
 
-        System.out.println("Cart total: " + cart.getTotal());
-        service.applyCoupon("TECH10", cart, "user-1");  // Discount: 150 (capped)
-        service.applyCoupon("FREESHIP", cart, "user-1"); // Discount: 9.99
+    print("Cart total:", cart.get_total())
+    service.apply_coupon("TECH10",   cart, "user-1")  # Discount: 150 (capped)
+    service.apply_coupon("FREESHIP", cart, "user-1")  # Discount: 9.99
 
-        // Second use by same user → fails per-user limit
-        try {
-            service.applyCoupon("TECH10", cart, "user-1");
-        } catch (IllegalStateException e) {
-            System.out.println("Expected rejection: " + e.getMessage());
-        }
-    }
-}
+    # Second use by same user → fails per-user limit
+    try:
+        service.apply_coupon("TECH10", cart, "user-1")
+    except RuntimeError as e:
+        print("Expected rejection:", e)
 ```
 
 ---
@@ -487,38 +450,37 @@ class CouponDemo {
 ### Extensions
 
 **Global limit with Redis (distributed, exact enforcement):**
-```java
-// In GlobalLimitValidator or CouponService, replace AtomicInteger with:
-String key = "coupon:usage:" + coupon.code;
-long count = redisTemplate.opsForValue().increment(key);
-if (count > coupon.maxGlobalUsage) {
-    redisTemplate.opsForValue().decrement(key); // rollback
-    return ValidationResult.fail("Coupon usage limit reached.");
-}
-// This is still not perfectly atomic under extreme concurrency;
-// use a Lua script for true atomicity:
-// EVAL "local c=redis.call('INCR',KEYS[1]); if c>tonumber(ARGV[1]) then redis.call('DECR',KEYS[1]); return 0 end; return 1"
+```python
+# In GlobalLimitValidator or CouponService, replace the in-memory counter with:
+key   = f"coupon:usage:{coupon.code}"
+count = redis_client.incr(key)
+if count > coupon.max_global_usage:
+    redis_client.decr(key)  # rollback
+    return ValidationResult.fail("Coupon usage limit reached.")
+# This is still not perfectly atomic under extreme concurrency;
+# use a Lua script for true atomicity:
+# EVAL "local c=redis.call('INCR',KEYS[1]); if c>tonumber(ARGV[1]) then redis.call('DECR',KEYS[1]); return 0 end; return 1"
 ```
 
 **Composite constraint (OR logic):**
-```java
-class OrCompositeValidator extends CouponValidator {
-    private final List<CouponValidator> branches;
-    OrCompositeValidator(List<CouponValidator> branches) { this.branches = branches; }
-    public ValidationResult validate(Cart cart, String userId, Coupon coupon) {
-        for (CouponValidator v : branches) {
-            if (v.validate(cart, userId, coupon).valid) return validateNext(cart, userId, coupon);
-        }
-        return ValidationResult.fail("None of the required conditions met.");
-    }
-}
+```python
+class OrCompositeValidator(CouponValidator):
+    def __init__(self, branches: list[CouponValidator]):
+        super().__init__()
+        self._branches = branches
+
+    def validate(self, cart: Cart, user_id: str, coupon: Coupon) -> ValidationResult:
+        for v in self._branches:
+            if v.validate(cart, user_id, coupon).valid:
+                return self._validate_next(cart, user_id, coupon)
+        return ValidationResult.fail("None of the required conditions met.")
 ```
 
 **BOGO extension:**
 `BuyXGetYStrategy` is already implemented above. Register it:
-```java
-new CouponBuilder().code("B2G1-ELEC")
-    .reward(new BuyXGetYStrategy(2, 1, "Electronics"))
-    .category("Electronics")
-    .build();
+```python
+CouponBuilder().code("B2G1-ELEC") \
+    .reward(BuyXGetYStrategy(2, 1, "Electronics")) \
+    .category("Electronics") \
+    .build()
 ```

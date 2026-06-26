@@ -14,33 +14,27 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class ElevatorSystem {
-    private int[] elevatorFloors;  // current floor of each elevator
-    private String[] elevatorStates; // "IDLE", "UP", "DOWN"
-    private List<int[]> requests = new ArrayList<>(); // [floor, direction]
+```python
+class ElevatorSystem:
+    def __init__(self):
+        self.elevator_floors: list[int] = []   # current floor of each elevator
+        self.elevator_states: list[str] = []   # "IDLE", "UP", "DOWN"
+        self.requests: list[list[int]] = []    # [floor, direction]
 
-    public void requestElevator(int floor, String direction) {
-        requests.add(new int[]{floor, 1});
-        // Which elevator do we assign? Pick the first idle one:
-        for (int i = 0; i < elevatorFloors.length; i++) {
-            if (elevatorStates[i].equals("IDLE")) {
-                elevatorStates[i] = elevatorFloors[i] < floor ? "UP" : "DOWN";
-                // move elevator:
-                while (elevatorFloors[i] != floor) {
-                    elevatorFloors[i] += elevatorStates[i].equals("UP") ? 1 : -1;
-                    // check all requests at this floor inline
-                    for (int[] req : requests) {
-                        if (req[0] == elevatorFloors[i]) {
-                            openDoors(i); // string-based state, no state machine
-                        }
-                    }
-                }
-                break;
-            }
-        }
-    }
-}
+    def request_elevator(self, floor: int, direction: str) -> None:
+        self.requests.append([floor, 1])
+        # Which elevator do we assign? Pick the first idle one:
+        for i in range(len(self.elevator_floors)):
+            if self.elevator_states[i] == "IDLE":
+                self.elevator_states[i] = "UP" if self.elevator_floors[i] < floor else "DOWN"
+                # move elevator:
+                while self.elevator_floors[i] != floor:
+                    self.elevator_floors[i] += 1 if self.elevator_states[i] == "UP" else -1
+                    # check all requests at this floor inline
+                    for req in self.requests:
+                        if req[0] == self.elevator_floors[i]:
+                            self._open_doors(i)  # string-based state, no state machine
+                break
 ```
 
 **Concrete failures**:
@@ -204,145 +198,111 @@ classDiagram
 
 ### Java Implementation
 
-```java
-import java.util.*;
+```python
+from __future__ import annotations
+import threading
+from enum import Enum
 
-// 1. Enums
-enum Direction { UP, DOWN }
-enum State { IDLE, MOVING_UP, MOVING_DOWN }
+# 1. Enums
+class Direction(Enum):
+    UP   = "UP"
+    DOWN = "DOWN"
 
-// 2. Request Wrapper
-class Request {
-    int floor;
-    Direction direction; // null for internal requests if needed, or separate class
-    public Request(int floor, Direction direction) {
-        this.floor = floor;
-        this.direction = direction;
-    }
-}
+class State(Enum):
+    IDLE       = "IDLE"
+    MOVING_UP  = "MOVING_UP"
+    MOVING_DOWN = "MOVING_DOWN"
 
-// 3. Elevator (The Worker)
-class Elevator {
-    int id;
-    int currentFloor;
-    State state;
-    
-    // Using TreeSet to keep stops sorted. 
-    // Two sets: one for floors above (processing UP), one for floors below (processing DOWN).
-    // This simplifies the LOOK algorithm logic.
-    TreeSet<Integer> upStops = new TreeSet<>();
-    TreeSet<Integer> downStops = new TreeSet<>((a, b) -> b - a); // Reverse order
+# 2. Request Wrapper
+from dataclasses import dataclass
 
-    public Elevator(int id) {
-        this.id = id;
-        this.currentFloor = 0; // Ground floor
-        this.state = State.IDLE;
-    }
+@dataclass
+class Request:
+    floor: int
+    direction: Direction | None  # None for internal requests
 
-    public synchronized void addStop(int floor) {
-        if (floor > currentFloor) {
-            upStops.add(floor);
-            if (state == State.IDLE) state = State.MOVING_UP;
-        } else if (floor < currentFloor) {
-            downStops.add(floor);
-            if (state == State.IDLE) state = State.MOVING_DOWN;
-        } else {
-            // Already here, open doors (omitted)
-        }
-        System.out.println("Elevator " + id + " added floor: " + floor);
-    }
+# 3. Elevator (The Worker)
+class Elevator:
+    def __init__(self, id: int):
+        self.id            = id
+        self.current_floor = 0   # Ground floor
+        self.state         = State.IDLE
+        # Two sorted sets: floors above (UP sweep), floors below (DOWN sweep, descending)
+        self.up_stops:   set[int] = set()
+        self.down_stops: set[int] = set()
+        self._lock = threading.Lock()
 
-    // Simulate movement step (e.g., called every second by a scheduler loop)
-    public void move() {
-        if (state == State.IDLE) return;
+    def add_stop(self, floor: int) -> None:
+        with self._lock:
+            if floor > self.current_floor:
+                self.up_stops.add(floor)
+                if self.state == State.IDLE:
+                    self.state = State.MOVING_UP
+            elif floor < self.current_floor:
+                self.down_stops.add(floor)
+                if self.state == State.IDLE:
+                    self.state = State.MOVING_DOWN
+            # Already here → open doors (omitted)
+            print(f"Elevator {self.id} added floor: {floor}")
 
-        if (state == State.MOVING_UP) {
-            if (!upStops.isEmpty()) {
-                int next = upStops.higher(currentFloor) != null ? upStops.higher(currentFloor) : upStops.first();
-                // Simulation jump (in reality, currentFloor++)
-                if (next > currentFloor) currentFloor++; 
-                
-                if (upStops.contains(currentFloor)) {
-                    System.out.println("Elevator " + id + " stopping at " + currentFloor);
-                    upStops.remove(currentFloor);
-                }
-            }
-            if (upStops.isEmpty()) {
-                state = downStops.isEmpty() ? State.IDLE : State.MOVING_DOWN;
-            }
-        } else if (state == State.MOVING_DOWN) {
-            if (!downStops.isEmpty()) {
-                int next = downStops.higher(currentFloor) != null ? downStops.higher(currentFloor) : downStops.first(); // 'higher' in reverse set is logically lower
-                if (next < currentFloor) currentFloor--;
-                
-                if (downStops.contains(currentFloor)) {
-                    System.out.println("Elevator " + id + " stopping at " + currentFloor);
-                    downStops.remove(currentFloor);
-                }
-            }
-            if (downStops.isEmpty()) {
-                state = upStops.isEmpty() ? State.IDLE : State.MOVING_UP;
-            }
-        }
-    }
-}
+    # Simulate movement step (e.g., called every second by a scheduler loop)
+    def move(self) -> None:
+        if self.state == State.IDLE:
+            return
 
-// 4. Dispatcher Strategy
-class ElevatorController {
-    List<Elevator> elevators;
+        if self.state == State.MOVING_UP:
+            if self.up_stops:
+                above = [f for f in self.up_stops if f > self.current_floor]
+                next_ = min(above) if above else min(self.up_stops)
+                if next_ > self.current_floor:
+                    self.current_floor += 1
+                if self.current_floor in self.up_stops:
+                    print(f"Elevator {self.id} stopping at {self.current_floor}")
+                    self.up_stops.discard(self.current_floor)
+            if not self.up_stops:
+                self.state = State.IDLE if not self.down_stops else State.MOVING_DOWN
 
-    public ElevatorController(int numElevators) {
-        elevators = new ArrayList<>();
-        for (int i = 0; i < numElevators; i++) {
-            elevators.add(new Elevator(i + 1));
-        }
-    }
+        elif self.state == State.MOVING_DOWN:
+            if self.down_stops:
+                below = [f for f in self.down_stops if f < self.current_floor]
+                next_ = max(below) if below else max(self.down_stops)
+                if next_ < self.current_floor:
+                    self.current_floor -= 1
+                if self.current_floor in self.down_stops:
+                    print(f"Elevator {self.id} stopping at {self.current_floor}")
+                    self.down_stops.discard(self.current_floor)
+            if not self.down_stops:
+                self.state = State.IDLE if not self.up_stops else State.MOVING_UP
 
-    public void requestElevator(int floor, Direction dir) {
-        // Strategy: Find nearest elevator moving in same direction or IDLE
-        // This is a simplified dispatch logic.
-        Elevator best = null;
-        int minDistance = Integer.MAX_VALUE;
+# 4. Dispatcher Strategy
+class ElevatorController:
+    def __init__(self, num_elevators: int):
+        self.elevators: list[Elevator] = [Elevator(i + 1) for i in range(num_elevators)]
 
-        for (Elevator e : elevators) {
-            int dist = Math.abs(e.currentFloor - floor);
-            // In a real interview, elaborate on this logic:
-            // If e is moving UP and floor > current, it's a candidate.
-            // If e is moving UP and floor < current, it's NOT a candidate (unless it wraps around).
-            
-            if (dist < minDistance) {
-                minDistance = dist;
-                best = e;
-            }
-        }
-        
-        if (best != null) {
-            best.addStop(floor);
-        }
-    }
-    
-    // Simulate time passing
-    public void step() {
-        for(Elevator e : elevators) e.move();
-    }
-}
+    def request_elevator(self, floor: int, direction: Direction) -> None:
+        # Strategy: Find nearest elevator moving in same direction or IDLE
+        best = min(self.elevators, key=lambda e: abs(e.current_floor - floor), default=None)
+        if best is not None:
+            best.add_stop(floor)
 
-// 5. Client
-public class ElevatorDemo {
-    public static void main(String[] args) {
-        ElevatorController system = new ElevatorController(1);
-        
-        System.out.println("-- Person at Floor 5 presses UP --");
-        system.requestElevator(5, Direction.UP);
-        
-        // Simulating ticks
-        system.step(); // 0 -> 1
-        system.step(); // 1 -> 2
-        system.step(); // 2 -> 3
-        system.step(); // 3 -> 4
-        system.step(); // 4 -> 5 (Stop)
-    }
-}
+    # Simulate time passing
+    def step(self) -> None:
+        for e in self.elevators:
+            e.move()
+
+# 5. Client
+if __name__ == "__main__":
+    system = ElevatorController(1)
+
+    print("-- Person at Floor 5 presses UP --")
+    system.request_elevator(5, Direction.UP)
+
+    # Simulating ticks
+    system.step()  # 0 -> 1
+    system.step()  # 1 -> 2
+    system.step()  # 2 -> 3
+    system.step()  # 3 -> 4
+    system.step()  # 4 -> 5 (Stop)
 ```
 
 ---

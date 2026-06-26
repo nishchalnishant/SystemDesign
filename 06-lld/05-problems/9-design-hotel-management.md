@@ -14,31 +14,33 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class HotelSystem {
-    private Map<Integer, String> roomStatus = new HashMap<>(); // roomId → "AVAILABLE"/"RESERVED"/"OCCUPIED"
-    private Map<String, int[]> reservations = new HashMap<>(); // confirmId → [roomId, checkIn, checkOut]
-    private String pricingMode = "STANDARD"; // or "WEEKEND"
+```python
+import uuid
+from datetime import date
 
-    public String bookRoom(int roomId, long checkIn, long checkOut, String guestName) {
-        if (!"AVAILABLE".equals(roomStatus.get(roomId))) {
-            return null; // room not available
-        }
-        // Does not check date overlap with existing reservations for this room
-        roomStatus.put(roomId, "RESERVED");
-        String confirmId = UUID.randomUUID().toString();
-        reservations.put(confirmId, new int[]{roomId, (int)checkIn, (int)checkOut});
-        return confirmId;
-    }
+class HotelSystem:
+    def __init__(self):
+        self.room_status: dict[int, str] = {}   # room_id → "AVAILABLE"/"RESERVED"/"OCCUPIED"
+        self.reservations: dict[str, list] = {}  # confirm_id → [room_id, check_in, check_out]
+        self.pricing_mode: str = "STANDARD"      # or "WEEKEND"
 
-    public double calculatePrice(int roomId, long checkIn, long checkOut) {
-        long nights = (checkOut - checkIn) / 86400000;
-        double baseRate = 100.0; // hardcoded
-        if (pricingMode.equals("WEEKEND")) return nights * baseRate * 1.5;
-        else return nights * baseRate;
-        // Adding "HOLIDAY" pricing requires editing this method
-    }
-}
+    def book_room(self, room_id: int, check_in: date, check_out: date,
+                  guest_name: str) -> str | None:
+        if self.room_status.get(room_id) != "AVAILABLE":
+            return None  # room not available
+        # Does not check date overlap with existing reservations for this room
+        self.room_status[room_id] = "RESERVED"
+        confirm_id = str(uuid.uuid4())
+        self.reservations[confirm_id] = [room_id, check_in, check_out]
+        return confirm_id
+
+    def calculate_price(self, room_id: int, check_in: date, check_out: date) -> float:
+        nights = (check_out - check_in).days
+        base_rate = 100.0  # hardcoded
+        if self.pricing_mode == "WEEKEND":
+            return nights * base_rate * 1.5
+        return nights * base_rate
+        # Adding "HOLIDAY" pricing requires editing this method
 ```
 
 **Concrete failures**:
@@ -216,243 +218,228 @@ calculate(Room, Range)  HolidayPricing
 
 ## Phase 5: Key Java Implementation
 
-```java
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+```python
+from __future__ import annotations
+import threading
+import uuid
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal
+from enum import Enum
+from typing import ClassVar
 
-// ── Date Range ─────────────────────────────────────────────────────────────
+# ── Date Range ─────────────────────────────────────────────────────────────
 
-class DateRange {
-    final LocalDate checkIn;
-    final LocalDate checkOut;
+@dataclass(frozen=True)
+class DateRange:
+    check_in:  date
+    check_out: date
 
-    DateRange(LocalDate checkIn, LocalDate checkOut) {
-        if (!checkIn.isBefore(checkOut))
-            throw new IllegalArgumentException("checkIn must be before checkOut");
-        this.checkIn  = checkIn;
-        this.checkOut = checkOut;
-    }
+    def __post_init__(self) -> None:
+        if not self.check_in < self.check_out:
+            raise ValueError("check_in must be before check_out")
 
-    // Half-open interval [checkIn, checkOut)
-    boolean overlaps(DateRange other) {
-        return checkIn.isBefore(other.checkOut) && checkOut.isAfter(other.checkIn);
-    }
+    # Half-open interval [check_in, check_out)
+    def overlaps(self, other: DateRange) -> bool:
+        return self.check_in < other.check_out and self.check_out > other.check_in
 
-    long nights() { return ChronoUnit.DAYS.between(checkIn, checkOut); }
-}
+    def nights(self) -> int:
+        return (self.check_out - self.check_in).days
 
-// ── Enums ──────────────────────────────────────────────────────────────────
+# ── Enums ──────────────────────────────────────────────────────────────────
 
-enum RoomType   { STANDARD, DELUXE, SUITE }
-enum RoomState  { AVAILABLE, RESERVED, OCCUPIED, CLEANING }
-enum ResStatus  { CONFIRMED, CHECKED_IN, CANCELLED }
+class RoomType(Enum):
+    STANDARD = "STANDARD"
+    DELUXE   = "DELUXE"
+    SUITE    = "SUITE"
 
-// ── Pricing Strategy ───────────────────────────────────────────────────────
+class RoomState(Enum):
+    AVAILABLE = "AVAILABLE"
+    RESERVED  = "RESERVED"
+    OCCUPIED  = "OCCUPIED"
+    CLEANING  = "CLEANING"
 
-interface PricingStrategy {
-    BigDecimal calculate(Room room, DateRange range);
-}
+class ResStatus(Enum):
+    CONFIRMED  = "CONFIRMED"
+    CHECKED_IN = "CHECKED_IN"
+    CANCELLED  = "CANCELLED"
 
-class FlatPricing implements PricingStrategy {
-    public BigDecimal calculate(Room room, DateRange range) {
-        return room.getBasePrice().multiply(BigDecimal.valueOf(range.nights()));
-    }
-}
+# ── Pricing Strategy ───────────────────────────────────────────────────────
 
-class WeekendSurgePricing implements PricingStrategy {
-    public BigDecimal calculate(Room room, DateRange range) {
-        BigDecimal total = BigDecimal.ZERO;
-        LocalDate d = range.checkIn;
-        while (d.isBefore(range.checkOut)) {
-            boolean isWeekend = d.getDayOfWeek().getValue() >= 6;
-            BigDecimal rate   = isWeekend
-                    ? room.getBasePrice().multiply(new BigDecimal("1.30"))
-                    : room.getBasePrice();
-            total = total.add(rate);
-            d = d.plusDays(1);
-        }
-        return total;
-    }
-}
+class PricingStrategy(ABC):
+    @abstractmethod
+    def calculate(self, room: Room, range_: DateRange) -> Decimal: ...
 
-// ── Room ───────────────────────────────────────────────────────────────────
+class FlatPricing(PricingStrategy):
+    def calculate(self, room: Room, range_: DateRange) -> Decimal:
+        return room.base_price * Decimal(range_.nights())
 
-class Room {
-    private final int id;
-    private final RoomType type;
-    private final BigDecimal basePrice;
-    private RoomState state;
-    private final List<DateRange> bookedRanges = new ArrayList<>();
+class WeekendSurgePricing(PricingStrategy):
+    def calculate(self, room: Room, range_: DateRange) -> Decimal:
+        total = Decimal(0)
+        d = range_.check_in
+        from datetime import timedelta
+        while d < range_.check_out:
+            rate = room.base_price * Decimal("1.30") if d.weekday() >= 5 else room.base_price
+            total += rate
+            d += timedelta(days=1)
+        return total
 
-    Room(int id, RoomType type, BigDecimal basePrice) {
-        this.id        = id;
-        this.type      = type;
-        this.basePrice = basePrice;
-        this.state     = RoomState.AVAILABLE;
-    }
+# ── Room ───────────────────────────────────────────────────────────────────
 
-    int getId()               { return id; }
-    RoomType getType()        { return type; }
-    BigDecimal getBasePrice() { return basePrice; }
-    RoomState getState()      { return state; }
+class Room:
+    def __init__(self, id: int, type: RoomType, base_price: Decimal):
+        self.id          = id
+        self.type        = type
+        self.base_price  = base_price
+        self._state      = RoomState.AVAILABLE
+        self._booked_ranges: list[DateRange] = []
+        self._lock       = threading.Lock()
 
-    synchronized boolean isAvailable(DateRange range) {
-        if (state != RoomState.AVAILABLE) return false;
-        for (DateRange booked : bookedRanges) {
-            if (booked.overlaps(range)) return false;
-        }
-        return true;
-    }
+    def get_state(self) -> RoomState:
+        return self._state
 
-    // Atomic check-and-book: returns true if successful
-    synchronized boolean book(DateRange range) {
-        if (!isAvailable(range)) return false;
-        bookedRanges.add(range);
-        state = RoomState.RESERVED;
-        return true;
-    }
+    def is_available(self, range_: DateRange) -> bool:
+        with self._lock:
+            if self._state != RoomState.AVAILABLE:
+                return False
+            return not any(b.overlaps(range_) for b in self._booked_ranges)
 
-    synchronized void release(DateRange range) {
-        bookedRanges.removeIf(r -> r.checkIn.equals(range.checkIn) && r.checkOut.equals(range.checkOut));
-        if (bookedRanges.isEmpty()) state = RoomState.AVAILABLE;
-    }
+    # Atomic check-and-book: returns True if successful
+    def book(self, range_: DateRange) -> bool:
+        with self._lock:
+            if self._state != RoomState.AVAILABLE:
+                return False
+            if any(b.overlaps(range_) for b in self._booked_ranges):
+                return False
+            self._booked_ranges.append(range_)
+            self._state = RoomState.RESERVED
+            return True
 
-    synchronized void checkIn()  { state = RoomState.OCCUPIED; }
-    synchronized void startCleaning() { state = RoomState.CLEANING; }
-    synchronized void finishCleaning() { state = RoomState.AVAILABLE; }
-}
+    def release(self, range_: DateRange) -> None:
+        with self._lock:
+            self._booked_ranges = [
+                r for r in self._booked_ranges
+                if not (r.check_in == range_.check_in and r.check_out == range_.check_out)
+            ]
+            if not self._booked_ranges:
+                self._state = RoomState.AVAILABLE
 
-// ── Guest ──────────────────────────────────────────────────────────────────
+    def check_in(self)        -> None:
+        with self._lock: self._state = RoomState.OCCUPIED
+    def start_cleaning(self)  -> None:
+        with self._lock: self._state = RoomState.CLEANING
+    def finish_cleaning(self) -> None:
+        with self._lock: self._state = RoomState.AVAILABLE
 
-class Guest {
-    final String id;
-    final String name;
-    Guest(String id, String name) { this.id = id; this.name = name; }
-}
+# ── Guest ──────────────────────────────────────────────────────────────────
 
-// ── Reservation ────────────────────────────────────────────────────────────
+@dataclass
+class Guest:
+    id:   str
+    name: str
 
-class Reservation {
-    final String id;
-    final Guest guest;
-    final Room room;
-    final DateRange dateRange;
-    final BigDecimal totalPrice;
-    ResStatus status;
+# ── Reservation ────────────────────────────────────────────────────────────
 
-    Reservation(Guest guest, Room room, DateRange range, BigDecimal price) {
-        this.id         = UUID.randomUUID().toString();
-        this.guest      = guest;
-        this.room       = room;
-        this.dateRange  = range;
-        this.totalPrice = price;
-        this.status     = ResStatus.CONFIRMED;
-    }
-}
+class Reservation:
+    def __init__(self, guest: Guest, room: Room, date_range: DateRange, price: Decimal):
+        self.id          = str(uuid.uuid4())
+        self.guest       = guest
+        self.room        = room
+        self.date_range  = date_range
+        self.total_price = price
+        self.status      = ResStatus.CONFIRMED
 
-// ── Hotel (Singleton) ──────────────────────────────────────────────────────
+# ── Hotel (Singleton) ──────────────────────────────────────────────────────
 
-public class Hotel {
-    private static volatile Hotel instance;
-    private final Map<RoomType, List<Room>> roomsByType   = new HashMap<>();
-    private final Map<String, Reservation> reservations   = new ConcurrentHashMap<>();
-    private PricingStrategy pricingStrategy = new FlatPricing();
+class Hotel:
+    _instance: ClassVar[Hotel | None] = None
+    _class_lock: ClassVar[threading.Lock] = threading.Lock()
 
-    private Hotel() {
-        for (RoomType t : RoomType.values()) roomsByType.put(t, new ArrayList<>());
-    }
+    def __new__(cls) -> Hotel:
+        if cls._instance is None:
+            with cls._class_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._init()
+        return cls._instance
 
-    public static Hotel getInstance() {
-        if (instance == null) {
-            synchronized (Hotel.class) {
-                if (instance == null) instance = new Hotel();
-            }
-        }
-        return instance;
-    }
+    def _init(self) -> None:
+        self._rooms_by_type: dict[RoomType, list[Room]] = {t: [] for t in RoomType}
+        self._reservations:  dict[str, Reservation]     = {}
+        self._pricing:       PricingStrategy             = FlatPricing()
 
-    public void addRoom(Room room) { roomsByType.get(room.getType()).add(room); }
-    public void setPricingStrategy(PricingStrategy s) { this.pricingStrategy = s; }
+    def add_room(self, room: Room) -> None:
+        self._rooms_by_type[room.type].append(room)
 
-    public List<Room> searchRooms(RoomType type, DateRange range) {
-        List<Room> result = new ArrayList<>();
-        for (Room r : roomsByType.getOrDefault(type, Collections.emptyList())) {
-            if (r.isAvailable(range)) result.add(r);
-        }
-        return result;
-    }
+    def set_pricing_strategy(self, s: PricingStrategy) -> None:
+        self._pricing = s
 
-    public Reservation bookRoom(Guest guest, Room room, DateRange range) {
-        // Per-room lock is inside room.book() — already synchronized
-        if (!room.book(range)) {
-            System.out.println("Booking failed: Room " + room.getId() + " unavailable for requested dates.");
-            return null;
-        }
-        BigDecimal price = pricingStrategy.calculate(room, range);
-        Reservation res  = new Reservation(guest, room, range, price);
-        reservations.put(res.id, res);
-        System.out.printf("Booking confirmed: %s | Room %d | %s–%s | Total: %s%n",
-                res.id, room.getId(), range.checkIn, range.checkOut, price);
-        return res;
-    }
+    def search_rooms(self, type: RoomType, range_: DateRange) -> list[Room]:
+        return [r for r in self._rooms_by_type.get(type, []) if r.is_available(range_)]
 
-    public boolean cancelReservation(String confirmationId) {
-        Reservation res = reservations.get(confirmationId);
-        if (res == null || res.status == ResStatus.CANCELLED) return false;
-        res.status = ResStatus.CANCELLED;
-        res.room.release(res.dateRange);
-        System.out.println("Cancelled: " + confirmationId);
-        return true;
-    }
+    def book_room(self, guest: Guest, room: Room, range_: DateRange) -> Reservation | None:
+        # Per-room lock is inside room.book() — already thread-safe
+        if not room.book(range_):
+            print(f"Booking failed: Room {room.id} unavailable for requested dates.")
+            return None
+        price = self._pricing.calculate(room, range_)
+        res   = Reservation(guest, room, range_, price)
+        self._reservations[res.id] = res
+        print(f"Booking confirmed: {res.id} | Room {room.id} | "
+              f"{range_.check_in}–{range_.check_out} | Total: {price}")
+        return res
 
-    public void checkIn(String confirmationId) {
-        Reservation res = reservations.get(confirmationId);
-        if (res == null || res.status != ResStatus.CONFIRMED) throw new IllegalStateException("Invalid check-in");
-        res.status = ResStatus.CHECKED_IN;
-        res.room.checkIn();
-        System.out.println("Checked in: " + res.guest.name + " → Room " + res.room.getId());
-    }
+    def cancel_reservation(self, confirmation_id: str) -> bool:
+        res = self._reservations.get(confirmation_id)
+        if res is None or res.status == ResStatus.CANCELLED:
+            return False
+        res.status = ResStatus.CANCELLED
+        res.room.release(res.date_range)
+        print(f"Cancelled: {confirmation_id}")
+        return True
 
-    public void checkOut(String confirmationId) {
-        Reservation res = reservations.get(confirmationId);
-        if (res == null || res.status != ResStatus.CHECKED_IN) throw new IllegalStateException("Invalid check-out");
-        res.room.startCleaning();
-        System.out.println("Checked out: Room " + res.room.getId() + " now CLEANING");
-        // Housekeeping callback would call: res.room.finishCleaning();
-    }
-}
+    def check_in(self, confirmation_id: str) -> None:
+        res = self._reservations.get(confirmation_id)
+        if res is None or res.status != ResStatus.CONFIRMED:
+            raise RuntimeError("Invalid check-in")
+        res.status = ResStatus.CHECKED_IN
+        res.room.check_in()
+        print(f"Checked in: {res.guest.name} → Room {res.room.id}")
 
-// ── Demo ───────────────────────────────────────────────────────────────────
+    def check_out(self, confirmation_id: str) -> None:
+        res = self._reservations.get(confirmation_id)
+        if res is None or res.status != ResStatus.CHECKED_IN:
+            raise RuntimeError("Invalid check-out")
+        res.room.start_cleaning()
+        print(f"Checked out: Room {res.room.id} now CLEANING")
+        # Housekeeping callback would call: res.room.finish_cleaning()
 
-class HotelDemo {
-    public static void main(String[] args) {
-        Hotel hotel = Hotel.getInstance();
-        hotel.addRoom(new Room(101, RoomType.STANDARD, new BigDecimal("100")));
-        hotel.addRoom(new Room(201, RoomType.DELUXE,   new BigDecimal("200")));
-        hotel.setPricingStrategy(new WeekendSurgePricing());
+# ── Demo ───────────────────────────────────────────────────────────────────
 
-        Guest alice = new Guest("g1", "Alice");
-        Guest bob   = new Guest("g2", "Bob");
-        DateRange range = new DateRange(LocalDate.of(2026, 7, 4), LocalDate.of(2026, 7, 7));
+if __name__ == "__main__":
+    hotel = Hotel()
+    hotel.add_room(Room(101, RoomType.STANDARD, Decimal("100")))
+    hotel.add_room(Room(201, RoomType.DELUXE,   Decimal("200")))
+    hotel.set_pricing_strategy(WeekendSurgePricing())
 
-        List<Room> available = hotel.searchRooms(RoomType.STANDARD, range);
-        System.out.println("Available STANDARD rooms: " + available.size());
+    alice = Guest("g1", "Alice")
+    bob   = Guest("g2", "Bob")
+    range_ = DateRange(date(2026, 7, 4), date(2026, 7, 7))
 
-        Reservation res1 = hotel.bookRoom(alice, available.get(0), range);
+    available = hotel.search_rooms(RoomType.STANDARD, range_)
+    print(f"Available STANDARD rooms: {len(available)}")
 
-        // Bob tries same room and dates → should fail
-        Reservation res2 = hotel.bookRoom(bob, available.get(0), range);
-        assert res2 == null : "Double booking should have failed";
+    res1 = hotel.book_room(alice, available[0], range_)
 
-        if (res1 != null) {
-            hotel.checkIn(res1.id);
-            hotel.checkOut(res1.id);
-        }
-    }
-}
+    # Bob tries same room and dates → should fail
+    res2 = hotel.book_room(bob, available[0], range_)
+    assert res2 is None, "Double booking should have failed"
+
+    if res1 is not None:
+        hotel.check_in(res1.id)
+        hotel.check_out(res1.id)
 ```
 
 ---
@@ -487,15 +474,13 @@ Option 3 — Optimistic locking:
 ```
 
 **Loyalty tier pricing:**
-```java
-class LoyaltyTierPricing implements PricingStrategy {
-    public BigDecimal calculate(Room room, DateRange range) {
-        // Fetch guest's tier from LoyaltyService
-        // GOLD: 10% off, PLATINUM: 20% off
-        BigDecimal base = new FlatPricing().calculate(room, range);
-        return base.multiply(discountFactor(guestTier));
-    }
-}
+```python
+class LoyaltyTierPricing(PricingStrategy):
+    def calculate(self, room: Room, range_: DateRange) -> Decimal:
+        # Fetch guest's tier from LoyaltyService
+        # GOLD: 10% off, PLATINUM: 20% off
+        base = FlatPricing().calculate(room, range_)
+        return base * self._discount_factor(self._guest_tier)
 ```
 
 **Pending payment timeout:**

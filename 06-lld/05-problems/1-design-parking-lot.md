@@ -16,35 +16,34 @@ tags: [06-lld, system-design, problems]
 
 Imagine a single `ParkingSystem` God class:
 
-```java
-class ParkingSystem {
-    private int[][] spots; // [floor][spotIndex], 0=free 1=occupied
-    private Map<String, int[]> tickets; // ticketId → [floor, spot]
-    private String pricingType = "HOURLY";
+```python
+import uuid
 
-    public String parkCar(String licensePlate, String vehicleType) {
-        // scan every floor and every spot to find a free one
-        for (int f = 0; f < spots.length; f++) {
-            for (int s = 0; s < spots[f].length; s++) {
-                if (spots[f][s] == 0) {
-                    spots[f][s] = 1;
-                    String ticketId = UUID.randomUUID().toString();
-                    tickets.put(ticketId, new int[]{f, s});
-                    return ticketId;
-                }
-            }
-        }
-        return null;
-    }
+class ParkingSystem:
+    def __init__(self, floors: int, spots_per_floor: int) -> None:
+        self.spots = [[0] * spots_per_floor for _ in range(floors)]  # 0=free 1=occupied
+        self.tickets: dict[str, list[int]] = {}  # ticket_id → [floor, spot]
+        self.pricing_type = "HOURLY"
 
-    public double exitCar(String ticketId) {
-        int[] location = tickets.remove(ticketId);
-        spots[location[0]][location[1]] = 0;
-        if (pricingType.equals("HOURLY")) { /* ... */ }
-        else if (pricingType.equals("FLAT")) { /* ... */ }
-        return 0;
-    }
-}
+    def park_car(self, license_plate: str, vehicle_type: str) -> str | None:
+        # scan every floor and every spot to find a free one
+        for f, row in enumerate(self.spots):
+            for s, occupied in enumerate(row):
+                if occupied == 0:
+                    self.spots[f][s] = 1
+                    ticket_id = str(uuid.uuid4())
+                    self.tickets[ticket_id] = [f, s]
+                    return ticket_id
+        return None
+
+    def exit_car(self, ticket_id: str) -> float:
+        location = self.tickets.pop(ticket_id)
+        self.spots[location[0]][location[1]] = 0
+        if self.pricing_type == "HOURLY":
+            pass  # ...
+        elif self.pricing_type == "FLAT":
+            pass  # ...
+        return 0
 ```
 
 **Concrete failures**:
@@ -262,205 +261,175 @@ findNearestSpot(vehicleType):
 
 The `Level` constructor adds spots in ascending `id` order (0, 1, 2, ...) so a linear scan automatically returns the smallest ID first.
 
-### Java Implementation
+### Python Implementation
 
-```java
-import java.util.*;
-import java.util.concurrent.*;
-import java.time.Instant;
+```python
+import uuid
+import time
+import threading
+from enum import Enum, auto
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 
-// 1. Enums
-enum VehicleType { MOTORCYCLE, CAR, TRUCK }
-enum SpotType { MOTORCYCLE, COMPACT, LARGE }
+# 1. Enums
+class VehicleType(Enum):
+    MOTORCYCLE = auto()
+    CAR = auto()
+    TRUCK = auto()
 
-// 2. Vehicle Hierarchy
-abstract class Vehicle {
-    private String licensePlate;
-    private VehicleType type;
+class SpotType(Enum):
+    MOTORCYCLE = auto()
+    COMPACT = auto()
+    LARGE = auto()
 
-    public Vehicle(String licensePlate, VehicleType type) {
-        this.licensePlate = licensePlate;
-        this.type = type;
-    }
+# 2. Vehicle Hierarchy
+class Vehicle(ABC):
+    def __init__(self, license_plate: str, vehicle_type: VehicleType) -> None:
+        self._license_plate = license_plate
+        self._type = vehicle_type
 
-    public VehicleType getType() { return type; }
+    @property
+    def vehicle_type(self) -> VehicleType:
+        return self._type
+
+class Car(Vehicle):
+    def __init__(self, license_plate: str) -> None:
+        super().__init__(license_plate, VehicleType.CAR)
+
+class Motorcycle(Vehicle):
+    def __init__(self, license_plate: str) -> None:
+        super().__init__(license_plate, VehicleType.MOTORCYCLE)
+
+class Truck(Vehicle):
+    def __init__(self, license_plate: str) -> None:
+        super().__init__(license_plate, VehicleType.TRUCK)
+
+# 3. Parking Spot
+class ParkingSpot:
+    def __init__(self, spot_id: int, spot_type: SpotType) -> None:
+        self._id = spot_id
+        self._type = spot_type
+        self._is_free = True
+        self._vehicle: Vehicle | None = None
+        self._lock = threading.Lock()
+
+    @property
+    def spot_id(self) -> int:
+        return self._id
+
+    @property
+    def spot_type(self) -> SpotType:
+        return self._type
+
+    def is_free(self) -> bool:
+        with self._lock:
+            return self._is_free
+
+    def occupy(self, vehicle: Vehicle) -> None:
+        with self._lock:
+            if not self._is_free:
+                raise RuntimeError("Spot already occupied")
+            self._vehicle = vehicle
+            self._is_free = False
+
+    def free(self) -> None:
+        with self._lock:
+            self._vehicle = None
+            self._is_free = True
+
+# 4. Ticket
+@dataclass
+class Ticket:
+    spot: ParkingSpot
+    ticket_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    entry_time: float = field(default_factory=time.time)
+
+# 5. Level
+_SPOT_TYPE_MAP = {
+    VehicleType.MOTORCYCLE: SpotType.MOTORCYCLE,
+    VehicleType.CAR: SpotType.COMPACT,
+    VehicleType.TRUCK: SpotType.LARGE,
 }
 
-class Car extends Vehicle {
-    public Car(String licensePlate) { super(licensePlate, VehicleType.CAR); }
-}
+class Level:
+    def __init__(self, floor: int, num_spots: int) -> None:
+        self._floor = floor
+        # Spots added in ascending ID order: 0..num_spots-1
+        # This ensures linear scan returns lowest ID first (nearest to entrance)
+        self._spots: list[ParkingSpot] = []
+        for i in range(num_spots):
+            if i < num_spots // 3:
+                stype = SpotType.MOTORCYCLE
+            elif i < 2 * num_spots // 3:
+                stype = SpotType.COMPACT
+            else:
+                stype = SpotType.LARGE
+            self._spots.append(ParkingSpot(i, stype))
 
-class Motorcycle extends Vehicle {
-    public Motorcycle(String licensePlate) { super(licensePlate, VehicleType.MOTORCYCLE); }
-}
+    def find_available_spot(self, vehicle_type: VehicleType) -> ParkingSpot | None:
+        """
+        Finds the nearest available spot for a given vehicle type.
+        Iterates spots in ascending ID order — lowest ID = nearest to entrance.
+        Returns first free spot of the required type.
+        """
+        needed = _SPOT_TYPE_MAP[vehicle_type]
+        for spot in self._spots:
+            if spot.is_free() and spot.spot_type == needed:
+                return spot  # First match = nearest spot on this floor
+        return None
 
-class Truck extends Vehicle {
-    public Truck(String licensePlate) { super(licensePlate, VehicleType.TRUCK); }
-}
+# 6. ParkingLot (Singleton)
+class ParkingLot:
+    _instance: "ParkingLot | None" = None
+    _lock = threading.Lock()
 
-// 3. Parking Spot
-class ParkingSpot {
-    private int id;
-    private SpotType type;
-    private boolean isFree;
-    private Vehicle vehicle;
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    def __new__(cls) -> "ParkingLot":
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    inst = super().__new__(cls)
+                    inst._levels: list[Level] = []
+                    cls._instance = inst
+        return cls._instance
 
-    public ParkingSpot(int id, SpotType type) {
-        this.id = id;
-        this.type = type;
-        this.isFree = true;
-    }
+    def add_level(self, level: Level) -> None:
+        self._levels.append(level)
 
-    public boolean isFree() { 
-        lock.readLock().lock();
-        try {
-            return isFree; 
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-    
-    public int getId() { return id; }
-    public SpotType getType() { return type; }
+    def park_vehicle(self, vehicle: Vehicle) -> Ticket:
+        """
+        Parks a vehicle using the nearest-available-spot algorithm:
+        Iterates levels in order (ground floor first).
+        On each level, find_available_spot() iterates spots by ascending ID.
+        The first match across all levels is the nearest overall spot.
+        """
+        for level in self._levels:
+            spot = level.find_available_spot(vehicle.vehicle_type)
+            if spot is not None:
+                spot.occupy(vehicle)
+                print(f"Assigned spot ID {spot.spot_id} to vehicle")
+                return Ticket(spot=spot)
+        raise RuntimeError("Gridlock! No spot available.")
 
-    public void occupy(Vehicle v) {
-        lock.writeLock().lock();
-        try {
-            if (!this.isFree) throw new IllegalStateException("Spot already occupied");
-            this.vehicle = v;
-            this.isFree = false;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
+    def unpark_vehicle(self, ticket: Ticket) -> float:
+        ticket.spot.free()
+        duration = time.time() - ticket.entry_time
+        # Simple pricing: $1 per second (for demo speed)
+        return duration * 1.0
 
-    public void free() {
-        lock.writeLock().lock();
-        try {
-            this.vehicle = null;
-            this.isFree = true;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-}
+# 7. Client Code
+if __name__ == "__main__":
+    lot = ParkingLot()
+    lot.add_level(Level(1, 10))  # 10 spots
 
-// 4. Ticket
-class Ticket {
-    String id;
-    long entryTime;
-    ParkingSpot spot;
+    car = Car("ABC-123")
+    print("Parking car...")
+    ticket = lot.park_vehicle(car)
+    print(f"Ticket issued: {ticket.ticket_id}")
 
-    public Ticket(ParkingSpot spot) {
-        this.id = UUID.randomUUID().toString();
-        this.entryTime = System.currentTimeMillis();
-        this.spot = spot;
-    }
-}
+    time.sleep(2)  # Wait 2 sec
 
-// 5. Level
-class Level {
-    private int floor;
-    private List<ParkingSpot> spots;
-
-    public Level(int floor, int numSpots) {
-        this.floor = floor;
-        this.spots = new ArrayList<>(numSpots);
-        // Spots added in ascending ID order: 0..numSpots-1
-        // This ensures linear scan returns lowest ID first (nearest to entrance)
-        for (int i = 0; i < numSpots; i++) {
-            SpotType type = (i < numSpots/3) ? SpotType.MOTORCYCLE : 
-                            (i < 2*numSpots/3) ? SpotType.COMPACT : SpotType.LARGE;
-            spots.add(new ParkingSpot(i, type));
-        }
-    }
-
-    /**
-     * Finds the nearest available spot for a given vehicle type.
-     * Iterates spots in ascending ID order — lowest ID = nearest to entrance.
-     * Returns first free spot of the required type.
-     */
-    public ParkingSpot findAvailableSpot(VehicleType vType) {
-        SpotType needed = getSpotTypeForVehicle(vType);
-        for (ParkingSpot s : spots) {
-            if (s.isFree() && s.getType() == needed) {
-                return s;  // First match = nearest spot on this floor
-            }
-        }
-        return null;
-    }
-
-    private SpotType getSpotTypeForVehicle(VehicleType vType) {
-        switch (vType) {
-            case MOTORCYCLE: return SpotType.MOTORCYCLE;
-            case CAR: return SpotType.COMPACT;
-            default: return SpotType.LARGE;
-        }
-    }
-}
-
-// 6. ParkingLot (Singleton)
-class ParkingLot {
-    private static ParkingLot instance;
-    private List<Level> levels;
-    
-    private ParkingLot() {
-        levels = new ArrayList<>();
-    }
-
-    public static synchronized ParkingLot getInstance() {
-        if (instance == null) instance = new ParkingLot();
-        return instance;
-    }
-
-    public void addLevel(Level level) {
-        levels.add(level);
-    }
-
-    /**
-     * Parks a vehicle using the nearest-available-spot algorithm:
-     * Iterates levels in order (ground floor first).
-     * On each level, findAvailableSpot() iterates spots by ascending ID.
-     * The first match across all levels is the nearest overall spot.
-     */
-    public Ticket parkVehicle(Vehicle v) {
-        for (Level l : levels) {
-            ParkingSpot spot = l.findAvailableSpot(v.getType());
-            if (spot != null) {
-                spot.occupy(v);
-                System.out.println("Assigned spot ID " + spot.getId() + " to vehicle");
-                return new Ticket(spot);
-            }
-        }
-        throw new RuntimeException("Gridlock! No spot available.");
-    }
-
-    public double unparkVehicle(Ticket ticket) {
-        ticket.spot.free();
-        long duration = System.currentTimeMillis() - ticket.entryTime;
-        // Simple pricing: $1 per second (for demo speed)
-        return (duration / 1000.0) * 1.0;
-    }
-}
-
-// 7. Client Code
-public class ParkingSystem {
-    public static void main(String[] args) throws InterruptedException {
-        ParkingLot lot = ParkingLot.getInstance();
-        lot.addLevel(new Level(1, 10)); // 10 spots
-
-        Vehicle car = new Car("ABC-123");
-        System.out.println("Parking car...");
-        Ticket ticket = lot.parkVehicle(car);
-        System.out.println("Ticket issued: " + ticket.id);
-
-        Thread.sleep(2000); // Wait 2 sec
-
-        double fee = lot.unparkVehicle(ticket);
-        System.out.println("Unparked. Fee: $" + fee);
-    }
-}
+    fee = lot.unpark_vehicle(ticket)
+    print(f"Unparked. Fee: ${fee:.2f}")
 ```
 
 ---

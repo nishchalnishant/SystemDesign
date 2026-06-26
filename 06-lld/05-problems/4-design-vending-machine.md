@@ -14,46 +14,41 @@ tags: [06-lld, system-design, problems]
 
 ## What Breaks Without This Design?
 
-```java
-class VendingMachine {
-    private String state = "IDLE"; // "IDLE", "SELECTED", "DISPENSING"
-    private String selectedItem;
-    private double balance;
-    private Map<String, Integer> inventory = new HashMap<>();
-    private Map<String, Double> prices = new HashMap<>();
+```python
+from decimal import Decimal
 
-    public void insertCoin(double amount) {
-        if (state.equals("IDLE") || state.equals("SELECTED")) {
-            balance += amount;
-            if (state.equals("SELECTED") && balance >= prices.get(selectedItem)) {
-                state = "DISPENSING";
-                dispense();
-            }
-        } else {
-            System.out.println("Cannot insert coin now");
-        }
-    }
+class VendingMachine:
+    def __init__(self) -> None:
+        self._state = "IDLE"  # "IDLE", "SELECTED", "DISPENSING"
+        self._selected_item: str | None = None
+        self._balance = Decimal("0")
+        self._inventory: dict[str, int] = {}
+        self._prices: dict[str, Decimal] = {}
 
-    public void selectItem(String item) {
-        if (state.equals("IDLE")) {
-            if (inventory.getOrDefault(item, 0) > 0) {
-                selectedItem = item;
-                state = "SELECTED";
-            }
-        } else {
-            System.out.println("Select item only in IDLE state");
-        }
-    }
+    def insert_coin(self, amount: Decimal) -> None:
+        if self._state in ("IDLE", "SELECTED"):
+            self._balance += amount
+            if self._state == "SELECTED" and self._balance >= self._prices[self._selected_item]:
+                self._state = "DISPENSING"
+                self._dispense()
+        else:
+            print("Cannot insert coin now")
 
-    private void dispense() {
-        inventory.put(selectedItem, inventory.get(selectedItem) - 1);
-        double change = balance - prices.get(selectedItem);
-        balance = 0;
-        selectedItem = null;
-        state = "IDLE";
-        System.out.println("Dispensed. Change: $" + change);
-    }
-}
+    def select_item(self, item: str) -> None:
+        if self._state == "IDLE":
+            if self._inventory.get(item, 0) > 0:
+                self._selected_item = item
+                self._state = "SELECTED"
+        else:
+            print("Select item only in IDLE state")
+
+    def _dispense(self) -> None:
+        self._inventory[self._selected_item] -= 1
+        change = self._balance - self._prices[self._selected_item]
+        self._balance = Decimal("0")
+        self._selected_item = None
+        self._state = "IDLE"
+        print(f"Dispensed. Change: ${change}")
 ```
 
 **Concrete failures**:
@@ -224,204 +219,174 @@ OUT_OF_ORDER ──admin done──► IDLE
 
 ---
 
-## Phase 5: Key Java Implementation
+## Phase 5: Key Python Implementation
 
-```java
-import java.math.BigDecimal;
-import java.util.*;
+```python
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from decimal import Decimal
 
-// ── Currency-safe Product & Inventory ─────────────────────────────────────
+# ── Currency-safe Product & Inventory ─────────────────────────────────────
 
-class Product {
-    final String name;
-    final BigDecimal price;
-    Product(String name, BigDecimal price) { this.name = name; this.price = price; }
-}
+@dataclass
+class Product:
+    name: str
+    price: Decimal
 
-class Inventory {
-    private final Map<String, Product> products = new HashMap<>();
-    private final Map<String, Integer> counts   = new HashMap<>();
+class Inventory:
+    def __init__(self) -> None:
+        self._products: dict[str, Product] = {}
+        self._counts: dict[str, int] = {}
 
-    public void addProduct(String code, Product p, int count) {
-        products.put(code, p);
-        counts.put(code, count);
-    }
+    def add_product(self, code: str, product: Product, count: int) -> None:
+        self._products[code] = product
+        self._counts[code] = count
 
-    public boolean isAvailable(String code) {
-        return counts.getOrDefault(code, 0) > 0;
-    }
+    def is_available(self, code: str) -> bool:
+        return self._counts.get(code, 0) > 0
 
-    public BigDecimal getPrice(String code) {
-        return products.containsKey(code) ? products.get(code).price : BigDecimal.ZERO;
-    }
+    def get_price(self, code: str) -> Decimal:
+        return self._products[code].price if code in self._products else Decimal("0")
 
-    public String getName(String code) {
-        return products.containsKey(code) ? products.get(code).name : "Unknown";
-    }
+    def get_name(self, code: str) -> str:
+        return self._products[code].name if code in self._products else "Unknown"
 
-    public void deduct(String code) {
-        if (isAvailable(code)) counts.put(code, counts.get(code) - 1);
-    }
+    def deduct(self, code: str) -> None:
+        if self.is_available(code):
+            self._counts[code] -= 1
 
-    public void restock(String code, int count) {
-        counts.merge(code, count, Integer::sum);
-    }
-}
+    def restock(self, code: str, count: int) -> None:
+        self._counts[code] = self._counts.get(code, 0) + count
 
-// ── State Interface ────────────────────────────────────────────────────────
+# ── State Interface ────────────────────────────────────────────────────────
 
-interface State {
-    void selectItem(String code);
-    void insertMoney(BigDecimal amount);
-    void dispense();
-    void cancel();
-}
+class State(ABC):
+    @abstractmethod
+    def select_item(self, code: str) -> None: ...
+    @abstractmethod
+    def insert_money(self, amount: Decimal) -> None: ...
+    @abstractmethod
+    def dispense(self) -> None: ...
+    @abstractmethod
+    def cancel(self) -> None: ...
 
-// ── Context ────────────────────────────────────────────────────────────────
+# ── Context ────────────────────────────────────────────────────────────────
 
-class VendingMachine {
-    private State idleState;
-    private State selectedState;
-    private State dispensingState;
-    private State outOfOrderState;
+class VendingMachine:
+    def __init__(self) -> None:
+        self._inventory = Inventory()
+        self._balance = Decimal("0")
+        self._selected_code: str | None = None
 
-    private State currentState;
-    private final Inventory inventory;
-    private BigDecimal balance;
-    private String selectedCode;
+        self._idle_state       = IdleState(self)
+        self._selected_state   = ProductSelectedState(self)
+        self._dispensing_state = DispensingState(self)
+        self._out_of_order_state = OutOfOrderState(self)
+        self._current_state: State = self._idle_state
 
-    public VendingMachine() {
-        inventory       = new Inventory();
-        balance         = BigDecimal.ZERO;
-        idleState       = new IdleState(this);
-        selectedState   = new ProductSelectedState(this);
-        dispensingState = new DispensingState(this);
-        outOfOrderState = new OutOfOrderState(this);
-        currentState    = idleState;
-    }
+    # Delegate user actions to current state
+    def select_item(self, code: str) -> None:        self._current_state.select_item(code)
+    def insert_money(self, amount: Decimal) -> None: self._current_state.insert_money(amount)
+    def press_dispense(self) -> None:                self._current_state.dispense()
+    def press_cancel(self) -> None:                  self._current_state.cancel()
 
-    // Delegate user actions to current state
-    public void selectItem(String code)        { currentState.selectItem(code);   }
-    public void insertMoney(BigDecimal amount) { currentState.insertMoney(amount); }
-    public void pressDispense()                { currentState.dispense();          }
-    public void pressCancel()                  { currentState.cancel();            }
+    # State accessors (used by state classes)
+    def set_state(self, state: State) -> None:           self._current_state = state
+    def get_idle_state(self) -> State:                   return self._idle_state
+    def get_selected_state(self) -> State:               return self._selected_state
+    def get_dispensing_state(self) -> State:             return self._dispensing_state
+    def get_out_of_order_state(self) -> State:           return self._out_of_order_state
+    def get_inventory(self) -> Inventory:                return self._inventory
 
-    // State accessors (used by state classes)
-    public void setState(State s)       { this.currentState = s; }
-    public State getIdleState()         { return idleState;       }
-    public State getSelectedState()     { return selectedState;   }
-    public State getDispensingState()   { return dispensingState; }
-    public State getOutOfOrderState()   { return outOfOrderState; }
-    public Inventory getInventory()     { return inventory;       }
+    def add_balance(self, amt: Decimal) -> None:         self._balance += amt
+    def get_balance(self) -> Decimal:                    return self._balance
+    def set_selected_code(self, code: str) -> None:      self._selected_code = code
+    def get_selected_code(self) -> str | None:           return self._selected_code
 
-    public void addBalance(BigDecimal amt) { balance = balance.add(amt); }
-    public BigDecimal getBalance()         { return balance; }
-    public void setSelectedCode(String c)  { selectedCode = c; }
-    public String getSelectedCode()        { return selectedCode; }
+    def reset(self) -> None:
+        self._balance = Decimal("0")
+        self._selected_code = None
 
-    public void reset() {
-        balance       = BigDecimal.ZERO;
-        selectedCode  = null;
-    }
-}
+# ── Concrete States ────────────────────────────────────────────────────────
 
-// ── Concrete States ────────────────────────────────────────────────────────
+class IdleState(State):
+    def __init__(self, vm: VendingMachine) -> None:
+        self._vm = vm
 
-class IdleState implements State {
-    private final VendingMachine vm;
-    IdleState(VendingMachine vm) { this.vm = vm; }
+    def select_item(self, code: str) -> None:
+        if not self._vm.get_inventory().is_available(code):
+            print(f"[IDLE] Item {code} is out of stock.")
+            return
+        self._vm.set_selected_code(code)
+        self._vm.set_state(self._vm.get_selected_state())
+        print(f"[IDLE→SELECTED] Item {code} selected. Price: {self._vm.get_inventory().get_price(code)}")
 
-    public void selectItem(String code) {
-        if (!vm.getInventory().isAvailable(code)) {
-            System.out.println("[IDLE] Item " + code + " is out of stock.");
-            return;
-        }
-        vm.setSelectedCode(code);
-        vm.setState(vm.getSelectedState());
-        System.out.println("[IDLE→SELECTED] Item " + code + " selected. Price: "
-                + vm.getInventory().getPrice(code));
-    }
+    def insert_money(self, amount: Decimal) -> None: print("[IDLE] Select an item first.")
+    def dispense(self) -> None:                      print("[IDLE] Select an item first.")
+    def cancel(self) -> None:                        print("[IDLE] Nothing to cancel.")
 
-    public void insertMoney(BigDecimal amount) { System.out.println("[IDLE] Select an item first."); }
-    public void dispense()                     { System.out.println("[IDLE] Select an item first."); }
-    public void cancel()                       { System.out.println("[IDLE] Nothing to cancel."); }
-}
+class ProductSelectedState(State):
+    def __init__(self, vm: VendingMachine) -> None:
+        self._vm = vm
 
-class ProductSelectedState implements State {
-    private final VendingMachine vm;
-    ProductSelectedState(VendingMachine vm) { this.vm = vm; }
+    def select_item(self, code: str) -> None: print("[SELECTED] Item already selected.")
 
-    public void selectItem(String code) { System.out.println("[SELECTED] Item already selected."); }
+    def insert_money(self, amount: Decimal) -> None:
+        self._vm.add_balance(amount)
+        price = self._vm.get_inventory().get_price(self._vm.get_selected_code())
+        print(f"[SELECTED] Inserted: {amount} | Balance: {self._vm.get_balance()}")
+        if self._vm.get_balance() >= price:
+            self._vm.set_state(self._vm.get_dispensing_state())
+            self._vm.press_dispense()
 
-    public void insertMoney(BigDecimal amount) {
-        vm.addBalance(amount);
-        BigDecimal price = vm.getInventory().getPrice(vm.getSelectedCode());
-        System.out.println("[SELECTED] Inserted: " + amount + " | Balance: " + vm.getBalance());
+    def dispense(self) -> None: print("[SELECTED] Insert more money.")
 
-        if (vm.getBalance().compareTo(price) >= 0) {
-            vm.setState(vm.getDispensingState());
-            vm.pressDispense();
-        }
-    }
+    def cancel(self) -> None:
+        print(f"[SELECTED] Cancelled. Refunding: {self._vm.get_balance()}")
+        self._vm.reset()
+        self._vm.set_state(self._vm.get_idle_state())
 
-    public void dispense() { System.out.println("[SELECTED] Insert more money."); }
+class DispensingState(State):
+    def __init__(self, vm: VendingMachine) -> None:
+        self._vm = vm
 
-    public void cancel() {
-        System.out.println("[SELECTED] Cancelled. Refunding: " + vm.getBalance());
-        vm.reset();
-        vm.setState(vm.getIdleState());
-    }
-}
+    def select_item(self, code: str) -> None:        print("[DISPENSING] Please wait...")
+    def insert_money(self, amount: Decimal) -> None: print("[DISPENSING] Please wait...")
+    def cancel(self) -> None:                        print("[DISPENSING] Cannot cancel now.")
 
-class DispensingState implements State {
-    private final VendingMachine vm;
-    DispensingState(VendingMachine vm) { this.vm = vm; }
+    def dispense(self) -> None:
+        code = self._vm.get_selected_code()
+        price = self._vm.get_inventory().get_price(code)
+        change = self._vm.get_balance() - price
+        self._vm.get_inventory().deduct(code)
+        print(f"[DISPENSING] Dispensed: {self._vm.get_inventory().get_name(code)}")
+        if change > Decimal("0"):
+            print(f"[DISPENSING] Change returned: {change}")
+        self._vm.reset()
+        self._vm.set_state(self._vm.get_idle_state())
+        print("[DISPENSING→IDLE] Ready.")
 
-    public void selectItem(String code) { System.out.println("[DISPENSING] Please wait..."); }
-    public void insertMoney(BigDecimal amount) { System.out.println("[DISPENSING] Please wait..."); }
-    public void cancel()               { System.out.println("[DISPENSING] Cannot cancel now."); }
+class OutOfOrderState(State):
+    def __init__(self, vm: VendingMachine) -> None:
+        self._vm = vm
 
-    public void dispense() {
-        String code  = vm.getSelectedCode();
-        BigDecimal price  = vm.getInventory().getPrice(code);
-        BigDecimal change = vm.getBalance().subtract(price);
+    def select_item(self, code: str) -> None:        print("[OUT_OF_ORDER] Machine under maintenance.")
+    def insert_money(self, amount: Decimal) -> None: print("[OUT_OF_ORDER] Machine under maintenance.")
+    def dispense(self) -> None:                      print("[OUT_OF_ORDER] Machine under maintenance.")
+    def cancel(self) -> None:                        print("[OUT_OF_ORDER] Machine under maintenance.")
 
-        vm.getInventory().deduct(code);
-        System.out.println("[DISPENSING] Dispensed: " + vm.getInventory().getName(code));
-        if (change.compareTo(BigDecimal.ZERO) > 0) {
-            System.out.println("[DISPENSING] Change returned: " + change);
-        }
+# ── Demo ───────────────────────────────────────────────────────────────────
 
-        vm.reset();
-        vm.setState(vm.getIdleState());
-        System.out.println("[DISPENSING→IDLE] Ready.");
-    }
-}
+if __name__ == "__main__":
+    vm = VendingMachine()
+    vm.get_inventory().add_product("A1", Product("Coke",  Decimal("1.50")), 5)
+    vm.get_inventory().add_product("B2", Product("Chips", Decimal("2.00")), 3)
 
-class OutOfOrderState implements State {
-    private final VendingMachine vm;
-    OutOfOrderState(VendingMachine vm) { this.vm = vm; }
-
-    public void selectItem(String code)        { System.out.println("[OUT_OF_ORDER] Machine under maintenance."); }
-    public void insertMoney(BigDecimal amount) { System.out.println("[OUT_OF_ORDER] Machine under maintenance."); }
-    public void dispense()                     { System.out.println("[OUT_OF_ORDER] Machine under maintenance."); }
-    public void cancel()                       { System.out.println("[OUT_OF_ORDER] Machine under maintenance."); }
-}
-
-// ── Demo ───────────────────────────────────────────────────────────────────
-
-class VendingMachineDemo {
-    public static void main(String[] args) {
-        VendingMachine vm = new VendingMachine();
-        vm.getInventory().addProduct("A1", new Product("Coke",  new BigDecimal("1.50")), 5);
-        vm.getInventory().addProduct("B2", new Product("Chips", new BigDecimal("2.00")), 3);
-
-        vm.selectItem("A1");
-        vm.insertMoney(new BigDecimal("1.00"));
-        vm.insertMoney(new BigDecimal("1.00")); // balance 2.00 >= 1.50 → auto-dispense
-        // Output: Dispensed Coke, Change returned: 0.50
-    }
-}
+    vm.select_item("A1")
+    vm.insert_money(Decimal("1.00"))
+    vm.insert_money(Decimal("1.00"))  # balance 2.00 >= 1.50 → auto-dispense
+    # Output: Dispensed Coke, Change returned: 0.50
 ```
 
 ---
@@ -443,22 +408,39 @@ class VendingMachineDemo {
 Track internal coin inventory (`Map<CoinDenomination, Integer>`). In `DispensingState.dispense()`, run a greedy algorithm to make change. If impossible, transition to `CannotMakeChangeState` and refund in full.
 
 **Maintenance mode:**
-```java
-class MaintenanceState implements State {
-    // Admin can call restock() and collectCash()
-    // All customer actions print "Machine under maintenance"
-    // Admin calls done() → setState(idleState)
-}
+```python
+class MaintenanceState(State):
+    def __init__(self, vm: VendingMachine) -> None:
+        self._vm = vm
+
+    # Admin can call restock() and collect_cash()
+    # All customer actions print "Machine under maintenance"
+    # Admin calls done() → set_state(idle_state)
+
+    def select_item(self, code: str) -> None:        print("[MAINTENANCE] Machine under maintenance.")
+    def insert_money(self, amount: Decimal) -> None: print("[MAINTENANCE] Machine under maintenance.")
+    def dispense(self) -> None:                      print("[MAINTENANCE] Machine under maintenance.")
+    def cancel(self) -> None:                        print("[MAINTENANCE] Machine under maintenance.")
+
+    def done(self) -> None:
+        self._vm.set_state(self._vm.get_idle_state())
 ```
 
 **Multiple payment types:**
 Extract `PaymentProcessor` interface with `CashProcessor`, `CardProcessor`, `QRCodeProcessor`. `insertMoney()` becomes `processPayment(PaymentRequest)`.
 
 **Exact-change coin tracking (SDE-3 depth):**
-```java
-// In DispensingState.dispense():
-Map<Integer, Integer> coinBox = vm.getCoinBox(); // denomination → count
-int changeInCents = balance.subtract(price).multiply(BigDecimal.valueOf(100)).intValue();
-// Greedy: 100¢, 25¢, 10¢, 5¢, 1¢
-// If cannot make change exactly → refund all, display error
+```python
+# In DispensingState.dispense():
+# coin_box: dict[int, int]  denomination (cents) → count
+from decimal import Decimal
+
+def make_change(coin_box: dict[int, int], balance: Decimal, price: Decimal) -> bool:
+    change_cents = int((balance - price) * 100)
+    # Greedy: 100¢, 25¢, 10¢, 5¢, 1¢
+    for denom in sorted(coin_box, reverse=True):
+        while change_cents >= denom and coin_box[denom] > 0:
+            change_cents -= denom
+            coin_box[denom] -= 1
+    return change_cents == 0  # False → refund all, display error
 ```

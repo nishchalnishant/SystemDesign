@@ -2,6 +2,10 @@
 
 23 LLD problems ranked by interview frequency. But before you jump to problems, the learning path below matters — design patterns only click when you understand what problem they solve.
 
+## Interview Approach
+
+Before studying problems, read [00-interview-strategy.md](00-interview-strategy.md) — it covers the 45-minute timeline, how to clarify, how to draw the class diagram, what to code vs. skip, and how to answer follow-ups.
+
 ## Learning Path (follow this order)
 
 **Step 1 — OOP fundamentals** (2–3 days, read before anything else)

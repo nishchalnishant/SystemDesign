@@ -63,26 +63,19 @@ Try this before reading on.
 
 The obvious implementation:
 
-```java
-class ConnectionPool {
-    private List<Connection> connections;
+```python
+class ConnectionPool:
+    def __init__(self):
+        self._connections = [open_new_connection() for _ in range(10)]
 
-    public ConnectionPool() {
-        connections = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            connections.add(openNewConnection());
-        }
-    }
+    def acquire(self): ...
+    def release(self, c): ...
 
-    public Connection acquire() { ... }
-    public void release(Connection c) { ... }
-}
+# In ServiceA:
+pool_a = ConnectionPool()  # opens 10 connections
 
-// In ServiceA:
-ConnectionPool poolA = new ConnectionPool(); // opens 10 connections
-
-// In ServiceB:
-ConnectionPool poolB = new ConnectionPool(); // opens another 10 connections
+# In ServiceB:
+pool_b = ConnectionPool()  # opens another 10 connections
 ```
 
 **What breaks**:
@@ -98,26 +91,33 @@ The real requirement isn't "create a connection pool" — it's "there must be ex
 
 The constraint: **only one instance must ever exist**.
 
-Step 1 — block external construction:
-```java
-class ConnectionPool {
-    private ConnectionPool() { } // prevent new ConnectionPool()
-}
+Step 1 — block external construction by hiding `__init__`:
+```python
+class ConnectionPool:
+    _instance: "ConnectionPool | None" = None
+
+    def __new__(cls):
+        raise TypeError("Use ConnectionPool.get_instance()")
 ```
 
-Step 2 — the class holds its own instance:
-```java
-class ConnectionPool {
-    private static ConnectionPool instance = new ConnectionPool();
-    private ConnectionPool() { }
-}
+Step 2 — the class holds its own instance and creates it exactly once:
+```python
+class ConnectionPool:
+    _instance: "ConnectionPool | None" = None
+
+    @classmethod
+    def _create(cls) -> "ConnectionPool":
+        obj = object.__new__(cls)
+        return obj
 ```
 
 Step 3 — expose a global access point:
-```java
-public static ConnectionPool getInstance() {
-    return instance;
-}
+```python
+    @classmethod
+    def get_instance(cls) -> "ConnectionPool":
+        if cls._instance is None:
+            cls._instance = cls._create()
+        return cls._instance
 ```
 
 That's the entire pattern. Everything below is refinements: lazy initialization, thread-safety under concurrency, preventing serialization bypass.
@@ -146,120 +146,101 @@ That's the entire pattern. Everything below is refinements: lazy initialization,
 
 ### Basic Singleton (Not Thread-Safe)
 
-```java
-public class Singleton {
-    private static Singleton instance;
-    
-    private Singleton() {
-        // Private constructor prevents external instantiation
-    }
-    
-    public static Singleton getInstance() {
-        if (instance == null) {
-            instance = new Singleton();
-        }
-        return instance;
-    }
-}
+```python
+class Singleton:
+    _instance: "Singleton | None" = None
+
+    def __new__(cls) -> "Singleton":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 ```
 
-**Problem**: Not thread-safe. Two threads can both see `instance == null` simultaneously and create two separate instances.
+**Problem**: Not thread-safe. Two threads can both see `_instance is None` simultaneously and create two separate instances.
 
 ---
 
 ### Thread-Safe Singleton (Double-Checked Locking)
 
-```java
-public class ThreadSafeSingleton {
-    private static volatile ThreadSafeSingleton instance;
-    
-    private ThreadSafeSingleton() {}
-    
-    public static ThreadSafeSingleton getInstance() {
-        if (instance == null) {                          // First check (no locking — fast path)
-            synchronized (ThreadSafeSingleton.class) {
-                if (instance == null) {                  // Second check (with lock — safe path)
-                    instance = new ThreadSafeSingleton();
-                }
-            }
-        }
-        return instance;
-    }
-}
+```python
+import threading
+
+class ThreadSafeSingleton:
+    _instance: "ThreadSafeSingleton | None" = None
+    _lock: threading.Lock = threading.Lock()
+
+    def __new__(cls) -> "ThreadSafeSingleton":
+        if cls._instance is None:                  # First check — no lock (fast path)
+            with cls._lock:
+                if cls._instance is None:          # Second check — with lock (safe path)
+                    cls._instance = super().__new__(cls)
+        return cls._instance
 ```
 
-**Key**: `volatile` ensures all threads see the latest value (prevents CPU cache inconsistency). Double-check reduces lock overhead once instance is created.
+**Key**: The double-check avoids acquiring the lock on the hot path after the instance exists.
 
 ---
 
-### Enum Singleton (Best in Java)
+### Module-Level Singleton (Idiomatic Python)
 
-```java
-public enum Singleton {
-    INSTANCE;
-    
-    public void doSomething() {
-        // Business logic
-    }
-}
+```python
+# singleton_module.py
+class _Singleton:
+    def do_something(self) -> None:
+        pass  # Business logic
 
-// Usage
-Singleton.INSTANCE.doSomething();
+instance = _Singleton()  # Created once when the module is first imported
+
+# Usage — import the module-level object directly
+from singleton_module import instance
+instance.do_something()
 ```
 
-**Why best**: Thread-safe by JVM, serialization-safe, and immune to reflection attacks (Java prevents creating a second enum instance via reflection).
+**Why best in Python**: Python's import system guarantees a module is executed only once; `instance` is the natural singleton. No locks, no metaclass tricks needed.
 
 ---
 
 ## Real-World Example: Database Connection Pool
 
-```java
-public class ConnectionPool {
-    private static volatile ConnectionPool instance;
-    private List<Connection> availableConnections;
-    private List<Connection> usedConnections;
-    private static final int MAX_POOL_SIZE = 10;
-    
-    private ConnectionPool() {
-        availableConnections = new ArrayList<>();
-        usedConnections = new ArrayList<>();
-        
-        for (int i = 0; i < MAX_POOL_SIZE; i++) {
-            availableConnections.add(createNewConnection());
-        }
-    }
-    
-    public static ConnectionPool getInstance() {
-        if (instance == null) {
-            synchronized (ConnectionPool.class) {
-                if (instance == null) {
-                    instance = new ConnectionPool();
-                }
-            }
-        }
-        return instance;
-    }
-    
-    public synchronized Connection getConnection() {
-        if (availableConnections.isEmpty()) {
-            throw new RuntimeException("No available connections");
-        }
-        Connection connection = availableConnections.remove(0);
-        usedConnections.add(connection);
-        return connection;
-    }
-    
-    public synchronized void releaseConnection(Connection connection) {
-        usedConnections.remove(connection);
-        availableConnections.add(connection);
-    }
-}
+```python
+import threading
 
-// Usage
-ConnectionPool pool = ConnectionPool.getInstance();  // Same object every time
-Connection conn = pool.getConnection();
-// Use connection
-pool.releaseConnection(conn);
+MAX_POOL_SIZE = 10
+
+class ConnectionPool:
+    _instance: "ConnectionPool | None" = None
+    _lock: threading.Lock = threading.Lock()
+
+    def __new__(cls) -> "ConnectionPool":
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    obj = super().__new__(cls)
+                    obj._available: list = [create_new_connection() for _ in range(MAX_POOL_SIZE)]
+                    obj._used: list = []
+                    obj._mutex = threading.Lock()
+                    cls._instance = obj
+        return cls._instance
+
+    def get_connection(self):
+        with self._mutex:
+            if not self._available:
+                raise RuntimeError("No available connections")
+            conn = self._available.pop(0)
+            self._used.append(conn)
+            return conn
+
+    def release_connection(self, conn) -> None:
+        with self._mutex:
+            self._used.remove(conn)
+            self._available.append(conn)
+
+
+# Usage
+pool = ConnectionPool()   # Same object every time
+conn = pool.get_connection()
+# Use connection
+pool.release_connection(conn)
 ```
 
 ### Class Diagram
@@ -301,26 +282,19 @@ classDiagram
 
 Prefer DI over Singleton for testability:
 
-```java
-// Bad: Singleton
-public class UserService {
-    public void createUser() {
-        DatabasePool.getInstance().getConnection();  // Hidden dependency!
-    }
-}
+```python
+# Bad: Singleton
+class UserService:
+    def create_user(self) -> None:
+        ConnectionPool().get_connection()  # Hidden dependency!
 
-// Good: Dependency Injection
-public class UserService {
-    private final DatabasePool pool;
-    
-    public UserService(DatabasePool pool) {  // Explicit dependency, mockable in tests
-        this.pool = pool;
-    }
-    
-    public void createUser() {
-        pool.getConnection();
-    }
-}
+# Good: Dependency Injection
+class UserService:
+    def __init__(self, pool: ConnectionPool):  # Explicit dependency, mockable in tests
+        self._pool = pool
+
+    def create_user(self) -> None:
+        self._pool.get_connection()
 ```
 
 The DI approach lets you inject `new InMemoryConnectionPool()` in tests — the Singleton approach doesn't.
