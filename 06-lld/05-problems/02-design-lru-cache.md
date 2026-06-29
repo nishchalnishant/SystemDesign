@@ -1,0 +1,369 @@
+---
+module: 06-lld
+topic: Problems
+status: unread
+tags: [06-lld, system-design, problems]
+---
+# Design LRU Cache
+
+> **Difficulty**: Medium
+> **Topics**: Data Structures, Doubly Linked List, HashMap
+> **Key Concepts**: O(1) Get/Put, Eviction Policy, Generics.
+
+---
+
+## What Breaks Without This Design?
+
+**Option A — Use only a `HashMap`**:
+
+```python
+class LRUCache:
+    def __init__(self, capacity):
+        self._capacity = capacity
+        self._map = {}  # dict[int, int]
+
+    def get(self, key):
+        return self._map.get(key, -1)
+
+    def put(self, key, value):
+        if len(self._map) >= self._capacity and key not in self._map:
+            # Which key do we evict? dict has no usage order — we cannot know
+            # which key was used least recently. We'd have to scan all keys.
+            lru_key = None  # ??? O(N) scan — and even then, no usage order is tracked
+            del self._map[lru_key]
+        self._map[key] = value
+```
+
+**Failure**: `HashMap` has no insertion or access order. You cannot identify the least recently used key without an external data structure. Any attempt to evict requires O(N) scanning the entire map.
+
+**Option B — Use only a `LinkedList` (ordered by recency)**:
+
+```python
+from collections import deque
+
+class LRUCache:
+    def __init__(self):
+        self._list = deque()  # [key, value] pairs in LRU order
+
+    def get(self, key):
+        for entry in self._list:           # O(N) scan to find key
+            if entry[0] == key:
+                self._list.remove(entry)   # O(N) removal
+                self._list.appendleft(entry)  # move to front
+                return entry[1]
+        return -1
+```
+
+**Failure**: Finding a key requires O(N) linear scan. The cache is O(N) per operation — useless at scale.
+
+**Root cause**: No single data structure provides both O(1) lookup by key AND O(1) ordering updates.
+
+---
+
+## Derive the Class Structure
+
+Start from the requirements and apply one forcing function at a time:
+
+**Force 1 — O(1) lookup by key**: Must find an entry instantly given a key. Only a hash-based structure provides this. Introduce a `HashMap<K, Node>`.
+
+**Force 2 — O(1) move-to-front on access**: When any key is accessed, it becomes MRU. We need to remove a node from its current position and insert it at the head — both in O(1). A singly linked list needs O(N) to find the predecessor for removal. A doubly linked list stores both `prev` and `next`, making arbitrary removal O(1). Introduce `Node<K,V>` with `prev` and `next`.
+
+**Force 3 — O(1) eviction of LRU**: The least recently used node is always the tail. With a doubly linked list, `tail.prev` gives the LRU node directly. `remove(tail.prev)` is O(1). But to remove it from the `HashMap` too, we need its key — so `Node` must store `key` (not just `value`).
+
+**Force 4 — Eliminate null checks on head/tail operations**: Inserting after head and removing the node before tail both require checking for null when the list is empty or has one element. Introduce dummy sentinel nodes (`head`, `tail`): real nodes always live between them. Now `head.next` is always MRU and `tail.prev` is always LRU, even with 0 or 1 real nodes.
+
+**Result** — the class split these forces produce:
+```
+No abstraction needed → LRUCache (single class)
+                      → Node (stores key + value + prev + next)
+                      → HashMap<K, Node> (O(1) key lookup, embedded in LRUCache)
+                      → DLL with dummy head/tail (O(1) ordering, embedded in LRUCache)
+```
+
+The `Node` storing `key` is the non-obvious design decision: it exists solely so eviction (`map.remove(lruKey)`) can happen in O(1) without any reverse lookup.
+
+---
+
+## Real-Life Analogy
+
+**A surgeon's instrument tray.**
+
+A surgeon keeps their most recently used instruments on the tray in front of them. The tray has limited space — only 10 instruments fit. When a new instrument is needed and the tray is full, the least recently used one (the one at the back, untouched the longest) is put away to make room.
+
+Key observations:
+- "Most recently used" = closest to the front of the tray (Head of the list).
+- "Least recently used" = furthest from the front (Tail of the list).
+- When an existing instrument is used again, it is physically moved to the front — it's now the most recently used.
+- When looking for a specific instrument by name (key), you don't scan the tray left to right — you have a lookup board (HashMap) that tells you exactly where each instrument is. O(1) lookup.
+- The combination of the **lookup board (HashMap)** and the **ordered tray (Doubly Linked List)** gives O(1) for every operation.
+
+---
+
+## Phase 1: Requirements Gathering
+
+### Goals
+- Design a data structure that follows Least Recently Used (LRU) eviction policy.
+- Support `Get` and `Put` operations in **O(1)** time complexity.
+
+### 1. Who are the actors?
+- **Client**: Application or System accessing the cache.
+- **Cache**: Stores key-value pairs and manages eviction.
+
+### 2. What are the must-have features? (Core)
+- **Capacity**: Fixed size limit.
+- **Get(key)**: Return value if exists (and update usage history), else -1 (or null).
+- **Put(key, value)**: Insert or Update value. If full, remove the least recently used item.
+
+### 3. What are the constraints?
+- **Performance**: All operations must be O(1) on average.
+- **Thread Safety**: Optional, but good to discuss (Synchronized vs Concurrent).
+
+---
+
+## Phase 2: Use Cases
+
+### UC1: Get Key
+**Actor**: Client
+**Flow**:
+1. Client requests `Get(Key)`.
+2. Cache checks HashMap.
+3. **If Hit**:
+    - Move corresponding Node to Head (Generic "Recently Used" position).
+    - Return Value.
+4. **If Miss**:
+    - Return -1/Null.
+
+### UC2: Put Key-Value
+**Actor**: Client
+**Flow**:
+1. Client requests `Put(Key, Value)`.
+2. Cache checks HashMap.
+3. **If Exists**:
+    - Update Node value.
+    - Move Node to Head.
+4. **If New**:
+    - If Capacity is full:
+        - Remove Tail (Least Recently Used).
+        - Remove from HashMap.
+    - Create New Node.
+    - Add to Head.
+    - Add to HashMap.
+
+---
+
+## Phase 3: Class Diagram and Data Structure Design
+
+### Why HashMap + Doubly Linked List?
+
+We need two things simultaneously:
+1. **O(1) lookup by key** — to find any cached item instantly.
+2. **O(1) ordering updates** — to move any item to "most recently used" without shifting other items.
+
+No single data structure achieves both. The combination does:
+
+| Operation | Data Structure | Why |
+|---|---|---|
+| Find a node by key | **HashMap** | Direct key → node pointer lookup in O(1) |
+| Move a node to front | **Doubly Linked List** | Pointer reassignment in O(1) — no shifting |
+| Remove least recently used | **Doubly Linked List tail** | `tail.prev` is always the LRU node; remove in O(1) |
+| Insert at front | **Doubly Linked List head** | Add after dummy head in O(1) |
+
+**Why Doubly Linked (not Singly Linked)?**: To remove a node from the middle of the list in O(1), you need to update its predecessor's `next` pointer AND its successor's `prev` pointer. With only `next` pointers (singly linked), finding the predecessor requires O(n) traversal from the head. Doubly linked nodes hold both `prev` and `next`, making any removal O(1).
+
+**Dummy Head and Tail Nodes**: Real nodes are inserted between two permanent sentinel nodes:
+```
+[dummy head] <-> [MRU node] <-> ... <-> [LRU node] <-> [dummy tail]
+```
+This eliminates null checks on every insert/remove — `head.next` is always the MRU, `tail.prev` is always the LRU, even when the cache has 0 or 1 elements.
+
+**Visual after operations**:
+```
+put(1, A): head <-> [1:A] <-> tail
+put(2, B): head <-> [2:B] <-> [1:A] <-> tail   (2 is MRU)
+get(1):    head <-> [1:A] <-> [2:B] <-> tail   (1 moved to front, now MRU)
+put(3, C): head <-> [3:C] <-> [1:A] <-> [2:B] <-> tail   (cap=2 → evict 2:B)
+           → actual result: head <-> [3:C] <-> [1:A] <-> tail   (2 evicted)
+```
+
+### Step 1: Core Entities
+- **LRUCache**: Main container.
+- **Node**: Doubly Linked List node (stores Key, Value, Prev, Next).
+- **HashMap**: Maps Key -> Node for O(1) access.
+
+### UML Diagram
+
+```mermaid
+classDiagram
+    class LRUCache~K,V~ {
+        -int capacity
+        -Map~K, Node~ map
+        -Node head
+        -Node tail
+        +get(K) V
+        +put(K, V)
+        -addFirst(Node)
+        -remove(Node)
+    }
+
+    class Node~K,V~ {
+        +K key
+        +V value
+        +Node prev
+        +Node next
+    }
+
+    LRUCache *-- Node
+```
+
+---
+
+## Phase 4: Design Patterns
+
+### 1. Composition
+- **Description**: A design principle where a class is composed of one or more objects of other classes, rather than inheriting from them.
+- **Why used**: The `LRUCache` combines a `HashMap` (for O(1) lookup) and a `DoublyLinkedList` (for O(1) updates to ordering). By composing these two structures, we get the benefits of both to satisfy the LRU constraints.
+
+### 2. Decorator Pattern
+- **Description**: Attaches additional responsibilities to an object dynamically.
+- **Why used**: (Optional) One could decorate a standard `Map` interface to add eviction policies (LRU, LFU) transparently, allowing the client to use it just like a regular Map.
+
+---
+
+## Phase 5: Code Key Methods
+
+### Implementation
+
+```python
+# 1. Doubly Linked List Node
+class Node:
+    def __init__(self, key, value):
+        self.key   = key
+        self.value = value
+        self.prev = None  # Node | None
+        self.next = None  # Node | None
+
+# 2. LRU Cache
+class LRUCache:
+    def __init__(self, capacity):
+        self._capacity = capacity
+        self._map = {}  # dict[K, Node]
+
+        # Dummy head/tail to avoid null checks on every add/remove
+        # Real nodes always live between head and tail
+        self._head = Node(None, None)   # Dummy head — MRU side
+        self._tail = Node(None, None)   # Dummy tail — LRU side
+        self._head.next = self._tail
+        self._tail.prev = self._head
+
+    # O(1): dict lookup + DLL move to front
+    def get(self, key):
+        if key not in self._map:
+            return None
+        node = self._map[key]
+        # Move to head = mark as most recently used
+        self._remove(node)
+        self._add_first(node)
+        return node.value
+
+    # O(1): dict insert/update + DLL insert at front + optional tail eviction
+    def put(self, key, value):
+        if key in self._map:
+            # Update existing — move to front
+            node = self._map[key]
+            node.value = value
+            self._remove(node)
+            self._add_first(node)
+        else:
+            if len(self._map) >= self._capacity:
+                # Evict LRU: the node just before the dummy tail
+                lru = self._tail.prev
+                self._remove(lru)
+                del self._map[lru.key]   # Key stored in node — why Node stores key
+            new_node = Node(key, value)
+            self._add_first(new_node)
+            self._map[key] = new_node
+
+    # Helper: Insert node immediately after dummy head (MRU position)
+    # Before: head <-> old_first
+    # After:  head <-> node <-> old_first
+    def _add_first(self, node):
+        node.prev          = self._head
+        node.next          = self._head.next
+        self._head.next.prev = node   # old_first.prev = node
+        self._head.next    = node     # head.next = node
+
+    # Helper: Remove node from wherever it is in the list (O(1) — doubly linked)
+    # Before: prev <-> node <-> next
+    # After:  prev <-> next
+    def _remove(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+
+# Demo
+if __name__ == "__main__":
+    cache = LRUCache(2)
+
+    cache.put(1, "Data1")
+    cache.put(2, "Data2")
+    # List: head <-> [2:Data2] <-> [1:Data1] <-> tail
+
+    print("Get 1:", cache.get(1))  # "Data1", 1 is now MRU
+    # List: head <-> [1:Data1] <-> [2:Data2] <-> tail
+
+    cache.put(3, "Data3")  # Capacity full: evict LRU = 2 (tail.prev)
+    # List: head <-> [3:Data3] <-> [1:Data1] <-> tail
+
+    print("Get 2:", cache.get(2))  # None — evicted
+    print("Get 3:", cache.get(3))  # "Data3"
+```
+
+**Why does `Node` store the key?**: When evicting the LRU node (`tail.prev`), we need to remove its entry from the HashMap. We only have the node reference at this point — not the key. By storing `key` in the `Node`, we can call `map.remove(lru.key)` in O(1) without any reverse lookup.
+
+---
+
+## Phase 6: Discussion
+
+### Concurrency (SDE-3 Concept)
+**Q: How to make this highly concurrent without a massive bottleneck?**
+- A: "The simple approach uses a global `synchronized` lock, which serializes all cache access. For high concurrency:
+  1. **Lock Striping (like `ConcurrentHashMap`)**: Create an array of `N` segment locks (e.g., 16). Hash the key to determine which segment it belongs to and only lock that segment. Each segment maintains its own independent `DoublyLinkedList` and LRU capacity ($Total Capacity / N$).
+  2. **Non-Blocking Algorithms**: Use atomic references and `compareAndSet`, though maintaining a strict LRU order becomes extremely complex without locking."
+
+### Expiration
+**Q: How to add Time-To-Live (TTL)?**
+- A: "Add a `timestamp` field to `Node`. On `get(K)`, check `if (now - node.time > TTL)`. If expired, remove node and return null. Also need a background cleaner thread for passive expiration."
+
+---
+
+## SOLID Principles Checklist
+
+- **S (Single Responsibility)**: `LRUCache` manages mapping and eviction.
+- **O (Open/Closed)**: Hard to extend eviction policy with this specific implementation (it's tightly coupled to LRU logic). Strategy pattern could allow swapping policies (LFU, FIFO).
+- **L (Liskov Substitution)**: Generic K, V allows substitution of types.
+- **I (Interface Segregation)**: `Cache` interface could expose `get/put`.
+- **D (Dependency Inversion)**: Not heavily used, but could depend on `Map` interface.
+
+---
+
+## Interview Questions Asked
+
+### Amazon
+1. **"Implement an LRU cache with O(1) get and put"** → Probe: data structure choice, O(1) constraint. Hint: HashMap for O(1) key lookup + doubly linked list for O(1) move-to-front and evict-from-tail; node stores key (needed to remove from map on eviction) and value.
+
+### Google
+1. **"How do you make an LRU cache thread-safe without a single global lock?"** → Probe: concurrency, scalability under high read/write load. Hint: lock striping — partition cache into N segments (e.g., 16), each with its own lock and independent LRU list; `segment = hash(key) % N`; contention reduced by 16×; similar to `ConcurrentHashMap` internals.
+
+### Common Follow-ups
+1. **"How would you implement LFU (least frequently used) instead?"** → Hint: maintain a `freqMap<freq, LinkedHashSet<key>>` and `keyFreqMap<key, freq>`; on access, move key from `freqMap[f]` to `freqMap[f+1]`; evict from `freqMap[minFreq]`; all operations O(1).
+2. **"What if multiple keys reach the same minimum frequency — which do you evict?"** → Hint: `LinkedHashSet` preserves insertion order within each frequency bucket; evict the oldest-inserted key at `minFreq` — effectively LFU with LRU tiebreaking; no additional data structure needed.
+3. **"Design a distributed LRU cache"** → Hint: consistent hashing assigns each key to a cache node; local LRU per node; on node failure, consistent hashing minimizes remapping; use replication factor 2 for fault tolerance; Redis with maxmemory-policy=allkeys-lru is a production implementation of exactly this.
+
+---
+
+## Interviewer Follow-Up Questions
+
+- "Why do you need both a HashMap and a Doubly Linked List for O(1) LRU?" → HashMap: O(1) key lookup to find a node. Doubly Linked List: O(1) move-to-front (node has direct prev/next pointers — no search needed). If you use a singly linked list: moving a node to front requires finding the previous node first — O(N). The combination gives you O(1) for get, put, and eviction.
+- "Walk me through a `get(key)` where the key exists." → (1) HashMap lookup: `nodes[key]` → returns the `Node` reference. (2) Move node to the front of the DLL (most recently used): `node.prev.next = node.next; node.next.prev = node.prev; node.next = head.next; head.next.prev = node; node.prev = head; head.next = node`. (3) Return `node.value`. All O(1). The interviewer wants to see you reason through the pointer manipulation.
+- "What are the sentinel (dummy) head and tail nodes for?" → Sentinel nodes eliminate edge-case handling: without them, inserting at the front requires checking if the list is empty; removing the last node requires checking if next/prev are null. With dummy `head` and `tail`: `head.next` is always the most-recently-used node (or `tail` if empty); `tail.prev` is always the LRU node. No null checks needed. This is a standard DLL implementation trick.
+- "How do you make this LRU cache thread-safe?" → Option 1: `threading.Lock()` wrapping every `get()` and `put()` — simple, correct, but serializes all access. Option 2: `threading.RLock` for reentrant safety. Option 3: Read-write lock — multiple concurrent readers allowed, writers get exclusive access. For an LRU cache, `get()` modifies the list order (it's a "write"), so even reads need locking. Simple Lock is often sufficient. Note: Python's `functools.lru_cache` uses a C-level lock for thread safety.
+- "What's the time complexity of `put()` when the cache is full?" → O(1). (1) Remove the LRU node: `lru = tail.prev; tail.prev = lru.prev; lru.prev.next = tail; del nodes[lru.key]` — O(1) DLL removal + O(1) HashMap delete. (2) Insert the new node at the front: O(1) DLL insertion + O(1) HashMap insert. Total: O(1). No iteration, no search.

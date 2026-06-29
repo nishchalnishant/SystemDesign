@@ -20,6 +20,7 @@
 | [Replication](replication.md) | Copy data across nodes for availability and read scale | HA, read scaling |
 | [Bloom Filter](bloom-filter.md) | Probabilistic set membership; space-efficient dedup | Web crawlers, cache miss reduction, dedup at scale |
 | [Architecture Composition](architecture-composition.md) | Patterns for combining building blocks into coherent systems | System design synthesis, component interaction patterns |
+| [SQL Fundamentals](sql-fundamentals.md) | ACID, isolation levels, SELECT FOR UPDATE, indexes, deadlocks | Booking/payment systems; any "check then write" critical section |
 
 ## How to Use
 

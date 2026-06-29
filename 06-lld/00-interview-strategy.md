@@ -169,7 +169,7 @@ Throw domain exceptions, not generic ones:
 Say: "Two threads could both see `seat.isFree() == true` before either marks it occupied — I'll synchronize the check-and-set."
 Then write the `synchronized` block. Never silently add synchronization — explain it.
 
-### Java-specific patterns to know cold:
+### Patterns to know cold:
 
 ```python
 import threading
@@ -283,3 +283,15 @@ Before walking in, make sure you can:
 - [ ] Write a `synchronized` critical section for a check-and-set operation
 - [ ] Name the tricky part of each Tier 1 problem (see `05-problems/README.md`)
 - [ ] Answer "how would you add a new X without changing Y" for each Tier 1 problem
+
+---
+
+## Interviewer Follow-Up Questions
+
+**On clarifying the problem:**
+- "You jumped straight into designing classes. What would you do first in a real interview?" → Clarify requirements: (1) Scope — what features are in/out? (2) Constraints — multi-user? concurrent access? persistence? (3) Actors — who uses the system and how? (4) Key operations — CRUD on what entities? Only after establishing scope should you name your first class. Interviewers penalize candidates who design before understanding the problem.
+- "Your design handles the happy path. What edge cases should you consider before declaring it complete?" → Resource exhaustion (what happens when capacity is full), concurrent access (two threads modifying the same entity), invalid inputs (negative amounts, null values, out-of-range IDs), lifecycle transitions (can a CANCELLED booking become ACTIVE?), boundary conditions (empty collections, single-element cases). Explicitly enumerate edge cases before coding — shows systematic thinking.
+
+**On trade-offs:**
+- "You chose composition over inheritance for this design. What would the inheritance version look like, and why is yours better?" → Describe the inheritance alternative: a `Vehicle` base class with `Car`, `Truck`, `Motorcycle` subclasses. The problem: adding a new dimension (e.g., ElectricVehicle vs GasVehicle) creates a hierarchy explosion (`ElectricCar`, `ElectricTruck`, `GasCar`...). Composition: a `Vehicle` has a `DrivetrainType` strategy injected. New drivetrain = one new class, not N new subclasses. Testable in isolation. This is the answer that demonstrates design maturity.
+- "How would you extend this design to support a new requirement X without modifying existing classes?" → Show OCP (Open-Closed Principle) in action: identify the extension point, extract an interface if one doesn't exist, add the new implementation as a new class that implements the interface. Existing code depends on the interface, not the concrete class — no changes required. If the design doesn't have this extension point, acknowledge it and propose a refactor.

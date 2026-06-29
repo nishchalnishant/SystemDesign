@@ -24,7 +24,7 @@ Easy does not mean trivial. It means the problem tests one or two concepts deepl
 
 ## Cross-References
 
-The building blocks used across all seven problems:
+The building blocks used across these problems:
 
 - Caching: [02-building-blocks/caching-layer.md](../../02-building-blocks/caching-layer.md)
 - Rate Limiting: [02-building-blocks/rate-limiting.md](../../02-building-blocks/rate-limiting.md)

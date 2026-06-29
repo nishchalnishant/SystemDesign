@@ -1,0 +1,348 @@
+---
+module: 06-lld
+topic: Design Patterns
+subtopic: Structural
+status: unread
+tags: [06-lld, system-design, design-patterns]
+---
+# Decorator Pattern
+
+## Question
+
+You have a `Pizza` class with a `getCost()` method. Pizzas can have toppings: cheese (+$1), mushrooms (+$1.50), olives (+$0.75). Any combination is valid. Model this using inheritance.
+
+Try it before reading on.
+
+---
+
+## Pattern Mindmap
+
+```
+[Decorator Pattern]
+├── Problem It Solves
+│   ├── Pizza + N toppings → 2^N subclasses (CheeseMushroom, CheeseOlive, ...)
+│   ├── Adding one topping doubles the subclass count
+│   └── Static inheritance cannot compose at runtime
+├── Core Structure
+│   ├── Component interface: Pizza with getCost() and getDescription()
+│   ├── Concrete component: BasePizza implements Pizza
+│   ├── Abstract decorator: ToppingDecorator implements Pizza, holds Pizza reference
+│   ├── Concrete decorators: CheeseDecorator, MushroomDecorator, OliveDecorator
+│   └── Each decorator: getCost() = inner.getCost() + own cost
+├── Composition at Runtime
+│   ├── new CheeseDecorator(new MushroomDecorator(new BasePizza()))
+│   ├── Chain can be built in any order, any combination
+│   └── Each wrapper adds exactly one responsibility
+├── Key Property
+│   ├── Decorator implements same interface as component
+│   ├── Client cannot tell if it has a base or decorated instance
+│   └── Open for extension (new decorators) without modifying base
+├── Analogy
+│   ├── Coffee shop: Espresso + Milk + Caramel + Whip
+│   └── Each add-on wraps the previous cup, adds cost and description
+├── Real-World: Java I/O
+│   ├── InputStream → FileInputStream → BufferedInputStream → DataInputStream
+│   ├── Each layer wraps the previous and adds behavior (buffering, data parsing)
+│   └── New InputStream type = one new class, works with all existing wrappers
+├── When to Use
+│   ├── Behavior combinations grow combinatorially with inheritance
+│   ├── Features should be added/removed at runtime
+│   └── Extending a class via subclassing is impractical (third-party, final)
+├── When NOT to Use
+│   ├── Only 2–3 fixed variants exist — simple subclassing is clearer
+│   └── Decorator chain order matters in non-obvious ways — confusing
+├── Trade-offs
+│   ├── Many small classes; deep chains are hard to debug
+│   ├── Identity: decorated object is not instanceof specific decorator
+│   └── Flexible for extension; rigid if component interface changes
+└── Interview Angles
+    ├── How is Decorator different from Inheritance?
+    ├── How does Java I/O use the Decorator pattern?
+    └── Decorator vs Proxy — what is the distinction?
+```
+
+## Problem Without the Pattern
+
+The subclass-for-every-combination approach:
+
+```python
+class CheesePizza(Pizza): ...
+class MushroomPizza(Pizza): ...
+class OlivePizza(Pizza): ...
+class CheeseMushroomPizza(Pizza): ...
+class CheeseOlivePizza(Pizza): ...
+class MushroomOlivePizza(Pizza): ...
+class CheeseMushroomOlivePizza(Pizza): ...
+# 3 toppings → 7 classes. 4 toppings → 15 classes. N toppings → 2^N - 1 classes.
+```
+
+**What breaks**:
+1. **Class explosion**: N toppings = 2^N subclasses. Adding "jalapeño" doubles the class count.
+2. **Static composition**: The combination (cheese + mushroom) is hardcoded at compile time. You cannot build combinations at runtime based on user input.
+3. **SRP violation**: `CheeseMushroomPizza` knows about the pricing of both cheese and mushrooms.
+
+---
+
+## Derive the Minimal Fix
+
+The constraint: **wrap behavior dynamically at runtime, not statically at compile time**.
+
+Step 1 — ensure every pizza and every topping share the same ABC:
+```python
+from abc import ABC, abstractmethod
+
+class Pizza(ABC):
+    @abstractmethod
+    def get_cost(self): ...
+
+    @abstractmethod
+    def get_description(self): ...
+
+class PlainPizza(Pizza):
+    def get_cost(self):        return 5.0
+    def get_description(self): return "Plain pizza"
+```
+
+Step 2 — a decorator wraps a `Pizza`, adds its cost, and delegates everything else:
+```python
+class ToppingDecorator(Pizza, ABC):
+    def __init__(self, pizza):
+        self._pizza = pizza  # hold the wrapped pizza
+
+class CheeseTopping(ToppingDecorator):
+    def get_cost(self):        return self._pizza.get_cost() + 1.0
+    def get_description(self): return self._pizza.get_description() + ", Cheese"
+
+class MushroomTopping(ToppingDecorator):
+    def get_cost(self):        return self._pizza.get_cost() + 1.5
+    def get_description(self): return self._pizza.get_description() + ", Mushroom"
+```
+
+Step 3 — compose at runtime by nesting wrappers:
+```python
+order = CheeseTopping(MushroomTopping(PlainPizza()))
+# cost = 5.0 + 1.5 + 1.0 = 7.5
+# description = "Plain pizza, Mushroom, Cheese"
+```
+
+Adding jalapeño is one new `JalapenoTopping` class. Zero changes to existing classes.
+
+---
+
+> **Type**: Structural
+> **Purpose**: Dynamically adds behavior to an object without altering its structure or creating a class explosion through inheritance.
+
+> **Analogy**: A coffee shop. Start with plain coffee. Add milk (Decorator). Add sugar (Decorator). Add whipped cream (Decorator). Each addition wraps the previous without modifying the original `Coffee` class. You can combine them in any order, any combination.
+
+---
+
+## The Core Idea
+
+Instead of creating `CoffeeWithMilk`, `CoffeeWithSugar`, `CoffeeWithMilkAndSugar`, `CoffeeWithWhippedCream`... (2^N subclasses for N additions), you wrap the object. Each decorator adds its own behavior and delegates everything else to the wrapped object.
+
+**The key insight**: Decorators implement the same interface as what they wrap. They ARE the thing, AND they hold the thing.
+
+---
+
+## Problem Statement
+
+Pizza pricing. Base: `Margherita`. Toppings: `Cheese`, `Olives`, `Mushroom`.
+Calculate total cost allowing any combination.
+
+Without Decorator, you'd need: `MargheritaWithCheese`, `MargheritaWithOlives`, `MargheritaWithCheeseAndOlives`... that's $2^N$ classes.
+
+---
+
+## Implementation
+
+```python
+from abc import ABC, abstractmethod
+
+# 1. Component ABC — the base contract
+class Pizza(ABC):
+    @abstractmethod
+    def get_desc(self): ...
+
+    @abstractmethod
+    def get_cost(self): ...
+
+# 2. Concrete Components — the base items
+class Margherita(Pizza):
+    def get_desc(self): return "Margherita"
+    def get_cost(self): return 100
+
+class VegDelight(Pizza):
+    def get_desc(self): return "Veg Delight"
+    def get_cost(self): return 150
+
+# 3. Decorator Base — implements same ABC, holds a Pizza
+class PizzaDecorator(Pizza, ABC):
+    def __init__(self, pizza):
+        self._pizza = pizza  # the wrapped object
+
+    # Default: delegate to wrapped pizza
+    def get_desc(self): return self._pizza.get_desc()
+    def get_cost(self): return self._pizza.get_cost()
+
+# 4. Concrete Decorators — each adds its own behavior
+class ExtraCheese(PizzaDecorator):
+    def get_desc(self): return self._pizza.get_desc() + ", Extra Cheese"
+    def get_cost(self): return self._pizza.get_cost() + 50
+
+class Olives(PizzaDecorator):
+    def get_desc(self): return self._pizza.get_desc() + ", Olives"
+    def get_cost(self): return self._pizza.get_cost() + 20
+
+class Mushroom(PizzaDecorator):
+    def get_desc(self): return self._pizza.get_desc() + ", Mushroom"
+    def get_cost(self): return self._pizza.get_cost() + 30
+
+# 5. Client — chain decorators in any combination
+my_pizza = Margherita()                  # Cost: 100
+my_pizza = ExtraCheese(my_pizza)         # Cost: 150
+my_pizza = Olives(my_pizza)              # Cost: 170
+
+print(f"{my_pizza.get_desc()} = ${my_pizza.get_cost()}")
+# Output: Margherita, Extra Cheese, Olives = $170
+
+# Different combination, zero new classes
+fancy_pizza = VegDelight()               # Cost: 150
+fancy_pizza = ExtraCheese(fancy_pizza)   # Cost: 200
+fancy_pizza = Mushroom(fancy_pizza)      # Cost: 230
+fancy_pizza = Olives(fancy_pizza)        # Cost: 250
+
+print(f"{fancy_pizza.get_desc()} = ${fancy_pizza.get_cost()}")
+# Output: Veg Delight, Extra Cheese, Mushroom, Olives = $250
+```
+
+### Class Diagram
+
+```mermaid
+classDiagram
+    class Pizza {
+        <<interface>>
+        +getDesc() String
+        +getCost() double
+    }
+
+    class Margherita {
+        +getDesc() String
+        +getCost() double
+    }
+
+    class VegDelight {
+        +getDesc() String
+        +getCost() double
+    }
+
+    class PizzaDecorator {
+        <<abstract>>
+        #Pizza pizza
+        +PizzaDecorator(Pizza pizza)
+        +getDesc() String
+        +getCost() double
+    }
+
+    class ExtraCheese {
+        +ExtraCheese(Pizza pizza)
+        +getDesc() String
+        +getCost() double
+    }
+
+    class Olives {
+        +Olives(Pizza pizza)
+        +getDesc() String
+        +getCost() double
+    }
+
+    Pizza <|.. Margherita
+    Pizza <|.. VegDelight
+    Pizza <|.. PizzaDecorator
+    PizzaDecorator <|-- ExtraCheese
+    PizzaDecorator <|-- Olives
+    PizzaDecorator o-- Pizza : decorates
+```
+
+---
+
+## Why Not Inheritance?
+
+Inheritance is static — you must commit to a class hierarchy at compile time:
+- `MargheritaWithCheese`
+- `MargheritaWithOlives`
+- `MargheritaWithCheeseAndOlives`
+- `VegDelightWithCheese`
+- `VegDelightWithCheeseAndOlives`
+- ... ($2^N$ classes for N toppings × M base pizzas)
+
+Decorator is **dynamic composition** — you add behavior at runtime, in any combination.
+
+---
+
+## Real-World Example: Java I/O Streams
+
+Python's `io` library is a canonical Decorator example:
+
+```python
+import io
+
+# FileIO is the base component
+# BufferedReader is a Decorator (adds buffering)
+# TextIOWrapper is a Decorator (adds text decoding)
+
+raw   = open("data.bin", "rb")                # base: raw binary IO
+buf   = io.BufferedReader(raw)                # Decorator: adds buffering
+text  = io.TextIOWrapper(buf, encoding="utf-8")  # Decorator: adds text decoding
+
+line = text.readline()  # Reads a buffered, decoded text line from a file
+```
+
+Each wrapper adds behavior without modifying the original.
+
+---
+
+## When to Use in Interviews
+
+- When designing a pricing/discount system: "I'd use Decorator to apply discounts on top of each other — a `StudentDiscount` wrapping a `SeasonalDiscount` wrapping the base `Price`."
+- When building middleware/logging: "Each middleware in a request pipeline is a Decorator — it does its work and passes control to the next."
+- When the interviewer suggests inheritance for combinations: "Inheritance creates a class explosion. Decorator lets you compose behavior dynamically at runtime."
+
+---
+
+## Common Violations
+
+| Violation | Symptom | Fix |
+|---|---|---|
+| Inheritance for combinations | `MargheritaWithCheese`, `MargheritaWithOlives` classes | Use Decorator pattern |
+| Decorator breaks interface contract | Decorator changes behavior beyond adding | Decorator should only add; never break existing behavior |
+| Deep decorator chains without documentation | Hard to trace what's wrapped | Keep decorator responsibilities narrow and named clearly |
+
+---
+
+## Decorator vs Inheritance Summary
+
+| | Inheritance | Decorator |
+|---|---|---|
+| When decided | Compile time (static) | Runtime (dynamic) |
+| Combinations | $2^N$ subclasses | Wrap and compose freely |
+| Modifies original? | No | No |
+| Adds behavior? | Yes (but rigidly) | Yes (flexibly) |
+
+---
+
+## Interview Tips
+
+**Q: "Decorator vs Inheritance for adding behavior?"**
+- "Inheritance is static — you decide at compile time. Decorator is dynamic — you compose behavior at runtime. For N optional additions, inheritance needs 2^N subclasses. Decorator needs N wrapper classes composable in any combination."
+
+**Q: "Give a real-world Decorator example"**
+- "Java's I/O streams. `FileInputStream` is the base. `BufferedInputStream` decorates it with buffering. `DataInputStream` decorates it with typed reads. Each wrapper adds behavior without modifying the original."
+
+---
+
+## Interviewer Follow-Up Questions
+
+- "What problem does Decorator solve? Why not use inheritance for adding behavior?" → Inheritance adds behavior at compile time to all instances of a subclass. Decorator adds behavior at runtime to a specific object instance. Inheritance explosion problem: `Coffee`, `CoffeeWithMilk`, `CoffeeWithSugar`, `CoffeeWithMilkAndSugar` — 2^N subclasses for N options. Decorator: wrap a `Coffee` with a `MilkDecorator`, then with a `SugarDecorator` — 2+N classes regardless of combination count. Decorators compose; inheritance multiplies.
+- "How does Python's `@decorator` syntax relate to the Decorator design pattern?" → Partially related but not identical. The Decorator design pattern wraps an object of the same interface to add behavior transparently. Python's `@decorator` syntax is function wrapping — syntactic sugar for `func = decorator(func)`. Python function decorators are closer to the Decorator pattern (same interface, wrapping), but Python's `@decorator` is often used for unrelated concerns (caching, logging, auth checks) via closures, not always via the same interface. The intent is similar (augmenting behavior); the mechanism differs.
+- "Show a real use case of Decorator in a web framework." → Middleware chain in Flask/Django: `@require_auth @rate_limit @log_request def endpoint(): ...`. Each decorator wraps the handler and adds a cross-cutting concern. In Java: `new BufferedReader(new FileReader("file.txt"))` — `BufferedReader` decorates `FileReader` by adding buffering. The caller uses the same `Reader` interface — they don't know or care about the wrapping. In Spring: `@Cacheable` is a method decorator implemented via AOP proxy (a Decorator variant).
+- "What's the risk of too many nested decorators?" → Performance: each layer adds a function call (usually negligible, but measurable in tight loops). Debugging complexity: a stack trace through 7 decorator layers is hard to read. Order matters: `@rate_limit @require_auth` vs `@require_auth @rate_limit` — does auth run before or after rate limiting? Wrong order = security bugs. Document the expected stack order explicitly.

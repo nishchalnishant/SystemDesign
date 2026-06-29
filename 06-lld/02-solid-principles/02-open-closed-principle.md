@@ -1,0 +1,242 @@
+---
+module: 06-lld
+topic: Solid Principles
+status: unread
+tags: [06-lld, system-design, solid-principles]
+---
+# Open/Closed Principle (OCP)
+
+**Question**: Your `AreaCalculator` class works perfectly for circles and rectangles. Product adds a triangle. You open the class, add another `else if`. Three months later, product adds a hexagon. You open it again. What is the risk each time you do this?
+
+**Problem without OCP**: Every new shape requires modifying `AreaCalculator`. That class already has working, tested code. Every modification risks introducing a regression. If ten places depend on `AreaCalculator`, they all need to be retested. The class that handles the "calculate total area" logic should never need to know about individual shape formulas.
+
+**Minimal fix**: Make each shape responsible for its own area calculation. `AreaCalculator` calls `shape.area()` — it never knows whether it is calling a circle, rectangle, or hexagon. Add a new shape by creating a new class. `AreaCalculator` never changes.
+
+**Full principle**: OCP — Software entities should be **open for extension** (add new behavior by adding new code), but **closed for modification** (adding new behavior should not require changing existing, working code). The mechanism is polymorphism: abstract the varying part into an interface, and new variations implement that interface.
+
+> **Analogy**: A vending machine. You can add new product slots (extension) without rewiring the internal dispensing mechanism (modification). Add new snacks, don't rewrite the machine.
+
+---
+
+## Topic Mindmap
+
+```
+[Open/Closed Principle]
+├── Problem It Solves
+│   ├── AreaCalculator with instanceof chain — add shape = modify class
+│   ├── Every modification risks regression in working, tested code
+│   └── Classes that depend on AreaCalculator must all be retested
+├── Core Rule
+│   ├── Open for extension: add new behavior by adding new code
+│   ├── Closed for modification: existing working code is untouched
+│   └── Mechanism: polymorphism — abstract the varying part into an interface
+├── The Fix Pattern
+│   ├── Shape interface with area() method
+│   ├── Circle, Rectangle, Triangle, Hexagon each implement Shape
+│   ├── AreaCalculator calls shape.area() — never knows the concrete type
+│   └── Add Triangle: new class only, AreaCalculator unchanged
+├── NotificationSender Example
+│   ├── if/else on notification type = OCP violation
+│   ├── NotificationSender interface with send()
+│   └── EmailNotification, SMSNotification, PushNotification implement it
+├── When OCP Applies
+│   ├── Behavior varies across types (payment methods, shapes, exporters)
+│   ├── The variation point is known and stable
+│   └── New variants are expected over time
+├── When NOT to Over-Apply
+│   ├── Don't abstract until you have two concrete cases (YAGNI)
+│   ├── Premature abstraction = wrong interface that blocks real extension
+│   └── Bug fixes do require modifying existing code — that is fine
+├── Trade-offs
+│   ├── More interfaces/classes — more indirection to trace
+│   ├── First extension is expensive (create interface + first impl)
+│   └── Second and all subsequent extensions are cheap
+└── Interview Angles
+    ├── How does OCP relate to polymorphism?
+    ├── Can you achieve OCP without interfaces? (composition, function objects)
+    └── What breaks when you violate OCP at scale?
+```
+
+## The Problem
+
+If you have to change existing code every time you add new functionality, you risk introducing bugs into previously working code. The existing logic becomes fragile — every addition is a potential regression.
+
+### Bad Example (Violates OCP)
+
+```python
+import math
+
+class AreaCalculator:
+    def calculate_area(self, shape):
+        if isinstance(shape, Rectangle):
+            return shape.length * shape.width
+        elif isinstance(shape, Circle):
+            return math.pi * shape.radius ** 2
+        # To add Triangle, we MUST MODIFY this class!
+        return 0
+```
+
+**Problems:**
+- Every new shape requires modifying `AreaCalculator`.
+- Risk of breaking Rectangle logic when adding Triangle.
+- The class is never "done" — it grows forever with if/else chains.
+
+---
+
+### Good Example (Follows OCP)
+
+```python
+import math
+from abc import ABC, abstractmethod
+
+# 1. Define an abstract base (Contract) — this is the stable abstraction
+class Shape(ABC):
+    @abstractmethod
+    def calculate_area(self): ...
+
+# 2. Each shape owns its own calculation logic
+class Rectangle(Shape):
+    def __init__(self, length, width):
+        self.length = length
+        self.width = width
+
+    def calculate_area(self):
+        return self.length * self.width
+
+class Circle(Shape):
+    def __init__(self, radius):
+        self.radius = radius
+
+    def calculate_area(self):
+        return math.pi * self.radius ** 2
+
+# 3. Adding Triangle = zero changes to AreaCalculator
+class Triangle(Shape):
+    def __init__(self, base, height):
+        self.base = base
+        self.height = height
+
+    def calculate_area(self):
+        return 0.5 * self.base * self.height
+
+# 4. AreaCalculator never needs to change
+class AreaCalculator:
+    def calculate_total_area(self, shapes):  # list of Shape
+        return sum(shape.calculate_area() for shape in shapes)  # Polymorphism does the work
+```
+
+**Benefits:**
+- Add `Hexagon`, `Polygon`, `Ellipse` without touching `AreaCalculator`.
+- `AreaCalculator` is **Closed for Modification**.
+- `Shape` hierarchy is **Open for Extension**.
+
+---
+
+## Real-World Example: Notification Service
+
+### Bad
+
+```python
+class NotificationSender:
+    def send(self, type_, message):
+        if type_ == "email":
+            pass  # SMTP logic
+        elif type_ == "sms":
+            pass  # Twilio logic
+        elif type_ == "push":
+            pass  # FCM logic — had to modify this class to add push!
+        # Slack? Webhook? Modify again...
+```
+
+### Good
+
+```python
+from abc import ABC, abstractmethod
+
+class NotificationChannel(ABC):
+    @abstractmethod
+    def send(self, message): ...
+
+class EmailChannel(NotificationChannel):
+    def send(self, message): ...  # SMTP logic
+
+class SMSChannel(NotificationChannel):
+    def send(self, message): ...  # Twilio logic
+
+class PushChannel(NotificationChannel):
+    def send(self, message): ...  # FCM logic
+
+# New channel? Just add a new class. NotificationSender never changes.
+class SlackChannel(NotificationChannel):
+    def send(self, message): ...  # Slack webhook logic
+
+class NotificationSender:
+    def __init__(self, channel):
+        self._channel = channel
+
+    def notify(self, message):
+        self._channel.send(message)  # Closed for modification
+```
+
+---
+
+## How to Apply OCP
+
+1. **Use Interfaces / Abstract Classes**: Define a stable contract.
+2. **Use Polymorphism**: Let subclasses handle specific behavior.
+3. **Dependency Injection**: Inject implementations at runtime.
+4. **Design Patterns that naturally enforce OCP**:
+   - **Strategy Pattern**: Swap algorithms without modifying the context.
+   - **Decorator Pattern**: Add behavior dynamically without modifying the component.
+   - **Factory Pattern**: Create objects without coupling to concrete types.
+
+---
+
+## When to Use in Interviews
+
+- When designing a payment system: "We'd define a `PaymentProcessor` interface. Each provider (Stripe, PayPal, Razorpay) implements it. Adding a new provider = new class, no modifications."
+- When designing a discount/pricing engine: Don't write `if (type == "SUMMER") ... else if (type == "STUDENT") ...`. Use a `DiscountStrategy` interface.
+- Plugin architectures are the ultimate OCP example: VS Code is closed for modification but open for extension via its extensions API.
+
+---
+
+## Common Violations
+
+| Violation | Symptom | Fix |
+|---|---|---|
+| Long if/else or switch on type | `if (type == "X") ... else if (type == "Y")` | Use polymorphism + interface |
+| Modify existing class to add new feature | PR changes core class for every new case | Extract abstract type, add new implementor |
+| Strategy embedded in client | Business rule logic inside the caller | Extract to Strategy interface |
+
+---
+
+## Pros & Cons
+
+**Pros:**
+- Stable, tested code stays untouched when adding features
+- Reduces regression risk
+- Forces clean abstraction design upfront
+
+**Cons:**
+- Requires predicting the right abstraction points (hard to get right the first time)
+- Can over-abstract too early (YAGNI conflict)
+- Can't be 100% closed — if the core interface changes, you must modify code
+
+---
+
+## Interview Tips
+
+**Q: "Can you be 100% closed for modification?"**
+- "No. If the core logic or interface changes (e.g., `calculateArea` needs a parameter), you have to modify code. OCP minimizes modification, it doesn't eliminate it."
+
+**Q: "How does OCP relate to plugins?"**
+- "Plugins are the ultimate OCP example. An IDE (like VS Code) is closed for modification but open for extension via its extensions API."
+
+---
+
+## Interviewer Follow-Up Questions
+
+- "OCP says 'closed for modification'. But you always modify code when adding features — isn't OCP impossible?" → OCP means: existing, tested, deployed code should not need to change. You add new code (a new class implementing an existing interface), not modify old code. `PaymentProcessor` that dispatches to `CreditCardPayment` vs `PayPalPayment` via an interface — adding Bitcoin payment is a new class, zero changes to `PaymentProcessor`. The old code stays untouched. OCP is achievable by designing extension points (interfaces, plugin registries) upfront.
+- "Show me a before/after example of applying OCP." → Before: `if payment_type == 'credit_card': ... elif payment_type == 'paypal': ...` — every new payment type modifies this method. After: `processor = payment_handlers[payment_type]; processor.process(amount)` — `payment_handlers` is a dict mapping type to an object implementing `PaymentHandler.process()`. Adding a new type = register a new handler. The if/elif chain is gone; the dispatcher doesn't change.
+- "When is it acceptable to violate OCP and just modify existing code?" → When the extension point wasn't designed upfront and the cost of introducing it (interface extraction, refactoring callers) exceeds the benefit. YAGNI applies: don't add abstractions for hypothetical future changes. Violate OCP and modify the existing code when: the change is small and well-tested, you're in an early prototype, or the abstraction you'd introduce would be more complex than the modification. OCP is a guide, not a rule — apply it where change is predictably frequent.
+- "Your `NotificationService` sends emails. Now it must also send SMS. How do you apply OCP?" → Extract interface: `Notifier.send(message, recipient)`. `EmailNotifier` and `SMSNotifier` implement it. `NotificationService` holds a `List<Notifier>` and calls `send()` on each. Adding push notifications = implement `PushNotifier`, register it. `NotificationService` is closed for modification (never changes); open for extension (add notifiers freely). This is the OCP + Strategy + Composite pattern combination.

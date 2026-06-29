@@ -49,6 +49,7 @@ tags: [06-lld, system-design, lld]
 ### Structural Patterns
 * [Structural Overview](03-design-patterns/02-structural/README.md)
 * [Adapter Pattern](03-design-patterns/02-structural/adapter-pattern.md)
+* [Composite Pattern](03-design-patterns/02-structural/composite-pattern.md)
 * [Decorator Pattern](03-design-patterns/02-structural/decorator-pattern.md)
 * [Facade Pattern](03-design-patterns/02-structural/facade-pattern.md)
 * [Proxy Pattern](03-design-patterns/02-structural/proxy-pattern.md)
@@ -75,7 +76,7 @@ tags: [06-lld, system-design, lld]
 
 * [OOP Introduction](01-oop-fundamentals/introduction.md)
 * [Four Pillars of OOP](01-oop-fundamentals/four-pillars.md)
-* [OOP Principles](01-oop-fundamentals/principles.md)
+* [Python OOPs](01-oop-fundamentals/python-oops.md)
 
 ## Concurrency
 
@@ -83,3 +84,11 @@ tags: [06-lld, system-design, lld]
 * [Locks and Semaphores](04-concurrency/locks-semaphores.md)
 * [Producer-Consumer](04-concurrency/producer-consumer.md)
 * [Thread-Safe Singleton](04-concurrency/thread-safe-singleton.md)
+
+## Building Blocks (HLD Cross-Reference)
+
+* [SQL Fundamentals](../02-building-blocks/sql-fundamentals.md)
+
+## HLD Problems (Cross-Reference)
+
+* [Uber / Ride-Sharing](../05-hld-problems/02-medium/uber.md)
