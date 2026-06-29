@@ -59,10 +59,10 @@ tags: [root, system-design, flowcharts]
 
 ---
 
-### Foundations › Caching & CDN
+### Building Blocks › Caching Layer
 
 ```
-01-foundations/caching-cdn.md
+02-building-blocks/caching-layer.md
 │
 ├── Cache-Aside (Lazy)         → App reads cache; on miss, reads DB, writes to cache; cache can be stale; most common
 ├── Write-Through              → Write to cache AND DB synchronously; consistent but slow writes

@@ -195,7 +195,7 @@ Every large-scale system is assembled from the same fundamental components. You 
 
 **Production generalization**: Cache-aside pattern + TTL for staleness control + LRU eviction for memory pressure + warm-up jobs for cold start. Redis is a RAM-backed hash map over a network — the network adds ~0.5ms but makes the cache shared across all app instances. Twitter caches the home timelines of active users entirely in Redis — what would take a complex database query is served from memory in under 1ms. The hard problems are *what* to cache, *when* to invalidate it, and how to handle a cold cache after a restart.
 
-→ Deep dive: [Caching](../01-foundations/caching-cdn.md) | [Caching Layer (Building Block)](../02-building-blocks/caching-layer.md)
+→ Deep dive: [Caching Layer (Building Block)](../02-building-blocks/caching-layer.md)
 
 ### 4. Content Delivery Networks (CDN)
 
@@ -207,7 +207,7 @@ Every large-scale system is assembled from the same fundamental components. You 
 
 **Production generalization**: A CDN is a globally distributed network of caching servers (edge nodes) that serve content from the location closest to the user. On the first request from a region, the edge fetches from your origin and caches the result. All subsequent requests from that region are served locally. Netflix delivers over 15% of global internet traffic almost entirely through CDN — it is economically impossible to serve that from a handful of origin data centers.
 
-→ Deep dive: [CDN](../01-foundations/caching-cdn.md#cdn) | [CDN (Building Block)](../02-building-blocks/cdn.md)
+→ Deep dive: [CDN (Building Block)](../02-building-blocks/cdn.md) | [CDN section in Caching Layer](../02-building-blocks/caching-layer.md#7-cdn-as-distributed-cache-layer)
 
 ### 5. Load Balancing
 
@@ -278,7 +278,7 @@ Follow this path for a systematic understanding that builds on itself. Each stag
 **Stage 1 — Foundations** (read first, everything else builds on these)
 1. [Networking](../01-foundations/networking.md) — TCP/IP, DNS, HTTP, OSI model
 2. [Databases](../01-foundations/databases.md) — SQL vs NoSQL, indexing, ACID, CAP theorem
-3. [Caching & CDN](../01-foundations/caching-cdn.md) — Strategies, eviction policies, CDN patterns
+3. [Caching Layer](../02-building-blocks/caching-layer.md) — Strategies, eviction policies, CDN patterns
 4. [Security](../01-foundations/security.md) — Auth, encryption, rate limiting
 
 **Stage 2 — Building Blocks** (the components every system uses)

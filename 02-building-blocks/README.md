@@ -10,7 +10,7 @@
 | [Load Balancers](load-balancers.md) | Distribute traffic across multiple servers | Multiple app instances, high availability |
 | [Reverse Proxy](reverse-proxy.md) | Single entry point; SSL termination, routing, caching | Fronting app servers, API gateway |
 | [CDN](cdn.md) | Edge caching for static/dynamic content | Low-latency global delivery |
-| [Caching Layer](caching-layer.md) | In-memory cache (e.g. Redis) for hot data | Read-heavy, latency-sensitive |
+| [Caching Layer](caching-layer.md) | In-memory cache (e.g. Redis) for hot data; covers cache patterns, eviction policies (LRU/LFU/ARC/W-TinyLFU), Redis config, CDN layer, and when to cache | Read-heavy, latency-sensitive |
 | [Message Brokers](message-brokers.md) | Queues and pub/sub for async processing | Decoupling, async jobs, events |
 | [Service Discovery](service-discovery.md) | Find service instances in a dynamic cluster | Microservices, containers |
 | [API Gateway](api-gateway.md) | Single entry for APIs; auth, rate limit, routing | Microservices, B2B APIs |

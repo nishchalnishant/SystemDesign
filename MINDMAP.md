@@ -37,7 +37,6 @@ SystemDesign/
 ├── fundamentals.md          [CAP, PACELC, consistency models, latency numbers]
 ├── networking.md            [TCP/UDP, HTTP/2/3, TLS, DNS, CDN mechanics]
 ├── databases.md             [SQL vs NoSQL, ACID, B-tree, LSM, indexing]
-├── caching-cdn.md           [Cache strategies: aside, write-through, write-back]
 └── security.md              [AuthN/AuthZ, OAuth2, JWT, mTLS, rate-limit abuse]
 ```
 

@@ -1,0 +1,384 @@
+---
+module: 06-lld
+topic: Problems
+status: unread
+tags: [06-lld, lld, coupon-system, composite, chain-of-responsibility, strategy]
+---
+# Design Coupon System
+
+> **Difficulty**: Medium
+> **Asked at**: Amazon, Shopify, DoorDash
+> **Key Patterns**: Composite (coupon stacking), Chain of Responsibility (validation), Strategy (discount type)
+
+---
+
+## Understanding the Problem
+
+Design a coupon and discount system for an e-commerce platform that supports percentage, fixed-amount, and free-shipping discounts, with validation rules and stacking limits.
+
+---
+
+## Clarifying Questions
+
+**You**: "What types of discounts do we support?"
+**Interviewer**: "Percentage off, fixed amount off, free shipping."
+
+**You**: "Can multiple coupons be applied to a single order?"
+**Interviewer**: "At most one product coupon and one shipping coupon simultaneously."
+
+**You**: "Are there conditions on coupon usage — minimum order value, expiry, one-use-per-user?"
+**Interviewer**: "Yes, all three."
+
+**You**: "Who creates coupons — admin only, or can we auto-generate?"
+**Interviewer**: "Admin creates. Auto-generation is a follow-up."
+
+**You**: "Can a coupon be for a specific product or category?"
+**Interviewer**: "Yes — scope can be order-wide, category, or specific product."
+
+---
+
+## Final Requirements
+
+**In scope:**
+1. Coupon types: PERCENTAGE, FIXED_AMOUNT, FREE_SHIPPING
+2. Validation: expiry date, minimum order value, per-user usage limit
+3. Scope: order-wide, per-category, per-product
+4. At most one product coupon + one shipping coupon per order
+5. Apply discounts to the order total; return itemized breakdown
+
+**Out of scope:**
+- Auto-generation (follow-up)
+- Flash sales / time-limited stacking
+- Loyalty points integration
+- Fraud detection
+
+---
+
+## Core Entities and Relationships
+
+| Entity | Responsibility |
+|--------|---------------|
+| `Coupon` | Code, type, value, scope, validity dates, usage limits |
+| `DiscountStrategy` (abstract) | Computes discount amount from order |
+| `PercentageDiscount / FixedDiscount / FreeShippingDiscount` | Concrete strategies |
+| `CouponValidator` | Chain: checks expiry → min order → user limit → scope |
+| `ValidationRule` (abstract) | Single validation step in chain |
+| `Order` | Items, subtotal, shipping cost |
+| `CouponService` | Applies and validates coupons; returns DiscountResult |
+| `UserCouponUsage` | Tracks how many times a user used each coupon |
+
+---
+
+## Class Design
+
+### Coupon
+
+| Requirement | What Coupon must track |
+|-------------|----------------------|
+| "Validation: expiry, min order, user limit" | expires_at, min_order_value, max_uses_per_user |
+| "Scope: order, category, product" | scope: CouponScope, scope_id: Optional[str] |
+| "Discount type" | discount_type: DiscountType, discount_value: float |
+
+```
+class Coupon:
+- code: str
+- discount_type: DiscountType
+- discount_value: float         # e.g., 20 for 20% or $20
+- scope: CouponScope            # ORDER, CATEGORY, PRODUCT
+- scope_id: Optional[str]       # category_id or product_id
+- min_order_value: float
+- max_uses_per_user: int
+- total_usage_limit: Optional[int]
+- expires_at: datetime
+- is_active: bool
+```
+
+### DiscountStrategy (Strategy)
+
+```
+class DiscountStrategy (abstract):
++ calculate(coupon: Coupon, order: Order) -> float  # returns discount amount
+
+class PercentageDiscount(DiscountStrategy):
++ calculate(coupon, order) -> float  # order.applicable_subtotal * coupon.discount_value / 100
+
+class FixedDiscount(DiscountStrategy):
++ calculate(coupon, order) -> float  # min(coupon.discount_value, order.applicable_subtotal)
+
+class FreeShippingDiscount(DiscountStrategy):
++ calculate(coupon, order) -> float  # order.shipping_cost
+```
+
+### ValidationRule (Chain of Responsibility)
+
+```
+class ValidationRule (abstract):
+- next_rule: Optional[ValidationRule]
+
++ set_next(rule: ValidationRule) -> ValidationRule
++ validate(coupon: Coupon, order: Order, user_id: str) -> ValidationResult
+
+class ExpiryRule(ValidationRule): ...
+class MinOrderRule(ValidationRule): ...
+class UserLimitRule(ValidationRule): ...
+class ScopeRule(ValidationRule): ...
+```
+
+### CouponService
+
+```
+class CouponService:
+- coupon_repo: CouponRepository
+- usage_repo: UserCouponUsageRepository
+- validator_chain: ValidationRule
+- strategies: dict[DiscountType, DiscountStrategy]
+
++ apply_coupon(code: str, order: Order, user_id: str) -> DiscountResult
++ validate_coupon(code: str, order: Order, user_id: str) -> ValidationResult
+```
+
+---
+
+## Implementation
+
+### Core Method: `apply_coupon`
+
+**Core logic:**
+1. Fetch coupon by code
+2. Run validation chain (expiry, min order, user limit, scope)
+3. Select discount strategy by type
+4. Calculate discount amount
+5. Check stacking: if SHIPPING coupon, check no other SHIPPING coupon applied; same for PRODUCT
+6. Record usage
+7. Return DiscountResult with breakdown
+
+**Edge cases:**
+- Coupon not found → error
+- Validation fails → return which rule failed
+- Stacking violation → reject second coupon of same type
+
+```python
+def apply_coupon(self, code, order, user_id):
+    coupon = self.coupon_repo.find_by_code(code)
+    if not coupon:
+        return DiscountResult.error("Coupon not found")
+
+    validation = self.validator_chain.validate(coupon, order, user_id)
+    if not validation.is_valid:
+        return DiscountResult.error(validation.reason)
+
+    # Stacking check
+    if coupon.discount_type == DiscountType.FREE_SHIPPING:
+        if order.has_shipping_coupon():
+            return DiscountResult.error("Only one shipping coupon allowed")
+    else:
+        if order.has_product_coupon():
+            return DiscountResult.error("Only one product coupon allowed")
+
+    strategy = self.strategies[coupon.discount_type]
+    discount_amount = strategy.calculate(coupon, order)
+
+    # Record usage
+    self.usage_repo.increment(user_id, coupon.code)
+
+    return DiscountResult(
+        coupon_code=code,
+        discount_amount=discount_amount,
+        new_total=order.total - discount_amount
+    )
+```
+
+### Validation Chain construction
+
+```python
+def build_validator_chain():
+    expiry = ExpiryRule()
+    min_order = MinOrderRule()
+    user_limit = UserLimitRule(usage_repo)
+    scope = ScopeRule()
+
+    expiry.set_next(min_order).set_next(user_limit).set_next(scope)
+    return expiry
+
+# Base class
+class ValidationRule:
+    def set_next(self, rule):
+        self.next_rule = rule
+        return rule
+
+    def validate(self, coupon, order, user_id):
+        if self.next_rule:
+            return self.next_rule.validate(coupon, order, user_id)
+        return ValidationResult.ok()
+
+class ExpiryRule(ValidationRule):
+    def validate(self, coupon, order, user_id):
+        if datetime.now() > coupon.expires_at:
+            return ValidationResult.fail("Coupon has expired")
+        return super().validate(coupon, order, user_id)
+
+class MinOrderRule(ValidationRule):
+    def validate(self, coupon, order, user_id):
+        if order.subtotal < coupon.min_order_value:
+            return ValidationResult.fail(
+                f"Minimum order value ${coupon.min_order_value} required"
+            )
+        return super().validate(coupon, order, user_id)
+```
+
+### PercentageDiscount with scope
+
+```python
+class PercentageDiscount(DiscountStrategy):
+    def calculate(self, coupon, order):
+        applicable = self._get_applicable_amount(coupon, order)
+        return round(applicable * coupon.discount_value / 100, 2)
+
+    def _get_applicable_amount(self, coupon, order):
+        if coupon.scope == CouponScope.ORDER:
+            return order.subtotal
+        elif coupon.scope == CouponScope.CATEGORY:
+            return sum(
+                item.price * item.quantity
+                for item in order.items
+                if item.category_id == coupon.scope_id
+            )
+        elif coupon.scope == CouponScope.PRODUCT:
+            return sum(
+                item.price * item.quantity
+                for item in order.items
+                if item.product_id == coupon.scope_id
+            )
+        return 0
+```
+
+---
+
+## Verification
+
+```
+Order: subtotal=$150, shipping=$10
+User: alice, usage of "SAVE20" = 0
+
+Coupon "SAVE20":
+  type=PERCENTAGE, value=20
+  min_order_value=$100, max_uses_per_user=1
+  expires_at=2027-01-01, scope=ORDER
+
+apply_coupon("SAVE20", order, "alice"):
+  coupon found ✓
+  ExpiryRule: now < 2027-01-01 ✓
+  MinOrderRule: 150 >= 100 ✓
+  UserLimitRule: usage=0 < max=1 ✓
+  ScopeRule: scope=ORDER, no scope_id needed ✓
+  strategy = PercentageDiscount
+  discount = 150 * 20 / 100 = $30
+  usage_repo.increment("alice", "SAVE20")
+  return DiscountResult(discount=$30, new_total=$130)
+```
+
+---
+
+## Deep Dive & Extensibility
+
+### 1. "How would you add BOGO (buy one get one free)?"
+
+Add `BOGODiscount(DiscountStrategy)`:
+
+```python
+class BOGODiscount(DiscountStrategy):
+    def calculate(self, coupon, order):
+        # Find items matching scope, sort by price desc
+        matching = sorted(
+            [i for i in order.items if self._matches_scope(coupon, i)],
+            key=lambda i: i.price, reverse=True
+        )
+        # Every other item is free
+        total_free = sum(
+            item.price for i, item in enumerate(matching)
+            if i % 2 == 1
+        )
+        return total_free
+```
+
+Register `DiscountType.BOGO → BOGODiscount` in the strategies dict. No other changes.
+
+### 2. "How would you add a 'first order only' restriction?"
+
+Add a new `ValidationRule`:
+
+```python
+class FirstOrderRule(ValidationRule):
+    def __init__(self, order_repo):
+        self.order_repo = order_repo
+
+    def validate(self, coupon, order, user_id):
+        if coupon.requires_first_order:
+            count = self.order_repo.count_completed_orders(user_id)
+            if count > 0:
+                return ValidationResult.fail("Coupon valid for first order only")
+        return super().validate(coupon, order, user_id)
+```
+
+Insert into the chain: `user_limit.set_next(first_order).set_next(scope)`. Open/Closed — no existing rules change.
+
+### 3. "How would you prevent coupon abuse (multiple accounts)?"
+
+- Device fingerprinting: tie coupon usage to device ID, not just user ID
+- Email domain check: one use per email domain
+- Payment method deduplication: same card = same user
+
+```python
+class PaymentDedupRule(ValidationRule):
+    def validate(self, coupon, order, user_id):
+        if coupon.limit_per_payment_method:
+            card_hash = hash(order.payment_method_last4)
+            usage = self.usage_repo.get_by_card(coupon.code, card_hash)
+            if usage >= coupon.max_uses_per_user:
+                return ValidationResult.fail("Coupon limit reached for this payment method")
+        return super().validate(coupon, order, user_id)
+```
+
+### 4. "How would you handle race conditions on total usage limit?"
+
+Two users simultaneously using the last slot of a coupon with `total_usage_limit=1`:
+
+```python
+# DB-level CAS
+UPDATE coupons
+SET total_used = total_used + 1
+WHERE code = ? AND total_used < total_usage_limit
+
+# If rows affected == 0: coupon exhausted
+```
+
+Or use Redis INCR and compare against limit — atomic, no race condition.
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**: Coupon entity with type and value. `apply_coupon` that computes discount. Basic expiry check. Return updated total.
+
+**Mid-level**: Strategy for discount types. Chain of Responsibility for validation rules. Stacking constraint (one product + one shipping). Scope filtering (category/product-level discount).
+
+**Senior**: Composite coupon stacking with explicit stacking policy. BOGO as new strategy requiring no changes to existing code. Race condition on usage limit solved with CAS. Abuse prevention via payment method deduplication.
+
+---
+
+## Common Interview Questions
+
+- **Q**: Why Chain of Responsibility for validation instead of a big `if` block?
+  **A**: Each rule is independent and reorderable. New rules (e.g., FirstOrder, PaymentDedup) are added as new classes without touching existing ones. The chain is built at startup and injected — easy to test each rule in isolation.
+
+- **Q**: How do you prevent applying the same coupon twice by the same user?
+  **A**: `UserLimitRule` checks `usage_repo.get(user_id, coupon.code)`. Usage is incremented only after successful application. The DB increment is atomic — use transactions.
+
+- **Q**: What's the difference between scope ORDER, CATEGORY, and PRODUCT?
+  **A**: ORDER applies discount to the full subtotal. CATEGORY applies only to items in the specified category. PRODUCT applies only to the specific product. The `DiscountStrategy._get_applicable_amount` method filters accordingly.
+
+- **Q**: How do you handle a coupon that makes the order total negative?
+  **A**: Cap discount at the order total: `discount = min(calculated_discount, order.subtotal)`. Coupon value can never exceed what the customer owes.
+
+- **Q**: How would you add time-based coupons (flash sale — valid only 1–3 PM)?
+  **A**: Add `valid_time_window: Optional[Tuple[time, time]]` to Coupon. Add `TimeWindowRule` to the chain — checks `time_start <= current_time <= time_end`.

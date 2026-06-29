@@ -201,4 +201,4 @@ No cache purge needed. The old file expires naturally. The new file is a brand-n
 - **Starbucks analogy**: Origin = Seattle roastery; edges = local stores; push = pre-shipping seasonal inventory; pull = ordering only when a customer asks.
 - **Interview**: "We use a CDN for static assets and redirect pages; pull model with long TTL and content-hashed URLs so we don't need to purge on deploy. For dynamic API responses we use a 30-second TTL with stale-while-revalidate. For personalized data we bypass the CDN entirely."
 
-**For deeper caching strategies and Cache-Control**, see [01-foundations/caching-cdn.md](../01-foundations/caching-cdn.md).
+**For deeper caching strategies and Cache-Control**, see [02-building-blocks/caching-layer.md](caching-layer.md).

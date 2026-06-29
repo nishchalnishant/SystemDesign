@@ -266,7 +266,7 @@ public class ProductService {
 }
 ```
 
-**When**: Read-heavy; latency-sensitive; can tolerate staleness or explicit invalidation. See [01-foundations/caching-cdn.md](../01-foundations/caching-cdn.md) and [02-building-blocks/caching-layer.md](../02-building-blocks/caching-layer.md).
+**When**: Read-heavy; latency-sensitive; can tolerate staleness or explicit invalidation. See [02-building-blocks/caching-layer.md](../02-building-blocks/caching-layer.md).
 
 ---
 

@@ -1,59 +1,72 @@
-# LLD Interview Problems 
+# LLD Interview Problems
 
-A curated collection of **23** common Low-Level Design (LLD) interview problems, ranked by probability of being asked in SDE 2 interviews.
+A curated collection of **36** Low-Level Design (LLD) interview problems. Problems 01–24 have Python implementations. Problems 25–36 are advanced/niche topics with Java implementations.
 
 > **Legend**:
-> - **Very High** (80-100%): Must prepare. Asked in almost every LLD round.
-> - **High** (60-80%): Frequently asked.
-> - **Medium** (20-60%): Domain-specific or less common.
+> - **Very High** (80–100%): Must prepare. Asked in almost every LLD round.
+> - **High** (60–80%): Frequently asked.
+> - **Medium** (20–60%): Domain-specific or less common.
+> - **Advanced**: Niche or senior-level problems.
 
 ---
 
-## The Complete Problem List
-
-This section contains detailed solutions and explanations for all 23 problems:
+## Problem List
 
 ### Very High Priority (Must Prepare)
-1. [Design Parking Lot](1-design-parking-lot.md) - Singleton, Factory, Strategy, Concurrency
-2. [Design Rate Limiter](2-design-rate-limiter.md) - Token Bucket, Thread-Safety, Decorator
-3. [Design Tic-Tac-Toe](3-design-tic-tac-toe.md) - Game Loop, 2D Arrays, Validation Logic
-4. [Design Vending Machine](4-design-vending-machine.md) - State Pattern, State Machine, Money Handling
-5. [Design Splitwise](5-design-splitwise.md) - Graph Simplification, Strategy (Splits), User/Group
+1. [Design Parking Lot](01-design-parking-lot.md) — Singleton, Factory, Strategy, Concurrency
+2. [Design Rate Limiter](02-design-rate-limiter.md) — Token Bucket, Thread-Safety, Decorator
+3. [Design Tic-Tac-Toe](03-design-tic-tac-toe.md) — Game Loop, 2D Arrays, Validation Logic
+4. [Design Vending Machine](04-design-vending-machine.md) — State Pattern, State Machine, Money Handling
+5. [Design Splitwise](05-design-splitwise.md) — Graph Simplification, Strategy (Splits), User/Group
 
 ### High Priority (Frequently Asked)
-6. [Design Snake & Ladder](6-design-snake-and-ladder.md) - Game Entity, Observer, Strategy (Dice)
-7. [Design Elevator System](7-design-elevator-system.md) - State Pattern, Scheduling Algorithms (SCAN/LOOK)
-8. [Design Comment System](8-design-comment-system.md) - Materialized Path (Trees), Recursion, Database Design
-9. [Design Hotel Management](9-design-hotel-management.md) - Booking Factory, Date Concurrency, Singleton
-10. [Design Cache (LRU/LFU)](10-design-lru-cache.md) - Doubly Linked List + HashMap, Generics
-11. [Design Locker Service](11-design-locker-service.md) - Geo-hashing, Locker Size Matching, Inheritance
+6. [Design BookMyShow](06-design-bookmyshow.md) — Seat Locking, Concurrency, Booking Flow
+7. [Design Chess](07-design-chess.md) — Piece Hierarchy, Move Validation, Turn Management
+8. [Design Snake & Ladder](08-design-snake-and-ladder.md) — Game Entity, Observer, Strategy (Dice)
+9. [Design Elevator System](09-design-elevator-system.md) — State Pattern, Scheduling (SCAN/LOOK)
+10. [Design Comment System](10-design-comment-system.md) — Materialized Path (Trees), Recursion
+11. [Design Hotel Management](11-design-hotel-management.md) — Booking Factory, Date Concurrency
+12. [Design ATM](12-design-atm.md) — State Pattern, Cash Dispensing, Transaction Safety
+13. [Design LRU/LFU Cache](13-design-lru-cache.md) — Doubly Linked List + HashMap, Generics
+14. [Design Food Delivery](14-design-food-delivery.md) — Order Lifecycle, Observer, Strategy (Dispatch)
+15. [Design Locker Service](15-design-locker-service.md) — Geo-hashing, Locker Size Matching, Inheritance
+16. [Design Notification System](16-design-notification-system.md) — Observer, Strategy (Channel), Retry
+17. [Design Coupon System](17-design-coupon-system.md) — Composite Pattern, Chain of Responsibility
 
 ### Medium Priority (Domain-Specific)
-12. [Design Coupon System](12-design-coupon-system.md) - Composite Pattern, Chain of Responsibility
-13. [Design Mentorship Platform](13-design-mentorship-platform.md) - Booking availability, Conflict resolution
-14. [Design Logger Library](14-design-logger-library.md) - Chain of Responsibility, Singleton, Sink Strategy
-15. [Design Minesweeper](15-design-minesweeper.md) - Flood Fill (DFS/BFS), Recursion
-16. [Design File System / S3](16-design-s3-object-storage.md) - Composite Pattern, Metadata vs Data, Permissions
-17. [Design Search Engine](17-design-search-engine.md) - Inverted Index, Tries, Tokenization
-18. [Design Tetris](18-design-tetris.md) - Matrix Rotation, Factory Pattern, Game Loop
-19. [Design Version Control](19-design-version-control.md) - Graph (DAG), Hashing (SHA-1), Merkle Tree
-20. [Design Tunneling Service](20-design-tunneling-service.md) - Reverse Proxy, Socket Programming
-21. [Design Text Editor](21-design-text-editor.md) - Gap Buffer/Rope, Command Pattern, Undo/Redo
-22. [Design Download Manager](22-design-download-manager.md) - Multi-threading, HTTP Ranges, File Merging
-23. [Design Unlock Pattern](23-design-unlock-pattern.md) - DFS/Backtracking, Validation Logic
+18. [Design Mentorship Platform](18-design-mentorship-platform.md) — Booking availability, Conflict resolution
+19. [Design Logger Library](19-design-logger-library.md) — Chain of Responsibility, Singleton, Sink Strategy
+20. [Design Library Management](20-design-library-management.md) — Catalog, Borrowing Rules, Fine Calculation
+21. [Design Order Management](21-design-order-management.md) — Order State Machine, Saga, Inventory
+22. [Design Ride Sharing](22-design-ride-sharing.md) — Matching, Geospatial, Ride Lifecycle
+23. [Design Pub-Sub System](23-design-pub-sub.md) — Topic/Subscription, Push vs Pull, Delivery Guarantees
+24. [Design Inventory Management](24-design-inventory-management.md) — Stock Tracking, Alerts, Concurrent Updates
+
+### Advanced / Niche
+25. [Design Minesweeper](25-design-minesweeper.md) — Flood Fill (DFS/BFS), Recursion
+26. [Design File System / S3](26-design-s3-object-storage.md) — Composite Pattern, Metadata vs Data, Permissions
+27. [Design Search Engine](27-design-search-engine.md) — Inverted Index, Tries, Tokenization
+28. [Design Tetris](28-design-tetris.md) — Matrix Rotation, Factory Pattern, Game Loop
+29. [Design Version Control](29-design-version-control.md) — Graph (DAG), Hashing (SHA-1), Merkle Tree
+30. [Design Tunneling Service](30-design-tunneling-service.md) — Reverse Proxy, Socket Programming
+31. [Design Text Editor](31-design-text-editor.md) — Gap Buffer/Rope, Command Pattern, Undo/Redo
+32. [Design Download Manager](32-design-download-manager.md) — Multi-threading, HTTP Ranges, File Merging
+33. [Design Unlock Pattern](33-design-unlock-pattern.md) — DFS/Backtracking, Validation Logic
+34. [Design Lock-Free Queue](34-design-lock-free-queue.md) — CAS, Wait-Free Algorithms
+35. [Design Concurrent LRU Cache](35-design-concurrent-lru-cache.md) — Thread-safe cache, Striped locking
+36. [Design High-Contention Counter](36-design-high-contention-counter.md) — LongAdder, Striped counters
 
 ---
 
 ## Preparation Strategy
 
-1. **Tier 1 (Fire )**: Implement these **from scratch** 3 times. These are your bread and butter.
- - *Parking Lot, Rate Limiter, Vending Machine, Tic-Tac-Toe, Splitwise*.
+**Tier 1 — Implement from scratch 3×** (bread and butter):
+Parking Lot, Rate Limiter, Vending Machine, Tic-Tac-Toe, Splitwise, BookMyShow
 
-2. **Tier 2 (Green )**: Understand the **Class Diagram** and **Key Design Pattern**.
- - *Elevator, Snake & Ladder, Comments, Hotel, LRU Cache*.
+**Tier 2 — Understand class diagram + key pattern** (read + trace):
+Elevator, Snake & Ladder, Chess, Comment System, Hotel, LRU Cache, ATM, Notification
 
-3. **Tier 3 (Yellow )**: Read the code to understand **specific algorithms** (e.g. QuadTree for Locker, Tries for Search).
+**Tier 3 — Read for specific algorithms** (one pass):
+Locker (geohash), Search (inverted index), Version Control (DAG/Merkle), Text Editor (rope/gap buffer)
 
----
-
-Click on any problem above to view its detailed solution and implementation.
+**Skip if short on time**: 25–36 (advanced/niche, rarely asked at SDE-2 level)

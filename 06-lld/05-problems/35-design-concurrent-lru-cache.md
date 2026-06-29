@@ -402,6 +402,6 @@ Java 8+: lock striping at individual bucket level. Each bucket (linked list or t
 
 ## See Also
 
-- **LRU eviction in cache policies**: [02-building-blocks/cache-eviction.md](../../02-building-blocks/cache-eviction.md)
+- **LRU eviction in cache policies**: [02-building-blocks/caching-layer.md](../../02-building-blocks/caching-layer.md#5-eviction-policies)
 - **Java Memory Model + CAS**: [06-lld/04-concurrency/concurrency-patterns.md](../04-concurrency/concurrency-patterns.md)
 - **Lock-free queue (Michael-Scott)**: [06-lld/05-problems/24-design-lock-free-queue.md](24-design-lock-free-queue.md)
