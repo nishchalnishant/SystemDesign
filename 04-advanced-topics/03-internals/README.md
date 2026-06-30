@@ -25,34 +25,34 @@ This directory contains deep-dive guides into the internals of popular distribut
 ## Available Internals
 
 ### Message Queues & Streaming
-- **[Kafka](./kafka-internals.md)** - Distributed streaming platform
+- **[Kafka](./03-kafka-internals.md)** - Distributed streaming platform
   - Partitions, ISR, Zero-Copy, Log Compaction
   - Exactly-once semantics, Consumer groups
 
 ### Databases
 
 #### NoSQL
-- **[Cassandra](./cassandra-internals.md)** - Wide-column distributed database
+- **[Cassandra](./05-cassandra-internals.md)** - Wide-column distributed database
   - Ring architecture, Consistent hashing, LSM-tree
   - Compaction strategies, Tunable consistency
 
 #### SQL
-- **[PostgreSQL](./postgresql-internals.md)** - Advanced relational database
+- **[PostgreSQL](./06-postgresql-internals.md)** - Advanced relational database
   - MVCC, WAL, VACUUM, Transaction isolation
   - Query planner, Indexes (B-tree, GIN, BRIN)
 
 ### Caching & In-Memory Stores
-- **[Redis](./redis-internals.md)** - In-memory data structure store
+- **[Redis](./04-redis-internals.md)** - In-memory data structure store
   - Data structures, Persistence (RDB, AOF)
   - Replication, Cluster mode
 
 ### Search & Analytics
-- **[Elasticsearch](./elasticsearch-internals.md)** - Distributed search engine
+- **[Elasticsearch](./09-elasticsearch-internals.md)** - Distributed search engine
   - Inverted index, Sharding, Segment merging
   - Query execution, Aggregations
 
 ### Coordination Services
-- **[ZooKeeper](./zookeeper-internals.md)** - Distributed coordination
+- **[ZooKeeper](./10-zookeeper-internals.md)** - Distributed coordination
   - Znodes, ZAB protocol, Leader election
   - Watches, Session management
 

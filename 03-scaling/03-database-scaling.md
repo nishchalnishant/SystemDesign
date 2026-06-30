@@ -19,7 +19,7 @@ module: 03-scaling
 status: unread
 tags: [03-scaling, system-design, scaling]
 ---
-# Database Scaling Deep Dive
+# Database Scaling
 
 > **From a single Postgres to a globally distributed data tier: WAL internals, MVCC, connection pooling, index strategies, and sharding at scale.**
 
@@ -75,77 +75,7 @@ Database Scaling Deep Dive
     └── Follow-up: hot key problem → salting or directory-based sharding
 ```
 
-## 1. PostgreSQL Internals That Matter for Scaling
-
-### Write-Ahead Log (WAL)
-
-**Question**: You write a row to Postgres. The kernel buffers the write in RAM. Before it flushes to disk, the machine crashes. Is the row there when you restart? If Postgres said "committed", it must be — but how can it guarantee that if disk writes are buffered? What mechanism makes "committed" mean something durable?
-
-**Physical constraint**: Random writes to disk are slow (~4ms per seek for HDD, ~0.1ms for NVMe). A typical transaction touches multiple pages scattered across the file. Flushing all dirty pages synchronously on every commit would make each commit take tens of milliseconds. At 1,000 writes/sec that's 10 seconds of disk time per second — impossible.
-
-**Minimal solution**: Write sequentially to a log file before touching data pages. Sequential writes are 100× faster than random writes because there's no seek — you just append. The log is the source of truth. If the machine crashes, replay the log on restart. Data pages are just a cache of the log's state.
-
-**Generalize**: The WAL is also the replication mechanism. Standbys stream the WAL from the primary and apply it. Physical replication streams raw WAL bytes (exact replica). Logical replication streams decoded logical changes (works across versions, more flexible). Every scaling capability in Postgres — replication, PITR, crash recovery — derives from the WAL.
-
-```
-Every write operation (INSERT/UPDATE/DELETE) in PostgreSQL:
-  1. Write change to WAL (sequential disk write — fast: ~1ms)
-  2. Modify in-memory buffer pages
-  3. Return success to client
-
-Checkpoint (every 5 min or 1GB WAL):
-  Flush dirty buffer pages to data files (random writes — slower)
-
-Why WAL first?
-  Sequential writes are 100× faster than random writes
-  If crash happens between step 1 and 3: replay WAL on restart → no data loss
-  If crash happens during checkpoint: WAL contains everything needed to recover
-
-WAL and replication:
-  Standby servers stream WAL from primary and apply it
-  Physical replication: stream exact WAL bytes (works for identical Postgres versions)
-  Logical replication: stream logical changes (works across versions, more flexible)
-```
-
-### MVCC (Multi-Version Concurrency Control)
-
-**Question**: Reader and writer hit the same row simultaneously. With a lock, one blocks the other. Your dashboard query holds a read lock while a write is waiting. At 10,000 concurrent users, lock contention becomes the bottleneck — not disk, not CPU. How do you let readers and writers proceed simultaneously without seeing inconsistent data?
-
-**Physical constraint**: A lock is a flag in shared memory. Acquiring it requires a memory fence (a CPU instruction that stops out-of-order execution). At high concurrency, the lock itself becomes a bottleneck — thousands of threads queuing up for the same flag. More threads means more contention, not more throughput.
-
-**Minimal solution**: Keep multiple versions of each row. Readers see the version that was current when their transaction started. Writers create a new version without touching the old one. Readers never block writers; writers never block readers.
-
-**Generalize**: MVCC is Postgres's implementation. Every row has `xmin` (the transaction that created it) and `xmax` (the transaction that deleted it). A reader at transaction ID T sees a row if `xmin <= T` and `(xmax is NULL OR xmax > T)`. The cost: dead tuples accumulate. Autovacuum reclaims them. Without vacuum, tables bloat. Transaction ID wraparound is a critical failure mode — monitor `age(datfrozenxid)` and alert before it reaches 2 billion.
-
-```
-Problem without MVCC: Read acquires a lock → blocks writer. Writer blocks readers.
-Solution: Store multiple versions of rows (old + new). Readers see consistent snapshots.
-
-Transaction T1 starts at timestamp 100:
-  Reads row R → sees version valid at T=100 (the "snapshot")
-  Even if T2 updates R at T=101, T1 still sees old version until T1 commits
-
-Implementation:
-  Each row has: xmin (transaction that created it), xmax (transaction that deleted it)
-  T1 sees row if: xmin <= T1.start_time AND (xmax is NULL OR xmax > T1.start_time)
-
-Vacuum (autovacuum daemon):
-  Old versions accumulate (every UPDATE creates a new version + marks old as dead)
-  Vacuum reclaims dead tuples (frees space)
-  Without vacuum: table bloat, degraded query performance
-  Monitor: pg_stat_user_tables.n_dead_tup → alert if > 10% of live tuples
-
-Transaction ID wraparound (critical!):
-  PostgreSQL uses 32-bit transaction IDs → wraps after ~2 billion transactions
-  If wraparound occurs: all old data looks "in the future" → data loss
-  Solution: autovacuum FREEZE prevents wraparound; monitor with:
-    SELECT datname, age(datfrozenxid) FROM pg_database ORDER BY age DESC;
-    Alert if age > 1.5 billion
-```
-
----
-
-## 2. Connection Pooling
+## Connection Pooling
 
 **Question**: You have 500 app server threads, each needing a DB connection. Postgres allocates a backend process (~10MB RAM) per connection. 500 connections = 5GB of RAM just for connection overhead, before a single query runs. At 1,000 threads, Postgres crashes with "too many connections." Why does each connection require a dedicated process, and how do you serve thousands of app threads without thousands of DB connections?
 
@@ -204,7 +134,7 @@ Effective multiplexing:
 
 ---
 
-## 3. Index Strategies for Scale
+## Index Strategies for Scale
 
 ### B-Tree (Default) — When and Why
 
@@ -297,7 +227,7 @@ LIMIT 10;
 
 ---
 
-## 4. Read Scaling Patterns
+## Read Scaling Patterns
 
 ### Read Replicas
 
@@ -362,7 +292,7 @@ Write path (cache invalidation):
 
 ---
 
-## 5. Write Scaling: Sharding
+## Write Scaling: Sharding
 
 ### When to Shard
 
@@ -427,7 +357,7 @@ Duration: Weeks for large datasets. Never underestimate resharding cost.
 
 ---
 
-## 6. Time-Series Data Scaling
+## Time-Series Data Scaling
 
 **Question**: You collect 100,000 metrics data points per second. After 1 year that's ~3 trillion rows. A standard Postgres table at that scale has an index that no longer fits in RAM. Every query does index page I/Os. INSERT performance degrades because index pages must be fetched, modified, and written. How do you store append-only time-series data without killing insert throughput or query performance?
 
@@ -476,7 +406,7 @@ Alternative for very high write throughput:
 
 ---
 
-## 7. Auto-Scaling Database
+## Auto-Scaling Database
 
 ### Read Replica Auto-Scaling (AWS Aurora)
 

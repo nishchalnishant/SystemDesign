@@ -77,7 +77,7 @@ Global Distribution & Multi-Region Architecture
     └── Follow-up: split-brain in Active-Active → CRDTs or Spanner-style external time
 ```
 
-## 1. Why Multi-Region?
+## Why Multi-Region?
 
 **Question**: Your entire infrastructure runs in US-EAST. Your p99 latency for users in London is 180ms. Physics says the round-trip between New York and London is at minimum 68ms (speed of light, ~5,500km each way). You're already at 2.6× the physical minimum. A user in Tokyo sees 280ms. Nothing in your code is wrong — the problem is geography. What do you do?
 
@@ -97,7 +97,7 @@ Global Distribution & Multi-Region Architecture
 
 ---
 
-## 2. Active-Active vs Active-Passive
+## Active-Active vs Active-Passive
 
 ### Active-Active (Multi-Master)
 
@@ -167,7 +167,7 @@ AP-NORTHEAST (Standby): ← Reads locally, writes redirect
 
 ---
 
-## 3. GeoDNS and Latency-Based Routing
+## GeoDNS and Latency-Based Routing
 
 **Question**: You have three regional deployments. A user in Frankfurt opens your app. DNS resolves your domain to an IP. Which IP? If it's always the same US-EAST IP, the user suffers 90ms RTT on every request. How does DNS become geography-aware, and what are the failure modes when a region goes down?
 
@@ -208,7 +208,7 @@ During failover: traffic shifts to remaining healthy regions
 
 ---
 
-## 4. Data Replication Across Regions
+## Data Replication Across Regions
 
 **Question**: You have a primary in US-EAST with synchronous replication to EU-WEST. Every write must wait for EU-WEST to acknowledge before returning to the client. Measured: writes that used to take 5ms now take 60ms (5ms + 54ms RTT + 1ms for EU-WEST to write to WAL). Your p99 write latency jumped 12×. How do you decide between synchronous (zero data loss, high write latency) and asynchronous (low latency, possible data loss on failover)?
 
@@ -262,7 +262,7 @@ Use for:
 
 ---
 
-## 5. CRDTs for Conflict-Free Multi-Region Writes
+## CRDTs for Conflict-Free Multi-Region Writes
 
 **Question**: You have a page-view counter replicated across US-EAST and EU-WEST. Both regions receive increments simultaneously. EU-WEST goes from 100 to 105 (5 increments). US-EAST goes from 100 to 103 (3 increments). After replication, what should the counter be? 108. But naive replication would give you 105 or 103 depending on which replica "wins". How do you design a data structure that always converges to the correct value regardless of replication order?
 
@@ -298,7 +298,7 @@ Used by: Riak, Cassandra (tunable), Redis Enterprise, Aerospike
 
 ---
 
-## 6. Consistency Models Across Regions
+## Consistency Models Across Regions
 
 **Question**: After a cross-region write, you read back from a different region 50ms later. Do you see your write? The answer depends on your consistency model. What does each model guarantee, and what is the corresponding write latency tax?
 
@@ -337,7 +337,7 @@ Session Consistency (Read-your-writes):
 
 ---
 
-## 7. Regional Data Sovereignty (GDPR, Data Residency)
+## Regional Data Sovereignty (GDPR, Data Residency)
 
 **Question**: You're building for global users. A German user signs up. Their name, email, and address are EU personal data under GDPR. If you replicate that row to US-EAST for performance, you've transferred EU PII outside the EU — potentially a GDPR violation. How do you architect a globally distributed system while keeping specific users' data in specific regions?
 
@@ -378,7 +378,7 @@ Implementation:
 
 ---
 
-## 8. Global Load Balancing Architecture
+## Global Load Balancing Architecture
 
 ```
 Layer 1: DNS (GeoDNS / Anycast)
@@ -407,7 +407,7 @@ Full request path:
 
 ---
 
-## 9. Multi-Region Database Decision Matrix
+## Multi-Region Database Decision Matrix
 
 | Requirement | Solution | Trade-off |
 |------------|----------|-----------|
@@ -419,7 +419,7 @@ Full request path:
 
 ---
 
-## 10. Failover Runbook
+## Failover Runbook
 
 ```
 Region failure detected:

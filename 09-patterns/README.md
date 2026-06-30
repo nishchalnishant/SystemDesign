@@ -26,13 +26,13 @@ These are cross-cutting distributed system patterns — each one solves a specif
 
 | Pattern | Solves | Use When |
 |---------|--------|----------|
-| [Saga](saga-pattern.md) | Distributed transactions without 2PC | Microservices, order fulfillment, payment flows |
-| [CQRS + Event Sourcing](cqrs-event-sourcing.md) | Read/write model separation + full audit trail | High read:write ratio, audit requirements, undo/replay |
-| [Outbox](outbox-pattern.md) | Guaranteed event delivery without dual-write | Any service that must write to DB AND publish event atomically |
-| [Bulkhead](bulkhead-pattern.md) | Fault isolation between subsystems | Prevent one slow dependency from collapsing the whole service |
-| [Strangler Fig](strangler-fig.md) | Incremental legacy migration | Replacing a monolith without a big-bang rewrite |
-| [Two-Phase Commit](two-phase-commit.md) | Atomic commit across multiple databases | Distributed transactions requiring strong consistency |
-| [Anti-Patterns](anti-patterns.md) | Learn what NOT to do | Before designing any system — know the failure modes |
+| [Saga](01-data-consistency/03-saga-pattern.md) | Distributed transactions without 2PC | Microservices, order fulfillment, payment flows |
+| [CQRS + Event Sourcing](02-architecture-and-scaling/01-cqrs-event-sourcing.md) | Read/write model separation + full audit trail | High read:write ratio, audit requirements, undo/replay |
+| [Outbox](01-data-consistency/01-outbox-pattern.md) | Guaranteed event delivery without dual-write | Any service that must write to DB AND publish event atomically |
+| [Bulkhead](02-architecture-and-scaling/02-bulkhead-pattern.md) | Fault isolation between subsystems | Prevent one slow dependency from collapsing the whole service |
+| [Strangler Fig](03-migration-and-pitfalls/01-strangler-fig.md) | Incremental legacy migration | Replacing a monolith without a big-bang rewrite |
+| [Two-Phase Commit](01-data-consistency/02-two-phase-commit.md) | Atomic commit across multiple databases | Distributed transactions requiring strong consistency |
+| [Anti-Patterns](03-migration-and-pitfalls/02-anti-patterns.md) | Learn what NOT to do | Before designing any system — know the failure modes |
 
 ---
 

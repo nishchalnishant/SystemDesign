@@ -1,3 +1,4 @@
+## 
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
@@ -73,7 +74,7 @@ Scaling Strategies
     └── Follow-up: hot shard problem → salting / composite shard key
 ```
 
-## 1. Horizontal vs Vertical Scaling
+## Horizontal vs Vertical Scaling
 
 **Question**: Your single server handles 5,000 req/sec at 70% CPU. Traffic grows 20% per month. In 12 months you need ~37,000 req/sec. The fastest single machine you can buy does ~100,000 req/sec — but it costs $200k, takes 2 weeks to provision, and if it dies your entire product is down. What do you do?
 
@@ -111,132 +112,7 @@ Scaling Strategies
 
 ---
 
-## 2. Database Scaling
-
-### Read Scaling
-
-**Question**: Your Postgres primary handles 1,000 reads/sec and 100 writes/sec. Read load triples from a new feature. The primary is at 90% CPU. Writes can't move — the primary must stay. How do you serve 3,000 reads/sec without adding write risk?
-
-**Physical constraint**: A spinning disk does ~100-200 random reads/sec. An SSD does ~10,000. A modern NVMe does ~500,000. But all reads on the same disk share the same physical head / controller. Two concurrent reads are slower than one. At some point adding more reads to a single node degrades all reads.
-
-**Minimal solution**: Add a read replica. The primary writes to its WAL; the replica streams the WAL and applies it. Reads go to the replica. Works until: replica falls behind (replication lag), you have more reads than one replica can serve, or you need guaranteed freshness (the replica might be 500ms stale).
-
-**Generalize**: Multiple read replicas behind a load balancer. Add a cache layer (Redis) in front — targets 90%+ hit rate so most reads never reach the DB at all. Route critical reads (balance checks, post-write reads) to the primary. Accept eventual consistency for non-critical reads.
-
-- **Read replicas**: Primary takes writes; replicas replicate (async or sync); reads go to replicas.
-- **Caching**: Cache hot data in front of DB (Redis, Memcached); reduces DB read load.
-- **CDN**: For static or cacheable content; offload entirely from DB.
-
-**Trade-off**: Replicas can lag; cache can be stale. Use "read-your-writes" (route user's reads to primary or same replica) when needed.
-
-```java
-// Route reads to replica, writes to primary
-@Service
-public class UserRepository {
-
-    @Qualifier("primaryDataSource")
-    private final JdbcTemplate primary;
-
-    @Qualifier("replicaDataSource")
-    private final JdbcTemplate replica;
-
-    public void updateProfile(String userId, String name) {
-        primary.update("UPDATE users SET name=? WHERE id=?", name, userId);
-    }
-
-    public User findById(String userId) {
-        // Read from replica (may be slightly stale — acceptable for profile reads)
-        return replica.queryForObject("SELECT * FROM users WHERE id=?",
-            userRowMapper, userId);
-    }
-}
-```
-
----
-
-### Write Scaling
-
-**Question**: Your primary DB takes 2,000 writes/sec. Postgres saturates at ~10,000–50,000 simple writes/sec per node depending on write complexity. You're at 20% of ceiling now, but writes grow with users. At what point does a single primary become the bottleneck, and what do you do when it does?
-
-**Physical constraint**: Every write must hit the WAL (sequential disk write, ~0.1ms) and eventually flush to data pages. A single disk has a fixed IOPS ceiling. At 10,000 writes/sec you're doing 10,000 WAL entries/sec. Beyond a certain point, WAL write serialization becomes the bottleneck regardless of RAM or CPU.
-
-**Minimal solution**: Vertical scale the primary (bigger machine, NVMe SSDs, more RAM for write buffers). Works until you hit the machine ceiling or your table exceeds what one instance can hold without index degradation.
-
-**Generalize**: Shard by a partition key. Each shard holds a fraction of the data and absorbs a fraction of writes. The hard problems are: choosing the shard key (must distribute evenly and align with query patterns), routing (which shard for this key?), and resharding (when one shard fills up, you split it — painful under live traffic). Use consistent hashing to minimize data movement on resize.
-
-- **Sharding**: Partition data by key across multiple DB instances; each shard takes a fraction of writes.
-- **Async writes**: Accept write in API, persist to queue, workers write to DB (write-behind); increases write throughput and smooths spikes.
-- **Batching**: Group many small writes into fewer large writes.
-
-**Trade-off**: Sharding adds complexity (routing, resharding, cross-shard queries); async writes add eventual consistency and operational complexity.
-
----
-
-### Storage Scaling
-
-- **Sharding**: More shards → more total storage.
-- **Archival**: Move old data to cold storage (e.g. S3, Glacier); keep hot data in primary DB.
-- **Compression and encoding**: Reduce size per row; more rows per node.
-
----
-
-## 3. Replication Strategies
-
-- **Leader–follower**: One primary, N replicas; simple; read scaling and HA. See [02-building-blocks/replication.md](../02-building-blocks/replication.md).
-- **Multi-leader**: Multiple primaries (e.g. per region); conflict resolution required.
-- **Leaderless (quorum)**: W + R > N for consistency; tunable W, R for latency vs durability.
-
-**When**: Replication for HA and read scaling; multi-leader only when you need writes in multiple regions and can handle conflicts.
-
----
-
-## 4. Partitioning (Sharding) Strategies
-
-**Question**: You have 100M user rows, growing 10M/month. In 18 months you'll have 280M rows. A single Postgres table at that size still works, but indexes grow proportionally and certain write patterns (especially secondary index updates) start to slow down. When do you shard, and how do you pick the partition key so you don't create a bigger problem than you solved?
-
-**Physical constraint**: A B-tree index node is 8KB. A 280M-row table with 3 indexes has index pages totaling several GB. Fitting them in buffer cache requires proportionally more RAM. Index writes (random I/O to update B-tree pages) scale superlinearly with table size because the tree gets deeper and buffer cache hit rate drops.
-
-**Minimal solution**: `shard = hash(user_id) % N`. Spreads writes evenly. Works until: you add a shard (modulo changes, you must move ~(N-1)/N of all data), or you need range queries across shards (impossible with hash partitioning).
-
-**Generalize**: Consistent hashing. Virtual nodes on a ring mean adding one shard moves ~1/N of data, not (N-1)/N. Directory-based routing (lookup table) adds flexibility at the cost of a lookup bottleneck. Range-based sharding enables range queries but risks hotspots on monotonically increasing keys (e.g. timestamp).
-
-- **Hash-based**: `shard = hash(key) % N`; even distribution; resharding costly (use consistent hashing to reduce moves).
-- **Range-based**: Ranges of key (e.g. A–M, N–Z); good for range queries; risk of hotspots.
-- **Directory-based**: Lookup table key → shard; flexible but lookup can be bottleneck.
-
-```java
-// Consistent hashing for shard routing
-public class ConsistentHashRouter {
-    private final TreeMap<Long, String> ring = new TreeMap<>();
-    private static final int VIRTUAL_NODES = 150;
-
-    public void addNode(String node) {
-        for (int i = 0; i < VIRTUAL_NODES; i++) {
-            long hash = hash(node + "-vnode-" + i);
-            ring.put(hash, node);
-        }
-    }
-
-    public String getNode(String key) {
-        if (ring.isEmpty()) throw new IllegalStateException("No nodes");
-        long hash = hash(key);
-        Map.Entry<Long, String> entry = ring.ceilingEntry(hash);
-        // Wrap around the ring if we're past the last node
-        return (entry != null ? entry : ring.firstEntry()).getValue();
-    }
-
-    private long hash(String key) {
-        // Use MurmurHash or SHA-256 in production
-        return Math.abs((long) key.hashCode());
-    }
-}
-```
-
-**When**: Write or storage exceeds single node; design access patterns around shard key to avoid cross-shard queries.
-
----
-
-## 5. Caching Strategies
+## Caching Strategies
 
 **Question**: Your API endpoint reads a product record on every request. The product changes once per hour. You have 50,000 req/sec hitting the DB for reads that return the same data. RAM access is ~100ns. Disk/network-backed DB query is ~1–5ms. That's 10,000–50,000x slower. Why is every read going to disk?
 
@@ -286,7 +162,7 @@ public class ProductService {
 
 ---
 
-## 6. CQRS (Command Query Responsibility Segregation)
+## CQRS (Command Query Responsibility Segregation)
 
 **Question**: Your order service runs complex joins across 6 tables to serve the "my orders" page. Each read query takes 50ms. You have 100,000 users loading that page per minute. The write model (create/update order) has a clean normalized schema. The read model needs a denormalized projection. Why are you using the same schema for both?
 
@@ -330,7 +206,7 @@ public List<OrderSummary> handle(GetOrdersByUserQuery query) {
 
 ---
 
-## 7. Queue-Based Architectures
+## Queue-Based Architectures
 
 **Question**: Your order endpoint calls inventory, payment, and notification services synchronously. Each takes ~100ms. Total: 300ms per request, and your API is blocked waiting for all three to succeed. If the notification service is slow (it calls SendGrid, which is flaky), every order creation slows down. Why is user-facing request latency coupled to the availability of a notification service?
 
@@ -368,7 +244,7 @@ public void processOrder(OrderMessage msg) {
 
 ---
 
-## 8. Asynchronous Processing
+## Asynchronous Processing
 
 - **Async I/O**: Non-blocking calls; one thread can handle many requests (e.g. Node.js, async/await, Java virtual threads).
 - **Async workflows**: Request returns immediately; long-running work in queue + workers; notify when done (webhook, polling, or SSE).
@@ -378,7 +254,7 @@ public void processOrder(OrderMessage msg) {
 
 ---
 
-## 9. Decision Summary
+## Decision Summary
 
 | Goal | Strategy | Trade-off |
 |------|----------|-----------|
