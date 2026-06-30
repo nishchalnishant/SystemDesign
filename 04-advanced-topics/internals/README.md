@@ -1,3 +1,23 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Deep-dive internals guides for 7 popular distributed systems — designed for SDE-3 interview follow-up questions on how specific databases and brokers actually work.
+>
+> **Key topics:**
+> - Kafka: partitions, ISR, consumer groups, offset management, exactly-once semantics, zero-copy, log compaction
+> - Cassandra: ring architecture, leaderless replication, LSM tree write path, tunable consistency, compaction strategies
+> - PostgreSQL: MVCC (xmin/xmax), WAL, buffer pool, VACUUM, B-tree and GIN indexes, query planner
+> - Redis: single-threaded event loop, data structures, RDB vs AOF persistence, cluster mode, Lua atomicity
+> - Elasticsearch: inverted index, sharding/replicas, segment merging, translog, query execution pipeline
+> - MySQL/InnoDB: B+ tree clustered index, buffer pool, undo log MVCC, redo log (WAL), lock modes
+> - ZooKeeper: ZAB protocol (leader election + atomic broadcast), znodes, watches, ephemeral vs persistent nodes
+> - DynamoDB: consistent hashing partitions, WCU/RCU capacity, LSI vs GSI, adaptive capacity, DAX
+> - Comparison matrix: read/write speed, consistency guarantees, and ideal use case for each system
+>
+> **Key takeaway:** Know the write path for each system cold — Cassandra (commit log → MemTable → SSTable), Kafka (append → ISR), PostgreSQL (WAL → buffer pool → disk) — these are the most common internals questions.
+
+---
+
 # System Internals
 
 This directory contains deep-dive guides into the internals of popular distributed systems and databases. Understanding these internals is crucial for SDE-3 level system design interviews.

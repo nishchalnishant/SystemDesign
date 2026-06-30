@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a team chat system (Slack) — real-time channel messaging with presence indicators, thread replies, file sharing, and search across message history.
+>
+> **Key design decisions:**
+> - Connection layer: WebSocket gateway servers; each user connects to a gateway; Redis tracks {user_id → gateway_id}; gateways stateless except connection state
+> - Message routing: sender → gateway → Kafka → fan-out service → each member's gateway → WebSocket push to clients
+> - Channel membership: channel members stored in DB + cached in Redis; fan-out scope determined by membership list
+> - Message storage: Cassandra for messages (channel_id as partition key, timestamp as clustering key); append-only; query by channel + time range
+> - Threads: each message can have a thread; thread replies stored separately; thread_id = parent message_id
+> - Presence: heartbeat every 30s; presence state (online/away/offline) in Redis with TTL; propagated to workspace members on change
+> - Search: Elasticsearch indexes message text; index on (workspace_id, channel_id, content); query by workspace + text + time range
+>
+> **Key takeaway:** The fan-out routing layer (Redis: user → gateway mapping) is the core architectural challenge — without it, you don't know which server to push messages to.
+
 ---
 module: 05-hld-problems
 topic: Hard

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a hotel booking system (Booking.com) — availability search, double-booking prevention, concurrent reservation handling, and payment integration.
+>
+> **Key design decisions:**
+> - Availability search: Elasticsearch for fast full-text + geo + date range queries; pre-computed availability calendar (bitmap per room per date) for O(1) lookup
+> - Room inventory: room_availability table (room_id, date) with unique constraint; prevents double-booking at DB constraint level
+> - Reservation flow: two-phase — HOLD (lock room for 10 min, idempotent) → CONFIRM (complete payment, convert hold to booking); hold TTL prevents abandoned reservations from blocking inventory
+> - Concurrency: SELECT FOR UPDATE (pessimistic) or optimistic locking (version field + CAS retry); pessimistic preferred for short booking transactions
+> - Search ranking: hotel scoring by price, rating, distance, availability; Elasticsearch custom scoring function; ML re-ranking for personalization
+> - Flash sales: popular hotels → high contention; Redis atomic DECR for available count; actual DB availability updated async; Redis as fast semaphore
+> - Pricing: dynamic pricing engine (base price × demand multiplier); price varies by date, season, advance booking; stored with room inventory
+>
+> **Key takeaway:** Two-phase HOLD → CONFIRM with a 10-minute TTL is the key pattern — it prevents overbooking while not blocking inventory indefinitely; the unique DB constraint on (room_id, date) is the final safety net.
+
 ---
 module: 05-hld-problems
 topic: Hard

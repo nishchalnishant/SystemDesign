@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Deep dive into databases for system design interviews — SQL vs NoSQL, ACID/BASE, CAP theorem, indexing, transactions, isolation levels, and how to pick the right DB.
+>
+> **Key topics:**
+> - SQL vs NoSQL decision framework: when to use relational vs document vs key-value vs wide-column vs graph
+> - ACID properties explained: atomicity, consistency, isolation, durability — with concrete failure examples
+> - CAP theorem: CP (HBase, ZooKeeper) vs AP (Cassandra, DynamoDB); why CA is impossible with partitions
+> - Indexes: B-tree (range queries), Hash (equality), Inverted (full-text), Covering (include columns)
+> - Transaction isolation levels: Read Uncommitted → Read Committed → Repeatable Read → Serializable
+> - MVCC: how PostgreSQL and MySQL avoid read/write locks using row versions (xmin/xmax)
+> - Database selection guide: flowchart for choosing the right DB for any interview problem
+>
+> **Key takeaway:** Know the isolation level trade-offs and when to use each DB type — these come up in every HLD deep-dive.
+
 ---
 module: 01-foundations
 status: unread

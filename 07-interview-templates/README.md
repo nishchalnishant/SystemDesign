@@ -1,5 +1,17 @@
 # Interview Templates
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The index and directory for all interview templates, cheat sheets, and checklists.
+>
+> **Key concepts:**
+> - High-Level Design (HLD) and Low-Level Design (LLD) standard templates to structure your thoughts during a 45-minute interview.
+> - Cheat sheets for capacity estimation, trade-offs (SQL vs NoSQL, Polling vs WebSockets), and failure recovery.
+> - A massive question bank of over 200 interview questions.
+>
+> **Key takeaway:** Use these templates to build muscle memory. In a high-pressure interview, falling back on a structured template prevents you from missing crucial steps like API design or database schema before jumping into architecture diagrams.
+
 Templates and cheat sheets for **system design** and **low-level design** interviews.
 
 ## Contents

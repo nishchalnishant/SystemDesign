@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Catalog of 27 curated HLD (High-Level Design) interview problems organized by difficulty — Easy (9), Medium (7), Hard (21); the complete interview problem bank for system design practice.
+>
+> **Structure:**
+> - Easy (01-easy/): 9 problems introducing one concept at a time — URL Shortener, Rate Limiter, Pastebin, Key-Value Store, Autocomplete, Web Crawler, Booking System, Leaderboard, Unique ID Generator
+> - Medium (02-medium/): 7 problems combining 3–5 subsystems — Twitter, Instagram, YouTube, WhatsApp, Notification Service, E-Commerce, Typeahead Search
+> - Hard (03-hard/): 21 problems requiring SDE-3 depth — Distributed Cache, Message Queue, Payment, Uber, Google Drive, Slack, Search Engine, Ad Click Aggregator, Google Maps, LLM Chat, RAG, Stock Exchange, + 9 more
+>
+> **How to practice:** Use hld-template.md for structure, capacity-estimation.md for math, trade-offs-cheat-sheet.md for decisions — time yourself at 45 min (easy) or 60 min (hard)
+>
+> **Key takeaway:** Complete Easy in order (concepts build sequentially), then Medium, then Hard; each problem file has a 5-minute summary at the top so you can quick-review before practicing.
+
+---
+
 # HLD Interview Problems Catalog
 
 27 curated system design problems with files, organized by difficulty and recommended study order.

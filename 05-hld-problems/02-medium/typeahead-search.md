@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design the Google Search typeahead — returning ranked suggestions within 50ms as the user types, at internet scale with personalization and trending freshness.
+>
+> **Key design decisions:**
+> - Latency budget: 50ms total → 10ms network (CDN/anycast) + 40ms compute; only pre-computed suggestions can hit this
+> - Pre-computation: offline Hadoop job aggregates search logs → frequency per query → Trie with top-K suggestions per prefix; refreshed hourly
+> - Serving: sharded Trie servers (shard by prefix); request routes to correct shard; top-10 suggestions returned in <10ms
+> - CDN acceleration: common short prefixes (2–3 chars) cached at CDN edge; covers 80% of queries without hitting Trie servers
+> - Trending freshness: Kafka stream of real-time searches → HyperLogLog frequency counter → inject trending queries (last 5min) into suggestions
+> - Personalization: user's recent searches + location blended with global scores; personalization layer after Trie lookup; stored in Redis per user
+> - Spell correction: Levenshtein distance fuzzy match for typos; secondary lookup if no Trie match
+>
+> **Key takeaway:** Pre-compute suggestions offline (hourly batch), serve from CDN for common prefixes (covers 80%), inject real-time trending (Kafka stream) for freshness — all three layers together deliver sub-50ms with current results.
+
 ---
 module: 05-hld-problems
 topic: Medium

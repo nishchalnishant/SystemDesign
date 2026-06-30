@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Redis internals — how a single-threaded in-memory store delivers microsecond latency while supporting 6 data structures, persistence, and clustering.
+>
+> **Key topics:**
+> - Single-threaded event loop: every command is atomic — no locks needed; I/O multiplexing (epoll) handles thousands of connections
+> - Data structures: String (SDS), Hash (ziplist → hashtable), List (quicklist), Set (intset → hashtable), Sorted Set (ziplist → skiplist + hashtable), HyperLogLog, Geospatial
+> - Encoding optimization: small collections use compact encodings (ziplist/intset) → automatically promoted on size threshold
+> - Persistence: RDB (periodic snapshot, smaller files, faster restart) vs AOF (append-only log, up to 1-sec durability, larger files) vs Hybrid
+> - Eviction policies: noeviction, allkeys-lru, volatile-lru, allkeys-lfu, volatile-ttl — choose based on cache vs durable store usage
+> - Replication: async primary-replica; Sentinel for auto-failover; Cluster mode for horizontal sharding (16384 hash slots)
+> - Pipelining and Lua: batch commands with PIPELINE; Lua scripts for multi-command atomicity without MULTI/EXEC overhead
+>
+> **Key takeaway:** Redis is single-threaded by design — the event loop + in-memory data model is why it's 100× faster than PostgreSQL for point lookups; use Cluster mode only when data exceeds single-node RAM.
+
 ---
 module: 04-advanced-topics
 topic: Internals

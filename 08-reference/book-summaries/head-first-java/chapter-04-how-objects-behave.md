@@ -5,6 +5,18 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How objects behave in Java through methods, parameters, return types, and encapsulation.
+>
+> **Key concepts:**
+> - Encapsulation: Hide the data (instance variables) by making them `private`. Expose the behavior (methods) by making them `public`.
+> - Pass-by-Value: Java passes all arguments by value. For primitives, it passes a copy of the value. For objects, it passes a copy of the *reference* (the remote control).
+> - Setters and Getters: Use these to enforce constraints. A setter can check if `height > 0` before modifying the private instance variable.
+>
+> **Key takeaway:** The core of object-oriented design is encapsulation. By hiding the internal state, you prevent external classes from putting your object into an invalid state.
+
 # Ch 04: How Objects Behave
 
 **Source**: Head First Java, Second Edition | **Pages**: 105-128

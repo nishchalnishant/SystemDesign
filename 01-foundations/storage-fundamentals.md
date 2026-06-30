@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The physical storage hierarchy from CPU cache to cloud object storage — latencies, IOPS, throughput, and how databases and caches sit on top of these tiers.
+>
+> **Key topics:**
+> - Storage hierarchy: L1/L2/L3 cache (ns) → RAM (100ns) → NVMe SSD (100µs) → SATA SSD (200µs) → HDD (5ms) → network storage (1–100ms)
+> - Storage types: block storage (raw sectors), file storage (POSIX/NFS), object storage (flat namespace, HTTP API, no random writes)
+> - Key metrics: IOPS (random 4KB ops/sec), throughput (MB/s sequential), latency (time to first byte)
+> - Trade-offs: fast vs durable, random vs sequential, cost (NVMe 10× HDD, RAM 100× NVMe per GB)
+> - Failure modes: SSD write cliff, HDD head crash, IO-bound vs CPU-bound bottlenecks
+> - When to use each tier: RAM for hot data, NVMe for DB WAL, HDD for cold archives, S3 for immutable objects
+>
+> **Key takeaway:** Every system design choice implicitly picks a storage tier — know the latency and cost of each tier so you can justify your decisions.
+
 ---
 module: 01-foundations
 status: unread

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A repeatable 7-phase framework for executing system design interviews at the SDE-3 level — from requirements clarification to deep-dive and failure handling.
+>
+> **Key topics:**
+> - Phase 1 (5–10 min): Clarify functional + non-functional requirements; questions to ask; scope alignment
+> - Phase 2 (5 min): Back-of-envelope capacity estimation — QPS, storage, bandwidth formulas
+> - Phase 3 (10–15 min): Draw the high-level architecture — components, data flow, API contracts
+> - Phase 4–5: Identify bottlenecks + discuss trade-offs (consistency vs availability, latency vs cost)
+> - Phase 6 (15–20 min): Deep dive into 1–2 components — API design, data model, scaling details
+> - Phase 7 (5–10 min): Horizontal scaling, failover strategies, degradation modes
+> - Senior-level signals: trade-off awareness, proactive failure discussion, cost consciousness
+>
+> **Key takeaway:** Memorize this 7-phase structure — it transforms a vague "design X" prompt into a structured 45-minute performance.
+
 ---
 module: root
 status: unread

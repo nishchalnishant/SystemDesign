@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Version Control System (like Git) — a highly advanced LLD problem focusing on Directed Acyclic Graphs (DAGs), hashing, and immutability.
+>
+> **Key concepts:**
+> - Core Entities: `Blob` (file content), `Tree` (directory structure), `Commit` (snapshot), `Branch` (pointer to a commit), `Repository`.
+> - Content-Addressable Storage: Every object is hashed (e.g., SHA-1). The hash is the ID. If a file's content doesn't change between commits, both commits point to the *exact same* Blob hash. This deduplication saves massive amounts of space.
+> - The DAG: Commits point to their parent commit(s). This forms a Directed Acyclic Graph.
+> - Branches: A branch is literally just a named pointer (a string -> hash map, e.g., `"main" -> "a1b2c3"`).
+> - Commands (Command Pattern): `git add` (creates Blobs in staging), `git commit` (creates a Tree and a Commit object), `git checkout` (updates HEAD and working directory).
+>
+> **Key takeaway:** Do not store full copies of the project for every commit. Explain how Git uses immutable hashing to share unchanged blobs and trees between commits.
+
 ---
 module: 06-lld
 topic: Problems

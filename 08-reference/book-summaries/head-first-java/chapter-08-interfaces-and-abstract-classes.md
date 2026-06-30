@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The power of abstraction in Java, using `abstract` classes and `interface`s.
+>
+> **Key concepts:**
+> - Abstract Classes: Used when a class is so general that it shouldn't be instantiated (e.g., `new Animal()` doesn't make sense). Use the `abstract` keyword.
+> - Abstract Methods: Methods with no body. If a class has an abstract method, the class *must* be abstract. The first concrete subclass *must* implement all abstract methods.
+> - Interfaces: A 100% pure abstract class. They define a contract (what a class can do) without specifying how. Use the `implements` keyword.
+> - Multiple Inheritance: Java doesn't allow a class to `extend` multiple classes, but it *does* allow a class to `implements` multiple interfaces.
+>
+> **Key takeaway:** Use an abstract class for a shared base implementation among closely related classes (IS-A). Use an interface to define a role that any class can play, regardless of where it is in the inheritance tree (e.g., `Pet`, `Serializable`).
+
 # Ch 08: Interfaces and Abstract Classes
 
 **Source**: Head First Java, Second Edition | **Pages**: 231-268

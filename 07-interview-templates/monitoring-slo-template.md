@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A framework for answering questions about system reliability, monitoring, and Service Level Objectives (SLOs).
+>
+> **Key concepts:**
+> - Metrics (The RED Method): Rate (requests/sec), Errors (failed requests), Duration (latency).
+> - SLOs vs SLAs: SLO is the internal target (e.g., 99.9% uptime). SLA is the external contract (money back if < 99.9%).
+> - Error Budgets: If the SLO is 99.9%, you have a 0.1% error budget. If you burn through it, freeze feature deployments and focus on reliability.
+> - Alerting: Don't alert on high CPU. Alert on user-facing pain (e.g., "Checkout latency > 500ms for 5 minutes").
+>
+> **Key takeaway:** Senior engineers don't just build systems; they operate them. Mentioning Prometheus/Grafana, the RED metrics, and SLOs shows you have production operational experience.
+
 ---
 module: 07-interview-templates
 status: unread

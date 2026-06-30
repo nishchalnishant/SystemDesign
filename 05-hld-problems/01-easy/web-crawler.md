@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a web crawler — a distributed system that systematically fetches and indexes the web, starting from seed URLs and discovering new ones through link extraction.
+>
+> **Key design decisions:**
+> - URL frontier: priority queue of URLs to crawl; BFS traversal; distributed as message queue (Kafka/SQS) for horizontal scaling
+> - Deduplication: Bloom filter for URL seen-check (1B URLs × 10 bits ≈ 1.2 GB); secondary DB for exact dedup if Bloom allows a false positive
+> - Politeness: per-domain crawl rate (robots.txt crawl-delay); separate queue per domain; rate limit fetcher per domain
+> - Content deduplication: SimHash or MD5 of page content to detect near-duplicates (mirror sites); avoid storing/indexing duplicates
+> - Distributed fetcher pool: stateless workers pull from Kafka URL queue; store HTML in object storage (S3); parse and extract links; enqueue new URLs
+> - robots.txt compliance: fetch robots.txt for each domain on first visit; cache with TTL; skip disallowed paths
+> - Recrawl scheduling: time-based (revisit popular pages every hour, rare pages monthly) + change-detection heuristics
+>
+> **Key takeaway:** The URL frontier (priority queue), Bloom filter dedup, and per-domain politeness rate limits are the three critical components — get these right and the system scales horizontally.
+
 ---
 module: 05-hld-problems
 topic: Easy

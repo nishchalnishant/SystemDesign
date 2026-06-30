@@ -1,3 +1,15 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A curated set of 15 practice problems (both HLD and LLD) with constraints, scope guardrails, and model answer skeletons.
+>
+> **Key concepts:**
+> - Realistic Constraints: Instead of just "Design Twitter", it specifies "100M DAU, heavy read bias, celebrity fan-out problem is the primary focus."
+> - Time Boxing: Each problem is designed to be practiced with a strict 45-minute timer to simulate real interview pressure.
+> - Model Skeletons: Provides the expected architectural diagram or class structure so you can self-evaluate your mock performance.
+>
+> **Key takeaway:** Passive reading won't pass an interview. You must use these problems to practice talking out loud, drawing on a whiteboard (or digital equivalent), and pacing yourself to finish in 45 minutes.
+
 ---
 module: 07-interview-templates
 topic: Mock Interview Problem Set

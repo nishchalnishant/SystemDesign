@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Library Management System — a comprehensive OOP modeling exercise testing inheritance, state management, and business rule enforcement.
+>
+> **Key concepts:**
+> - Core Entities: `Library`, `Book`, `BookItem` (a specific physical copy), `Member`, `Librarian`.
+> - Inheritance: Differentiate between a `Book` (the abstract concept: Harry Potter, ISBN 123) and a `BookItem` (the physical copy: Barcode 999, placed on Rack 5).
+> - State Pattern: `BookItem` transitions between `AVAILABLE`, `LOANED`, `LOST`, `RESERVED`.
+> - Enforcement Rules: Max 5 books per user, max 10 days checkout. These are business rules that must be checked before a state transition.
+> - Fine Calculation: Use the Strategy pattern if fines vary by book type or member type.
+>
+> **Key takeaway:** The biggest mistake candidates make is conflating `Book` and `BookItem`. A library has one `Book` record for "The Hobbit", but might own five physical `BookItem` copies. You checkout a `BookItem`, not a `Book`.
+
 ---
 module: 06-lld
 topic: Problems

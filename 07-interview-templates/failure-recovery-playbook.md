@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A playbook for handling the inevitable interviewer question: "What happens when X fails?"
+>
+> **Key concepts:**
+> - Database Outage: Explain failover to Read Replicas, promoting a replica to master, and how writes are handled during the transition (buffering or rejecting).
+> - Cache Outage: Explain the thundering herd problem. Do not let all traffic hit the DB directly. Use circuit breakers or degrade gracefully (serve stale data or show errors).
+> - Message Queue Outage: Discuss dead-letter queues, exponential backoff retries, and exactly-once vs at-least-once delivery implications if the consumer crashes.
+> - Network Partition (Split Brain): Discuss Quorum-based consensus (Raft/Paxos) and the CAP theorem (choosing Availability vs Consistency).
+>
+> **Key takeaway:** Never say "it just crashes." Walk the interviewer through the detection (health checks), mitigation (circuit breakers/failover), and recovery (resyncing data) phases for any component failure.
+
 ---
 module: 07-interview-templates
 status: unread

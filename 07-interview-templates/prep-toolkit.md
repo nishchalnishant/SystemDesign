@@ -1,3 +1,15 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A comprehensive study guide, including a 4-week spaced repetition schedule, self-assessment rubrics, and company-specific calibration.
+>
+> **Key concepts:**
+> - Study Schedule: A week-by-week breakdown of what topics to review and when to do mock interviews.
+> - Self-Assessment Rubric: A grading scale (1-4) across dimensions like Requirements Gathering, Technical Depth, and Communication to evaluate your mock interviews.
+> - Company Calibration: How Amazon interviews (leadership principles focus) differ from Meta (speed and scale focus) or Google (algorithmic depth focus).
+>
+> **Key takeaway:** Use the 4-week schedule to avoid cramming. System design requires synthesizing many different concepts, which requires time for the brain to consolidate.
+
 ---
 module: 07-interview-templates
 topic: Prep Toolkit

@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Java OOP syntax reference for LLD interviews — classes, objects, access modifiers, interfaces, abstract classes, generics, and Java-specific patterns.
+>
+> **Key topics:**
+> - Class structure: fields, constructors, methods; `public`/`private`/`protected`/package-private; `static` vs instance members; `final` for immutability
+> - Interfaces: `interface` = pure contract (all methods abstract by default); `implements`; from Java 8: `default` methods allow interface evolution without breaking implementors
+> - Abstract classes: `abstract class` = partial implementation; cannot instantiate; `extends`; use when subclasses share code; interface = behavior contract, abstract class = shared code
+> - Key Java-specific: `@Override` annotation; `equals()`/`hashCode()` contract; `Comparable` vs `Comparator`; generics (`List<T>`, bounded wildcards `<T extends Comparable<T>>`)
+> - Enums: use for fixed set of constants (Order.Status: PENDING, SHIPPED, DELIVERED); enums in Java are classes and can have methods
+> - Common patterns in LLD: `ParkingLot implements Singleton`; `VehicleFactory.create(type)`; `PaymentStrategy` interface with `CreditCard`, `UPI` implementations
+>
+> **Key takeaway:** For LLD interviews in Java — interfaces for behavior contracts, abstract classes for shared implementation, enums for state machines; master the Builder pattern via telescoping constructor problem.
+
 ---
 module: 06-lld
 topic: Oop Fundamentals

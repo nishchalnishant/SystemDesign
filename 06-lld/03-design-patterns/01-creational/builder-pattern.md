@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Builder Pattern — separates the construction of a complex object from its representation, allowing step-by-step creation.
+>
+> **Key concepts:**
+> - The problem: the "Telescoping Constructor" anti-pattern. A class has many optional fields, leading to `User(name, null, null, 25, null)`. Unreadable, error-prone, hard to maintain.
+> - The fix: a static nested `Builder` class. The Builder has the same fields. It exposes fluent setter methods that return `this`.
+> - The build method: `build()` calls the private `User` constructor, passing the builder instance. It validates all constraints before creating the object.
+> - Immutability: Builder is the best way to construct immutable objects (no setters on the final `User` class) that have many optional parameters.
+> - Usage: `User u = new User.Builder("Alice").age(25).phone("123").build();`
+>
+> **Key takeaway:** If a class has more than 4 parameters or multiple optional parameters, use the Builder pattern. It's universally expected in Java LLD interviews for creating domain models and configuration objects.
+
 ---
 module: 06-lld
 topic: Design Patterns

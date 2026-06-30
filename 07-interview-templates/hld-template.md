@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The gold standard High-Level Design (HLD) interview template to pace a 45-minute system design interview perfectly.
+>
+> **Key concepts:**
+> - Phase 1: Requirements & Scope (5-7 min). Functional vs Non-Functional (CAP theorem). Never start drawing yet.
+> - Phase 2: Capacity Estimation (3-5 min). QPS, Storage, Bandwidth. Identify the core bottleneck.
+> - Phase 3: API Design (5 min). Define the core endpoints and payloads.
+> - Phase 4: Database Schema (5 min). Draw the tables/collections based on the APIs.
+> - Phase 5: High-Level Architecture (10-15 min). Draw the boxes (Client -> LB -> App -> Cache -> DB).
+> - Phase 6: Deep Dives (10 min). Identify the hardest technical challenge and zoom in (e.g., sharding strategy, handling the thundering herd).
+>
+> **Key takeaway:** Pacing is everything. If you spend 20 minutes on capacity estimation, you will fail. Use this template to structure your time and ensure you hit every expected rubric point.
+
 ---
 module: 07-interview-templates
 status: unread

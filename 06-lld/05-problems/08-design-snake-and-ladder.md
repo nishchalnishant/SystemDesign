@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Snake and Ladder — a simpler, entity-relationship focused LLD problem that tests basic game loops and random number generation handling.
+>
+> **Key concepts:**
+> - Core Entities: `Game`, `Board`, `Player`, `Dice`, `Jumper` (class representing both Snakes and Ladders).
+> - The Board: usually an array or map of size 100.
+> - The Jumper: a `Snake` is just a `Jumper` where `start > end`. A `Ladder` is a `Jumper` where `end > start`. Representing both as a single `Jumper(start, end)` class simplifies logic.
+> - The Game Loop: Roll dice, calculate new position, check for Jumper at new position, update position, check for win condition (position >= 100).
+> - Extensions: Multiple dice, rolling a 6 grants an extra turn (requires a `while` loop inside the player's turn), different board sizes.
+>
+> **Key takeaway:** Do not create separate `Snake` and `Ladder` classes. Creating a single `Jumper` (or `Entity`) class that maps a `start` position to an `end` position makes the logic incredibly clean.
+
 ---
 module: 06-lld
 topic: Problems

@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How to persist object state beyond the lifetime of the JVM using Serialization and File I/O.
+>
+> **Key concepts:**
+> - Serialization: Flattens an object into a stream of bytes so it can be saved to a file or sent over a network. The class must implement `java.io.Serializable`.
+> - `transient`: If an instance variable cannot or should not be saved (like a network connection or a password), mark it as `transient`. It will be skipped during serialization.
+> - Deserialization: Reading the bytes back into a live object. The JVM must have access to the class's bytecode, or it will throw an exception.
+> - File I/O: Using `FileWriter` and `BufferedWriter` to write plain human-readable text instead of serialized object bytes.
+>
+> **Key takeaway:** Serialization is a powerful tool for saving the exact state of an object graph, but it's fragile. If the class definition changes before deserialization, things break. Today, JSON/XML mapping is usually preferred over native Java serialization.
+
 # Ch 14: Saving Objects
 
 **Source**: Head First Java, Second Edition | **Pages**: 463-504

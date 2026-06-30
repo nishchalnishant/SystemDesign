@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Twitter/news feed — one of the most classic interview problems; the core challenge is serving personalized timelines at millisecond latency for users following celebrities.
+>
+> **Key design decisions:**
+> - Fan-out-on-write: when a user tweets, push to all followers' timeline caches (Redis); reads are fast (O(1)); expensive for celebrities (10M followers = 10M writes)
+> - Fan-out-on-read: pull tweets from all followees on timeline load; simple writes; slow reads for users following many accounts
+> - Hybrid: fan-out-on-write for normal users (<10K followers); fan-out-on-read for celebrities; merge at read time (get pre-computed timeline + pull last 100 celebrity tweets)
+> - Timeline storage: Redis sorted set per user (tweet_id by timestamp); ZRANGE for chronological feed; TTL 7 days
+> - Tweets DB: Cassandra (tweet_id, user_id, content, created_at, like_count); tweet_id as row key; timeline sharded by user_id
+> - Media: photos/videos stored in S3 + CDN; tweet stores S3 URL; media is separate from tweet metadata
+> - Search: Elasticsearch indexing tweet content; separate from timeline serving
+>
+> **Key takeaway:** The celebrity (hotspot) problem is the hardest part — always answer it proactively with the hybrid approach; interviewers will specifically ask about it.
+
 ---
 module: 05-hld-problems
 topic: Medium

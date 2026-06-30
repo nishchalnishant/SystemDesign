@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Rate limiting — algorithms and architectures for limiting how many requests a user, API key, or IP can make in a time window.
+>
+> **Key topics:**
+> - Token Bucket: tokens refill at rate R, consumed per request; allows burst up to bucket size N — most common production algorithm
+> - Leaky Bucket: fixed output rate, queue absorbs bursts; smooths traffic; no burst allowed
+> - Fixed Window Counter: simple counter per time window; edge-case burst at window boundary (2× allowed rate)
+> - Sliding Window Log: track timestamps of each request; accurate but memory-heavy (O(requests) storage)
+> - Sliding Window Counter: fixed window + weighted previous window; approximation with low memory cost
+> - Distributed rate limiting: Redis Lua scripts for atomic counter operations; sync vs async counter sharing across nodes
+> - Rate limiting by: user ID, IP, API key, endpoint, global — layered strategies for abuse prevention
+>
+> **Key takeaway:** Use Token Bucket for API rate limits (allows controlled bursts); implement with Redis INCR + EXPIRE for distributed enforcement.
+
 ---
 module: 02-building-blocks
 status: unread

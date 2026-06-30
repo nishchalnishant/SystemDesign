@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The ultimate cheat sheet for comparing technologies and architectural patterns. System design is entirely about justifying trade-offs.
+>
+> **Key concepts:**
+> - SQL vs NoSQL: ACID vs BASE, structured vs flexible schema, vertical vs horizontal scaling.
+> - Polling vs WebSockets vs SSE: Short polling (wasteful), Long polling (better, still HTTP overhead), SSE (one-way server-to-client), WebSockets (two-way persistent).
+> - TCP vs UDP: Reliable/ordered (TCP, HTTP) vs Fast/lossy (UDP, Video streaming).
+> - Caching Strategies: Write-through (safe, slow writes) vs Write-behind (fast writes, risk of data loss).
+>
+> **Key takeaway:** There are no perfect solutions, only trade-offs. The fastest way to fail an interview is to insist a technology is "always better." Use this sheet to articulate *why* you chose X over Y for the specific problem at hand.
+
 ---
 module: 07-interview-templates
 status: unread

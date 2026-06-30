@@ -1,3 +1,20 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How real systems scale by composing building blocks in stages — from a single server to a globally distributed architecture, each addition driven by a specific failure mode.
+>
+> **Key topics:**
+> - Single-server era (0→1K users): one box with web server + app + DB; no ops overhead; correct starting point
+> - Adding a DB replica (1K→10K): read replicas for read scaling; primary for writes; connection pooling
+> - Adding a cache layer (10K→100K): Redis for hot data; cache-aside pattern; 100× DB load reduction
+> - Adding a load balancer + app servers (50K+): horizontal app scaling; LB distributes traffic; stateless app tier
+> - Adding a CDN (global users): edge caching for static assets; removes origin load for global traffic
+> - Adding queues + async workers (writes at scale): decouple slow write paths (email, video processing)
+> - Adding sharding (100M+ users): partition DB writes across shards when vertical limit is hit
+> - Microservices split: when teams and codebases hit coordination limits — not a performance solution
+>
+> **Key takeaway:** Every architectural addition should be a response to a specific failure — don't add complexity until the current tier is genuinely breaking.
+
 ---
 module: 02-building-blocks
 status: unread

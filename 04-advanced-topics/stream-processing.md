@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Stream processing — real-time computation on continuously arriving data, contrasted with batch processing, using Kafka Streams and Apache Flink.
+>
+> **Key topics:**
+> - Batch vs stream: batch answers "what happened yesterday?"; stream answers "what's happening now?" (fraud detection in 500ms, live dashboards)
+> - Processing models: record-at-a-time (simple, no state) vs micro-batch (Spark Streaming, high latency) vs true streaming (Flink, per-event)
+> - Windowing: Tumbling windows (non-overlapping), Sliding windows (overlapping), Session windows (event-gap based)
+> - Time semantics: event time (when it happened) vs processing time (when we process it); late arrivals handled via watermarks + allowed lateness
+> - Stateful processing: stream joins, aggregations, pattern detection across time; state stored in RocksDB (Flink) or changelog topics (Kafka Streams)
+> - Exactly-once semantics: Kafka idempotent producer + transactional API; Flink checkpoints with two-phase commit to sinks
+> - Use cases: real-time fraud detection, live recommendations, IoT sensor processing, A/B test metrics, session analytics
+>
+> **Key takeaway:** Choose Kafka Streams for simple stateful stream processing on Kafka data; choose Flink for complex stateful computations, event-time windowing, and exactly-once guarantees.
+
 ---
 module: 04-advanced-topics
 topic: Stream Processing

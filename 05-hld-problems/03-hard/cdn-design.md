@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a CDN — geographically distributed content delivery with edge caching, cache invalidation, HTTPS termination, and origin offload.
+>
+> **Key design decisions:**
+> - Edge PoP (Point of Presence): 200+ global locations; each PoP has cache cluster + reverse proxy + TLS termination; requests route to nearest PoP via Anycast BGP
+> - Cache hierarchy: L1 (PoP-local SSD cache) → L2 (regional aggregation cache) → Origin; cache-hit at L1 serves in <20ms; L2 in <50ms; origin only for misses
+> - Cache key: URL + Vary header (language, device type); CDN can cache different versions for mobile vs desktop, or by language
+> - TTL strategy: static assets (images, JS, CSS) → long TTL (1 year, versioned URL); HTML pages → short TTL (5 min) or no cache
+> - Cache invalidation: CDN-wide purge API (costly, use sparingly); URL versioning preferred (append hash to filename → new URL = new cache key)
+> - Origin shield: single aggregation node per region that talks to origin; prevents thundering herd on origin when cache expires for popular content
+> - DDoS protection: edge absorbs volumetric attacks; rate limiting at PoP; challenge-response (CAPTCHA) for bot traffic; BGP anycast for resilience
+>
+> **Key takeaway:** Anycast routing + origin shield are the two CDN-specific design elements interviewers test — Anycast routes to nearest PoP automatically; origin shield prevents cache stampede on popular content.
+
 ---
 module: 05-hld-problems
 topic: Hard

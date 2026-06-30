@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** CDN (Content Delivery Network) — geographically distributed edge caches that serve content close to users, reducing latency and origin load.
+>
+> **Key topics:**
+> - Why CDN exists: speed of light is a physical limit; Mumbai→Virginia = 130ms RTT; only solution is serving from Mumbai
+> - Pull model (origin pull): edge fetches from origin on first miss, caches locally; subsequent requests served from edge
+> - Push model: pre-populate edge nodes with content before any user requests (used for known large releases)
+> - Multi-tier CDN: edge PoP → regional PoP → origin; cache miss at edge only hits regional, not origin
+> - Cache invalidation: TTL-based expiry vs on-demand purge (API call); hard to invalidate by URL pattern
+> - Dynamic content on CDN: route optimization, edge compute (Cloudflare Workers, Lambda@Edge), connection persistence
+> - Providers: Cloudflare, AWS CloudFront, Akamai, Fastly — trade-offs in PoP count, pricing, edge compute capabilities
+>
+> **Key takeaway:** For any globally-accessed static content (JS, CSS, images, video), always put a CDN in front — 95–99% cache hit rate means the origin handles a fraction of total traffic.
+
 ---
 module: 02-building-blocks
 status: unread

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Index for the foundations section — the core theory every system design answer builds on.
+>
+> **Key topics:**
+> - Fundamentals: scalability, availability, consistency, performance, latency numbers
+> - Databases: SQL vs NoSQL, ACID/BASE, CAP theorem, replication, sharding, indexes, isolation levels
+> - Networking: OSI model, TCP/UDP, HTTP/1.1–3, REST/GraphQL/gRPC, WebSockets, DNS
+> - Security: AuthN/AuthZ, OAuth 2.0/OIDC, TLS, OWASP, Zero Trust
+> - Pointers to building-block deep dives for caching, CDN, load balancers
+>
+> **Key takeaway:** Read all files in this section before touching anything else — they form the vocabulary for every topic that follows.
+
+---
+
 # Core Concepts
 
 Fundamental building blocks for system design interviews.

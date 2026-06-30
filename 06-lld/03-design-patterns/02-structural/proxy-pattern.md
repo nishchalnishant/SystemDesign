@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Proxy Pattern — provides a surrogate or placeholder for another object to control access to it.
+>
+> **Key concepts:**
+> - The problem: you want to add access control, lazy loading, caching, or logging to an object, but you can't or shouldn't modify the object's code itself.
+> - The fix: create a Proxy class that implements the same interface as the real object.
+> - The intercept: the client talks to the Proxy. The Proxy performs its duty (e.g., checks permissions, checks the cache, or initializes the heavy object) and then delegates the work to the real object.
+> - Types of Proxies: Virtual Proxy (lazy loads heavy objects, e.g., high-res images), Protection Proxy (access control/auth), Cache Proxy (returns cached results), Remote Proxy (hides network calls, e.g., gRPC stubs).
+> - Difference from Decorator: Decorator *adds behavior* (like toppings). Proxy *controls access* to the object.
+>
+> **Key takeaway:** Proxy is heavily used under the hood in modern frameworks (e.g., Spring AOP, Hibernate lazy-loading). If an interview asks you to add caching or auth to an existing service without modifying it, use a Proxy.
+
 ---
 module: 06-lld
 topic: Design Patterns

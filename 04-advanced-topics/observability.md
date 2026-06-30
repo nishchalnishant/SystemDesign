@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Observability — how to understand what your distributed system is doing via metrics, logs, and traces, and how to set SLIs/SLOs that drive alerting.
+>
+> **Key topics:**
+> - Three pillars: Metrics (what's the rate?), Logs (what happened?), Distributed Traces (where did the latency come from across services?)
+> - SLI/SLO/SLA: SLI = measurement (e.g. 99th percentile latency), SLO = target (e.g. p99 < 200ms 99.9% of time), SLA = contractual commitment with penalty
+> - Golden Signals (Google SRE): Latency, Traffic (RPS), Errors (rate), Saturation (capacity used) — the four metrics to always have
+> - Distributed tracing: trace ID + span ID propagated in headers; visualizes request path across 10+ services; Jaeger/Zipkin/X-Ray
+> - Alerting best practices: alert on SLO burn rate, not raw metrics; alert on symptoms not causes; avoid alert fatigue
+> - Error budgets: 99.9% SLO = 43.8 min/month downtime budget; if budget is consumed, freeze feature work, fix reliability
+> - Tools: Prometheus + Grafana (metrics), ELK Stack (logs), Jaeger (traces), Datadog/New Relic (all-in-one SaaS)
+>
+> **Key takeaway:** Design systems with observability from Day 1 — if you can't measure it (SLI), you can't set a target (SLO), and you can't know if you're meeting your commitments (SLA).
+
 ---
 module: 04-advanced-topics
 status: unread

@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The State Pattern — lets an object alter its behavior when its internal state changes. It appears as if the object changed its class.
+>
+> **Key concepts:**
+> - The problem: massive `switch(currentState)` statements inside every method of a class (e.g., `insertCoin()` behaves differently if state is `IDLE` vs `SOLD_OUT`).
+> - The fix: extract the state-specific behaviors into separate classes.
+> - Interface: create a `State` interface with methods for all possible actions (`insertCoin`, `dispense`).
+> - Concrete States: `IdleState`, `HasCoinState`. Each implements the actions valid for that state (and throws exceptions for invalid ones).
+> - Context: the main object (`VendingMachine`) holds a reference to the current `State` object and delegates all actions to it. The state objects themselves usually trigger the transition to the next state.
+>
+> **Key takeaway:** State is the only acceptable answer for "Design a Vending Machine" or "Design an Elevator". It transforms a spaghetti mess of `if/else` state checks into clean, polymorphic classes.
+
 ---
 module: 06-lld
 topic: Design Patterns

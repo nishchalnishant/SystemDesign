@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Java Collections Framework and how to use Generics for type safety.
+>
+> **Key concepts:**
+> - Collections: `List` (ordered, allows duplicates, e.g., `ArrayList`), `Set` (unordered, no duplicates, e.g., `HashSet`), and `Map` (key-value pairs, e.g., `HashMap`).
+> - Sorting: To sort a collection, the objects must implement `Comparable` (defining `compareTo()`). Or you can pass a custom `Comparator` to the `sort()` method.
+> - Generics: Using `<T>` (e.g., `ArrayList<String>`) allows the compiler to enforce type safety. You can't accidentally put an `Integer` into an `ArrayList<String>`.
+> - Polymorphism with Generics: `ArrayList<Animal>` is *not* a supertype of `ArrayList<Dog>`. To write a method that takes a list of any Animal subtype, use wildcards: `void takeAnimals(ArrayList<? extends Animal> list)`.
+>
+> **Key takeaway:** The Collections framework is the bread and butter of Java programming. Understand when to use a List (order matters), a Set (uniqueness matters), or a Map (key lookups matter).
+
 # Ch 16: Data Structures
 
 **Source**: Head First Java, Second Edition | **Pages**: 563-614

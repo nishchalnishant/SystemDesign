@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a notification service — delivering push/email/SMS notifications reliably at high throughput with deduplication, prioritization, and user preference management.
+>
+> **Key design decisions:**
+> - Channel abstraction: unified notification model with channel plugins (APNs for iOS, FCM for Android, SendGrid for email, Twilio for SMS); each plugin handles delivery
+> - Reliability: Kafka queue per channel; at-least-once delivery; idempotency key prevents duplicates on retry; DLQ for failed notifications
+> - Priority queues: critical (OTP, alerts) → high-priority queue; marketing → low-priority queue; ensure critical delivery even under load
+> - Fan-out: event (e.g., new follower) → notification service → fan-out to all followers; large fan-outs (10M followers) batched async
+> - User preferences: preference DB (user_id → {push: on, email: on, SMS: off, quiet_hours: 22:00–08:00}); check before every send
+> - Deduplication: dedup by (user_id, notification_type, reference_id) in Redis with 1-hour TTL; prevent duplicate email for same event
+> - Rate limiting: cap per user/per type to avoid notification fatigue; e.g., max 3 marketing emails/day
+>
+> **Key takeaway:** The preference check + deduplication layer is critical — a raw fan-out without it spams users and destroys engagement; always respect quiet hours and per-channel opt-outs.
+
 ---
 module: 05-hld-problems
 topic: Medium

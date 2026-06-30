@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a web search engine (Google) — the complete pipeline from web crawling to real-time index serving with relevance ranking at internet scale.
+>
+> **Key design decisions:**
+> - Pipeline: Web Crawler → Document Store (raw HTML in S3) → Parser/Indexer → Inverted Index → Ranker → Query Serving
+> - Inverted index: word → sorted list of (doc_id, TF score) entries; sharded by term hash; each shard fits in RAM for fast lookup
+> - Relevance: TF-IDF/BM25 for content relevance + PageRank for authority; combined scoring with learned ranking model (LambdaMART)
+> - Index freshness: periodic batch rebuild (Hadoop) for most of web; incremental updates for news/hot content via streaming pipeline
+> - Query serving: <100ms requirement → all data in memory; sharded index; fan-out to all shards, merge top-K, rank, return
+> - Personalization: search history, location, language, SafeSearch preference → re-rank results per user context
+> - Knowledge Graph: structured data (infoboxes, answer boxes) stored separately in graph DB; surfaced above blue links for direct answers
+>
+> **Key takeaway:** The inverted index + BM25 scoring is the core — everything else (crawling, PageRank, personalization) feeds into getting the right documents into the top-10 results.
+
 ---
 module: 05-hld-problems
 topic: Hard

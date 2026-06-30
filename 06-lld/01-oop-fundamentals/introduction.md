@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Why OOP exists — the historical context, the problems it solves, and how it changed software development from procedural to object-oriented thinking.
+>
+> **Key concepts:**
+> - Problem OOP solves: procedural code = giant interconnected blob; change one function → cascade of breaks; OOP = modular containers (classes) with clear boundaries
+> - Object = data (state) + behavior (methods) bundled together; state is hidden from outside (encapsulation); interact via public interface only
+> - Class vs Object: class is blueprint, object is instance; multiple objects from one class, each with independent state
+> - Message passing: objects communicate by calling methods (sending messages); loose coupling through interfaces
+> - When to use OOP: modeling real-world entities with state and behavior; large systems requiring team collaboration; systems that need extensibility
+> - Mindmap covers: OOP introduction → classes/objects → encapsulation → inheritance → polymorphism → abstraction → design principles
+>
+> **Key takeaway:** OOP's core value is managing complexity through encapsulation — hide state behind methods, expose minimal interface, change internals without breaking callers.
+
 ---
 module: 06-lld
 topic: Oop Fundamentals

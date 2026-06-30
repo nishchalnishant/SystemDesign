@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Python OOP syntax reference for LLD interviews — classes, dataclasses, ABC, properties, dunder methods, and Python-specific patterns.
+>
+> **Key topics:**
+> - Class structure: `__init__` constructor; `self` is explicit; `_private` convention (not enforced); `__private` name mangling (double underscore)
+> - Properties: `@property` for getters; `@prop.setter` for setters with validation; Pythonic alternative to Java getters/setters
+> - Class methods / static: `@classmethod` (receives cls, factory methods); `@staticmethod` (no cls/self, utility functions); useful for alternative constructors
+> - ABC (Abstract Base Class): `from abc import ABC, abstractmethod`; `class Shape(ABC): @abstractmethod def area()`; enforces interface implementation
+> - Dunder methods: `__str__`/`__repr__` (string representation), `__eq__`/`__hash__` (equality), `__lt__` (comparison/sorting), `__len__`, `__iter__` (iteration protocol)
+> - Dataclasses: `@dataclass` auto-generates `__init__`, `__repr__`, `__eq__`; `frozen=True` for immutability; great for value objects
+> - Multiple inheritance: Python supports it; MRO (Method Resolution Order) via C3 linearization; prefer mixins over complex hierarchies
+>
+> **Key takeaway:** Python's ABC + `@abstractmethod` replaces Java interfaces for LLD; use dataclasses for value objects and DTOs; `@property` gives Java-style encapsulation without explicit getter/setter boilerplate.
+
 ---
 module: 06-lld
 topic: Oop Fundamentals

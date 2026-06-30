@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Circuit Breaker — a resilience pattern that stops cascading failures by short-circuiting calls to a failing downstream service until it recovers.
+>
+> **Key topics:**
+> - Problem: slow downstream service holds threads open → thread pool exhaustion → upstream service crashes too (cascading failure)
+> - Three states: Closed (calls pass through, failures counted), Open (calls fail-fast, no network hit), Half-Open (probe request sent to test recovery)
+> - Tripping strategies: count-based (trip after N consecutive failures) vs sliding-window (trip on failure % in last N seconds)
+> - Fallback strategies: return cached response, return default value, queue for later retry, return graceful degradation
+> - Configuration: failure threshold, success threshold for closing, timeout for half-open probe
+> - Libraries: Resilience4j (Java), Hystrix (deprecated), Polly (.NET), sentinel (Go)
+> - Combined with retry: exponential backoff + jitter; circuit breaker prevents retry storms when downstream is fully down
+>
+> **Key takeaway:** Every synchronous service-to-service call should have a circuit breaker — fail fast rather than holding resources and causing cascading outages.
+
 ---
 module: 02-building-blocks
 status: unread

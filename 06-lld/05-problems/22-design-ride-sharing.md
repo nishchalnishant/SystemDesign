@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Ride Sharing System (e.g., Uber/Lyft) — tests matching algorithms, geospatial querying, and managing the lifecycle of a Ride.
+>
+> **Key concepts:**
+> - Core Entities: `Rider`, `Driver`, `Ride`, `Location` (lat, long), `Vehicle`.
+> - Matching Strategy (Strategy Pattern): How to find the best driver? `NearestDriverStrategy`, `HighestRatedDriverStrategy`. Requires a spatial data structure (QuadTree or Geohash, usually abstracted behind a `LocationManager`).
+> - Pricing Strategy (Strategy Pattern): `SurgePricing`, `StandardPricing`, `DistanceBasedPricing`.
+> - State Pattern: `Ride` transitions: `REQUESTED`, `ACCEPTED`, `ARRIVING`, `IN_PROGRESS`, `COMPLETED`.
+> - Observer: `Rider` app observing the `Driver`'s location updates.
+>
+> **Key takeaway:** Focus on the interfaces for the Strategy patterns (Matching and Pricing) and the State machine for the Ride. Abstract the complex geospatial math into a black-box `LocationService.getDriversWithinRadius()`.
+
 ---
 module: 06-lld
 topic: Problems

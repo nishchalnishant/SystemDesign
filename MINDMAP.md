@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Master mindmap and 8-week study framework that maps every topic in the repo to a week-by-week learning plan.
+>
+> **Key topics:**
+> - Repo architecture overview: all 9 directories with file counts and weekly study assignment
+> - Per-section concept maps: key concepts and sub-topics for foundations, building blocks, scaling, advanced topics
+> - HLD problem mindmap: 27 problems grouped by theme (storage, messaging, realtime, ML, financial)
+> - LLD problem mindmap: 26 problems organized by pattern type (state machine, strategy, concurrency)
+> - Interview template map: which template to use for what situation
+> - Weekly study schedule from Week 1 (foundations) to Week 8 (mock interviews)
+>
+> **Key takeaway:** This is your study planner — follow the 8-week schedule and use the mindmaps to see how topics connect to each other.
+
 ---
 module: root
 status: unread

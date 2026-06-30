@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How to package, deploy, and execute Java applications.
+>
+> **Key concepts:**
+> - Source vs Class: Keep your `.java` files in one directory (e.g., `src`) and your compiled `.class` files in another (e.g., `classes`).
+> - Packages: Prevent naming collisions. The package structure must exactly match the directory structure (e.g., `package com.headfirstjava;` must live in `com/headfirstjava/`).
+> - JAR Files: Java ARchive. It's a zip file containing your entire directory structure of `.class` files.
+> - Manifest: A file inside the JAR (`META-INF/MANIFEST.MF`) that tells the JVM which class holds the `main()` method, allowing the JAR to be executable.
+>
+> **Key takeaway:** A Java program isn't just one file. It's a structured hierarchy of packages. JAR files are the standard way to bundle these hierarchies so a user can just double-click or run `java -jar App.jar`.
+
 # Ch 17: Release Your Code
 
 **Source**: Head First Java, Second Edition | **Pages**: 615-640

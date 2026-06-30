@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a distributed unique ID generator — generating globally unique, time-sortable 64-bit IDs at scale without central coordination.
+>
+> **Key design decisions:**
+> - Snowflake ID (Twitter): 64 bits = 1 sign + 41 timestamp (ms) + 10 machine ID + 12 sequence; ~4096 IDs/ms per machine
+> - Alternatives: UUID v4 (random, not sortable, 128 bits), DB auto-increment (single point of failure), segment-based (pre-allocate ranges)
+> - Clock skew problem: if system clock goes backward, IDs from same machine could repeat; solution: wait until clock catches up or reject
+> - Machine ID assignment: ZooKeeper or etcd for machine registration; each worker registers and gets unique ID on startup
+> - Sorting property: Snowflake IDs are monotonically increasing within a machine and roughly ordered across machines → great for pagination
+> - High availability: no single coordinator; each machine generates IDs independently; horizontal scaling trivial
+> - Custom epoch: set epoch to company founding date to maximize usable timestamp bits (41 bits = ~69 years from epoch)
+>
+> **Key takeaway:** Snowflake is the industry standard — 41-bit timestamp + 10-bit machine ID + 12-bit sequence = no coordination, sortable by time, 4096 IDs/ms per machine.
+
 ---
 module: 05-hld-problems
 topic: Easy

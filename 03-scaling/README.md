@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Index for the scaling section — strategies and deep dives for handling traffic, data, and complexity growth.
+>
+> **Key topics:**
+> - Scaling Strategies: horizontal vs vertical, read/write DB scaling, replication, partitioning, caching, queues
+> - Database Scaling Deep Dive: WAL internals, MVCC, connection pooling (PgBouncer), OLTP vs OLAP separation
+> - Global Distribution: multi-region, active-active vs active-passive, CRDT conflict resolution, data sovereignty
+> - Database Internals: B-tree, LSM, WAL, MVCC, isolation levels for deep-dive interview follow-ups
+> - LSM vs B-Tree: the fundamental trade-off between write throughput and read performance
+>
+> **Key takeaway:** Read Scaling Strategies first, then use the deep dives when an interviewer pushes harder on database or global architecture specifics.
+
+---
+
 # Scaling
 
 > **Strategies and concepts for scaling systems to handle growth in traffic, data, and complexity.**

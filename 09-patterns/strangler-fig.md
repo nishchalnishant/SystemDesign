@@ -5,6 +5,18 @@ tags: [09-patterns, system-design, patterns]
 ---
 # The Strangler Fig Pattern
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A safe, incremental strategy for migrating a legacy monolith application to a modern microservices architecture.
+>
+> **Key concepts:**
+> - The Metaphor: The strangler fig vine grows around a host tree. Over time, the vine grows stronger and the host tree dies, leaving only the vine.
+> - The Gateway: An API Gateway or load balancer is placed in front of the monolith. It routes old traffic to the monolith and new/migrated traffic to the microservices.
+> - Incremental Migration: You carve out one feature at a time from the monolith, build it as a microservice, and update the Gateway routing.
+>
+> **Key takeaway:** "Big Bang" rewrites (where you spend 2 years rewriting the monolith and flip the switch on day 730) almost always fail. The Strangler Fig pattern allows you to deliver value incrementally and rollback easily if a specific microservice fails.
+
 > **Incrementally migrate a monolith to microservices without a big-bang rewrite.**
 
 ---

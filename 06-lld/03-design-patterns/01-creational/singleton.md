@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Singleton Pattern — ensures a class has only one instance and provides a global access point to it.
+>
+> **Key concepts:**
+> - The problem: multiple instances of shared resources (like DB connection pools or loggers) waste memory and cause conflicts.
+> - Implementation: private constructor, static variable holding the instance, static `getInstance()` method.
+> - Thread safety: lazy initialization in multithreaded environments causes race conditions (creating multiple instances).
+> - Double-checked locking: the standard Java fix. Check if null, `synchronized` block, check if null again. Variable must be `volatile`.
+> - Enum Singleton: Joshua Bloch's recommended Java approach. Thread-safe by default, handles serialization automatically.
+> - Anti-pattern: Singleton is often considered an anti-pattern because it acts like global state, making unit testing difficult. Dependency Injection (Spring) handles singletons better.
+>
+> **Key takeaway:** If asked to implement a Singleton in a Java interview, you must know how to write the double-checked locking version and explain why `volatile` is required (prevents instruction reordering).
+
 ---
 module: 06-lld
 topic: Design Patterns

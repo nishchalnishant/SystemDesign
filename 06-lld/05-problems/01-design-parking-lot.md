@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Parking Lot — the quintessential LLD problem that tests your ability to model real-world entities, manage state, and apply design patterns.
+>
+> **Key concepts:**
+> - Core Entities: `ParkingLot` (Singleton), `ParkingFloor`, `ParkingSpot` (Enum for size: Compact, Large, Handicapped), `Vehicle` (Enum for type: Car, Truck, Bike), `Ticket`.
+> - The problem: assigning the correct spot based on vehicle type and calculating the fee upon exit.
+> - Patterns: 
+>   - Singleton: to ensure only one Parking Lot instance exists.
+>   - Strategy: for dynamic pricing calculation (e.g., hourly rate vs flat rate).
+>   - Factory: to generate `Vehicle` objects or assign parking spots.
+> - Concurrency: Thread safety is critical when two vehicles try to enter simultaneously. The `assignSpot()` method must be synchronized or use concurrent data structures.
+>
+> **Key takeaway:** A solid Parking Lot design demonstrates your grasp of OOP fundamentals. Focus on separation of concerns — the `ParkingLot` delegates finding a spot to `ParkingFloor`, which checks its `ParkingSpot`s.
+
 ---
 module: 06-lld
 topic: Problems

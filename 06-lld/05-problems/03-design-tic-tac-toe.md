@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Tic-Tac-Toe — a classic introductory LLD problem focusing on state machines, game loops, and optimized win-checking logic.
+>
+> **Key concepts:**
+> - Core Entities: `Game` (orchestrator), `Board` (2D array or 1D array), `Player`, `Piece` (Enum: X, O).
+> - The Game Loop: wait for input, validate move, update board, check win/draw, switch player.
+> - Optimized Win Check: $O(1)$ instead of $O(N)$. Keep track of row sums, col sums, and two diagonal sums. If any sum equals $N$ or $-N$, the current player wins.
+> - Extension: Design it for an $N \times N$ board.
+> - Patterns: Strategy for different win conditions (if rules change), State pattern for game lifecycle (Not Started, In Progress, Finished).
+>
+> **Key takeaway:** The $O(1)$ win checking logic (using row/col counter arrays) is the main "gotcha" of this problem. A naive $O(N)$ sweep after every move is often penalized.
+
 ---
 module: 06-lld
 topic: Problems

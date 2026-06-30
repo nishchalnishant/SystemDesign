@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Logger Library — a classic framework-design problem that is the textbook use case for the Chain of Responsibility pattern.
+>
+> **Key concepts:**
+> - Core Entities: `Logger` (Singleton), `LogAppender` (Strategy), `LogFilter` (Chain of Responsibility).
+> - Chain of Responsibility: Create handlers for `DEBUG`, `INFO`, `WARN`, `ERROR`. Link them: `DebugLogger -> InfoLogger -> WarnLogger -> ErrorLogger`. If the system is set to `WARN`, the `DebugLogger` and `InfoLogger` simply pass the request along without acting.
+> - Strategy Pattern (Appender): Where do the logs go? Provide strategies for `ConsoleAppender`, `FileAppender`, `DatabaseAppender`.
+> - Asynchronous Logging: For performance, don't write to disk on the main thread. Use a `BlockingQueue` and a background consumer thread to write logs (Producer-Consumer pattern).
+>
+> **Key takeaway:** The interviewer wants to see Chain of Responsibility for log levels, Strategy for destinations, and Producer-Consumer (BlockingQueue) for async performance.
+
 ---
 module: 06-lld
 topic: Problems

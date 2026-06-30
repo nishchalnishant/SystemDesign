@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an Inventory Management System — tests handling of concurrent stock updates and alerting mechanisms when stock runs low.
+>
+> **Key concepts:**
+> - Core Entities: `Warehouse`, `Product`, `InventoryItem`, `StockAlert`.
+> - Concurrency (The core challenge): Two users buying the last item. 
+>   - Use a `ConcurrentHashMap` for `product_id -> quantity`.
+>   - Use `synchronized` methods or `AtomicInteger.compareAndSet` for decrementing stock.
+> - Reservation Strategy: When a user adds to cart, "reserve" the item (decrement available, increment reserved). If checkout fails/times out, revert it.
+> - Observer Pattern: When stock drops below a threshold, trigger a `LowStockEvent` to notify suppliers.
+>
+> **Key takeaway:** The interviewer will hammer you on the exact moment the stock count is updated. Differentiate between "Available Quantity" (can be added to cart), "Reserved Quantity" (in carts), and "Purchased Quantity".
+
 ---
 module: 06-lld
 topic: Problems

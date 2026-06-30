@@ -1,5 +1,16 @@
 # Head First Java - Second Edition: Chapter Notes
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A complete index of chapter-wise notes for *Head First Java*.
+>
+> **Key concepts:**
+> - Java fundamentals: variables, arrays, classes, objects, inheritance, and polymorphism.
+> - Advanced Java: exception handling, GUI programming (Swing), serialization, and networking.
+> - Data structures: Collections framework and generics.
+>
+> **Key takeaway:** This serves as a quick directory to jump into specific topics. If you're rusty on how Java passes variables (by value, but object references are passed by value), jump straight to Chapter 3.
 Comprehensive chapter-wise notes for learning and revising Java and Object-Oriented Programming concepts.
 
 ## 📖 Table of Contents

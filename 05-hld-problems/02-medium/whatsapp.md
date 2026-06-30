@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design WhatsApp — real-time messaging with WebSocket connections, delivery receipts, group messaging, and end-to-end encryption at billions of messages per day.
+>
+> **Key design decisions:**
+> - Connection management: persistent WebSocket per client; connection server stores {user_id → connection_id}; Redis tracks which server holds each user's connection
+> - Message routing: sender → connection server → message queue (Kafka) → recipient's connection server → WebSocket push
+> - Delivery receipts: single check (sent), double check (delivered), blue double check (read); each state stored in message DB
+> - Offline delivery: messages stored in Cassandra if recipient offline; delivered on reconnect; TTL = 30 days
+> - Group messaging: group message fan-out to all member connections; capped at 256/1024 members for performance
+> - End-to-end encryption: Signal Protocol (Double Ratchet); keys never leave devices; server only routes ciphertext
+> - Media: images/videos sent as S3 URLs; metadata in message; recipient downloads directly from CDN
+>
+> **Key takeaway:** The key insight is routing — a connection registry (Redis: user_id → server_id) tells the routing layer which WebSocket server to forward the message to.
+
 ---
 module: 05-hld-problems
 topic: Medium

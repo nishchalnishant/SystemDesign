@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Advanced distributed systems theory for SDE-3 — consistency models, consensus, distributed transactions, time and ordering, conflict resolution, and coordination.
+>
+> **Key topics:**
+> - Consistency models spectrum: linearizability → sequential → causal → eventual — with real-world database mappings
+> - Consensus protocols: Raft (leader election + log replication), Paxos (Prepare/Promise/Accept/Commit) — when each is used
+> - Distributed transactions: 2PC (two-phase commit), 3PC, Saga pattern — trade-offs in failure atomicity
+> - Time and ordering: Lamport timestamps (partial order), Vector clocks (causal order), TrueTime (Google Spanner, bounded uncertainty)
+> - Conflict resolution: Last-Write-Wins, multi-value/siblings, CRDTs for automatic merge
+> - Distributed coordination: ZooKeeper (configuration, leader election, distributed locks), etcd (Kubernetes config store)
+> - Failure models: fail-stop, fail-slow, Byzantine — and which to design for in practice
+>
+> **Key takeaway:** Linearizability is expensive — know when eventual consistency + CRDTs is sufficient, and when you actually need strong consistency (financial transactions, inventory reservation).
+
 ---
 module: 04-advanced-topics
 status: unread

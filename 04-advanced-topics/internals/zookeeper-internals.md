@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** ZooKeeper internals — how the distributed coordination service uses ZAB protocol, znodes, and watches to enable leader election, configuration management, and distributed locks.
+>
+> **Key topics:**
+> - ZAB protocol: leader-based consensus; Phase 1 (discovery) → Phase 2 (sync) → Phase 3 (broadcast); total order for all writes
+> - Znodes: hierarchical namespace like a filesystem; persistent (survives restart) vs ephemeral (deleted on session disconnect)
+> - Watches: clients register watch on a znode; any change triggers a one-time notification; enables reactive coordination
+> - Leader election: services create ephemeral sequential znodes; lowest number = leader; if leader crashes, ephemeral znode disappears → election
+> - Distributed lock: create ephemeral znode; if it exists, another holder → watch on it → notified on release
+> - Session management: client sends heartbeat (ping) to ZooKeeper; if session expires, all ephemeral znodes deleted → automatic cleanup
+> - Quorum: write requires ack from majority; 3-node cluster tolerates 1 failure; 5-node tolerates 2 failures
+>
+> **Key takeaway:** ZooKeeper's ephemeral znodes + watches are the foundation of distributed coordination — a crashed process automatically releases its lock and triggers leader re-election via watch notifications.
+
 ---
 module: 04-advanced-topics
 topic: Internals

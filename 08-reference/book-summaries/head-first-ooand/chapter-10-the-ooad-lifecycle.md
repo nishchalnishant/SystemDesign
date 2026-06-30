@@ -5,6 +5,17 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Bringing all the concepts together into a unified Object-Oriented Analysis and Design Lifecycle.
+>
+> **Key concepts:**
+> - The OOA&D Lifecycle: 1. Feature List (What does it do?) 2. Use Cases (How do people use it?) 3. Break Up the Problem (Modules/Architecture) 4. Requirements (Specifics) 5. Domain Analysis (Nouns/Verbs) 6. Design (Applying Principles) 7. Implementation (Coding/Testing).
+> - It's not a waterfall: You don't have to perfectly finish step 2 before starting step 3. The process is cyclical.
+>
+> **Key takeaway:** This chapter serves as a roadmap for any new software project. You don't just start typing. You talk to the customer, write use cases, find the objects, design the architecture, apply SOLID principles, and iterate.
+
 # Ch 10: The OOA\&D Lifecycle
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 518-591

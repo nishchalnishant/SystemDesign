@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The definitive cheat sheet for "Back-of-the-Envelope" (BotE) capacity estimations in System Design interviews.
+>
+> **Key concepts:**
+> - Traffic (QPS): Calculate Read and Write QPS. (E.g., 100M Daily Active Users * 5 writes/day = 500M writes/day = ~6,000 QPS). Remember $100,000 \text{ seconds} \approx 1 \text{ day}$.
+> - Storage: Write QPS * Size of Object * Time (usually 5 years). Distinguish between text/metadata (KB) and media (MB/GB).
+> - Bandwidth: QPS * Size of Object. Calculate ingress and egress.
+> - Memory (Cache): Estimate 20% of daily traffic reads via the 80/20 rule.
+>
+> **Key takeaway:** Don't get bogged down in exact math. Use approximations (e.g., $1 \text{ day} \approx 10^5 \text{ seconds}$, $1 \text{ month} \approx 2.5 \times 10^6 \text{ seconds}$). The goal is to determine the *order of magnitude* to justify architectural decisions (e.g., "We need 10TB of storage, so a single RDBMS won't cut it, we need to shard").
+
 ---
 module: 07-interview-templates
 status: unread

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A deep dive into database scaling from a single PostgreSQL node to a globally distributed data tier — WAL internals, MVCC, connection pooling, and sharding at scale.
+>
+> **Key topics:**
+> - PostgreSQL WAL: sequential write-first → checkpoint → crash recovery; WAL is also the replication stream
+> - MVCC: xmin/xmax row versions → readers never block writers; dead tuples need VACUUM
+> - Connection pooling with PgBouncer: session vs transaction vs statement modes; pool_size tuning
+> - Index strategies: composite index column order, covering indexes, partial indexes, index-only scans
+> - Read vs write scaling path: add replicas → connection pooling → caching → query optimization → shard
+> - Sharding at scale: virtual shards, cross-shard scatter-gather, shard key selection anti-patterns
+> - OLTP vs OLAP separation: CDC to pipeline writes into a columnar store (Redshift, BigQuery, ClickHouse) for analytics
+>
+> **Key takeaway:** Before sharding, exhaust all single-node options: PgBouncer connection pooling + read replicas + covering indexes can handle 10× more load than a naive single node.
+
 ---
 module: 03-scaling
 status: unread

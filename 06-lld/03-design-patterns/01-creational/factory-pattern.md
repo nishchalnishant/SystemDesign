@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Factory Pattern (Simple Factory & Factory Method) — creates objects without specifying the exact class to create.
+>
+> **Key concepts:**
+> - The problem: business logic filled with `if/else` statements calling `new SMSNotification()`, `new EmailNotification()`. If a new type is added, you violate OCP by modifying the business logic.
+> - Simple Factory: extract the `if/else` creation logic into a single `NotificationFactory` class. The client passes a string/enum, gets back the interface (`Notification`).
+> - Factory Method (GoF): define an interface for creating an object, but let subclasses decide which class to instantiate. E.g., `Logistics` class has abstract `createTransport()`. `RoadLogistics` returns `Truck`, `SeaLogistics` returns `Ship`.
+> - Benefit: highly decoupled. The client code only depends on the `Notification` interface, not the concrete implementations.
+> - Use cases: whenever object creation logic is complex, requires conditionals based on input, or depends on configurations.
+>
+> **Key takeaway:** This is the most frequently used pattern in LLD interviews. Whenever you have different types of a thing (e.g., Vehicles in a Parking Lot, Cards in a Deck, Payment Methods), use a Factory to create them.
+
 ---
 module: 06-lld
 topic: Design Patterns

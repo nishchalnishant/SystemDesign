@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A curated collection of 36 Low-Level Design (LLD) interview problems, complete with requirements, class diagrams, code (Python for 1-24, Java for 25-36), and concurrency handling.
+>
+> **Prioritization:**
+> - Very High Priority (1-5): The "Big 5" — Parking Lot, Rate Limiter, Tic-Tac-Toe, Vending Machine, Splitwise. Master these first; they appear in 80% of LLD rounds.
+> - High Priority (6-17): Frequent variations — BookMyShow (concurrency), Chess (rules engine), Elevator (State pattern), LRU Cache.
+> - Medium Priority (18-24): Domain-specific designs — Logger Library, Pub-Sub, Inventory.
+> - Advanced (25-36): Senior-level deep dives — Concurrent Data Structures, S3 Object Storage, Lock-free queues.
+>
+> **Key takeaway:** LLD interviews test three things: 1) Extracting entities from requirements, 2) Applying OOP principles (Composition over Inheritance) and Design Patterns (Strategy, Factory, State, Observer), 3) Handling concurrency (Thread safety, locks). Treat each problem as practice for these three skills.
+
+---
+
 # LLD Interview Problems
 
 A curated collection of **36** Low-Level Design (LLD) interview problems. Problems 01–24 have Python implementations. Problems 25–36 are advanced/niche topics with Java implementations.

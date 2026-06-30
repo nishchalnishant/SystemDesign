@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** 50 common mistakes that cause candidates to fail system design interviews, categorized by interview phase.
+>
+> **Key concepts:**
+> - Premature Optimization: Adding Kafka and Redis to your diagram before explaining the basic data flow.
+> - Unjustified Choices: "I'll use Cassandra" without explaining *why* Cassandra fits the specific write-heavy access pattern of this problem.
+> - Ignoring Non-Functional Requirements: Forgetting to discuss latency, availability, or consistency until the interviewer forces you to.
+> - Poor Time Management: Getting bogged down in database schema details while failing to finish the overall architecture diagram.
+>
+> **Key takeaway:** System Design interviews are as much about communication as technical skill. Avoiding these anti-patterns ensures you signal seniority and structure to the interviewer.
+
 ---
 module: 07-interview-templates
 topic: Interview Anti-Patterns — 50 Mistakes That Kill SDE-3 Offers

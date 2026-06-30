@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Mediator Pattern — defines an object that encapsulates how a set of objects interact, keeping them from referring to each other explicitly.
+>
+> **Key concepts:**
+> - The problem: "Spaghetti" dependencies. 10 UI components all need to update each other. If one changes, the other 9 must react. This results in $O(N^2)$ connections.
+> - The fix: introduce a Mediator (e.g., a `DialogController`).
+> - The hub: components only communicate with the Mediator ($O(N)$ connections). "Hey Mediator, I was clicked."
+> - The logic: the Mediator holds the complex coordination logic: "Since Component A was clicked, disable B, enable C, and clear D."
+> - Famous use case: Air Traffic Control. Planes don't talk directly to other planes to avoid crashing; they talk to the ATC tower (the Mediator).
+>
+> **Key takeaway:** Mediator centralizes complex communication between peers. It's heavily used in complex UI screens to prevent components from becoming tightly coupled.
+
 ---
 module: 06-lld
 topic: Design Patterns

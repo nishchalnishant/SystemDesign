@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Event-Driven Architecture (EDA) — decoupling services by publishing events to a durable broker so producers don't need to know about consumers.
+>
+> **Key topics:**
+> - Core idea: source service publishes an event → broker retains it → any number of consumers subscribe independently; adding consumer N+1 doesn't touch the source
+> - EDA vs Request/Response: in REST, A knows B exists and waits; in EDA, A publishes to broker and doesn't know who cares
+> - Event patterns: Event Notification (trigger, no state), Event-Carried State Transfer (full entity snapshot), Event Sourcing (log of all changes = source of truth)
+> - Kafka as the backbone: topics + consumer groups; each consumer group reads independently; offset enables replay
+> - Outbox pattern: write to DB + outbox table in one transaction; CDC publishes outbox to Kafka; prevents dual-write data loss
+> - CQRS + Event Sourcing: Command side writes events; Query side builds read-optimized projections from events
+> - Failure handling: DLQ for failed consumers; retry with backoff; schema evolution with Avro + Schema Registry
+>
+> **Key takeaway:** EDA is the right choice when you have multiple downstream consumers reacting to the same business events — the Outbox pattern + Kafka makes it production-safe.
+
 ---
 module: 04-advanced-topics
 status: unread

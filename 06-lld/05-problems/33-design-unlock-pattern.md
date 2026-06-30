@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Android Unlock Pattern — a graph traversal problem masquerading as LLD. Tests DFS/Backtracking and constraint validation.
+>
+> **Key concepts:**
+> - Core Entities: `PatternValidator`, `Grid` (3x3).
+> - The Rules: You can connect any two dots, *unless* there is a dot directly between them. If there is a dot in between, you can only make the jump if the intermediate dot has *already been visited*.
+> - The Jump Table: Precompute a 2D array (or Map) `jumps[start][end]` which stores the intermediate node. E.g., `jumps[1][3] = 2`.
+> - Backtracking (DFS): To find all valid patterns of length $N$, use DFS. Keep a `visited` boolean array. Before visiting `next`, check if `jumps[current][next]` is non-zero. If it is, ensure `visited[jumps[current][next]]` is true.
+>
+> **Key takeaway:** This is a classic LeetCode algorithm problem (Number of Valid Words for Each Puzzle / Android Unlock Patterns) wrapped in an object-oriented shell. Memorize the "Jump Table" concept to handle the "intermediate dot" rule elegantly.
+
 ---
 module: 06-lld
 topic: Problems

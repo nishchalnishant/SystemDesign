@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Splitwise — a popular problem that tests OOP modeling of complex entities (Expenses, Splits) and algorithmic graph simplification.
+>
+> **Key concepts:**
+> - Core Entities: `User`, `Group`, `Expense`, `Split` (interface).
+> - Split Types (Strategy Pattern): `EqualSplit`, `ExactSplit`, `PercentageSplit`.
+> - Expense Management: An `Expense` has an amount, a paid-by user, and a list of `Split`s detailing who owes what.
+> - The Algorithm: Debt simplification. To minimize transactions, model users as nodes and debts as directed edges. 
+>   1. Calculate the net balance for each user (sum of incoming - sum of outgoing).
+>   2. Separate users into "debtors" (negative balance) and "creditors" (positive balance).
+>   3. Greedily match the largest debtor with the largest creditor to settle debts efficiently.
+>
+> **Key takeaway:** The OOP part requires the Strategy pattern for different split types. The algorithmic part requires the "Minimize Cash Flow" greedy graph algorithm. Both are equally important for passing this interview.
+
 ---
 module: 06-lld
 topic: Problems

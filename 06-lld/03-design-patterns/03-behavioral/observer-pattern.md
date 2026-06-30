@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Observer Pattern — defines a subscription mechanism to notify multiple objects about any events that happen to the object they're observing.
+>
+> **Key concepts:**
+> - The problem: tightly coupling a state-holding object (Subject) to the objects that need to know about its changes (Observers). Hardcoding `chart.update()` inside `StockMarket`.
+> - The fix: the Subject maintains a list of Observers (which implement an `Observer` interface).
+> - Publish/Subscribe: Observers call `subject.subscribe(this)`. When the Subject changes, it loops through the list and calls `observer.update()` on all of them.
+> - Push vs Pull: The Subject can "push" the new data in the `update(data)` method, or it can just notify `update()`, and the Observer "pulls" the data via `subject.getState()`.
+> - Use cases: Model-View-Controller (MVC) where Views observe the Model; event handling systems (button clicks); real-time feeds.
+>
+> **Key takeaway:** Observer is extremely common in LLD (e.g., "Design a Notification System" or "Design a Live Cricket Scoreboard"). It's the OOP foundation of event-driven architectures.
+
 ---
 module: 06-lld
 topic: Design Patterns

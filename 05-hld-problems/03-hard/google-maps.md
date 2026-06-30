@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Google Maps — map tile serving, road graph routing, real-time traffic ingestion from GPS data, and sub-second ETA computation at global scale.
+>
+> **Key design decisions:**
+> - Map tiles: pre-rendered vector/raster tiles at zoom levels 0–20 stored in S3; served via CDN; tile key = (zoom, x, y) quadtree coordinates
+> - Routing graph: road network as directed weighted graph (nodes = intersections, edges = road segments); stored in custom binary format; loaded into memory per region
+> - Routing algorithm: Dijkstra for short distances; Contraction Hierarchies (CH) for long routes (200× faster than plain Dijkstra); pre-process graph offline
+> - Real-time traffic: GPS pings from active navigating users → Kafka → stream processing → traffic speed per road segment → update edge weights in routing graph
+> - ETA: route distance / traffic-adjusted speed per segment; ML model corrects for time-of-day, weather, incidents
+> - Geospatial indexing: H3 hexagonal cells for spatial queries (nearby POIs, traffic density per area); R-tree for bounding-box queries
+> - Map updates: OSM + commercial providers → validate → conflate → push to tile render pipeline; edge case: road closures propagate in <5 min
+>
+> **Key takeaway:** Contraction Hierarchies preprocessing is what makes sub-second routing possible — plain Dijkstra on a full road network takes seconds; CH reduces it to milliseconds by pre-computing shortcuts.
+
 ---
 module: 05-hld-problems
 topic: Hard

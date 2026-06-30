@@ -5,6 +5,19 @@ tags: [09-patterns, system-design, patterns]
 ---
 # The Outbox Pattern
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How to reliably publish events to a message broker (like Kafka) immediately after a database transaction commits, solving the dual-write problem.
+>
+> **Key concepts:**
+> - The Dual-Write Problem: If you update a DB and then publish an event, the broker might be down, leaving the event unpublished. If you publish first, the DB transaction might fail, but the event was already sent.
+> - The Outbox Table: An extra table in the *same* database as your business data.
+> - Transactional Guarantee: You update your business table AND insert an event into the Outbox table in the *same database transaction*. It's atomic.
+> - Message Relay: A separate process (like Debezium via Change Data Capture, or a polling worker) reads the Outbox table and reliably forwards the messages to the broker.
+>
+> **Key takeaway:** The Outbox Pattern is the gold standard for achieving "At-Least-Once" delivery semantics from a microservice to an event bus.
+
 > **Solving the dual-write problem: atomically writing to a database AND publishing an event.**
 
 ---

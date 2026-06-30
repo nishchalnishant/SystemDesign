@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A Rosetta Stone for cloud computing. It maps generic architectural components to their specific AWS, GCP, and Azure service names.
+>
+> **Key concepts:**
+> - Object Storage: AWS S3 == GCP Cloud Storage == Azure Blob Storage.
+> - Message Queues: AWS SQS == GCP Pub/Sub == Azure Service Bus.
+> - Managed Relational DBs: AWS RDS == GCP Cloud SQL == Azure SQL Database.
+> - Serverless Compute: AWS Lambda == GCP Cloud Functions == Azure Functions.
+>
+> **Key takeaway:** In an interview, it's safer to use generic terms ("I will use a managed message queue") rather than vendor-specific ones. But if an interviewer specifically asks "How would you implement this on AWS?", this cheat sheet ensures you know the right managed service to name-drop.
+
 ---
 module: 08-reference
 status: unread

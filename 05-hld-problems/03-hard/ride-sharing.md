@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a ride-sharing platform (Uber) — real-time driver location tracking, geospatial matching, dynamic pricing, and trip management at global scale.
+>
+> **Key design decisions:**
+> - Location tracking: drivers send GPS updates every 4s → Kafka → location store (Redis with GEOADD); high write throughput, short TTL
+> - Geospatial indexing: S2 (Google) or H3 (Uber) cell hierarchy; convert GPS coords to cell ID; find nearby drivers via cell + neighbors lookup
+> - Driver matching: when rider requests → query Redis for drivers within 1km radius → rank by ETA (distance ÷ speed) → offer to nearest; retry expanding radius
+> - State machine: driver states (offline → available → en-route-to-pickup → on-trip → available); state transitions trigger events
+> - Surge pricing: demand/supply ratio per H3 cell; if demand/supply > threshold → multiply base price; real-time recomputed every 60s
+> - Trip management: PostgreSQL for trip records (idempotent); Kafka for trip events (trip_started, trip_ended, payment_completed)
+> - ETA computation: pre-computed road graph (OSRM) → shortest path → adjust with real-time traffic; GPU acceleration for mass matching
+>
+> **Key takeaway:** The geospatial challenge — H3/S2 cell indexing in Redis — is what makes Uber work at scale; without it, "find nearby drivers" degrades to a full table scan with haversine distance.
+
 ---
 module: 05-hld-problems
 topic: Hard

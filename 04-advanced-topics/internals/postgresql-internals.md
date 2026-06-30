@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** PostgreSQL internals — MVCC, WAL, vacuum, buffer pool, and index types; everything needed to answer deep interview follow-ups on PostgreSQL performance and correctness.
+>
+> **Key topics:**
+> - MVCC: xmin (row created by txn) + xmax (row deleted by txn); readers see snapshot at txn start; readers never block writers
+> - WAL (Write-Ahead Log): every change written to WAL before data pages; sequential I/O; enables crash recovery + streaming replication
+> - VACUUM: reclaims dead tuple storage (from MVCC old versions); updates visibility map; prevents transaction ID wraparound
+> - Buffer pool (shared_buffers): 8KB pages cached in RAM; dirty pages flushed at checkpoint; default 128MB, tune to 25% of RAM
+> - Index types: B-tree (range, equality), Hash (equality only), GIN (full-text, JSONB arrays), BRIN (time-series, physically ordered data)
+> - Table partitioning: declarative (RANGE, LIST, HASH) — each partition is a separate physical table; constraint exclusion prunes irrelevant partitions
+> - Transaction isolation: Read Committed (default), Repeatable Read (snapshot), Serializable (SSI); each adds protection vs anomalies
+>
+> **Key takeaway:** PostgreSQL's MVCC is what makes it competitive for concurrent OLTP — but VACUUM must be tuned to keep dead tuple bloat from degrading performance over time.
+
 ---
 module: 04-advanced-topics
 topic: Internals

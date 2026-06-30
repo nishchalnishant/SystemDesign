@@ -1,5 +1,17 @@
 # Head First Object-Oriented Analysis & Design: Chapter Notes
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A complete index of chapter-wise notes for *Head First Object-Oriented Analysis & Design (OOA&D)*.
+>
+> **Key concepts:**
+> - Requirements Gathering: Use cases, user stories, and understanding what the customer actually wants.
+> - Analysis: Translating real-world problems into software objects.
+> - Design Principles: DRY (Don't Repeat Yourself), SRP (Single Responsibility Principle), OCP (Open-Closed Principle).
+> - Architecture: Structuring large applications into manageable, decoupled components.
+>
+> **Key takeaway:** While *Head First Java* teaches you the syntax, this book teaches you *how to design software*. Use this index to jump to specific stages of the software development lifecycle, from gathering requirements (Ch 2) to system architecture (Ch 7).
 Comprehensive chapter-wise notes for mastering OO analysis, design principles, and software architecture.
 
 ## 📖 Table of Contents

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a stock exchange — matching engine, order book, market data distribution, and microsecond-latency infrastructure for financial trading systems.
+>
+> **Key design decisions:**
+> - Order book: per-symbol price-time priority book; buy orders (bids) sorted descending by price; sell orders (asks) sorted ascending; best bid/ask = NBBO
+> - Matching engine: single-threaded per symbol to avoid locks; match buy vs sell when bid ≥ ask; price-time priority (same price → earliest order wins)
+> - Order types: market (execute immediately at best price), limit (execute at specified price or better), stop (trigger at price, then market)
+> - Data structures: price level → doubly-linked list of orders; price levels in Red-Black tree; O(log N) insert/cancel, O(1) best bid/ask
+> - Market data: after every trade → publish trade feed (price, qty, time) + order book delta to all subscribers; fan-out via multicast UDP or pub-sub
+> - Latency: co-location (exchange rack), FPGA for market data processing, kernel bypass (DPDK), CPU pinning; target <100μs round-trip
+> - Persistence: event sourcing (log every order event); replay log to reconstruct order book; WAL for crash recovery
+>
+> **Key takeaway:** The matching engine must be single-threaded per symbol — any locking or coordination introduces latency spikes that fairness-sensitive traders exploit; price-time priority is non-negotiable for regulatory compliance.
+
 ---
 module: 05-hld-problems
 topic: Hard

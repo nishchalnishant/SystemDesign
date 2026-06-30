@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Download Manager — focuses on network protocols (HTTP Range requests), threading, and merging files.
+>
+> **Key concepts:**
+> - Core Entities: `DownloadTask`, `ChunkDownloader`, `FileMerger`, `ConnectionManager`.
+> - HTTP Range Requests: The secret sauce. You send `Range: bytes=0-1023` in the HTTP header to download just a specific chunk of a file.
+> - Thread Pool: The `DownloadTask` determines the file size, divides it into $N$ chunks, and submits $N$ `ChunkDownloader` runnables to an `ExecutorService`.
+> - Merging: As chunks finish, they write to temporary files. Once all complete, the `FileMerger` combines them into the final file.
+> - Resuming: If paused, the system saves the state of which chunks are complete. On resume, it only requests the incomplete byte ranges.
+>
+> **Key takeaway:** Explain how to use `java.util.concurrent.ExecutorService` and `CountDownLatch` (to wait for all chunks to finish before merging). The interviewer is testing your multithreading and network knowledge.
+
 ---
 module: 06-lld
 topic: Problems

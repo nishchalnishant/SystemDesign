@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Consensus algorithms — how distributed systems get multiple nodes to agree on a single value when nodes can crash and messages can be lost.
+>
+> **Key topics:**
+> - Why consensus is hard: no global clock, FLP Impossibility (can't guarantee consensus with even 1 faulty async node)
+> - Raft algorithm: leader election → log replication → safety; node states (Follower, Candidate, Leader)
+> - Raft terms: monotonically increasing logical clocks; election with randomized timeouts to avoid split vote
+> - Log replication: leader writes to majority before committing; follower catches up via AppendEntries RPC
+> - Paxos: the original consensus algorithm — Prepare/Promise/Accept/Commit phases; harder to understand than Raft
+> - Zab (ZooKeeper): similar to Paxos; used by ZooKeeper for leader broadcast
+> - Where used: etcd (Kubernetes), ZooKeeper (Kafka, HBase), CockroachDB, TiKV (Raft), Consul
+>
+> **Key takeaway:** Raft is the algorithm to know deeply — it powers etcd (Kubernetes) and is designed to be explainable; master leader election and log replication.
+
 ---
 module: 01-foundations
 status: unread

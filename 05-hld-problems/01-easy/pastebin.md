@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Pastebin — a text sharing service that introduces object storage, CDN delivery, and TTL-based expiration in a simple read-heavy architecture.
+>
+> **Key design decisions:**
+> - Storage split: metadata (paste_id, user_id, created_at, expires_at, size, visibility) in DB; content in object storage (S3/GCS)
+> - ID generation: random 8-char Base62 string (collision probability negligible at Pastebin scale); check uniqueness in DB before creating
+> - CDN delivery: paste content served via CDN (CloudFront); origin-pull on first request; TTL matches paste expiration
+> - Expiration: lazy deletion (check on read) + background cleanup job (scan for expired rows daily); don't rely on DB TTL alone
+> - Privacy model: public (indexed), unlisted (URL is the password — not searchable), private (requires auth)
+> - Read vs write ratio: reads dominate (read:write ≈ 100:1); cache hot pastes in Redis; metadata for analytics only
+> - Abuse prevention: rate limit paste creation per IP; scan content for malware/abuse keywords; CAPTCHA for anonymous users
+>
+> **Key takeaway:** Pastebin is URL Shortener + object storage — key insight is to separate metadata (DB) from content (S3), and serve content through CDN to avoid origin load.
+
 ---
 module: 05-hld-problems
 topic: Easy

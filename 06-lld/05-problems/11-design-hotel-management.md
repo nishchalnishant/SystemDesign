@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Hotel Management System — tests your ability to model real-world inventory with date-based constraints and dynamic pricing.
+>
+> **Key concepts:**
+> - Core Entities: `Hotel`, `Room`, `RoomType` (Enum), `Guest`, `Reservation`, `Invoice`.
+> - Date-based Inventory: The hardest part is checking if a room is available between `startDate` and `endDate`. 
+>   - Option A: Store reservations as a list and check for overlapping date ranges (O(N) per room).
+>   - Option B: Use a timeline/interval tree for faster querying.
+> - Patterns: Factory (for generating specific room types), Strategy (for pricing — e.g., weekend rates vs weekday rates, or loyalty discounts).
+> - Concurrency: Similar to BookMyShow, multiple guests might try to book the last available Deluxe room for the same dates simultaneously. Require locks on the specific room or room type.
+>
+> **Key takeaway:** The concept of an "Inventory" that varies over time is the core challenge. Make sure your `searchAvailableRooms()` method clearly handles date range overlaps logic.
+
 ---
 module: 06-lld
 topic: Problems

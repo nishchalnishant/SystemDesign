@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A cross-reference guide linking theoretical system design concepts to practical interview problems that heavily feature those concepts.
+>
+> **Key concepts:**
+> - If you want to practice WebSockets: Look at Chat Apps, Collaborative Editors, or Real-time Dashboards.
+> - If you want to practice Graph Databases: Look at Social Network News Feeds or Recommendation Systems.
+> - If you want to practice Geo-Spatial indexing (Quadtrees/Geohashes): Look at Uber/Ride-sharing or Yelp/Proximity services.
+> - If you want to practice rate limiting: Look at API Gateways or DDoS protection designs.
+>
+> **Key takeaway:** Use this map bidirectionally. If you feel weak on "Event Sourcing", find the problem that tests it. If you're tackling "Design Uber", use this map to verify you've included the core expected concepts (Geospatial + Real-time updates).
+
 ---
 module: 07-interview-templates
 topic: Concept to Problem Map

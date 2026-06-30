@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a High-Contention Counter — testing advanced concurrency concepts (like Java's `LongAdder`) to optimize metrics counting under massive load.
+>
+> **Key concepts:**
+> - The Problem: `AtomicLong` uses a single CAS loop. If 1000 threads try to increment it simultaneously, 999 fail, spin, and retry, causing massive CPU contention and cache-line invalidation (false sharing).
+> - Striped Counters: Instead of one variable, use an array of variables (cells). 
+> - The Algorithm: 
+>   - When a thread wants to increment, it hashes its own Thread ID to pick a specific cell in the array and increments that cell using CAS.
+>   - Since threads map to different cells, contention is drastically reduced.
+> - Getting the Total: When you need the actual count, iterate through the array and sum all the cells. (This is slightly slower, but usually reads are rare compared to writes for metrics).
+>
+> **Key takeaway:** This is a very specific systems question. Knowing the difference between `AtomicLong` (good for low contention) and `LongAdder` (Striped cells, good for high contention) is the key to passing this.
+
 ---
 module: 06-lld
 topic: Problems

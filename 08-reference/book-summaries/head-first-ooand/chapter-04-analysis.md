@@ -5,6 +5,18 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Textual analysis. How to translate the use cases written in plain English into concrete classes and methods.
+>
+> **Key concepts:**
+> - Nouns and Verbs: Look at the use case. The nouns (Dog, Door, Remote) are your candidate classes. The verbs (Barks, Opens, Closes) are your candidate methods.
+> - Class Diagrams: Visualizing the classes, their methods, and how they interact before writing any code.
+> - Identifying the Real Problem: Sometimes the use case is hiding the real problem. Textual analysis helps uncover missing objects (like a `Bark` object to represent the sound the dog makes).
+>
+> **Key takeaway:** Don't start coding from a blank slate. Write the use case, highlight the nouns, highlight the verbs, and you instantly have your first draft of a class diagram.
+
 # Ch 04: Analysis
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 180-231

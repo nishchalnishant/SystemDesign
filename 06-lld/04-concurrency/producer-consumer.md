@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Producer-Consumer Pattern — the fundamental concurrency pattern where one or more threads produce data and put it in a shared queue, while one or more threads consume it.
+>
+> **Key concepts:**
+> - The problem: Producers generating data faster than consumers can process it causes OutOfMemory (if queue is unbounded). If they share an `ArrayList` without locking, race conditions corrupt the data.
+> - The primitive fix: `wait()` and `notifyAll()`. Lock a shared object. If the queue is full, the producer calls `wait()`. If empty, the consumer calls `wait()`. They `notifyAll()` each other after adding/removing items.
+> - The modern fix: use a `BlockingQueue` (like `ArrayBlockingQueue`). It handles all the locking, waiting, and notifying internally.
+> - Bounded Buffers: always use a fixed-size queue (bounded buffer). This applies backpressure to producers if consumers are too slow, preventing the system from crashing.
+> - Poison Pill: how to gracefully shut down consumer threads. The producer sends a special "poison pill" object. When the consumer reads it, it terminates its loop.
+>
+> **Key takeaway:** Never implement `wait()/notify()` manually in an interview unless explicitly asked. Say "I will use an `ArrayBlockingQueue` for thread-safe producer-consumer communication."
+
 ---
 module: 06-lld
 topic: Concurrency

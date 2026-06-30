@@ -5,6 +5,18 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Scaling up OOA&D techniques to handle large, complex systems (like a massive strategy game framework).
+>
+> **Key concepts:**
+> - Domain Analysis: When the problem is too big, break it down into smaller, manageable domains.
+> - The Big Picture: You can't write use cases for a massive system all at once. You must first establish the overarching architecture and the main subsystems.
+> - Feature Lists: Before writing detailed use cases, write a high-level list of features the system must support.
+>
+> **Key takeaway:** Big problems are just collections of small problems. Don't let the scale overwhelm you. Break the system down into modules, and apply the OOA&D process (Requirements -> Analysis -> Design) to each module independently.
+
 # Ch 06: Solving Really Big Problems
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 314-357

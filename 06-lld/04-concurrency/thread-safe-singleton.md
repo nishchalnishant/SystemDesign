@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Thread-Safe Singleton Pattern — how to ensure a class has exactly one instance, even when multiple threads try to create it simultaneously.
+>
+> **Key concepts:**
+> - The problem: a basic lazy-loaded singleton (`if (instance == null) instance = new Singleton();`) causes race conditions. Two threads evaluating the `null` check simultaneously will create two instances.
+> - The bad fix: adding `synchronized` to the method signature. This kills performance because *every* call to `getInstance()` acquires a lock, even after the instance is created.
+> - The correct fix: Double-Checked Locking. Check for null, enter `synchronized(Singleton.class)` block, check for null again, then instantiate.
+> - The trap: you MUST declare the instance variable as `volatile`. Without `volatile`, compiler instruction reordering can cause another thread to see a partially constructed object.
+> - The best fix: Joshua Bloch's Enum Singleton (`public enum Singleton { INSTANCE; }`). The JVM guarantees thread safety and serialization safety automatically.
+>
+> **Key takeaway:** If asked to write a Singleton in an interview, write the Double-Checked Locking version and explicitly explain why the `volatile` keyword is absolutely necessary.
+
 ---
 module: 06-lld
 topic: Concurrency

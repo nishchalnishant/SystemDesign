@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Layout Managers in Java Swing and advanced GUI components.
+>
+> **Key concepts:**
+> - Layout Managers: You don't usually specify absolute X, Y coordinates for buttons. You give them to a Layout Manager which decides where they go based on the window size.
+> - BorderLayout: Divides the window into 5 regions (North, South, East, West, Center). Default for a JFrame.
+> - FlowLayout: Places components in a row, wrapping to the next line when space runs out. Default for a JPanel.
+> - BoxLayout: Stacks components vertically.
+>
+> **Key takeaway:** Layout managers are early implementations of responsive design. They allow a UI to gracefully adapt when a user resizes the window, much like Flexbox or CSS Grid do for the web today.
+
 # Ch 13: Work on Your Swing
 
 **Source**: Head First Java, Second Edition | **Pages**: 433-462

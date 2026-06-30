@@ -5,6 +5,19 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How to extract the real requirements from a customer, using a "Dog Door" application as an example.
+>
+> **Key concepts:**
+> - Requirements: What the system *must* do to be successful.
+> - Use Cases: A specific scenario describing what a system does to achieve a particular goal for a particular user (Actor).
+> - Main Success Scenario (Happy Path): The steps where everything goes right.
+> - Alternate Paths: What happens when things go wrong (e.g., the dog gets stuck outside).
+>
+> **Key takeaway:** Customers rarely know exactly what they want. It is your job as an analyst to write down use cases, find the edge cases (alternate paths), and ensure the system accounts for them *before* you write the code.
+
 # Ch 02: Gathering Requirements
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 90-145

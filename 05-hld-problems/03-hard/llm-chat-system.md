@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an LLM chat system (ChatGPT) — GPU inference serving with streaming token delivery, context window management, and cost-efficient routing at massive scale.
+>
+> **Key design decisions:**
+> - Inference serving: requests routed to GPU servers (A100/H100 clusters); model loaded in GPU VRAM; batch requests for efficiency (dynamic batching)
+> - Streaming: SSE (Server-Sent Events) for token-by-token streaming; HTTP/2 for multiplexed connections; no WebSocket needed (unidirectional)
+> - Context management: conversation history stored in DB (PostgreSQL); retrieved on each request; truncated with sliding window when exceeding context limit
+> - Routing: load balancer routes to GPU servers by model (gpt-4, gpt-3.5, claude); KV-cache locality routing (route to server with cached context prefix)
+> - Cost optimization: small/fast model for simple queries; large model only for complex queries; prompt caching for repeated system prompts
+> - Rate limiting: token-based rate limits (not request-based); 1M tokens/day per user; token counting per request before processing
+> - Conversation storage: PostgreSQL for conversation metadata; Cassandra for message history (user_id + conversation_id partition key)
+>
+> **Key takeaway:** Token streaming via SSE (not polling) is critical for UX — users see partial responses immediately; GPU routing with KV-cache locality minimizes latency on follow-up messages.
+
 ---
 module: 05-hld-problems
 topic: Hard

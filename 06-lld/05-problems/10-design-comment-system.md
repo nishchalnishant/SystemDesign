@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Nested Comment System (like Reddit or HackerNews) — tests tree data structures, Composite pattern, and recursive rendering.
+>
+> **Key concepts:**
+> - Core Entities: `User`, `Post`, `Comment`.
+> - Tree Structure (Composite Pattern): A `Comment` contains a list of `Comment`s (its children/replies).
+> - Database Storage: Storing trees in SQL is hard. 
+>   - Adjacency List (storing `parentId`) is simple but requires recursive queries to fetch deep threads.
+>   - Materialized Path (storing `path="1/4/7"`) allows fetching an entire thread in one query (`LIKE '1/4/%'`).
+> - Sorting (Strategy Pattern): Implement strategies for "Top" (upvotes - downvotes), "New", and "Controversial".
+> - Pagination: Fetching the whole tree is too heavy. You must support lazy-loading (e.g., "Load more comments...").
+>
+> **Key takeaway:** The interviewer will heavily probe how you store and retrieve the nested structure from a database. Be prepared to explain the Materialized Path approach for O(1) thread retrieval.
+
 ---
 module: 06-lld
 topic: Problems

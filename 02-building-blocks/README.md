@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Index of all 15 system design building blocks — the reusable Lego pieces that appear in virtually every HLD answer.
+>
+> **Key topics:**
+> - Load balancers, reverse proxy, CDN, caching layer (Redis), message brokers, service discovery
+> - API gateway, distributed locks, rate limiting, sharding, replication, bloom filter
+> - Architecture composition: how all these blocks snap together as systems grow from 1K to 100M users
+> - Each file includes: why it exists, mindmap, trade-offs, failure modes, and interview angles
+>
+> **Key takeaway:** Master all 15 building blocks — every HLD interview is really just a question of which blocks to pick and how to compose them.
+
+---
+
 # System Design Building Blocks
 
 > **Fundamental components used in almost every large-scale system.**  

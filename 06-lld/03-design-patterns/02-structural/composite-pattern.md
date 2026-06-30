@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Composite Pattern — composes objects into tree structures to represent part-whole hierarchies, allowing clients to treat individual objects and compositions uniformly.
+>
+> **Key concepts:**
+> - The problem: operating on trees of objects where leaves and branches have different interfaces. E.g., getting the total price of a shopping cart containing loose Items and bundled Boxes (which contain more items/boxes).
+> - The fix: define a common interface (`Component`) for both leaf nodes and composite nodes (e.g., `FileSystemNode` with `getSize()`).
+> - Leaf: represents end objects (e.g., `File`). `getSize()` returns its own size.
+> - Composite: represents complex objects (e.g., `Folder`). Contains a list of `Component`s. Its `getSize()` iterates through children and sums their sizes.
+> - Client usage: The client calls `getSize()` on the root. It doesn't care if it's looking at a single file or a folder with a million nested files.
+>
+> **Key takeaway:** If an interview problem involves a tree structure (File System, Organization Chart, UI DOM Tree, Nested Tasks), you must immediately think of the Composite pattern.
+
 ---
 module: 06-lld
 topic: Design Patterns

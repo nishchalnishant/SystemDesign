@@ -1,3 +1,23 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** 9 easy HLD interview problems — each introducing one or two core concepts in isolation, building sequentially toward more complex designs.
+>
+> **Problems and core concepts:**
+> - URL Shortener: hashing, Base62 encoding, DB sharding for 100M URLs
+> - Unique ID Generator: Snowflake ID (timestamp + machine ID + sequence), no central coordination
+> - Rate Limiter: token bucket algorithm, Redis INCR + EXPIRE, distributed enforcement
+> - Pastebin: object storage (S3), CDN for content delivery, TTL-based expiration
+> - Key-Value Store: consistent hashing, LSM tree storage engine, tunable replication
+> - Autocomplete: Trie data structure, prefix cache, frequency-ranked suggestions
+> - Web Crawler: distributed URL frontier (BFS queue), Bloom filter deduplication, politeness (robots.txt)
+> - Booking System: optimistic locking, idempotency keys, overbooking prevention with DB transactions
+> - Leaderboard: Redis ZADD/ZRANGE (sorted sets), windowed rankings, score aggregation
+>
+> **Key takeaway:** Solve these in order — each one introduces concepts the next depends on; time yourself at 45 min each using the HLD template.
+
+---
+
 # Easy — HLD Problems
 
 High-level design problems that introduce one or two core concepts in isolation. Do these first and time yourself at 45 minutes each. Use the [HLD template](../../07-interview-templates/hld-template.md) on every run.

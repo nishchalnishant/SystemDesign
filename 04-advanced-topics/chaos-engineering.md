@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Chaos Engineering — the practice of deliberately injecting failures into production systems to discover weaknesses before they cause real outages.
+>
+> **Key topics:**
+> - Principles of Chaos Engineering: hypothesis → experiment → steady state baseline → inject failure → observe → fix
+> - Fault injection types: network latency injection, packet loss, node kill, CPU/memory exhaustion, disk full, clock skew, dependency failure
+> - Resilience patterns tested: circuit breakers, timeouts, retries with jitter, bulkheads, graceful degradation, fallback values
+> - Game Days: structured exercises where teams simulate incidents; builds muscle memory for oncall response
+> - Tools: Chaos Monkey (Netflix, kills EC2 instances), Gremlin (fault injection SaaS), LitmusChaos (Kubernetes), Pumba (Docker)
+> - Blast radius control: start in staging → canary production subset → full production; limit scope to avoid real outages
+> - SRE link: chaos experiments validate SLO assumptions; if a test breaks the SLO, the system wasn't resilient enough
+>
+> **Key takeaway:** Chaos engineering proves your resilience patterns actually work — testing retry logic in staging is not the same as seeing the circuit breaker trip under real production traffic patterns.
+
 ---
 module: 04-advanced-topics
 status: unread

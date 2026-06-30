@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Futures and Async Patterns — how to perform asynchronous, non-blocking programming using `CompletableFuture` (Java's version of Promises).
+>
+> **Key concepts:**
+> - The problem: standard `Future.get()` blocks the thread until the result is ready, wasting thread pool resources.
+> - `CompletableFuture`: allows chaining operations non-blocking. When task A finishes, trigger task B on the same thread pool.
+> - Chaining (`thenApply`, `thenAccept`): transforms the result or consumes it without blocking.
+> - Composition (`thenCompose`): chaining dependent async calls (e.g., fetch user ID -> use ID to fetch profile). Like `flatMap`.
+> - Parallel execution (`thenCombine`): run task A and task B in parallel, then merge their results (e.g., fetch price from Amazon + price from eBay, then compare).
+> - Multi-task (`allOf`, `anyOf`): wait for an array of futures to all complete (scatter-gather), or return as soon as the fastest one finishes.
+> - Error handling (`exceptionally`): cleanly handle exceptions in the async chain without breaking the flow.
+>
+> **Key takeaway:** In modern LLD, blocking I/O is a bottleneck. If an interview asks "How do you query 3 microservices and combine the result?", your answer should be `CompletableFuture.allOf()` running on an `ExecutorService`.
+
 ---
 module: 06-lld
 topic: Concurrency

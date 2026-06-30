@@ -5,6 +5,18 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The lifecycle of an object: Constructors, the Heap, the Stack, and Garbage Collection.
+>
+> **Key concepts:**
+> - The Stack vs The Heap: Method invocations and local variables live on the Stack. Objects (and their instance variables) live on the Heap.
+> - Constructors: The code that runs when you say `new`. It has the same name as the class and no return type. If you don't write one, the compiler provides a no-arg default constructor.
+> - `super()`: The first line of *every* constructor is a call to `super()`, either implicitly added by the compiler or explicitly written by you. This ensures the entire inheritance tree is built properly.
+>
+> **Key takeaway:** Understanding the Stack and the Heap is crucial for debugging `NullPointerException`s and memory leaks. Objects live on the Heap until their reference count drops to zero, at which point the Garbage Collector destroys them.
+
 # Ch 09: Life and Death of an Object
 
 **Source**: Head First Java, Second Edition | **Pages**: 269-306

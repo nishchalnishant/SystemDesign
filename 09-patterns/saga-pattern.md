@@ -5,6 +5,19 @@ tags: [09-patterns, system-design, patterns]
 ---
 # Saga Pattern
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Managing distributed transactions across multiple microservices where standard ACID transactions (like Two-Phase Commit) are not feasible.
+>
+> **Key concepts:**
+> - Local Transactions: A Saga is a sequence of local database transactions. Service A commits its change, then triggers Service B to do its work.
+> - Compensating Transactions: If a step fails (e.g., Service C fails), you cannot "rollback" Service A and B's committed transactions. You must execute *compensating* transactions (e.g., issue a refund in Service A).
+> - Choreography: Services listen to each other's events and react independently. Good for simple workflows (2-4 steps).
+> - Orchestration: A central controller (Orchestrator) explicitly tells each service what to do and handles the rollback logic. Good for complex workflows.
+>
+> **Key takeaway:** Sagas embrace eventual consistency. They are essential for long-running business processes (like booking a flight, hotel, and rental car) where locking rows across multiple databases for the entire duration is impossible.
+
 > **Distributed transactions without 2PC: coordinating multi-service workflows through a sequence of local transactions with compensating actions.**
 
 ---

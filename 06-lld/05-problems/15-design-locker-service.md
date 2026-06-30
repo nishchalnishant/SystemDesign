@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an Amazon Hub / Locker Service — an inventory management problem focused on optimally matching package sizes to container sizes.
+>
+> **Key concepts:**
+> - Core Entities: `LockerFacility`, `Locker` (Enum sizes: S, M, L, XL), `Package` (S, M, L, XL), `Order`, `CodeGenerator`.
+> - The Matching Algorithm: A package can fit in a locker of the *same* size or any *larger* size. You want to assign the smallest available locker that fits the package to preserve large lockers for large packages.
+> - Strategy Pattern: `LockerAssignmentStrategy` encapsulates the logic. (e.g., `OptimalFitStrategy`).
+> - Workflow: Delivery agent arrives -> requests locker for package size M -> system finds optimal locker -> opens locker -> generates 6-digit pickup code -> sends to user.
+> - Expiration: Lockers are held for ~3 days. A background job must sweep expired lockers, refund the user, and mark the locker available.
+>
+> **Key takeaway:** The core algorithm is simple but easy to mess up. A Small package fits S, M, L, XL. A Large package only fits L, XL. Use a sorted mapping or Enums with size comparators to handle this cleanly.
+
 ---
 module: 06-lld
 topic: Problems

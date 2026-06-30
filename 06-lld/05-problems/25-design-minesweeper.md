@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Minesweeper — tests your ability to model a game board, handle cell states, and implement recursive flood-fill algorithms (DFS/BFS).
+>
+> **Key concepts:**
+> - Core Entities: `Game`, `Board`, `Cell`.
+> - State Pattern (Cell): A `Cell` can be `HIDDEN`, `REVEALED`, or `FLAGGED`. It also holds its content (`MINE` or `NUMBER_1_TO_8`).
+> - The Setup Phase: Placing $M$ mines randomly on an $N \times N$ board, then calculating the adjacent mine count for all non-mine cells.
+> - The Game Loop (Flood Fill): When a user clicks a `HIDDEN` cell:
+>   - If it's a mine: Game Over.
+>   - If it's a number: Reveal just that cell.
+>   - If it's empty (0 adjacent mines): Reveal it, then recursively (or using a queue/BFS) reveal all its 8 neighbors. If any neighbor is also a 0, continue the recursion.
+>
+> **Key takeaway:** The recursion (Flood Fill) is the core algorithmic challenge. Ensure you check boundary conditions (`x < 0 || y >= N`) and only recurse on `HIDDEN` cells to prevent infinite loops.
+
 ---
 module: 06-lld
 topic: Problems

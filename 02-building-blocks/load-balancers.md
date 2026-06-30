@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Load balancers — distributing incoming traffic across multiple servers to improve availability, throughput, and latency.
+>
+> **Key topics:**
+> - L4 (Transport Layer) vs L7 (Application Layer): L4 routes by IP/port (faster), L7 routes by HTTP path/headers (smarter)
+> - Routing algorithms: Round Robin, Weighted Round Robin, Least Connections, IP Hash, Consistent Hashing
+> - Health checks: active (ping) vs passive (error rate monitoring); removing unhealthy instances from rotation
+> - Sticky sessions: directing same client to same server — useful for stateful apps; risks: uneven distribution
+> - Global Server Load Balancing (GSLB): DNS-based routing across datacenters for multi-region failover
+> - Hardware LB (F5, Citrix) vs Software LB (Nginx, HAProxy, Envoy) vs Cloud LB (AWS ALB/NLB)
+> - Failure modes: LB becomes SPOF → active-passive or active-active redundant LB pairs
+>
+> **Key takeaway:** Use L7 (ALB) for microservices routing with path-based rules; use L4 (NLB) for raw TCP performance and database traffic.
+
 ---
 module: 02-building-blocks
 status: unread

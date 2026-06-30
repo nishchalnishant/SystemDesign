@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Master index for a comprehensive system design interview preparation repo targeting SDE-2/SDE-3 roles.
+>
+> **Key topics:**
+> - Repo structure overview: 9 directories covering HLD, LLD, patterns, templates, and reference material
+> - Content inventory: 36 HLD problems (9 easy, 7 medium, 20 hard), 36 LLD problems, 21 design patterns, 16 building blocks
+> - Recommended 4–8 week study plan with weekly milestones
+> - Quick-reference table linking each concept to its file location
+> - Study order: Foundations → Building Blocks → Scaling → Advanced Topics → HLD Problems → LLD Problems → Interview Templates
+>
+> **Key takeaway:** This is the navigation hub — use it to find any topic and follow the structured study order to become interview-ready.
+
+---
+
 # System Design — Interview Preparation (SDE-2 / SDE-3)
 
 Consolidated system design guide for senior/staff engineer interviews. No fluff, no duplicates. Covers HLD, LLD, distributed systems, and interview execution.

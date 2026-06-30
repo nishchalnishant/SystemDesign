@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Service Discovery — how services find each other in dynamic environments where IPs change constantly (containers, autoscaling).
+>
+> **Key topics:**
+> - Problem: hard-coded IP 10.0.1.45; Kubernetes pod restarts → new IP; service calls return 500s
+> - Service Registry: database of {service name → [IP:port, health status]}; services register on startup, deregister on shutdown or TTL expiry
+> - Client-Side Discovery: client queries registry → gets instance list → does its own load balancing (Netflix Eureka + Ribbon)
+> - Server-Side Discovery: client calls LB → LB queries registry → routes to instance; simpler client, centralized routing (AWS ALB + ECS)
+> - Health checks: active polling (registry pings service) vs passive (service sends heartbeat); stale entries removed on TTL expiry
+> - Tools: Consul (DNS + API + health checks), etcd (Raft-backed key-value), ZooKeeper (ephemeral nodes), Kubernetes service DNS
+> - DNS-based discovery: service DNS resolves to current healthy IPs; low TTL for fast propagation; used by Kubernetes natively
+>
+> **Key takeaway:** In Kubernetes, DNS-based service discovery is built-in; for non-K8s environments, Consul is the go-to — register on startup, deregister via health check failure.
+
 ---
 module: 02-building-blocks
 status: unread

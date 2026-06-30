@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a real-time leaderboard — ranking millions of players by score with fast top-N and individual rank queries using Redis sorted sets.
+>
+> **Key design decisions:**
+> - Core data structure: Redis Sorted Set — ZADD for score update, ZRANGE/ZREVRANGE for top-N, ZRANK for player rank; all O(log N) operations
+> - Score update: ZADD player_id score (absolute set) or ZINCRBY player_id delta (incremental); atomic, no race conditions
+> - Global rank for player: ZREVRANK leaderboard player_id → O(log N); nearby players with ZREVRANGE rank±5
+> - Windowed leaderboards (daily/weekly): separate sorted sets per window with TTL; ZUNIONSTORE to merge; background expiry
+> - Scale: 100M players × 16 bytes (member + score) ≈ 1.6 GB; fits in single Redis instance; sharding by game_id for many games
+> - DB persistence: Redis is source of truth for ranking; persist to DB asynchronously for history and analytics
+> - Percentile calculation: ZCARD (total count) + ZRANK (position) → percentile = (total - rank) / total × 100
+>
+> **Key takeaway:** Redis sorted sets are purpose-built for leaderboards — ZADD + ZREVRANK gives you real-time ranking with O(log N) updates and reads; no DB needed for real-time queries.
+
 ---
 module: 05-hld-problems
 topic: Easy

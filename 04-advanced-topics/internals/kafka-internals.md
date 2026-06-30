@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Kafka internals — how the distributed streaming platform achieves high throughput, durability, and exactly-once semantics.
+>
+> **Key topics:**
+> - Architecture: Topics → Partitions (ordered append-only log) → Consumer Groups (each gets its own offset cursor)
+> - Write path: producer → leader partition → ISR (in-sync replicas) → ack to producer; acks=all for no data loss
+> - Zero-copy: sendfile() syscall delivers data from page cache to network socket without copying to userspace → 2× throughput
+> - Consumer offset: Kafka stores offsets in __consumer_offsets topic; consumers commit after processing; enables replay
+> - Log compaction: per-key keeps only latest value; enables Kafka as a changelog/compacted state store
+> - Exactly-once semantics: idempotent producer (deduplication per session) + transactional API (atomic cross-partition writes)
+> - Rebalancing: consumer joins/leaves trigger partition reassignment; Cooperative Sticky assignor minimizes disruption
+>
+> **Key takeaway:** Kafka's throughput comes from sequential disk I/O (log append) + zero-copy networking + consumer pull model — all three must be understood to explain why it outperforms traditional message queues by 10×.
+
 ---
 module: 04-advanced-topics
 topic: Internals

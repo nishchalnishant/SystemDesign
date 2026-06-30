@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Java Remote Method Invocation (RMI), servlets, and enterprise computing concepts.
+>
+> **Key concepts:**
+> - RMI: Allows an object on one machine to call methods on an object running on another machine as if it were local.
+> - Stubs and Skeletons: The client uses a "Stub" (a proxy) that looks like the real object. The server uses a "Skeleton" to unpack the network call and invoke the real object.
+> - Servlets: Java code running inside a web server (like Tomcat) that handles HTTP requests and responses.
+> - Jini (Apache River): An older technology for network service discovery.
+>
+> **Key takeaway:** While RMI is mostly legacy today (replaced by REST APIs, gRPC, and microservices), the underlying concept—using a local proxy (stub) to abstract away the complexity of a network call—remains a fundamental architectural pattern.
+
 # Ch 18: Distributed Computing
 
 **Source**: Head First Java, Second Edition | **Pages**: 641-682

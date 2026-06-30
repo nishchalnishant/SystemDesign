@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Visitor Pattern — lets you separate algorithms from the objects on which they operate.
+>
+> **Key concepts:**
+> - The problem: you have a complex tree/structure of different objects (e.g., AST nodes, or Document elements). You need to add a new operation (e.g., "Export to XML") that behaves differently for each node type. Modifying every node class violates OCP and pollutes the domain models.
+> - The fix: move the operation logic into a separate `Visitor` class.
+> - Double Dispatch: the core mechanism. The element calls `visitor.visit(this)`. The visitor executes the logic specific to that element type.
+> - Structure: `Element` interface has `accept(Visitor)`. `Visitor` interface has `visit(TypeA)`, `visit(TypeB)`.
+> - Pros: adding a new operation (e.g., "Export to JSON") just means creating a new `JsonVisitor` class. Zero changes to the element classes.
+> - Cons: adding a new *element type* requires updating every single Visitor interface and implementation.
+>
+> **Key takeaway:** Visitor is the most complex pattern. Only use it when your object structure (the types of nodes) is very stable, but you frequently need to add new operations across that structure.
+
 ---
 module: 06-lld
 topic: Design Patterns

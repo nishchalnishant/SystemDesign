@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A comprehensive glossary defining the most important vocabulary and terminology used in System Design interviews.
+>
+> **Key concepts:**
+> - Data concepts: Sharding, Partitioning, Replication, Consistent Hashing.
+> - Consistency models: Strong Consistency, Eventual Consistency, Linearizability.
+> - Networking concepts: CDN, Load Balancer, API Gateway, Reverse Proxy.
+> - Concurrency concepts: Race condition, Deadlock, Semaphore, Mutex.
+>
+> **Key takeaway:** Using the exact right terminology (e.g., "We will use Consistent Hashing to minimize cache invalidation during node failure") immediately signals seniority to the interviewer. Use this glossary to refine your technical vocabulary.
+
 ---
 module: 08-reference
 status: unread

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How distributed systems detect, order, and resolve concurrent write conflicts — logical clocks, consistency models, LWW, vector clocks, and CRDTs.
+>
+> **Key topics:**
+> - The core problem: no global clock in distributed systems → concurrent writes cannot be unambiguously ordered
+> - Lamport timestamps: logical clock establishing happens-before ordering (but not causality)
+> - Vector clocks: per-node counters that track causal relationships and detect true conflicts
+> - Consistency levels: strong (linearizability) → sequential → causal → eventual
+> - Conflict resolution: Last Write Wins (simple but lossy), Multi-Value/siblings (keep all, client resolves), CRDTs (merge automatically)
+> - CRDTs: G-Counter, PN-Counter, OR-Set, LWW-Register — designed for conflict-free automatic merging
+> - Where each approach is used: DynamoDB (LWW + vector clock), Riak (siblings), Redis (CRDT counters)
+>
+> **Key takeaway:** CRDTs are the gold standard for conflict-free eventual consistency — use them whenever you can model your data as counters, sets, or maps.
+
 ---
 module: 01-foundations
 status: unread

@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an Order Management System (OMS) — tests your ability to handle complex, multi-step distributed workflows (like reserving inventory, charging payment, then confirming).
+>
+> **Key concepts:**
+> - Core Entities: `Order`, `OrderLineItem`, `InventoryManager`, `PaymentProcessor`, `Warehouse`.
+> - State Pattern: `Order` moves through `CREATED`, `PENDING_PAYMENT`, `CONFIRMED`, `SHIPPED`, `DELIVERED`, `CANCELLED`.
+> - Saga Pattern (LLD variation): The orchestrator calls Inventory (reserve items), then Payment (charge card). If Payment fails, it must call Inventory (release items) to rollback the transaction.
+> - Observer Pattern: Notifications (email, SMS) triggered by state transitions.
+>
+> **Key takeaway:** The main challenge is the rollback mechanism if a later step fails. Clearly define the `OrderOrchestrator` class that handles the try-catch block and invokes the compensating transactions (un-reserve inventory, refund payment) if necessary.
+
 ---
 module: 06-lld
 topic: Problems

@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Core Concurrency Patterns and Utilities — the essential thread synchronization tools beyond basic `synchronized` blocks.
+>
+> **Key concepts:**
+> - `ReadWriteLock`: allows multiple threads to read simultaneously, but only one thread to write (and blocks reads while writing). Crucial for cache implementations.
+> - `Semaphore`: restricts the number of concurrent threads accessing a resource (e.g., max 10 DB connections). It's a bouncer with $N$ permits. Essential for Rate Limiters.
+> - `CountDownLatch`: makes one or more threads wait until a set of operations being performed in other threads completes. Useful for scatter-gather (e.g., query 3 APIs in parallel, wait for all 3 to finish).
+> - `ConcurrentHashMap`: thread-safe map that uses bucket-level locking (lock stripping) instead of locking the whole map. Much faster than `Collections.synchronizedMap()`.
+> - Thread Pools (`ExecutorService`): never create threads manually (`new Thread()`). Use pools to reuse threads, bound resource usage, and handle task queuing.
+> - `AtomicInteger` / `AtomicLong`: lock-free, thread-safe primitives using CAS (Compare-And-Swap) hardware instructions. Perfect for counters.
+>
+> **Key takeaway:** Learn to map LLD problems to the right concurrency tool: Cache = `ReadWriteLock` + `ConcurrentHashMap`. Rate Limiter = `Semaphore`. Scatter-Gather = `CountDownLatch`. Counter = `AtomicInteger`.
+
 ---
 module: 06-lld
 topic: Concurrency

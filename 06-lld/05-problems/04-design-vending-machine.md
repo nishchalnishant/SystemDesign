@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Vending Machine — the textbook example for demonstrating the State Design Pattern.
+>
+> **Key concepts:**
+> - Core Entities: `VendingMachine` (context), `State` (interface), `Item`, `Inventory` (manages stock), `Coin`/`Note` (Enums).
+> - States: `IdleState`, `HasMoneyState`, `DispensingState`, `OutOfStockState`.
+> - State Pattern implementation: Each state implements methods like `insertCoin()`, `selectProduct()`, `dispense()`, and `cancel()`. If an action is invalid for a state (e.g., `dispense()` while in `IdleState`), it throws an exception.
+> - Workflow: User inserts coin -> transitions to `HasMoneyState`. User selects product -> validates stock -> transitions to `DispensingState`. Dispenses item, returns change -> transitions back to `IdleState`.
+>
+> **Key takeaway:** DO NOT use if-else blocks for state management in a Vending Machine interview. The interviewer specifically wants to see a clean, polymorphic State Pattern implementation.
+
 ---
 module: 06-lld
 topic: Problems

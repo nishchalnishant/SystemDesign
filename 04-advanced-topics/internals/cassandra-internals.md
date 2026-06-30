@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Cassandra internals — how a leaderless, ring-based distributed database achieves massive write throughput and tunable consistency.
+>
+> **Key topics:**
+> - Ring architecture: consistent hashing places nodes on a ring; partition key hash determines owning node; no single master
+> - Write path: Commit Log (durability) → MemTable (in-memory) → SSTable (immutable on-disk); all writes sequential = very fast
+> - Replication: replicate to N adjacent nodes in ring; reads from R nodes; W+R>N = quorum consistency
+> - Consistency levels: ONE (fastest, risk stale), QUORUM (balanced), ALL (strongest, risk availability); tunable per operation
+> - Compaction: SSTables accumulate → compaction merges and deduplicates; Size-Tiered vs Leveled strategies
+> - Anti-entropy: read repair (fix inconsistency on read), hinted handoff (buffer writes for down nodes), Merkle tree sync (periodic)
+> - Data modeling: primary key = partition key + clustering columns; design tables around queries, not entities
+>
+> **Key takeaway:** Cassandra's write speed comes from sequential disk I/O (MemTable flush) — the trade-off is eventual consistency and no cross-partition transactions; model your data around your read patterns.
+
 ---
 module: 04-advanced-topics
 topic: Internals

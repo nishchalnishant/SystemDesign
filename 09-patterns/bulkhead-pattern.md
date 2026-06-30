@@ -5,6 +5,18 @@ tags: [09-patterns, system-design, patterns]
 ---
 # Bulkhead Pattern
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Isolating failures in a distributed system so that a failure in one component doesn't cascade and take down the entire system.
+>
+> **Key concepts:**
+> - The Ship Metaphor: A ship is divided into watertight compartments (bulkheads). If the hull is breached, only one compartment floods, and the ship stays afloat.
+> - Connection Pools: Dedicating specific thread/connection pools to specific downstream services. If Service A is slow, it exhausts its own pool, but Service B's pool remains unaffected.
+> - Hardware Isolation: Running critical and non-critical workloads on completely separate infrastructure.
+>
+> **Key takeaway:** The Bulkhead pattern is a defensive architecture strategy. It sacrifices some resource efficiency (by not pooling all resources globally) in exchange for massive gains in system resiliency.
+
 > Isolate components into pools so that if one fails or becomes slow, the failure cannot cascade and exhaust shared resources, sinking the entire system.
 
 ---

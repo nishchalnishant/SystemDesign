@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an ad click aggregator — high-volume event ingestion with near-real-time aggregation for dashboards and accurate batch aggregation for billing.
+>
+> **Key design decisions:**
+> - Dual pipeline (Lambda Architecture): Speed layer (Flink/Kafka Streams → real-time counts) + Batch layer (Spark → accurate historical counts); merge for read queries
+> - Event ingestion: click events → Kafka (partitioned by ad_id); 10K events/sec → scale horizontally; Kafka retains 7 days for reprocessing
+> - Deduplication: Bloom filter in Flink for same-session dedup; exact dedup via Redis SETNX with TTL for cross-session; remove bot clicks via fraud filter
+> - Aggregation windows: 1-minute tumbling windows in Flink; store in Redis sorted sets for real-time dashboard; Spark hourly/daily for billing-accurate counts
+> - Query API: GET /clicks?ad_id=X&start=T1&end=T2&granularity=minute; served from pre-aggregated results store
+> - Fault tolerance: Flink checkpoints every 60s; on failure, replay from last checkpoint offset; exactly-once via checkpoint + transactional writes
+> - Storage: real-time counts in Redis; historical in Cassandra (ad_id + window start → count); compact with time-series optimization
+>
+> **Key takeaway:** Lambda architecture is necessary here — real-time Flink for dashboards (low latency, approximate), Spark batch for billing (high accuracy, high latency); don't try to serve both from one pipeline.
+
 ---
 module: 05-hld-problems
 topic: Hard

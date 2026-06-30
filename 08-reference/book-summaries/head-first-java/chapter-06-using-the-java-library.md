@@ -5,6 +5,18 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Exploring the Java Standard Library (API), particularly focusing on `ArrayList` and reading JavaDocs.
+>
+> **Key concepts:**
+> - Arrays vs ArrayList: Standard arrays have a fixed size upon creation. `ArrayList` grows and shrinks dynamically.
+> - Packages: Java classes are grouped into packages (like folders). You must `import java.util.ArrayList;` to use it, unless it's in `java.lang` (which is imported automatically).
+> - Standard Library: You don't need to write everything from scratch. Java comes with thousands of pre-built classes.
+>
+> **Key takeaway:** Never use a standard array when you don't know the exact size of the collection in advance. `ArrayList` is the most commonly used data structure in Java programming.
+
 # Ch 06: Using the Java Library
 
 **Source**: Head First Java, Second Edition | **Pages**: 159-198

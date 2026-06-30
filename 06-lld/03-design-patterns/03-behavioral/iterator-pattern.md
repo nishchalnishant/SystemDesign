@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Iterator Pattern — provides a way to access the elements of an aggregate object sequentially without exposing its underlying representation (list, stack, tree, etc.).
+>
+> **Key concepts:**
+> - The problem: you want to iterate over a custom collection (e.g., a Binary Search Tree or a Graph), but you don't want to expose its internal node structure to the client.
+> - The fix: extract the traversal behavior into a separate `Iterator` object.
+> - Interface: the Iterator has methods like `hasNext()` and `next()`.
+> - Decoupling: the client code uses the Iterator interface, completely unaware of whether it's traversing an array, a linked list, or a complex tree.
+> - Built-in: in Java, this is deeply integrated via the `Iterable` and `Iterator` interfaces, powering the enhanced `for-each` loop.
+>
+> **Key takeaway:** You rarely need to write this from scratch in LLD interviews because standard libraries provide it. However, if asked to implement a custom data structure (like a specialized graph), providing an Iterator is the correct OOP approach.
+
 ---
 module: 06-lld
 topic: Design Patterns

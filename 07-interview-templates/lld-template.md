@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The definitive Low-Level Design (LLD) interview template to structure a 45-minute object-oriented design session.
+>
+> **Key concepts:**
+> - Phase 1: Requirements (5 min). Define the core entities and actions.
+> - Phase 2: Class Diagram / Core Entities (10 min). Identify the nouns (Classes) and their relationships (Has-A vs Is-A).
+> - Phase 3: APIs / Interface Design (10 min). Identify the verbs. What are the public methods exposed by the core orchestrator?
+> - Phase 4: Design Patterns (10 min). Where is the logic getting messy? Apply Strategy (for rules), State (for lifecycles), or Factory (for creation).
+> - Phase 5: Code Implementation (10 min). Write the skeleton code for the most complex method.
+>
+> **Key takeaway:** Do not start writing code immediately. Spend the first 20 minutes agreeing on the classes and interfaces with the interviewer. If the class diagram is wrong, the code will be wrong.
+
 ---
 module: 07-interview-templates
 status: unread

@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The absolute minimum set of latency numbers and capacity metrics you must memorize for System Design interviews.
+>
+> **Key concepts:**
+> - Latency Hierarchy: L1 cache ($~0.5\text{ns}$) $\rightarrow$ Mutex lock ($~25\text{ns}$) $\rightarrow$ Main memory ($~100\text{ns}$) $\rightarrow$ SSD read ($~10,000\text{ns}$ or $10\mu\text{s}$) $\rightarrow$ Network round trip ($~150\text{ms}$).
+> - The Golden Rule: Reading from disk is ~100x slower than reading from memory. A network call is ~1,000,000x slower than reading from memory.
+> - Availability 9s: 
+>   - 99% = 3.65 days of downtime/year.
+>   - 99.9% ("three nines") = 8.76 hours/year.
+>   - 99.99% ("four nines") = 52 minutes/year.
+>
+> **Key takeaway:** You don't need exact numbers, just orders of magnitude. Knowing that a cross-country network round trip takes $~150\text{ms}$ instantly explains why CDNs are strictly necessary for global static asset delivery.
+
 ---
 module: 08-reference
 status: unread

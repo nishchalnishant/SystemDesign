@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Security fundamentals for distributed systems — authentication types, authorization models, OAuth 2.0/OIDC, JWT, TLS, CORS, OWASP vulnerabilities, and Zero Trust patterns.
+>
+> **Key topics:**
+> - AuthN vs AuthZ: authentication (who are you?) vs authorization (what can you do?)
+> - Auth types: session (stateful, hard to scale) vs JWT (stateless, can't revoke) vs API keys vs mTLS
+> - JWT deep dive: Header.Payload.Signature structure, HS256 vs RS256, revocation problem & short TTL fix
+> - OAuth 2.0 flows: Authorization Code (web), PKCE (mobile/SPA), Client Credentials (machine-to-machine)
+> - TLS 1.3: 1-RTT handshake, forward secrecy, mTLS for service mesh mutual authentication
+> - OWASP Top 10: SQL injection, XSS, broken auth, IDOR, SSRF — with prevention strategies
+> - Authorization models: RBAC (role-based), ABAC (attribute-based), ACL (access-control list)
+>
+> **Key takeaway:** Use JWT with short TTL + refresh token for stateless auth at scale; add mTLS between services in a service mesh for zero-trust security.
+
 ---
 module: 01-foundations
 status: unread

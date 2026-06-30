@@ -1,3 +1,15 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Transcripts of full 45-minute mock interviews. It shows the dialogue between a strong candidate and an interviewer, including how to handle interruptions and redirects.
+>
+> **Key concepts:**
+> - The Dialogue: See exactly how a candidate transitions from requirements gathering to capacity estimation using phrases like "Before we draw boxes, let's agree on the scale."
+> - Handling Pushback: Notice how the candidate reacts when the interviewer says "I don't like that database choice." (Spoiler: They don't get defensive; they discuss the trade-offs).
+> - Time Management: See how the candidate checks the clock and explicitly defers deep-dives to ensure the overall architecture is completed first.
+>
+> **Key takeaway:** Reading these transcripts is the closest thing to shadowing a real interview. Pay attention to the *annotated brackets* which explain the strategy behind the candidate's responses.
+
 ---
 module: 07-interview-templates
 topic: Worked Examples — Full 45-Minute Session Walkthroughs

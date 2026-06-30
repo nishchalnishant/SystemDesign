@@ -5,6 +5,17 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The introduction to the *Head First OOA&D* learning approach.
+>
+> **Key concepts:**
+> - Metacognition: Tricking your brain into thinking this material matters through visual learning, exercises, and redundancy.
+> - OOA&D defined: Object-Oriented Analysis (figuring out what the system needs to do) and Object-Oriented Design (figuring out how the code should be structured).
+>
+> **Key takeaway:** Like all Head First books, you need to actively engage with the material to retain the complex architectural concepts introduced later.
+
 # Introduction: Introduction
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 24-35

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Google Drive — cloud file storage with real-time collaboration, conflict resolution, fine-grained permissions, and offline support at petabyte scale.
+>
+> **Key design decisions:**
+> - File storage: chunked uploads (4MB chunks); each chunk content-addressed by SHA256 hash → deduplication across all users; stored in GCS/S3
+> - Metadata: file tree (folder hierarchy), file versions, chunk manifests stored in PostgreSQL or Spanner; chunk store keyed by hash
+> - Sync protocol: client maintains local file tree + version vectors; on upload, diff local vs server state; upload only changed chunks (delta sync)
+> - Conflict resolution: last-write-wins for simple files; OT/CRDT for collaborative documents (Google Docs); version branching for offline edits
+> - Permissions: ACL table (file_id, user_id, permission_level); inherited permissions (folder grants access to children); Google Workspace integration
+> - Real-time collaboration: WebSocket channel per document; operational transformation (OT) for concurrent edits; server applies OT to resolve conflicts
+> - Offline support: local SQLite file manifest; sync changes queue persisted locally; push all pending changes on reconnect
+>
+> **Key takeaway:** Content-addressed chunk storage (SHA256 hash as key) enables global deduplication — if 1000 users upload the same file, only one copy is stored; delta sync means only changed chunks are transferred.
+
 ---
 module: 05-hld-problems
 topic: Hard

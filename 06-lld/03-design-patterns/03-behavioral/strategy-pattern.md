@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Strategy Pattern — defines a family of algorithms, encapsulates each one, and makes them interchangeable at runtime.
+>
+> **Key concepts:**
+> - The problem: a class does something specific in lots of different ways (e.g., calculating pricing for normal, premium, and VIP users), leading to massive `if-else` blocks that violate OCP.
+> - The fix: extract the algorithms into separate classes that all implement a common interface.
+> - Interface: `PricingStrategy` with `calculatePrice(cart)`.
+> - Concrete Strategies: `NormalPricing`, `VipPricing`.
+> - Context: the `Checkout` class holds a `PricingStrategy` reference. It calls `strategy.calculatePrice(cart)`. You can swap the strategy at runtime.
+> - Difference from State: State transitions are usually automatic and internal; Strategies are usually injected by the client and stay the same for the duration of the task.
+>
+> **Key takeaway:** This is arguably the most important pattern in LLD. Any time an interview problem has "multiple ways to do X" (payment methods, sorting algorithms, pricing rules, rate-limiting algorithms), use Strategy.
+
 ---
 module: 06-lld
 topic: Design Patterns

@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Tetris — a very complex game state problem that tests 2D array manipulation, matrix rotation math, and game loops.
+>
+> **Key concepts:**
+> - Core Entities: `Game`, `Board` (2D array, e.g., 20x10), `Tetromino` (the falling piece).
+> - Tetromino (Factory): 7 distinct shapes (I, J, L, O, S, T, Z). Each is represented by a small 2D array or a list of relative coordinates.
+> - Actions (Command Pattern): Move Left, Move Right, Move Down, Rotate, Drop.
+> - Collision Detection: Before applying any command, the system must simulate it. If the new coordinates overlap with the board boundaries or existing settled blocks, the move is invalid.
+> - Rotation Logic: Rotating a 2D matrix 90 degrees involves transposing the matrix and reversing the rows (or applying a standard 2D rotation matrix: `x' = -y, y' = x`).
+> - Line Clearing: After a piece settles, check all rows. If a row is full, remove it, shift all rows above it down by 1, and increment the score.
+>
+> **Key takeaway:** Collision detection is the hardest part. Always keep the `Tetromino`'s local coordinates separate from its global position `(x, y)` on the `Board`. Add the local offsets to `(x, y)` to check against the board array.
+
 ---
 module: 06-lld
 topic: Problems

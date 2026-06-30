@@ -5,6 +5,18 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Dealing with the inevitable truth of software development: requirements will always change mid-project.
+>
+> **Key concepts:**
+> - Updating Use Cases: When the customer asks for a new feature (like a bark recognizer for the Dog Door), you must first update the use case, not the code.
+> - Code Flexibility: If your code is tightly coupled, a requirement change will require a massive rewrite.
+> - Delegation: Separating responsibilities. Instead of the Dog Door handling the bark recognition, delegate that to a `BarkRecognizer` object.
+>
+> **Key takeaway:** The single constant in software engineering is change. By encapsulating what varies and delegating responsibilities, you create a system that can absorb new requirements without breaking existing functionality.
+
 # Ch 03: Requirements Change
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 146-179

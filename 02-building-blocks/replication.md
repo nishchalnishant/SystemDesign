@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Database replication — copying data across multiple nodes for high availability, read scaling, and durability.
+>
+> **Key topics:**
+> - Leader-Follower (Primary-Replica): all writes to leader, reads from followers; replication lag → stale reads possible
+> - Multi-Leader: multiple primaries accept writes; used for multi-datacenter active-active; requires conflict resolution
+> - Leaderless (Dynamo-style): write to W nodes, read from R nodes; quorum W+R>N guarantees freshness; sloppy quorum for availability
+> - Replication lag: replica may be seconds behind leader; read-your-own-writes requires routing reads to leader for that user
+> - Synchronous vs Asynchronous replication: sync = no data loss on failover but slower writes; async = fast writes but potential data loss on crash
+> - Failover: automatic promotion on leader death; split-brain risk if old leader comes back; use fencing tokens
+> - Where used: PostgreSQL streaming replication, MySQL binlog replication, Redis Sentinel, MongoDB replica sets
+>
+> **Key takeaway:** Leader-follower is the default — use synchronous replication for at least one follower (semi-sync) so failover has zero data loss for the most recent committed writes.
+
 ---
 module: 02-building-blocks
 status: unread

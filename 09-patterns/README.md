@@ -6,6 +6,18 @@ tags: [09-patterns, system-design, distributed-patterns]
 ---
 # System Design Patterns
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** An index of common cross-cutting distributed system patterns and anti-patterns.
+>
+> **Key concepts:**
+> - Patterns vs Building Blocks: While a load balancer is a building block, the way you use it to route traffic during a monolith-to-microservice migration is a *pattern* (Strangler Fig).
+> - Distributed Transactions: Handling state changes across multiple services (Saga, 2PC, Outbox).
+> - Resiliency: Preventing total system collapse when one component fails (Bulkhead, Anti-patterns).
+>
+> **Key takeaway:** In system design interviews, being able to name-drop a pattern (e.g., "To avoid the dual-write problem, we'll use the Outbox pattern here") immediately signals seniority and deep distributed systems knowledge.
+
 These are cross-cutting distributed system patterns — each one solves a specific class of problem that appears across many different systems. Unlike building blocks (which are components), these are *protocols and approaches* that govern how components interact.
 
 ---

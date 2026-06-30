@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Network programming with Sockets and Multithreading in Java.
+>
+> **Key concepts:**
+> - Sockets: A `Socket` is an object representing a network connection between two machines. A `ServerSocket` listens for incoming client requests.
+> - Multithreading: You need threads so your program can do two things at once (like reading from the network while updating the GUI).
+> - `Runnable` and `Thread`: You implement the `Runnable` interface (defining a `run()` method), pass it to a new `Thread` object, and call `start()`.
+> - Synchronization: If two threads modify the same object at the same time, you get a race condition. Use the `synchronized` keyword to lock the object so only one thread accesses it at a time.
+>
+> **Key takeaway:** Multithreading introduces extreme complexity (race conditions, deadlocks). Always lock the minimum amount of code necessary when dealing with shared mutable state.
+
 # Ch 15: Make a Connection
 
 **Source**: Head First Java, Second Edition | **Pages**: 505-562

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Chess — a complex OOP modeling problem focusing on inheritance, polymorphism, and validating complex business rules.
+>
+> **Key concepts:**
+> - Core Entities: `Game`, `Board` (8x8 array of `Box`), `Player`, `Move`.
+> - Polymorphism: `Piece` is an abstract base class with an abstract method `isValidMove(start, end)`. Concrete classes (`King`, `Queen`, `Knight`, etc.) implement their specific movement logic.
+> - The Game Loop: A central `Game` orchestrator manages player turns, gets the proposed move, checks if it's valid for that piece, and executes it.
+> - Tricky Rules: 
+>   - Castling: requires tracking if the King and Rook have moved yet.
+>   - En Passant: requires knowing the exact *previous* move.
+>   - Check/Checkmate: requires simulating a move and seeing if the King is still under attack.
+>
+> **Key takeaway:** Keep the pieces "dumb" regarding the state of the entire game. A `Piece` should only validate its geometric move (e.g., Knight moves in an L-shape). The `Board` or `Game` must validate if the path is blocked by other pieces.
+
 ---
 module: 06-lld
 topic: Problems

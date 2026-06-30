@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** DynamoDB internals — how AWS's fully managed key-value store delivers single-digit millisecond performance at any scale via consistent hashing, adaptive capacity, and SSD storage.
+>
+> **Key topics:**
+> - Data model: Partition Key (determines node via hash) + Sort Key (range within partition); items ≤ 400 KB; tables up to unlimited size
+> - Capacity modes: Provisioned (WCU/RCU = 1KB write / 4KB strongly consistent read) vs On-Demand (auto-scaling, pay per request)
+> - Local Secondary Index (LSI): same partition key, different sort key; strongly consistent; max 10 GB per partition value
+> - Global Secondary Index (GSI): different partition key; eventually consistent; async replication; unlimited size
+> - Adaptive capacity: DynamoDB automatically redistributes hot partitions; eliminates most hot-key issues
+> - Transactions: TransactWriteItems up to 25 items; uses 2-phase commit internally; 2× cost
+> - Streams: captures item-level changes; used for CDC to trigger Lambda or replicate to other systems
+>
+> **Key takeaway:** DynamoDB is ideal for single-digit-ms key-value access at massive scale — the trade-off is rigid data modeling (all access patterns must be baked into the schema via indexes).
+
 ---
 module: 04-advanced-topics
 topic: Internals

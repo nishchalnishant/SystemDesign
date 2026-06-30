@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The mental model for system design — scalability, availability, consistency, performance, and the 8 core building blocks every engineer must know.
+>
+> **Key topics:**
+> - Scalability: vertical vs horizontal scaling, when each breaks down
+> - Availability: "nines" table (99% = 3.65 days downtime/yr, 99.999% = 5.3 min/yr)
+> - Consistency: strong → sequential → causal → eventual consistency spectrum
+> - Performance: latency (p50/p99/p999) vs throughput, QPS estimation formula
+> - Key latency numbers: L1 cache 1ns, RAM 100ns, SSD 100µs, network 0.5ms, cross-region 100ms
+> - CAP theorem + PACELC: pick 2, and even without partitions choose latency vs consistency
+> - 8 building blocks: load balancer, cache, database, message queue, CDN, reverse proxy, API gateway, service discovery
+>
+> **Key takeaway:** Internalize the latency numbers and availability nines — they are the foundation of every capacity estimation and trade-off discussion.
+
 ---
 module: 01-foundations
 status: unread

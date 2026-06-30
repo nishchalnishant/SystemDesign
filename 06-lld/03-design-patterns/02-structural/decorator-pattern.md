@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Decorator Pattern — lets you attach new behaviors to objects dynamically by placing them inside special wrapper objects that contain the behaviors.
+>
+> **Key concepts:**
+> - The problem: adding features to an object via inheritance leads to class explosion. E.g., `Coffee`, `CoffeeWithMilk`, `CoffeeWithSugar`, `CoffeeWithMilkAndSugar`.
+> - The fix: create an interface (`Beverage` with `getCost()`). The base object (`Espresso`) implements it.
+> - The decorators: create wrapper classes (`Milk`, `Sugar`) that *also* implement `Beverage` AND accept a `Beverage` in their constructor.
+> - Chaining: `new Sugar(new Milk(new Espresso()))`. When `getCost()` is called on the outermost object, it delegates down the chain and adds its own cost.
+> - Flexibility: you can add or remove decorators at runtime. The client just sees a `Beverage`.
+>
+> **Key takeaway:** This is a very common LLD question (e.g., "Design a Pizza pricing system with toppings" or "Design a text formatting tool"). Decorator avoids subclass explosion by wrapping objects recursively.
+
 ---
 module: 06-lld
 topic: Design Patterns

@@ -5,6 +5,18 @@ tags: [09-patterns, system-design, patterns]
 ---
 # Two-Phase Commit (2PC)
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A protocol used to ensure atomic distributed transactions across multiple databases or nodes (all-or-nothing).
+>
+> **Key concepts:**
+> - Phase 1 (Prepare): The Coordinator asks all participating nodes, "Are you ready and able to commit this transaction?" Every node locks its resources and replies "Yes" or "No".
+> - Phase 2 (Commit/Rollback): If *all* nodes said "Yes", the Coordinator tells them to Commit. If *any* node said "No" (or timed out), the Coordinator tells them all to Rollback.
+> - The Blocking Problem: If the Coordinator crashes after Phase 1, the participating nodes are stuck holding their database locks indefinitely until the Coordinator recovers.
+>
+> **Key takeaway:** 2PC provides strong consistency, but it is slow and highly vulnerable to single-point-of-failure blocks. In modern microservices, Sagas are heavily preferred over 2PC due to these availability issues.
+
 > A distributed coordination protocol that guarantees atomic commit across multiple databases — all nodes commit or all roll back, with no partial success.
 
 ---

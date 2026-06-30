@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a distributed job scheduler — executing millions of one-off and recurring jobs reliably with at-least-once guarantees, exactly-once prevention, and worker failure handling.
+>
+> **Key design decisions:**
+> - Job store: PostgreSQL as source of truth; job row: {job_id, cron_expression, next_run_time, status, worker_id}; index on next_run_time for efficient polling
+> - Scheduler: leader node (via distributed lock) scans for due jobs (next_run_time ≤ now); claims job via CAS update (status: PENDING → CLAIMED); publishes to Kafka
+> - Worker pool: stateless workers pull from Kafka; execute job; update status to COMPLETED or FAILED in DB; heartbeat for long-running jobs
+> - At-least-once: if worker dies mid-job, timeout detection (last_heartbeat + timeout < now) → re-queue; idempotent job design required
+> - Exactly-once prevention: idempotency key per (job_id, scheduled_time) → deduplicate in DB with unique constraint; compensating rollback if re-run
+> - Distributed leader election: ZooKeeper / etcd ephemeral node; only leader schedules; follower promotes if leader crashes within TTL
+> - Monitoring: job execution latency, miss rate (jobs running past scheduled time), DLQ for repeatedly failed jobs
+>
+> **Key takeaway:** CAS-based job claiming (optimistic locking on status field) prevents two workers running the same job — combine with idempotent job logic as defense in depth.
+
 ---
 module: 05-hld-problems
 topic: Hard

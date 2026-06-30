@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A framework for evolving system architecture based on user scale. It demonstrates how to transition from a single server to a massive, globally distributed system.
+>
+> **Key concepts:**
+> - Start Small (1k users): Single server (Web + DB). The bottleneck is CPU/RAM.
+> - Decouple (10k users): Separate Web tier from DB tier.
+> - Stateless Web (100k users): Add a Load Balancer, make Web servers stateless (store sessions in Redis). The bottleneck shifts to the DB.
+> - Database Scaling (1M users): Read replicas for heavy read loads. Introduce caching (Memcached/Redis) for slow queries.
+> - Async/Microservices (10M+ users): Message queues (Kafka/RabbitMQ) to decouple heavy processing. Sharding the DB to handle write throughput.
+>
+> **Key takeaway:** Never start an interview with microservices and Kafka if the problem asks for a small internal tool. Always match the architecture complexity to the specific bottlenecks at the given scale.
+
 ---
 module: 07-interview-templates
 status: unread

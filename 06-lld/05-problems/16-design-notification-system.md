@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Notification System — a common LLD question focusing on decoupling the generation of events from the delivery of messages.
+>
+> **Key concepts:**
+> - Core Entities: `NotificationContext`, `NotificationDispatcher`, `User`, `NotificationTemplate`.
+> - Strategy Pattern (Channel): The system must send via Email, SMS, or Push. These are separate `DeliveryStrategy` classes.
+> - Chain of Responsibility (Fallback/Retry): If an SMS fails, automatically try Email. Link the handlers in a chain.
+> - Factory Pattern: To construct the correct notification object based on the event type (e.g., `OrderShippedEvent` generates a specific notification).
+> - Abstraction: The system sending the notification (e.g., the Billing Service) should not know *how* the user receives it. It just publishes an event to a queue, and the Notification System consumes it.
+>
+> **Key takeaway:** The key to this problem is extensibility. When the interviewer asks "How do we add WhatsApp notifications?", you should just need to add a `WhatsAppStrategy` class without modifying core logic.
+
 ---
 module: 06-lld
 topic: Problems

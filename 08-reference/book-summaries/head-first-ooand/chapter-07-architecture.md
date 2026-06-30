@@ -5,6 +5,18 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Defining the overarching structure of an application—its Architecture.
+>
+> **Key concepts:**
+> - What is Architecture?: It's the design of the highest-level components and how they interact. It's the decisions that are hardest to change later.
+> - The Three Qs of Architecture: 1. Is it part of the core essence of the system? 2. What the fuck does it mean? (Is it confusing/unclear?) 3. How the heck do we do it? (Is it technically difficult?)
+> - Reducing Risk: Address the architectural components that answer "yes" to the three Qs first. Build prototypes to prove the hardest parts are solvable.
+>
+> **Key takeaway:** Don't start coding the easy, boring parts first. Identify the highest-risk, most architecturally significant use cases and prove they work before committing to the design.
+
 # Ch 07: Architecture
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 358-409

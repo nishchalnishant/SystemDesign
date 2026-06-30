@@ -5,6 +5,18 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Abstracting away concrete implementations to create truly flexible, plug-and-play software architectures.
+>
+> **Key concepts:**
+> - Programming to an Interface: Do not tie your code to a concrete class (e.g., `DogDoor`). Tie it to an interface (e.g., `Door`). This allows you to swap in a `CatDoor` later without changing the rest of the code.
+> - Encapsulation (Revisited): It's not just about hiding variables. It's about hiding *behavior* that might change.
+> - Cohesion: Ensuring a class does only one thing. A `DogDoor` should not be responsible for parsing audio files of barks.
+>
+> **Key takeaway:** Flexibility in software comes from loose coupling. If Class A doesn't know exactly what Class B is (because it only knows Class B's Interface), Class A won't break when Class B changes.
+
 # Ch 05: Good Design = Flexible Software
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 232-313

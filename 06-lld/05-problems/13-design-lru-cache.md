@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an LRU Cache — arguably the most famous data structure interview question. Tests your ability to combine primitive data structures to achieve O(1) time complexity for complex operations.
+>
+> **Key concepts:**
+> - Core Data Structures: A `HashMap` (for O(1) lookups) + a `DoublyLinkedList` (for O(1) additions and removals).
+> - The Nodes: The nodes in the linked list must store BOTH the `key` and the `value` (so when you evict the tail node, you know which key to remove from the HashMap).
+> - `get(key)`: If present, return value AND move the node to the front (head) of the list. O(1).
+> - `put(key, value)`: If present, update value and move to front. If not present, add to front. If at capacity, remove the tail node (Least Recently Used) from both the list and the map. O(1).
+> - Dummy Head/Tail: Using a dummy head and dummy tail node eliminates all null checks when adding/removing nodes, drastically simplifying the code.
+>
+> **Key takeaway:** Memorize the exact wiring of the `DoublyLinkedList` with dummy head and tail nodes. This question is so common that any hesitation on the pointer wiring is heavily penalized.
+
 ---
 module: 06-lld
 topic: Problems

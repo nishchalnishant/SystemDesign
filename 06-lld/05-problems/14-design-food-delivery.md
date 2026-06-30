@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Food Delivery System (e.g., UberEats, DoorDash) — a massive, multi-actor system focusing on order lifecycle, geolocation, and dynamic assignment.
+>
+> **Key concepts:**
+> - Core Entities: `User`, `Restaurant`, `MenuItem`, `DeliveryAgent`, `Order`.
+> - State Pattern: `Order` lifecycle (`PLACED`, `ACCEPTED`, `PREPARING`, `OUT_FOR_DELIVERY`, `DELIVERED`).
+> - Observer Pattern: As the `Order` state changes, notifications must be pushed to both the `User` and the `Restaurant`.
+> - Strategy Pattern (Dispatching): How do you assign a `DeliveryAgent` to an order? You could use a `NearestAgentStrategy`, a `HighestRatedAgentStrategy`, or a `LeastBusyAgentStrategy`.
+> - Search: Implementing a menu search requires a Strategy pattern as well (search by name, category, or rating).
+>
+> **Key takeaway:** In an LLD interview, you can't design the whole backend. Focus on the core domain models and specifically on the dispatching logic (Strategy) and the status updates (Observer).
+
 ---
 module: 06-lld
 topic: Problems

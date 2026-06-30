@@ -5,6 +5,18 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Exception handling in Java. How to write code that deals with unpredictable runtime errors (like network failures or bad file paths).
+>
+> **Key concepts:**
+> - Try/Catch blocks: Put risky code inside `try { }`. Handle the failure in `catch(Exception e) { }`. Put cleanup code in `finally { }` (which runs no matter what).
+> - Checked vs Unchecked Exceptions: `RuntimeException`s (like `NullPointerException` or `IndexOutOfBoundsException`) are unchecked; you aren't forced to handle them. All other exceptions (like `IOException`) are checked; the compiler forces you to handle them or declare them.
+> - The `throws` keyword: If a method doesn't want to handle an exception, it can "duck" by adding `throws ExceptionType` to its declaration, forcing the caller to handle it.
+>
+> **Key takeaway:** Exceptions are for exceptional circumstances, not for regular control flow. If a file might be missing, catch the exception. If a user enters a negative number, use an `if` statement, not an exception.
+
 # Ch 11: Risky Behavior
 
 **Source**: Head First Java, Second Edition | **Pages**: 349-386

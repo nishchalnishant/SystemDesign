@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Pub-Sub Messaging System (like Kafka or RabbitMQ) — an advanced systems problem disguised as LLD, testing deep understanding of concurrency, queues, and message delivery guarantees.
+>
+> **Key concepts:**
+> - Core Entities: `Topic`, `Message`, `Publisher`, `Subscriber`, `Queue`/`Broker`.
+> - Observer Pattern: The foundational pattern. Subscribers observe Topics.
+> - Delivery Strategies: `AtMostOnce`, `AtLeastOnce`, `ExactlyOnce`.
+> - Push vs Pull: Does the broker push messages to subscribers (RabbitMQ style, easy for LLD), or do subscribers poll the broker (Kafka style, better for scale)?
+> - Concurrency: Thread pools for workers consuming messages, thread-safe queues (`ConcurrentLinkedQueue`), and handling slow consumers without blocking the publisher.
+>
+> **Key takeaway:** Keep it simple initially: implement an in-memory "Push" based system. If asked for high throughput, introduce a `BlockingQueue` per topic, where a worker thread reads from the queue and pushes to the subscribers asynchronously.
+
 ---
 module: 06-lld
 topic: Problems

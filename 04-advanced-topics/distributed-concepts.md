@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Essential distributed systems concepts for robust systems — idempotency, retry strategies, and backpressure — the three patterns that prevent data corruption and cascading failures.
+>
+> **Key topics:**
+> - Idempotency: same request N times = same result as once; implemented via idempotency key (UUID in header) stored with UNIQUE constraint
+> - Retry strategies: at-most-once (fire-and-forget), at-least-once (retry on failure), exactly-once (idempotent + transactional)
+> - Exponential backoff with jitter: wait = min(cap, base * 2^n) + random(0, base); prevents retry storms on shared infrastructure
+> - Circuit breaker integration: stop retrying if circuit is open; don't retry 429 (rate limited) or 400 (bad request)
+> - Backpressure: when consumers can't keep up with producers — bounded queues (reject), dropping (sample), slowing producer (TCP-style)
+> - Distributed deduplication: idempotency keys in Redis with TTL; SQL upsert with ON CONFLICT DO NOTHING
+> - Saga compensation: if step N fails, run compensating transactions for steps 1..N-1 in reverse order
+>
+> **Key takeaway:** Every distributed system call that crosses a network boundary needs idempotency + retry with exponential backoff — these are not optional; they're the minimum for correctness.
+
 ---
 module: 04-advanced-topics
 status: unread

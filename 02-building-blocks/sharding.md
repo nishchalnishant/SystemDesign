@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Database sharding — partitioning data horizontally across multiple nodes to scale writes and storage beyond a single machine's limits.
+>
+> **Key topics:**
+> - Why shard: single PostgreSQL tops out at ~50K writes/sec; vertical scaling costs $100K/month and still has a ceiling
+> - Shard key selection: the most critical decision — bad key → hotspot (one shard gets 90% traffic); good key → even spread
+> - Sharding strategies: Hash (even distribution, bad for range queries), Range (natural for time-series, hotspot risk), Directory (flexible, lookup table overhead)
+> - Hotspot mitigation: add random suffix to hot keys, pre-split partitions, local buffer + async flush
+> - Cross-shard queries: scatter-gather (fan out to all shards, merge results) — expensive; avoid with good shard key design
+> - Resharding: consistent hashing minimizes data movement; virtual nodes (vnodes) enable smooth shard migration
+> - Where used: Cassandra (partition key), DynamoDB (partition key + sort key), MongoDB (shard key), Vitess (MySQL sharding)
+>
+> **Key takeaway:** Shard key selection is everything — choose based on your most common query pattern, and add virtual nodes to avoid data movement pain during scaling.
+
 ---
 module: 02-building-blocks
 status: unread

@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Search Engine (Inverted Index) — tests text processing, efficient data structures (`Map<String, List<Document>>`), and ranking algorithms.
+>
+> **Key concepts:**
+> - Core Entities: `Document`, `SearchEngine`, `InvertedIndex`, `Tokenizer`, `Ranker`.
+> - The Inverted Index: A `Map<String, List<DocResult>>`. For every word (token), it stores a list of documents that contain the word, along with the term frequency.
+> - Tokenization (Strategy Pattern): Before indexing, text must be processed: lowercase, remove punctuation, remove stop words ("the", "is"), and stem ("running" -> "run").
+> - Ranking (Strategy Pattern): When querying, you retrieve the lists for each word. How do you sort them? Usually via TF-IDF (Term Frequency - Inverse Document Frequency) or PageRank.
+> - Set Intersection: If a user searches "fast car", you must fetch the list for "fast" and the list for "car", and efficiently find the intersection of the two lists.
+>
+> **Key takeaway:** The heart of this problem is the Inverted Index data structure and the Set Intersection algorithm for multi-word queries.
+
 ---
 module: 06-lld
 topic: Problems

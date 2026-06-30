@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a distributed message queue (Kafka) — durable, ordered, partitioned message storage with consumer groups and exactly-once delivery semantics.
+>
+> **Key design decisions:**
+> - Partitioning: topic split into P partitions; each partition is an ordered append-only log; partition key determines which partition; enables parallelism
+> - Durability: messages written to disk + replicated to ISR (in-sync replicas); acks=all ensures no data loss; configurable retention (time or size)
+> - Consumer groups: each group gets independent offset cursor per partition; add consumers = parallel consumption up to partition count
+> - Offset management: offsets stored in __consumer_offsets topic; auto-commit vs manual commit; commit after processing for at-least-once
+> - Backpressure: consumers pull at their own rate; producers never overwhelm consumers; natural backpressure via pull model
+> - Exactly-once: idempotent producer (epoch + sequence) eliminates duplicates; transactional API for atomic multi-partition writes + offset commit
+> - Compaction: log compaction retains only latest value per key; enables Kafka as a changelog / state store (source of truth)
+>
+> **Key takeaway:** Kafka's partition-based parallelism + pull model + ISR replication = high throughput + durability; consumer groups make it trivially scalable to add downstream consumers.
+
 ---
 module: 05-hld-problems
 topic: Hard

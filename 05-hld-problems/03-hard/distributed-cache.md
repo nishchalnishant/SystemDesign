@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a distributed cache (Redis Cluster / Memcached) — horizontal scaling of in-memory key-value storage with consistent hashing, replication, and eviction.
+>
+> **Key design decisions:**
+> - Consistent hashing: keys distributed across nodes using hash ring; virtual nodes (vnodes) ensure even load; adding/removing node only moves O(K/N) keys
+> - Replication: each primary has 1–2 replicas; async replication for performance; replica auto-promotes on primary failure (Sentinel/Cluster)
+> - Eviction policies: LRU (evict least recently used), LFU (evict least frequently used); choose based on access pattern; allkeys-lru for pure cache
+> - Cache-aside pattern: application checks cache → miss → fetch from DB → populate cache; avoids stale data on write
+> - Write-through vs write-behind: write-through (write to cache + DB atomically) vs write-behind (write to cache, async DB flush); write-behind risks data loss
+> - Hot key problem: single popular key overwhelms one node; solution: local in-process micro-cache + key sharding (append shard ID suffix)
+> - Failure handling: circuit breaker on cache; fall through to DB on cache unavailability; don't crash on cache miss
+>
+> **Key takeaway:** Consistent hashing with virtual nodes is the foundation — getting the hot key problem right (local micro-cache + key sharding) separates senior candidates.
+
 ---
 module: 05-hld-problems
 topic: Hard

@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** API Gateway — the single entry point for all API traffic that handles cross-cutting concerns like auth, rate limiting, routing, and protocol translation.
+>
+> **Key topics:**
+> - Why it exists: 20 microservices each duplicating JWT validation, rate limiting, CORS → API gateway centralizes all of it
+> - Core responsibilities: TLS termination, authentication, rate limiting, path-based routing, protocol translation (REST→gRPC), observability
+> - Request lifecycle through a gateway: client → TLS termination → auth → rate limit check → routing → backend
+> - Implementation options: Kong, AWS API Gateway, Nginx, Envoy, Traefik — with trade-off comparison
+> - Patterns: BFF (Backend for Frontend) — separate gateways for mobile vs web vs partner APIs
+> - Failure modes: gateway as single point of failure → active-active multi-region; gateway bottleneck under high QPS
+>
+> **Key takeaway:** An API gateway buys you one place to change auth, rate limits, and routing — deploy it from Day 1 in any microservices architecture.
+
 ---
 module: 02-building-blocks
 status: unread

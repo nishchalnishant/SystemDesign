@@ -5,6 +5,18 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A massive single-file compilation of all chapters from *Head First Object-Oriented Analysis & Design*.
+>
+> **Key concepts:**
+> - The Three Steps to Great Software: 1. Make sure your software does what the customer wants. 2. Apply basic OOP principles to add flexibility. 3. Strive for a maintainable, reusable design.
+> - Delegation: Often better than inheritance. Instead of inheriting behavior, an object delegates the work to a specialized helper object (HAS-A vs IS-A).
+> - Cohesion: A class should do one thing and do it well. High cohesion means methods and variables are tightly related to a single purpose.
+>
+> **Key takeaway:** This file contains the entire book's summary. It's a great reference for core software engineering principles. The overarching theme is that requirements *will* change, and your job is to design a system where a change in one place doesn't break everything else.
+
 # Introduction: Introduction
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 24-35

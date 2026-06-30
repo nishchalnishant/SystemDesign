@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** MySQL/InnoDB internals — how the storage engine uses B+ trees, a buffer pool, MVCC, and WAL (redo log) to deliver ACID-compliant OLTP performance.
+>
+> **Key topics:**
+> - B+ tree clustered index: data rows ARE the leaf pages of the B+ tree; ordered by primary key; enables fast range scans
+> - Buffer pool: LRU cache of 16KB pages; target 80–90% of available RAM; InnoDB reads and writes entire pages
+> - Secondary index structure: stores PK value, not physical row pointer; secondary index lookup = index scan + PK lookup (except covering index)
+> - MVCC with undo log: readers see consistent snapshot without locks; old row versions stored in undo log; readers never block writers
+> - WAL (redo log): changes written to redo log before data pages; enables crash recovery and reduces random I/O
+> - Lock types: row-level (shared, exclusive), gap locks (prevent phantom reads), next-key locks; deadlock detection via wait-for graph
+> - Query optimization: EXPLAIN format=tree; covering indexes; composite index column order; index selectivity
+>
+> **Key takeaway:** InnoDB's buffer pool is the most impactful performance tuning lever — if your working set fits in the buffer pool, disk I/O drops to near-zero for reads; if it doesn't, you're doing random I/O per page fault.
+
 ---
 module: 04-advanced-topics
 topic: Internals

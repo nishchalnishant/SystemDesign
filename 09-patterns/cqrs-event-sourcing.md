@@ -5,6 +5,18 @@ tags: [09-patterns, system-design, patterns]
 ---
 # CQRS + Event Sourcing
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Two advanced patterns for managing state and data access in high-scale systems: Command Query Responsibility Segregation (CQRS) and Event Sourcing.
+>
+> **Key concepts:**
+> - CQRS: Splitting the application into two parts: one for Commands (writes/updates) and one for Queries (reads). They often use entirely different databases (e.g., Postgres for writes, ElasticSearch for reads) synchronized via events.
+> - Event Sourcing: Instead of storing the *current state* of an entity, you store an immutable sequence of *state-changing events*. The current state is derived by replaying the events.
+> - Eventual Consistency: Because the read database is updated asynchronously via events from the write database, reads might momentarily return stale data.
+>
+> **Key takeaway:** These patterns solve massive read/write asymmetry and provide a perfect audit trail, but they introduce immense complexity. Only use them when standard CRUD architecture absolutely cannot meet your scalability or auditing requirements.
+
 > **Two patterns that work well independently and are transformative when combined.**
 
 ---

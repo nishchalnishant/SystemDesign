@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a booking system (hotels/flights) — preventing double-booking with inventory locking, idempotent reservations, and consistent availability search.
+>
+> **Key design decisions:**
+> - Inventory locking: SELECT FOR UPDATE on inventory row during booking transaction; pessimistic locking prevents concurrent double-booking
+> - Optimistic locking alternative: version field on inventory row; CAS (compare-and-swap) on update; retry on conflict; better throughput
+> - Idempotency: idempotency key per booking attempt; prevents duplicate charge if client retries after timeout
+> - Two-step booking: hold → confirm flow; hold locks inventory for 10 min; confirm completes payment + booking; release if not confirmed
+> - Availability search: read replicas or separate search index (Elasticsearch) for fast availability queries; don't hit primary DB for reads
+> - Payment flow: payment processed outside booking DB transaction to avoid holding DB lock during payment processing (300ms+ latency)
+> - Overbooking prevention: DB constraint (CHECK inventory ≥ 0) + unique constraint on (room_id, date, booking_id) as last line of defense
+>
+> **Key takeaway:** Two-step hold → confirm prevents double-booking without holding locks during payment processing; idempotency keys prevent duplicate charges on retry.
+
 ---
 module: 05-hld-problems
 topic: Easy

@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design BookMyShow (Ticket Booking) — a high-frequency LLD problem that tests your ability to handle concurrency (seat locking) and manage complex relationships (Cinemas, Screens, Shows).
+>
+> **Key concepts:**
+> - Core Entities: `Cinema`, `Screen`, `Show`, `Seat`, `Booking`.
+> - State Pattern: `Seat` transitions between Available, Locked, and Booked.
+> - Concurrency (The core challenge): Two users trying to book the same seat simultaneously. 
+>   - DB approach: Row-level locking (Pessimistic: `SELECT FOR UPDATE`, or Optimistic with versioning).
+>   - In-memory LLD approach: Use `ConcurrentHashMap` for locks or synchronize the `lockSeat()` method.
+> - TTL (Time To Live): When a user selects seats, they are "Locked" for 5-10 minutes. If payment isn't completed, a background job (or delay queue) must revert them to "Available".
+>
+> **Key takeaway:** The interviewer is looking for how you prevent double-booking. Clearly explain the difference between a `Seat` (physical chair) and a `ShowSeat` (that chair for a specific movie at a specific time). The lock must be on the `ShowSeat`.
+
 ---
 module: 06-lld
 topic: Problems

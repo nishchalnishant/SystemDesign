@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Complete Low-Level Design (LLD) interview preparation — OOP fundamentals, SOLID principles, 16 design patterns, concurrency, and 36 LLD problems with full class diagrams and code.
+>
+> **Learning path (follow this order):**
+> - Step 1 — OOP Fundamentals (2–3 days): four-pillars.md, principles.md, introduction.md; choose Java or Python for code examples
+> - Step 2 — SOLID Principles (1 week): SRP → OCP → LSP → ISP → DIP in order; each builds on the previous
+> - Step 3 — Design Patterns (pair with problems): 16 patterns across Creational, Structural, Behavioral; read pattern when problem needs it
+> - Step 4 — Concurrency Patterns: thread-safe singleton, producer-consumer, futures; needed for concurrent LLD problems
+> - Step 5 — LLD Problems (36 problems): Parking Lot → Rate Limiter → Tic-Tac-Toe → Vending Machine → Splitwise → BookMyShow etc.
+>
+> **Key takeaway:** Don't read all patterns upfront — pair each pattern with the problem that needs it; the README maps patterns to problems; the LLD interview is about translating requirements into clean class hierarchies.
+
+---
+
 # Low-Level Design (LLD) Interview Problems
 
 23 LLD problems ranked by interview frequency. But before you jump to problems, the learning path below matters — design patterns only click when you understand what problem they solve.

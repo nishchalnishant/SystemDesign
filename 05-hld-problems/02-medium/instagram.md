@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Instagram — a photo/video sharing platform with follow-graph, feed generation, and media delivery at billions-of-users scale.
+>
+> **Key design decisions:**
+> - Media storage: photos/videos stored in object storage (S3); CDN for delivery; thumbnail generation on upload via worker queue
+> - Follow graph: adjacency list in DB (follower_id, followee_id); Redis cache of followed user IDs per user; graph DB for recommendations
+> - Feed generation: fan-out-on-write (precompute timelines on post → fast reads, expensive celebrity writes) vs fan-out-on-read (pull on demand → simpler, slower for active users)
+> - Hybrid: fan-out-on-write for normal users; fan-out-on-read for celebrities (>1M followers); merge at read time
+> - Media upload: client → signed S3 URL (direct upload, bypass app server) → async CDN propagation + thumbnail generation
+> - Capacity: 1B users, 50M active daily, 100M posts/day → ~1150 posts/sec; read:write ≈ 100:1 (mostly browsing)
+> - Storage: each photo ~300KB; 100M posts/day → 30TB/day; cold storage (S3 Glacier) after 90 days
+>
+> **Key takeaway:** The celebrity problem is the hardest part — pure fan-out-on-write breaks at 10M followers; hybrid (fan-out for normal users, pull-on-read for celebrities merged at read time) is the production solution.
+
 ---
 module: 05-hld-problems
 topic: Medium

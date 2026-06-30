@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design YouTube — a video upload, transcoding, and streaming platform with CDN delivery, search indexing, and recommendation engine at global scale.
+>
+> **Key design decisions:**
+> - Video upload: client → resumable upload → object storage (GCS/S3); chunked to handle large files and network interruptions
+> - Transcoding pipeline: upload triggers message to Kafka → transcoding workers (FFmpeg) → multiple resolutions (360p/720p/1080p/4K) → stored in S3 per quality tier
+> - CDN delivery: videos served from CDN edge nodes; adaptive bitrate streaming (HLS/DASH) selects quality based on bandwidth
+> - Metadata storage: video metadata (title, description, tags, duration, channel_id) in PostgreSQL; Elasticsearch for search
+> - View count: async counter via Kafka → batch aggregation; don't write to DB per view (thundering herd)
+> - Recommendations: collaborative filtering (viewers who watched X also watched Y); updated offline via Spark; served from feature store
+> - Capacity: 500 hours of video uploaded per minute; storage at multiple quality levels; CDN handles 99% of bandwidth
+>
+> **Key takeaway:** Separate the upload path (async transcoding pipeline) from the streaming path (CDN + adaptive bitrate) — these have very different throughput and latency requirements.
+
 ---
 module: 05-hld-problems
 topic: Medium

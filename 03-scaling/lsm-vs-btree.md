@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The fundamental trade-off between LSM Trees (write-optimized) and B-Trees (read-optimized) — the two dominant database storage engine designs.
+>
+> **Key topics:**
+> - B-Tree: balanced tree of disk pages; in-place updates; fast reads (O(log n)); write amplification from random I/O
+> - LSM Tree: MemTable (in-memory) → immutable SSTable on disk → background compaction; sequential writes = high throughput
+> - Write amplification: B-Tree rewrites data on every update; LSM rewrites during compaction but batches writes efficiently
+> - Read amplification: LSM must check MemTable + multiple SSTable levels; Bloom filters reduce unnecessary reads
+> - Space amplification: LSM keeps multiple versions during compaction; B-Tree is more space-efficient for random updates
+> - Compaction strategies: Size-Tiered (better write throughput), Leveled (better read performance, less space waste)
+> - Which databases use which: PostgreSQL/MySQL → B-Tree; Cassandra/RocksDB/LevelDB → LSM; HBase → LSM
+>
+> **Key takeaway:** Use B-Tree (relational DBs) for read-heavy OLTP; use LSM (Cassandra, RocksDB) for write-heavy workloads — the Bloom filter bridges the read performance gap.
+
 ---
 module: 03-scaling
 status: unread

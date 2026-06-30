@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a real-time gaming leaderboard at hard difficulty — multiple leaderboard scopes (global, regional, tournament, friends), sub-second updates, and millions of concurrent players.
+>
+> **Key design decisions:**
+> - Core: Redis ZADD/ZREVRANK per leaderboard scope; O(log N) update and rank query; separate sorted set per scope (global, per-region, per-tournament)
+> - Friends leaderboard: can't pre-compute for all friend groups → query: fetch friend IDs (Redis set) → ZSCORE for each friend → sort client-side; or use secondary sorted set per user updated on score change
+> - Score aggregation: match end → Kafka → score aggregation service → atomic ZADD; batch updates to reduce Redis write load
+> - Tournament leaderboard: TTL-based sorted set per tournament; active tournament data in Redis; archive to PostgreSQL on completion
+> - Scale: 100M players × 8 bytes (score) ≈ 800 MB per sorted set; fits in one Redis node; shard by game_id for multiple concurrent games
+> - Nearby rank: ZREVRANK (player rank) → ZREVRANGE (rank-5 to rank+5) → get neighbor entries; O(log N) + O(K)
+> - Percentile: (total_players - rank) / total_players × 100; ZCARD O(1) for total count
+>
+> **Key takeaway:** This is leaderboard easy problem × multiple scopes — the friends leaderboard is the hard part because you can't pre-compute; solve it with on-demand ZSCORE lookup for friend IDs.
+
 ---
 module: 05-hld-problems
 topic: Hard

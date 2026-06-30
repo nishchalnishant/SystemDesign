@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Template Method Pattern — defines the skeleton of an algorithm in the superclass but lets subclasses override specific steps of the algorithm without changing its structure.
+>
+> **Key concepts:**
+> - The problem: multiple classes have identical overall workflows, but the implementation of specific steps differs. (e.g., `DataMiner` for PDF vs CSV — open file, extract data, parse data, close file).
+> - The fix: create an abstract base class.
+> - The Template Method: a `final` method (e.g., `mineData()`) that dictates the exact sequence of steps.
+> - The Steps: some steps are implemented in the base class (shared code). Other steps are declared `abstract` (forcing subclasses to implement them).
+> - Hooks: optional steps with empty default implementations that subclasses *can* override if needed.
+> - Difference from Strategy: Strategy uses composition (delegates the whole algorithm). Template uses inheritance (base class controls the algorithm, subclass fills in the blanks).
+>
+> **Key takeaway:** Template Method is the foundation of almost all object-oriented frameworks (like Spring or React lifecycle methods), where the framework dictates the flow, and you just fill in the specific step implementations.
+
 ---
 module: 06-lld
 topic: Design Patterns

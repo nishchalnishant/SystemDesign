@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Mentorship Platform (or calendar booking system) — focuses on availability, interval overlap detection, and two-sided marketplace matching.
+>
+> **Key concepts:**
+> - Core Entities: `Mentor`, `Mentee`, `Session`, `Availability` (Time slots).
+> - Scheduling/Conflict Detection: The hardest part. You must check if a proposed session overlaps with any existing accepted sessions. Represent time as Unix timestamps and check if `new_start < exist_end && new_end > exist_start`.
+> - Strategy Pattern (Matching): Finding a mentor involves ranking them by relevance. Implement strategies like `SkillMatchStrategy`, `RatingStrategy`, or `AvailabilityStrategy`.
+> - State Pattern: `Session` transitions from `REQUESTED` -> `ACCEPTED` -> `IN_PROGRESS` -> `COMPLETED`.
+>
+> **Key takeaway:** Handling time is tricky. Always store intervals as UTC timestamps, not formatted strings. Use a simple interval overlap check for the availability logic.
+
 ---
 module: 06-lld
 topic: Problems

@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Flyweight Pattern — minimizes memory usage by sharing as much data as possible with similar objects, instead of keeping all data in each object.
+>
+> **Key concepts:**
+> - The problem: an app crashes due to OutOfMemory because it creates millions of small objects (e.g., 1 million Trees in a forest game, or 100,000 characters in a text editor).
+> - Intrinsic vs Extrinsic state: The key to Flyweight.
+> - Intrinsic state: state that is shared and unchanging (e.g., a Tree's 3D mesh and texture). This is stored *inside* the Flyweight object.
+> - Extrinsic state: state that is unique per instance (e.g., the `x, y` coordinates of a specific Tree). This is passed *into* the Flyweight methods by the client.
+> - Factory/Cache: a `FlyweightFactory` pools these objects. `getTreeType("Oak")` returns the shared "Oak" flyweight (only 1 exists in memory). The client maintains an array of `(x, y, oak_reference)`.
+>
+> **Key takeaway:** Only use Flyweight when you have a memory problem caused by a massive number of similar objects. It is the textbook solution for "design a text editor" (characters) or "design a game environment" (trees/particles).
+
 ---
 module: 06-lld
 topic: Design Patterns

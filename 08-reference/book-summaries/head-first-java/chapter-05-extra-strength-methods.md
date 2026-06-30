@@ -5,6 +5,18 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Building a complete program (a simple game called "Sink a Dot Com") and the standard Java loop constructs.
+>
+> **Key concepts:**
+> - The `for` loop: Traditional `for(int i=0; i<10; i++)` vs the enhanced for-each loop `for(String name : names)`.
+> - Casting: Converting from a larger primitive type to a smaller one (e.g., `(int) 3.14`) results in truncation and requires an explicit cast to tell the compiler you accept the risk.
+> - Program Flow: Converting pseudo-code into real Java code.
+>
+> **Key takeaway:** This chapter transitions you from isolated syntax rules into writing a functioning program with loops, input parsing, and state tracking. The enhanced `for` loop is almost always preferred over the traditional `for` loop when iterating over collections.
+
 # Ch 05: Extra-Strength Methods
 
 **Source**: Head First Java, Second Edition | **Pages**: 129-158

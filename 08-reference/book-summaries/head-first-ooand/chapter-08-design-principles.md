@@ -5,6 +5,19 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The core principles of Object-Oriented Design (the SOLID principles, though not explicitly named as such here).
+>
+> **Key concepts:**
+> - OCP (Open-Closed Principle): Classes should be open for extension but closed for modification. You should be able to add new behavior without changing existing code.
+> - DRY (Don't Repeat Yourself): Abstract out common code into a single place to avoid bugs when updating logic.
+> - SRP (Single Responsibility Principle): Every object in your system should have a single responsibility, and all its services should be narrowly aligned with that responsibility.
+> - Liskov Substitution Principle: Subtypes must be substitutable for their base types.
+>
+> **Key takeaway:** These principles are the guardrails of good design. If you find yourself copying and pasting code, or changing a class every time a new feature is added, you are violating these principles.
+
 # Ch 08: Design Principles
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 410-457

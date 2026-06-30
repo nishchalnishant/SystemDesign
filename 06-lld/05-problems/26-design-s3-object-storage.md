@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design S3 Object Storage / File System — an advanced problem combining the Composite pattern for hierarchical data with Strategy for permissions and metadata management.
+>
+> **Key concepts:**
+> - Core Entities: `FileSystemEntry` (interface), `File` (leaf), `Directory` (composite), `User`, `Permission`.
+> - Composite Pattern: A `Directory` contains a list of `FileSystemEntry`s. Both `File` and `Directory` implement methods like `getSize()` and `delete()`.
+> - Separation of Concerns: The LLD focuses on the *metadata* (names, paths, sizes, permissions), not the actual physical byte storage (which would be handled by a storage engine).
+> - Permissions (Strategy): Checking if a `User` has `READ` or `WRITE` access requires traversing up the tree. If the user doesn't have explicit access to the file, check the parent directory, and so on.
+> - Concurrency: Handling concurrent file writes or directory creations requires careful locking, usually `ReadWriteLock` on specific directory nodes.
+>
+> **Key takeaway:** This is the quintessential Composite Pattern problem. Focus heavily on how `getSize()` works recursively on a `Directory` and how path resolution (`/usr/bin/java`) traverses the tree.
+
 ---
 module: 06-lld
 topic: Problems

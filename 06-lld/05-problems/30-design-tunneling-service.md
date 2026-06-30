@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an HTTP Tunneling Service (like ngrok) — tests understanding of networking, proxy servers, and establishing long-lived connections for reverse tunneling.
+>
+> **Key concepts:**
+> - Core Entities: `TunnelServer`, `TunnelClient` (runs on localhost), `PublicEndpoint`, `ConnectionManager`.
+> - The Tunnel: The `TunnelClient` opens a long-lived TCP connection (or WebSocket) *outbound* to the `TunnelServer`. This bypasses the local NAT/Firewall.
+> - Request Routing: When a public user hits `https://xyz.ngrok.io`, the `TunnelServer` looks up the active tunnel for `xyz`, forwards the HTTP request down the established TCP connection to the `TunnelClient`.
+> - Replaying/Monitoring (Observer): A nice-to-have feature is a local dashboard that observes all requests passing through the `TunnelClient` to display them to the developer.
+>
+> **Key takeaway:** The core trick to NAT traversal is that the connection must be initiated from the *inside* (localhost) to the *outside* (public server). The public server then multiplexes incoming web traffic down that established connection.
+
 ---
 module: 06-lld
 topic: Problems

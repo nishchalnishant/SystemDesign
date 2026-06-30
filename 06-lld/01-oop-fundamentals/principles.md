@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** OOP design principles — IS-A vs HAS-A, composition vs inheritance, plus DRY/KISS/YAGNI/Law of Demeter; the decision frameworks that determine class structure.
+>
+> **Key principles:**
+> - IS-A (inheritance): only when the relationship is truly "B is a type of A" forever; `Dog IS-A Animal` ✓; `Stack IS-A Vector` ✗ (Java design mistake)
+> - HAS-A (composition): preferred; `Car HAS-A Engine`; change behavior by swapping components; less coupling; easier testing
+> - Why prefer composition: inheritance exposes internals; subclasses depend on parent implementation details; changes in parent break all children
+> - DRY (Don't Repeat Yourself): every piece of knowledge has one authoritative location; duplication = bugs (fix in one place, forget the other)
+> - KISS (Keep It Simple, Stupid): don't add complexity before it's needed; simplest solution that works is often correct
+> - YAGNI (You Ain't Gonna Need It): don't implement features "in case they're needed"; adds complexity, delays delivery
+> - Law of Demeter: talk only to your immediate dependencies (don't chain: `a.getB().getC().doSomething()`); reduces coupling
+>
+> **Key takeaway:** The composition vs inheritance decision is the most important judgment call in LLD interviews — default to composition (HAS-A); only use inheritance when the IS-A relationship is permanently true and you want code reuse.
+
 ---
 module: 06-lld
 topic: Oop Fundamentals

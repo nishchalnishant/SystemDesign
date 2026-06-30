@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A massive single-file compilation of all 18 chapters of notes from *Head First Java*. 
+>
+> **Key concepts:**
+> - Object-Oriented Programming: Encapsulation, Inheritance, Polymorphism, Abstract classes, and Interfaces.
+> - Memory Management: The Heap (for objects) and the Stack (for method invocations and local variables). The Garbage Collector.
+> - Data Structures & Generics: `ArrayList`, `HashSet`, `TreeSet`, `HashMap`. Using `<T>` to ensure type safety at compile time.
+> - Concurrency: Threads, `Runnable`, and the `synchronized` keyword to prevent race conditions.
+>
+> **Key takeaway:** This file contains the entire book's summary. It's excellent for a `Cmd+F` search when you need to recall a specific Java quirk or syntax rule (like the difference between `==` and `.equals()`).
+
 # Introduction: How to Use This Book
 
 **Source**: Head First Java, Second Edition | **Pages**: 23-34

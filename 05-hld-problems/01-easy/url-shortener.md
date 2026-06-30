@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a URL shortener (Bitly) — one of the most common system design interview questions; covers hashing, Base62 encoding, and high-read-volume caching.
+>
+> **Key design decisions:**
+> - ID generation: hash (MD5/SHA256, take first 7 chars) vs counter (auto-increment → Base62 encode); counter preferred for uniqueness
+> - Base62 encoding: 62^7 = 3.5 trillion combinations; supports custom aliases with collision detection
+> - Storage: write once, read many; MySQL/PostgreSQL for metadata; 301 vs 302 redirect (301 = cached at browser, loses analytics; 302 = server always sees request)
+> - Caching: hot URLs cached in Redis (90/10 rule — 20% URLs get 80% traffic); cache-aside; TTL = 24h
+> - DB schema: {short_code, original_url, user_id, created_at, expires_at, click_count}
+> - Scale: 100M URLs, 10B redirects/day → ~115K reads/sec → need Redis caching + read replicas; writes are trivial
+> - Analytics: async click counter (Kafka → batch DB write); avoid write-amplification on hot rows
+>
+> **Key takeaway:** The redirect layer is read-heavy (100:1 read-to-write); cache aggressively in Redis; use 302 (not 301) for accurate analytics.
+
 ---
 module: 05-hld-problems
 topic: Easy

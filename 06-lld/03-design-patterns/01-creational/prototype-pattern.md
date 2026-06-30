@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Prototype Pattern — used to clone existing objects without coupling to their specific classes, especially when creation is expensive.
+>
+> **Key concepts:**
+> - The problem: creating an object from scratch is expensive (e.g., requires DB calls, parsing XML, or complex math). Or, you have an object and want a copy, but its fields are private.
+> - The fix: define a `clone()` method on the object itself (via a `Prototype` interface).
+> - Shallow vs Deep Copy: The hardest part of this pattern.
+> - Shallow copy: copies primitive fields and *references* to objects. Modifying a nested object in the clone modifies the original!
+> - Deep copy: recursively copies every nested object. Modifying the clone does not affect the original.
+> - Registry: often paired with a Prototype Registry (a Map) storing pre-configured prototypes (e.g., `registry.get("basic_enemy").clone()`).
+>
+> **Key takeaway:** Use Prototype when object initialization is costly and you need many similar instances. In Java, beware of the default `Object.clone()` (it's a shallow copy and requires `Cloneable`, which is considered a broken interface).
+
 ---
 module: 06-lld
 topic: Design Patterns

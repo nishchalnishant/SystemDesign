@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** GitBook-style table of contents for the entire system design repo — a complete, clickable index of every file.
+>
+> **Key topics:**
+> - Full hierarchical listing of all repo files, grouped by section
+> - Links to all 9 directory sections: foundations, building blocks, scaling, advanced topics, HLD problems, LLD, interview templates, reference, and patterns
+> - Chapter-level navigation for book summaries (Head First Java, DDIA, Head First OOAD)
+> - All 36 LLD problems enumerated in sequence
+> - All 36 HLD problems listed by difficulty tier
+>
+> **Key takeaway:** Use this file as your clickable master index when reading the repo in GitBook or any markdown navigator.
+
 ---
 module: root
 status: unread

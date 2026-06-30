@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Creational Design Patterns — mechanisms that deal with object creation, hiding the exact instantiation logic and making systems independent of how their objects are created.
+>
+> **The 5 Patterns:**
+> - Singleton: Ensure a class has only one instance (e.g., Database Connection Pool, Logger). Anti-pattern in modern DI frameworks.
+> - Factory Method: Delegate object creation to subclasses or a separate factory class based on input (e.g., `NotificationFactory.create("SMS")`).
+> - Abstract Factory: Create families of related objects (e.g., UI themes: MacButton/MacCheckbox vs WinButton/WinCheckbox).
+> - Builder: Construct complex objects step-by-step using a fluent API (`new User.Builder().name("A").age(25).build()`). Solves telescoping constructors.
+> - Prototype: Clone existing objects rather than creating them from scratch (e.g., copying a complex email template object).
+>
+> **Key takeaway:** In LLD interviews, Builder (for DTOs/complex domain objects) and Factory Method (for polymorphic creation) are mandatory. Singleton is commonly asked but mostly to see if you know its threading pitfalls.
+
+---
+
 # Creational Design Patterns
 
 Creational patterns provide various object creation mechanisms, which increase flexibility and reuse of existing code.

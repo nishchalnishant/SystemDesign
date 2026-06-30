@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** An introduction to Object-Oriented Programming (OOP) and how classes act as blueprints for objects.
+>
+> **Key concepts:**
+> - Classes vs Objects: A class is a blueprint; an object is a concrete instance of that class living in memory.
+> - State (Instance Variables): Data that represents what an object *knows* (e.g., `size`, `breed`, `name`).
+> - Behavior (Methods): Code that represents what an object *does* (e.g., `bark()`, `play()`).
+> - Instantiation: Using the `new` keyword (e.g., `Dog d = new Dog();`) to create an object on the heap.
+>
+> **Key takeaway:** Stop thinking in terms of procedural steps and start thinking in terms of "Things" (Objects). A program is just a bunch of objects sending messages (method calls) to each other.
+
 # Ch 02: Classes and Objects
 
 **Source**: Head First Java, Second Edition | **Pages**: 61-82

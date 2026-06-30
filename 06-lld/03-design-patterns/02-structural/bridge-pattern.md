@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Bridge Pattern — decouples an abstraction from its implementation so that the two can vary independently.
+>
+> **Key concepts:**
+> - The problem: class explosion via inheritance. If you have 3 shapes (Circle, Square, Triangle) and 3 colors (Red, Blue, Green), inheritance requires 9 classes (`RedCircle`, `BlueSquare`, etc.).
+> - The fix: favor composition over inheritance. Split them into two separate hierarchies: `Shape` and `Color`.
+> - The bridge: The `Shape` class holds a reference to a `Color` object (the bridge). When `Shape` needs to draw, it delegates the color part to its composed `Color` object.
+> - Result: you now have 3 Shape classes + 3 Color classes = 6 classes (instead of 9). Adding a new shape (e.g., Pentagon) requires adding exactly 1 class, not 3.
+> - Common use case: Cross-platform UI (a `Button` abstraction bridging to a `WindowsRenderer` or `MacRenderer` implementation).
+>
+> **Key takeaway:** Bridge is the ultimate application of "prefer composition over inheritance." Whenever you see an inheritance tree growing multiplicatively on two different dimensions, use a Bridge to split them.
+
 ---
 module: 06-lld
 topic: Design Patterns

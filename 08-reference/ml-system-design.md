@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** An introduction to designing Machine Learning systems at scale, focusing on the differences between traditional software systems and ML pipelines.
+>
+> **Key concepts:**
+> - Training Pipeline vs Inference Pipeline: Training is batch-heavy and done offline. Inference (serving predictions) is real-time and latency-sensitive.
+> - Data Drift / Concept Drift: Models degrade over time as the real world changes. You must monitor input distributions and set up automated retraining loops.
+> - Feature Store: A centralized database that stores cleaned, curated features so both training and inference pipelines use the exact same data logic (preventing training-serving skew).
+> - Evaluation: Offline metrics (Precision/Recall) vs Online metrics (A/B testing, click-through rates).
+>
+> **Key takeaway:** Designing an ML system is 80% data engineering (pipelines, feature stores, monitoring) and 20% actual model training. Focus the design on data flow, not on the math of the neural network.
+
 ---
 module: 08-reference
 status: unread

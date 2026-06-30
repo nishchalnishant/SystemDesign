@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Ticketmaster — the hardest concurrency problem in system design; flash sale seat reservation where millions compete for thousands of seats in seconds.
+>
+> **Key design decisions:**
+> - Seat reservation: two-phase HOLD (lock seat in Redis for 10 min) → PURCHASE (DB commit + payment); Redis SETNX seat_id = user_id for atomic single-winner guarantee
+> - Concurrency at flash sale: virtual waiting room (queue users; release N per second into booking flow); prevents thundering herd on seat inventory
+> - Seat status: real-time seat map via WebSocket; status states: AVAILABLE → HELD (10 min TTL) → SOLD; broadcast seat_id status changes to all connected clients
+> - Inventory atomicity: Redis SETNX (set if not exists) for seat hold — exactly one user wins; if SETNX returns 0, seat is already held
+> - Payment flow: held seat → initiate payment (Stripe) → on success, publish SEAT_SOLD event → DB commit booking; compensating transaction on payment failure releases hold
+> - Waitlist: users on waitlist notified via WebSocket/push when hold expires (seat released); first in waitlist gets hold offer
+> - DB design: events, venues, seats, bookings tables; seat_map indexed by (event_id, section, row, seat_number); booking record is immutable
+>
+> **Key takeaway:** Redis SETNX + 10-min TTL is the atomic seat locking mechanism — it's the only way to guarantee a single winner under millions of concurrent hold attempts without DB deadlocks.
+
 ---
 module: 05-hld-problems
 topic: Hard

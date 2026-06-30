@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The caching layer — in-memory stores (Redis, Memcached) used to serve hot data at RAM speed (100ns) vs DB speed (1–20ms), with all cache patterns and eviction policies.
+>
+> **Key topics:**
+> - Cache patterns: Cache-Aside (lazy loading), Read-Through, Write-Through, Write-Behind, Write-Around
+> - Eviction policies: LRU (least recently used), LFU (least frequently used), ARC (adaptive), W-TinyLFU (Caffeine/Redis)
+> - Cache stampede / thundering herd: when many requests miss simultaneously → fix with mutex lock or probabilistic early refresh
+> - Redis data structures: String, Hash, List, Set, Sorted Set, HyperLogLog, Geospatial
+> - Redis persistence: RDB snapshots vs AOF (append-only file) vs hybrid; trade-offs for durability
+> - CDN as cache layer: serves static content at the edge; complements in-process and server-side caches
+> - When NOT to cache: frequently changing data, financial data requiring strong consistency, user-specific data too large to fit in RAM
+>
+> **Key takeaway:** Cache-Aside is the default — simple, resilient to cache failures; use Write-Through when you can't tolerate stale reads.
+
 ---
 module: 02-building-blocks
 status: unread

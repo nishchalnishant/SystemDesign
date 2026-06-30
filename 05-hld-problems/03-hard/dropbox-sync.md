@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Dropbox file sync — efficient bi-directional file synchronization with delta sync, conflict resolution, and multi-device consistency.
+>
+> **Key design decisions:**
+> - File chunking: files split into 4MB chunks; each chunk content-addressed by SHA256 hash; upload only changed chunks (delta sync saves 90% bandwidth on typical edits)
+> - Sync protocol: client computes local chunk manifest → sends to server → server returns list of missing chunks → client uploads only those → server assembles file
+> - Change detection: client watches filesystem events (inotify/FSEvents); debounce 200ms; compute diff; sync only changed files
+> - Conflict resolution: if two devices edit same file concurrently → both versions preserved; user sees "filename (conflicted copy)" + original; no auto-merge
+> - Metadata service: file tree (file_id, parent_folder_id, name, version, chunks[]) in PostgreSQL; version vector per file; chunk store in S3 keyed by hash
+> - Offline support: local SQLite tracks pending sync queue; batch uploads on reconnect; reads work offline from local copy
+> - Bandwidth optimization: rsync-like differential sync; skip unchanged chunks via hash comparison; compression for text files
+>
+> **Key takeaway:** Content-addressed chunk storage (SHA256) enables deduplication and delta sync simultaneously — the chunk hash tells you both what to skip uploading and whether a chunk already exists globally.
+
 ---
 module: 05-hld-problems
 topic: Hard

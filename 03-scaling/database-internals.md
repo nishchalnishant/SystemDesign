@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Database internals that matter for system design interviews — storage engines, indexes, WAL, MVCC, and transaction isolation — so you can answer follow-up questions confidently.
+>
+> **Key topics:**
+> - Storage engines: B-Tree (read-fast, in-place updates) vs LSM Tree (write-fast, append-only + compaction)
+> - Index types: primary (clustered), secondary (pointer to row), composite (leftmost prefix rule), covering (no row lookup)
+> - WAL (Write-Ahead Log): every write goes to sequential log before modifying data pages; enables crash recovery and replication
+> - MVCC: each transaction sees a snapshot; old row versions kept until VACUUM; readers never block writers
+> - Transaction isolation levels: Read Uncommitted → Read Committed → Repeatable Read → Serializable (and their anomalies)
+> - Query optimization: EXPLAIN/ANALYZE to find seq scans; covering indexes to avoid heap access; query planner statistics
+> - Vacuum and bloat: PostgreSQL dead tuples from MVCC; AUTOVACUUM reclaims space; bloat slows range scans
+>
+> **Key takeaway:** When an interviewer asks "what happens under high write load?" — explain WAL sequential writes, connection limits, and why MVCC dead tuples require VACUUM.
+
 ---
 module: 03-scaling
 topic: Database Internals

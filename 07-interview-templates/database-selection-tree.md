@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A structured decision tree to help you quickly choose the right database for a system design problem and justify it to the interviewer.
+>
+> **Key concepts:**
+> - Relational (SQL): Use for structured data with strict ACID requirements (e.g., financial transactions, billing).
+> - Key-Value (Redis/DynamoDB): Use for simple lookups by ID, caching, or session storage.
+> - Document (MongoDB/Couchbase): Use for unstructured or evolving data where the schema isn't fixed (e.g., product catalogs, user profiles).
+> - Wide-Column (Cassandra/HBase): Use for massive write-heavy time-series data without complex joins (e.g., chat histories, IoT metrics).
+> - Graph (Neo4j): Use for highly interconnected data where traversing relationships is the primary query (e.g., social networks, recommendation engines).
+>
+> **Key takeaway:** "Because it's fast" is not a valid justification. Use this tree to say: "Because our data has fluid schemas and we need high write throughput without complex joins, a Document database like MongoDB fits best."
+
 ---
 module: 07-interview-templates
 status: unread

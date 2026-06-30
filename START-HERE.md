@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Quick-start guide for the repo — where to begin, fastest paths to interview readiness, and key decision files.
+>
+> **Key topics:**
+> - Section-by-section breakdown of what each directory covers in one line
+> - Two study tracks: 2-week fast-track (minimum viable prep) and 4-week full track
+> - Prioritized 2-week plan: HLD template → capacity estimation → numbers to know → building blocks → HLD problems → SOLID + top 5 patterns → LLD Tier 1
+> - LLD problem tiers (Tier 1: must solve, Tier 2: understand, Tier 3: read only)
+> - Decision files: SQL vs NoSQL, which pattern to use, trade-off any choice
+>
+> **Key takeaway:** If you're short on time, follow the 2-week fast track — master the HLD template, building blocks, and Tier 1 LLD problems first.
+
+---
+
 # Start Here
 
 This repo covers system design end-to-end — HLD, LLD, design patterns, and interview frameworks. It is language-agnostic (Python examples in LLD, Java discussed in OOP).

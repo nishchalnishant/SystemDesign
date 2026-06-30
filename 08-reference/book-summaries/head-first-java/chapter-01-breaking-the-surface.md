@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The absolute basics of Java, including the structure of a class, the main method, and how Java code is compiled and executed.
+>
+> **Key concepts:**
+> - The JVM: Java code is compiled into bytecode (`.class` files), which is then interpreted by the Java Virtual Machine (JVM). This enables "Write Once, Run Anywhere".
+> - Code Structure: Source code goes in a `.java` file, which must contain a class matching the filename.
+> - The `main()` Method: The entry point of every Java application: `public static void main(String[] args)`.
+> - Basic Syntax: Loops (`while`, `for`), conditionals (`if`, `else`), and branching.
+>
+> **Key takeaway:** Java is strictly object-oriented, but execution always starts in a static context (the `main` method). Your first job is usually to create an object inside `main` and hand control over to it.
+
 # Ch 01: Breaking the Surface
 
 **Source**: Head First Java, Second Edition | **Pages**: 35-60

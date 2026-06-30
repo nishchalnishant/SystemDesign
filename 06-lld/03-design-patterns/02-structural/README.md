@@ -1,3 +1,21 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Structural Design Patterns — how to assemble objects and classes into larger structures while keeping these structures flexible and efficient.
+>
+> **The 7 Patterns:**
+> - Adapter: Connects incompatible interfaces (like a power adapter). E.g., wrapping a legacy XML library to work with a JSON system.
+> - Bridge: Decouples an abstraction from its implementation so both can vary independently. Prevents class explosion (e.g., `Shape` + `Color` instead of `RedCircle`, `BlueCircle`).
+> - Composite: Treats individual objects and groups of objects uniformly using a tree structure. E.g., `File` and `Folder` both implement `FileSystemNode`.
+> - Decorator: Attaches new behaviors to objects dynamically without subclassing. Alternative to inheritance. E.g., `Coffee`, `MilkDecorator`, `SugarDecorator`.
+> - Facade: Provides a simplified interface to a complex subsystem. E.g., one `OrderFacade.placeOrder()` hides Inventory, Payment, and Shipping services.
+> - Flyweight: Shares memory across huge numbers of fine-grained objects (e.g., sharing the `texture` of a Tree in a game, while `x/y` are unique).
+> - Proxy: Provides a placeholder/wrapper to control access to another object (for lazy loading, caching, or access control).
+>
+> **Key takeaway:** Decorator (dynamically adding behavior like Pizza toppings) and Composite (tree structures like file systems) are extremely common in LLD. Adapter is standard for third-party integrations.
+
+---
+
 # Structural Design Patterns
 
 Structural patterns explain how to assemble objects and classes into larger structures while keeping these structures flexible and efficient.

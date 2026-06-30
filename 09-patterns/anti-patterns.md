@@ -5,6 +5,19 @@ tags: [09-patterns, system-design, patterns]
 ---
 # System Design Anti-Patterns
 
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Common architectural mistakes in distributed systems, why they are bad, and how to fix them.
+>
+> **Key concepts:**
+> - Dual Writes: Writing to a DB and publishing an event without coordination. Use the Outbox Pattern instead.
+> - Shared Database: Multiple microservices accessing the same database directly, creating tight coupling. Use API-driven data access.
+> - Distributed Monolith: Microservices that are so tightly coupled via synchronous RPCs that if one goes down, they all go down. Use asynchronous events where possible.
+> - Infinite Retries: Retrying a failed request forever without a backoff strategy, which can cause a self-inflicted DDoS attack (retry storm). Use Exponential Backoff + Jitter.
+>
+> **Key takeaway:** Senior engineers are defined not just by the patterns they know, but by the anti-patterns they avoid. Recognizing these traps in an interview or architecture review is critical.
+
 > **The most common architectural mistakes in distributed systems and how to avoid them. Knowing what NOT to build is as important as knowing what to build.**
 
 ---

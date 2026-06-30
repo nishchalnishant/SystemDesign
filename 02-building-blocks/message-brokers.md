@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Message brokers — middleware enabling async decoupled communication between services via queues (point-to-point) and pub/sub (fan-out).
+>
+> **Key topics:**
+> - Queue vs Pub/Sub: queue delivers to exactly one consumer (work distribution); pub/sub broadcasts to all subscribers (events)
+> - Kafka architecture: topics → partitions (ordered immutable log) → consumer groups; producers append, consumers read with offset
+> - Delivery guarantees: at-most-once (fire and forget), at-least-once (retry on failure), exactly-once (idempotent + transactional)
+> - RabbitMQ vs Kafka: RabbitMQ for job queues with complex routing (AMQP); Kafka for high-throughput event streaming and replay
+> - Dead Letter Queue (DLQ): messages that fail repeatedly go to DLQ for inspection/replay
+> - Backpressure: when consumers can't keep up — bounded queues, consumer scaling, rate limiting producers
+> - When to use: async processing, service decoupling, event sourcing, fan-out notifications, buffering traffic spikes
+>
+> **Key takeaway:** Choose Kafka for event streaming with replay; choose RabbitMQ/SQS for task queues where messages are consumed-and-gone.
+
 ---
 module: 02-building-blocks
 status: unread

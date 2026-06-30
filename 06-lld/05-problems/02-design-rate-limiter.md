@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Rate Limiter — an essential system design and LLD problem focusing on algorithms, concurrency, and time-based state management.
+>
+> **Key concepts:**
+> - Algorithms: Token Bucket (most common, used by AWS), Leaking Bucket (queue-based), Fixed Window, Sliding Window Log, Sliding Window Counter.
+> - Core Entities: `RateLimiter` (interface), `TokenBucketLimiter` (implementation), `UserRule` (limits per user/IP).
+> - The problem: efficiently tracking requests and dropping those that exceed the limit without locking up the system.
+> - Concurrency: Highly concurrent. `allowRequest()` must be thread-safe. Use `AtomicInteger` or explicit locking.
+> - Lazy Refill: Instead of a background thread constantly refilling buckets (expensive), refill tokens *on-demand* when the next request arrives by calculating time elapsed since the last request.
+>
+> **Key takeaway:** If you implement Token Bucket, use lazy refill and `ConcurrentHashMap` for storing buckets per user ID. For Sliding Window, use a thread-safe Deque or Redis Sorted Sets.
+
 ---
 module: 06-lld
 topic: Problems

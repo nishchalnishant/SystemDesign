@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Global distribution and multi-region architecture — how to design systems that serve users worldwide with low latency, high availability, and data sovereignty compliance.
+>
+> **Key topics:**
+> - Three motivations: latency (<20ms near region vs 200ms cross-continent), availability (region failure isolation), data compliance (GDPR EU residency)
+> - Active-Active: all regions accept reads and writes; requires conflict resolution (LWW, CRDTs, Google Spanner TrueTime)
+> - Active-Passive: primary region accepts writes; passive regions are hot standbys; failover in 1–3 min
+> - Data routing: geolocation-based DNS (Route 53 latency routing), Anycast, GSLB
+> - Consistency spectrum: strong (expensive, cross-region coordination) → eventual (local writes, async replication)
+> - Multi-tier CDN: edge PoP → regional PoP → origin; shields origin from global cache miss storms
+> - Data residency patterns: data partitioned by region (EU data stays in EU); cross-region reads only for non-sensitive data
+>
+> **Key takeaway:** Active-active gives the best latency and availability but requires CRDT-based conflict resolution — for most apps, active-passive with sub-minute failover is simpler and sufficient.
+
 ---
 module: 03-scaling
 status: unread

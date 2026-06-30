@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** How variables work in Java, specifically the critical difference between primitive types and object references.
+>
+> **Key concepts:**
+> - Primitives: Hold fundamental values (`int`, `boolean`, `byte`, `double`). They have a fixed size.
+> - Object References: Variables that hold a *pointer* to an object on the heap, not the object itself. Like a remote control for a TV.
+> - Array Basics: Arrays are always objects, even if they are declared to hold primitive values. `int[] nums = new int[5];` creates one array object holding 5 primitives.
+> - Garbage Collection: When an object on the heap no longer has any active references pointing to it, the JVM will automatically destroy it to reclaim memory.
+>
+> **Key takeaway:** Java passes everything by value. But when passing an object, the "value" being passed is the bits representing the reference (the remote control), meaning the receiving method can modify the original object.
+
 # Ch 03: Primitives and References
 
 **Source**: Head First Java, Second Edition | **Pages**: 83-104

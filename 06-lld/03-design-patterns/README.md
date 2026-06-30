@@ -1,3 +1,22 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Patterns — 23 standard solutions to common software design problems, organized into Creational, Structural, and Behavioral categories.
+>
+> **Categories:**
+> - Creational (5): How objects are created (Singleton, Factory Method, Abstract Factory, Builder, Prototype). They abstract the instantiation process.
+> - Structural (7): How classes and objects are composed to form larger structures (Adapter, Bridge, Composite, Decorator, Facade, Flyweight, Proxy).
+> - Behavioral (11): How objects communicate and assign responsibilities (Strategy, Observer, Command, State, Chain of Responsibility, etc.).
+>
+> **Most critical for LLD interviews:**
+> - Creational: Factory Method, Builder (for complex objects), Singleton (for shared state, though it's an anti-pattern in large systems).
+> - Structural: Decorator (add behavior without inheritance), Adapter (connect incompatible interfaces), Composite (tree structures like file systems).
+> - Behavioral: Strategy (swap algorithms), Observer (event systems like Pub/Sub), State (state machines like Vending Machines).
+>
+> **Key takeaway:** Do not memorize all 23 patterns. Focus on the core 8–10 that appear constantly in LLD interviews. Apply a pattern only when the specific problem it solves arises (e.g., use Strategy when you see multiple algorithms for the same task).
+
+---
+
 # Design Patterns
 
 Design patterns are typical solutions to common problems in software design. Each pattern is like a blueprint that you can customize to solve a particular design problem in your code.

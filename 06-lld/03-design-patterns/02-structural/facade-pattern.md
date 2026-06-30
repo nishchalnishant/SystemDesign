@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Facade Pattern — provides a simplified, higher-level interface to a complex subsystem of classes.
+>
+> **Key concepts:**
+> - The problem: a client needs to perform a common task (e.g., "Checkout"), but doing so requires orchestrating 5 different complex subsystems (Inventory, Payment, Shipping, Loyalty, Email).
+> - The fix: create a `CheckoutFacade` class that exposes a single `placeOrder()` method.
+> - The facade handles the complexity: inside `placeOrder()`, it coordinates the 5 subsystems in the correct order, handling errors and passing data between them.
+> - Benefits: isolates clients from subsystem changes. If the Payment system upgrades from v1 to v2, only the Facade changes; the client UI stays the same.
+> - Difference from Adapter: Adapter changes an existing interface to match another interface. Facade creates a new, simpler interface for an entire complex system.
+>
+> **Key takeaway:** Use Facade to hide "spaghetti" coordination logic from the client. In Spring/Java, @Service classes often act as facades orchestrating multiple Repositories.
+
 ---
 module: 06-lld
 topic: Design Patterns

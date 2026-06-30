@@ -5,6 +5,18 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Introduction to Graphical User Interfaces (GUIs) in Java using the Swing library, focusing on event handling.
+>
+> **Key concepts:**
+> - Swing Basics: `JFrame` is the window. `JButton` is a widget that goes in the window.
+> - Event Handling: How do you make a button *do* something? You use the Observer Pattern.
+> - Interfaces as Callbacks: Your class implements `ActionListener`, which forces you to write an `actionPerformed(ActionEvent e)` method. You then register your class with the button: `button.addActionListener(this);`.
+>
+> **Key takeaway:** While writing desktop Swing apps is rare today, the concept of Event Listeners is fundamental. The exact same pattern (registering a callback function to handle an asynchronous event) is used in Javascript DOM manipulation, Android development, and Node.js.
+
 # Ch 12: A Very Graphic Story
 
 **Source**: Head First Java, Second Edition | **Pages**: 387-432

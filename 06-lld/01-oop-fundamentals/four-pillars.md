@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The four pillars of OOP with deep dives, real-world analogies, Java/Python code examples, and design principle implications.
+>
+> **The four pillars:**
+> - Encapsulation: bundle data + methods; private fields, public getters/setters; prevents invalid state; e.g., BankAccount hides `balance`, exposes `deposit()`/`withdraw()`
+> - Inheritance: IS-A relationship; child inherits parent's interface and/or implementation; `Dog extends Animal`; avoid deep hierarchies (>2 levels = problem)
+> - Polymorphism: same method name, different behavior per class; runtime polymorphism via method overriding; compile-time via overloading; enables `List<Animal>` containing Dogs and Cats
+> - Abstraction: hide complexity behind simple interface; abstract classes (partial implementation) and interfaces (pure contract); `PaymentGateway` interface hides Stripe/PayPal details
+> - IS-A vs HAS-A: inheritance (IS-A) = tight coupling; composition (HAS-A) = flexible; `Car HAS-A Engine` (not IS-A); prefer composition
+> - This file covers: analogies, code examples in Java and Python, common mistakes, interview questions
+>
+> **Key takeaway:** Polymorphism via interfaces is the most interview-relevant pillar — it's how you swap algorithms (Strategy), handle events (Observer), and build extensible systems (OCP); memorize the `Shape.draw()` example.
+
 ---
 module: 06-lld
 topic: Oop Fundamentals

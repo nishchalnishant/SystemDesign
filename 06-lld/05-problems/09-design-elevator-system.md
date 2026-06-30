@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design Elevator System — a classic problem testing State machines, scheduling algorithms, and concurrent request handling.
+>
+> **Key concepts:**
+> - Core Entities: `ElevatorSystem` (orchestrator), `ElevatorCar`, `Button` (Internal/External), `Display`.
+> - State Pattern: `ElevatorState` (MovingUp, MovingDown, Idle, DoorOpen).
+> - The Algorithm: SCAN (or LOOK) algorithm. The elevator maintains two min/max heaps or sorted sets: one for upward requests, one for downward requests. It sweeps fully up, then fully down.
+> - Strategy Pattern: the `ElevatorDispatchStrategy` decides *which* car gets a request (e.g., shortest wait time, nearest car moving in the same direction).
+> - Concurrency: Requests arrive asynchronously from different floors. The request queues must be thread-safe (e.g., `PriorityBlockingQueue`).
+>
+> **Key takeaway:** Do not use a basic FIFO queue for elevator requests, or the elevator will bounce erratically. You must mention the SCAN/LOOK directional sweep algorithm and use sorted data structures.
+
 ---
 module: 06-lld
 topic: Problems

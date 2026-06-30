@@ -1,3 +1,18 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Command Pattern — encapsulates a request as an object, allowing you to parameterize clients with different requests, queue or log requests, and support undoable operations.
+>
+> **Key concepts:**
+> - The problem: tightly coupling a UI button to the business logic it triggers. Or, needing to implement "Undo/Redo" functionality.
+> - The fix: create a `Command` interface with an `execute()` method.
+> - Concrete Commands: `TurnOnLightCommand`, `TransferMoneyCommand`. These hold the parameters needed to execute the action and a reference to the receiver.
+> - Invoker: the object calling the command (e.g., a Button). It just calls `command.execute()`.
+> - Undo: add an `undo()` method to the interface. Maintain a `Stack<Command>` of executed commands. To undo, pop the stack and call `undo()`.
+> - Async/Queuing: because the request is now an object, it can be serialized, saved to a database, or put on a queue (e.g., Kafka) to be executed later.
+>
+> **Key takeaway:** Command is the definitive answer to any LLD interview question involving "Undo/Redo" functionality (like a Text Editor) or job queuing.
+
 ---
 module: 06-lld
 topic: Design Patterns

@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Visual flowcharts for every major topic in the repo — designed for active recall and pre-interview mental rehearsal.
+>
+> **Key topics:**
+> - ASCII-style flowcharts for all 9 repo sections: foundations, building blocks, scaling, advanced topics, HLD problems, LLD, patterns, templates, and reference
+> - Each chart shows the internal structure of a topic file (e.g., CAP → PACELC → Consistency Models → Latency Numbers)
+> - Covers 50+ individual topic flowcharts: networking stack, DB internals, Kafka consumer groups, Saga pattern, LLD class hierarchies
+> - Designed as a "predict then verify" study technique — glance before reading, redraw from memory after
+> - Includes HLD problem flowcharts showing architecture layers for URL Shortener, Chat System, Stock Exchange, etc.
+>
+> **Key takeaway:** Use this file before interviews — if you can mentally redraw these flowcharts, you can explain any topic clearly under pressure.
+
 ---
 module: root
 status: unread

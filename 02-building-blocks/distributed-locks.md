@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Distributed locks — coordinating exclusive access to a shared resource across multiple processes/nodes (something Java's `synchronized` can't do across machines).
+>
+> **Key topics:**
+> - Problem: 3 app servers all fire the same cron job at midnight → 3 duplicate emails sent to users
+> - Lock requirements: mutual exclusion, liveness (no deadlock via TTL), safety (only holder can release), fault tolerance
+> - Redis-based lock: SET key value NX EX ttl — atomic acquire + expiry; release only if value matches (Lua script)
+> - Fencing tokens: each lock acquisition returns a monotonically increasing token; storage layer rejects stale token writes
+> - Redlock (multi-node Redis): acquire lock on majority (N/2+1) of Redis nodes; controversial (Martin Kleppmann critique)
+> - ZooKeeper ephemeral nodes: more robust distributed locking; ephemeral node deleted automatically on client disconnect
+> - TTL and GC pauses: GC pause can cause lock holder to lose lock mid-work → always use fencing tokens with storage
+>
+> **Key takeaway:** Redis NX+EX is the simplest distributed lock; add fencing tokens for storage writes so stale lock holders can't corrupt data.
+
 ---
 module: 02-building-blocks
 status: unread

@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Coupon/Discount System — tests complex business rule validation and compounding mathematical operations using patterns.
+>
+> **Key concepts:**
+> - Core Entities: `Cart`, `Item`, `Coupon`, `DiscountResult`.
+> - Strategy Pattern (Discount Type): `PercentageDiscount`, `FlatDiscount`, `BOGODiscount` (Buy One Get One).
+> - Chain of Responsibility (Validation): Before applying a coupon, it must pass a chain of checks: `ExpirationValidator` -> `MinimumCartValueValidator` -> `UserEligibilityValidator`.
+> - Composite Pattern (Stacking): If users can apply multiple coupons, create a `CompositeCoupon` that contains a list of coupons and applies them sequentially to the cart total.
+>
+> **Key takeaway:** E-commerce pricing rules change daily. Hardcoding `if (coupon == "SUMMER50")` is an instant fail. Use the Strategy pattern so the Marketing team can configure new coupons via database rows, mapped to your generic strategies.
+
 ---
 module: 06-lld
 topic: Problems

@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A structured template for designing APIs during an interview. It guides you from protocol choice to endpoint definition to advanced topics like versioning and pagination.
+>
+> **Key concepts:**
+> - Protocol Choice: Justify REST (CRUD), gRPC (internal microservices, low latency), or GraphQL (mobile, avoiding over-fetching).
+> - Anatomy of an Endpoint: `METHOD /v1/resource/identifier`. Always specify headers, request payload, and response format.
+> - Pagination: Cursor-based (better for infinite scroll, changing datasets) vs. Offset-based (better for jumping to page $N$, but slow on large offsets).
+> - Versioning: Path versioning (`/v1/users`) vs. Header versioning (`Accept-Version: v1`).
+> - Idempotency: Essential for payment/transaction APIs (using `Idempotency-Key` headers).
+>
+> **Key takeaway:** Don't just list endpoints. The interviewer wants to see you consider the *design* of the API—how you handle pagination, backwards compatibility (versioning), and network failures (idempotency).
+
 ---
 module: 07-interview-templates
 status: unread

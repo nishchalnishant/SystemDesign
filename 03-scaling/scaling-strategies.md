@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The full toolkit of scaling strategies — from vertical/horizontal scaling through database read/write scaling, caching, queues, and async processing.
+>
+> **Key topics:**
+> - Vertical vs horizontal scaling: when each applies, cost curves, when vertical hits its ceiling
+> - Database read scaling: read replicas, connection pooling (PgBouncer), consistent read routing
+> - Database write scaling: sharding strategies (hash/range/directory), trade-offs and hotspot prevention
+> - Caching: which tier (client, CDN, object, DB query, application), eviction policies, stampede prevention
+> - Queues and async processing: decouple producers from slow consumers; buffer traffic spikes; retry semantics
+> - Stateless services: prerequisite for horizontal app scaling; session state in Redis, not local memory
+> - Autoscaling: horizontal pod autoscaler (K8s), CPU/RPS triggers, scale-in protection
+>
+> **Key takeaway:** Caching is always the first lever; sharding is the last resort — go through read replicas, connection pooling, and query optimization before you shard.
+
 ---
 module: 03-scaling
 status: unread

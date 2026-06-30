@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Core OOP concepts: Inheritance (the IS-A relationship) and Polymorphism.
+>
+> **Key concepts:**
+> - Inheritance: Using the `extends` keyword, a subclass inherits all public and protected instance variables and methods from its superclass.
+> - Overriding: A subclass can redefine a method inherited from a superclass to provide its own specific behavior.
+> - Polymorphism: You can declare a reference variable of a superclass type, but assign it a subclass object. `Animal a = new Dog();`.
+> - IS-A vs HAS-A: Use inheritance only when the subclass "IS-A" type of the superclass (e.g., A Dog IS-A Animal). If a class "HAS-A" something else, use composition (e.g., a Bathroom HAS-A Tub).
+>
+> **Key takeaway:** Polymorphism allows you to write flexible, extensible code. You can write a method that takes an `Animal` array and calls `.makeNoise()` on all of them, and it works perfectly whether the array contains `Dog`, `Cat`, or `Lion` objects.
+
 # Ch 07: Inheritance and Polymorphism
 
 **Source**: Head First Java, Second Edition | **Pages**: 199-230

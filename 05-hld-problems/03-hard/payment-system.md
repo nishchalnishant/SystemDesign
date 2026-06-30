@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a payment system — the most correctness-critical system design problem; covers double-charge prevention, double-entry accounting, PCI compliance, and reconciliation.
+>
+> **Key design decisions:**
+> - Idempotency: every payment request has an idempotency key (client-generated UUID); server stores key → result; retry returns same result without re-charging
+> - Double-entry accounting: every transaction has debit + credit entries; ledger entries are immutable; account balance = sum of all entries
+> - Payment flow: initiate → payment processor (Stripe/Braintree) → async webhook confirmation → order update; never wait synchronously on payment response
+> - Saga pattern: cross-service payment (reserve funds → charge → fulfill); compensating transaction on failure (refund); distributed without 2PC
+> - PCI DSS compliance: never store raw card numbers; tokenize with payment processor; TLS everywhere; cardholder data isolated in separate service
+> - Reconciliation: daily batch job compares internal ledger vs payment processor report; flag mismatches for manual review
+> - Failure handling: timeout ≠ failure; query payment processor for status; idempotency key prevents double-charge on retry
+>
+> **Key takeaway:** Idempotency key + double-entry ledger are the two non-negotiable foundations — timeout does not mean failure, so always query status before retrying a payment.
+
 ---
 module: 05-hld-problems
 topic: Hard

@@ -5,6 +5,19 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The iterative development process and Test-Driven Development (TDD).
+>
+> **Key concepts:**
+> - Iterative Development: Build a tiny, working piece of the system, test it, and show it to the customer. Then build the next piece. Do not write all the code at once.
+> - Feature Driven Development: Pick one feature, analyze it, design it, code it, test it.
+> - Testing: Tests prove your code does what the customer asked.
+> - Test-Driven Development (TDD): Write the test *before* you write the code. It forces you to think about how the object will be used before you get bogged down in implementation details.
+>
+> **Key takeaway:** Big Bang integration (writing all the code and praying it works together at the end) always fails. Iteration and TDD ensure that your software is always in a working, verifiable state.
+
 # Ch 09: Iterating and Testing
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 458-517

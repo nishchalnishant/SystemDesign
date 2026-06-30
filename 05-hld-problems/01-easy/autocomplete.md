@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design autocomplete/typeahead search — returning the top 5–10 ranked completions for a prefix within 100ms, at Google-scale.
+>
+> **Key design decisions:**
+> - Data structure: Trie (prefix tree) for prefix lookup; each node stores top-K suggestions cached; O(prefix length) lookup
+> - Ranking: suggestions scored by search frequency; updated via Hadoop batch job hourly or Kafka streaming in real-time
+> - Scale: Trie doesn't fit in RAM on one server (billions of terms) → shard Trie by prefix range; each server owns A–F, G–M, N–Z
+> - Prefix cache: Redis cache top prefixes (2-char and 3-char prefixes handle 80% of queries); re-compute on score change
+> - Freshness: trending queries (breaking news) need minutes-fresh data → stream Kafka → real-time frequency update pipeline
+> - API design: GET /suggestions?q=sys&limit=10; backend routes to correct Trie shard based on prefix
+> - Personalization: blend global frequency score with user's recent queries; weighted combination; stored in user session cache
+>
+> **Key takeaway:** Cache top suggestions for the most common prefixes in Redis — most queries are short (2–3 chars); the Trie itself only needs to serve cache misses for long-tail prefixes.
+
 ---
 module: 05-hld-problems
 topic: Easy

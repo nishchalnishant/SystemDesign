@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A massive repository of over 90 follow-up questions interviewers use to test the depth of your knowledge.
+>
+> **Key concepts:**
+> - Database Follow-ups: "How do you handle a replica lag?", "What if a shard becomes a hotspot?"
+> - Cache Follow-ups: "How do you ensure cache consistency?", "What eviction policy are you using and why?"
+> - Microservices Follow-ups: "How do you handle distributed transactions across three services?", "What happens if service B is slow?"
+> - Networking Follow-ups: "Why WebSockets instead of Server-Sent Events?", "How does the client know when the job is done?"
+>
+> **Key takeaway:** You will be interrupted during your interview with these exact questions. Use this list to practice thinking on your feet and giving concise, 60-second answers.
+
 ---
 module: 07-interview-templates
 topic: Interviewer Follow-Up Question Bank

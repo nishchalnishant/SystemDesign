@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a RAG (Retrieval-Augmented Generation) system — grounding LLM responses in a document corpus via semantic search, embedding vectors, and prompt construction.
+>
+> **Key design decisions:**
+> - Ingestion pipeline: documents → chunking (512–1024 tokens, overlap 50 tokens) → embedding model → vector embeddings → vector DB (Pinecone/Weaviate/pgvector)
+> - Chunking strategy: fixed-size chunks vs semantic chunks (sentence-boundary aware); overlap prevents context loss at chunk boundaries
+> - Retrieval: user query → embed query → ANN search in vector DB (HNSW index) → top-K semantically similar chunks → re-rank with cross-encoder
+> - Hybrid search: semantic (dense vector) + keyword (BM25) → combine scores with RRF (Reciprocal Rank Fusion); catches both semantic and exact matches
+> - Prompt construction: system prompt + retrieved chunks + user query → sent to LLM; chunk count limited by context window (e.g., 5 chunks × 512 tokens)
+> - Citation: each chunk tagged with source document + page; LLM instructed to cite sources; UI displays reference links
+> - Freshness: incremental ingestion for new documents; chunk-level deduplication by content hash; re-embed on document update
+>
+> **Key takeaway:** HNSW vector search + re-ranking (cross-encoder) is the retrieval backbone — ANN gives recall, re-ranking gives precision; hybrid BM25+vector catches cases where semantic search misses exact keyword matches.
+
 ---
 module: 05-hld-problems
 topic: Hard

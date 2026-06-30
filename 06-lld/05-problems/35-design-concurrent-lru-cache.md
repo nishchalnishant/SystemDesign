@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Concurrent LRU Cache — takes the standard LRU cache and asks "how do we make this thread-safe without locking the whole structure and killing performance?"
+>
+> **Key concepts:**
+> - The Problem: Wrapping the whole LRU (HashMap + DoublyLinkedList) in a `synchronized` block makes it thread-safe, but limits throughput to 1 thread at a time.
+> - Striped Locking (The Solution): Divide the cache into $N$ separate "segments" (e.g., 16 segments). 
+> - Hashing to Segments: Use `hash(key) % N` to determine which segment a key belongs to.
+> - Segment Isolation: Each segment has its own independent `HashMap`, `DoublyLinkedList`, and `ReentrantLock`.
+> - Concurrency: Thread A accessing Segment 2 and Thread B accessing Segment 5 can proceed entirely in parallel without blocking each other.
+>
+> **Key takeaway:** This is the exact design of Java's pre-8 `ConcurrentHashMap`. Explain that an LRU requires *both* a map and a linked list to be updated atomically, which is why you can't just use a `ConcurrentHashMap` out of the box (you still need to lock the segment to update the linked list pointers).
+
 ---
 module: 06-lld
 topic: Problems

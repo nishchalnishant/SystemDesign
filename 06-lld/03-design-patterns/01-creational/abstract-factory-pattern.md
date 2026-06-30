@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Abstract Factory Pattern — provides an interface for creating families of related or dependent objects without specifying their concrete classes.
+>
+> **Key concepts:**
+> - The problem: you have *families* of products (e.g., Mac UI vs Windows UI). A Mac Button must be used with a Mac Checkbox. Mixing a Mac Button with a Windows Checkbox breaks the system.
+> - The fix: create an `UIFactory` interface with `createButton()` and `createCheckbox()`.
+> - Concrete factories: `MacFactory` implements it (returns Mac items). `WinFactory` implements it (returns Win items).
+> - Client usage: The client receives a `UIFactory`. It doesn't know (or care) which OS it's on. It just calls `factory.createButton()`, guaranteeing compatible products.
+> - Difference from Factory Method: Factory Method creates *one* product. Abstract Factory creates *multiple related* products (a family).
+>
+> **Key takeaway:** Use Abstract Factory only when you have multiple, distinct product families and you must enforce that objects from different families are never mixed. It's rare in standard LLD problems but common in framework design.
+
 ---
 module: 06-lld
 topic: Design Patterns

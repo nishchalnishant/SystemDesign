@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Adapter Pattern — allows objects with incompatible interfaces to collaborate.
+>
+> **Key concepts:**
+> - The problem: your system expects an interface (e.g., `PaymentGateway`), but the third-party library you must use has a different interface (`RazorpayClient`). You can't change either.
+> - The fix: create an `Adapter` class that implements your expected interface (`PaymentGateway`), and holds a reference to the third-party object (`RazorpayClient`).
+> - The mapping: inside the `Adapter`, map the methods and data types from what your system passes in, to what the third-party object expects.
+> - Client usage: The client code only talks to the `Adapter` via the known interface. It is unaware of the third-party library underneath.
+> - Analogy: a travel plug adapter that lets a European laptop plug into a US wall socket.
+>
+> **Key takeaway:** Adapter is the standard solution whenever you integrate with legacy code or third-party APIs. It protects your core business logic from being polluted by external dependencies.
+
 ---
 module: 06-lld
 topic: Design Patterns

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an e-commerce platform (Amazon) — product catalog, inventory management, cart, checkout, payment, and order lifecycle with flash sale support.
+>
+> **Key design decisions:**
+> - Product catalog: Elasticsearch for full-text search + faceted filtering; PostgreSQL for canonical product data; CDN for product images
+> - Inventory: inventory DB with optimistic locking (version field + CAS); reserve on add-to-cart, confirm on checkout; 30-min hold TTL
+> - Cart service: Redis for active cart (TTL = 30 days); cart is eventually consistent; don't put cart in main order DB
+> - Checkout flow: cart → inventory reservation → payment → order creation; each step is idempotent; compensating transactions on failure
+> - Payment: async payment via Stripe/Braintree; payment service publishes Kafka event on success → order confirmed; idempotency key prevents double-charge
+> - Flash sales: inventory counter in Redis (atomic DECR); actual DB inventory updated async; Redis acts as distributed semaphore
+> - Order history: Cassandra for order events (order_id by user_id); immutable event log; read by user timeline
+>
+> **Key takeaway:** Flash sales require Redis atomic DECR for inventory (not DB) — DB cannot handle 100K concurrent reservation attempts; Redis holds the semaphore, DB is eventually consistent.
+
 ---
 module: 05-hld-problems
 topic: Medium

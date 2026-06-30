@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a distributed key-value store (like Redis, DynamoDB, Cassandra) — covers consistent hashing, replication, storage engines, and CAP theorem trade-offs.
+>
+> **Key design decisions:**
+> - Data partitioning: consistent hashing with virtual nodes; each key maps to a node clockwise on the ring; vnodes ensure even distribution
+> - Replication: replicate to N successor nodes (N=3); read from R, write to W; quorum W+R>N; tunable per-operation consistency
+> - Storage engine: LSM tree for write-heavy (Cassandra approach) — MemTable → SSTable; Bloom filter to skip disk reads for non-existent keys
+> - Write path: Commit log (durability) → MemTable (in-memory) → periodic SSTable flush → compaction; all sequential I/O
+> - Failure handling: hinted handoff (queue writes for down nodes); read repair (fix inconsistency on read); Merkle tree anti-entropy
+> - CAP choice: AP (Cassandra-style) vs CP (Zookeeper-style); most KV stores default to AP with tunable consistency
+> - Operations: get, put, delete (tombstone marker); TTL via background sweeper; range scans only if using range sharding
+>
+> **Key takeaway:** Consistent hashing + LSM tree is the Cassandra blueprint — understand the write path (commit log → MemTable → SSTable) and quorum reads/writes cold.
+
 ---
 module: 05-hld-problems
 topic: Easy

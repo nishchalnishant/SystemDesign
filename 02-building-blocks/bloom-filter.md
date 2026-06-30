@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Bloom Filter — a space-efficient probabilistic data structure that answers "is this element in the set?" with zero false negatives but a tunable false positive rate.
+>
+> **Key topics:**
+> - Core mechanics: bit array of m bits + k hash functions; insert sets k bits; lookup checks if all k bits are 1
+> - No false negatives: if a bit is 0, the element is DEFINITELY not in the set
+> - False positives: all bits are 1 but the element was never inserted (collision) — rate tunable via m and k
+> - Space efficiency: 1B URLs → ~1.2 GB for 1% FPR (vs 50 GB for a hash set)
+> - Optimal parameters: m = -n·ln(p) / (ln2)²; k = m/n · ln2; calculable for any n (elements) and p (false positive rate)
+> - Counting Bloom Filter: allows deletions by using counters instead of bits
+> - Where used: Cassandra (avoid disk reads for non-existent keys), web crawlers (URL deduplication), Chrome Safe Browsing, HBase
+>
+> **Key takeaway:** Use a Bloom filter whenever you need to reduce expensive DB/disk lookups for elements that definitely don't exist — the memory savings are orders of magnitude.
+
 ---
 module: 02-building-blocks
 status: unread

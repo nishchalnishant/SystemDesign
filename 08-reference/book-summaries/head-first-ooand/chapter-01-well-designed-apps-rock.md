@@ -5,6 +5,19 @@ subtopic: Head First Ooand
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The foundational rules of building great software, using a "Guitar inventory" application as an example.
+>
+> **Key concepts:**
+> - Step 1: Make it work. The app must do what the customer asked for.
+> - Step 2: Apply OOP principles. Use encapsulation. (e.g., Hide the `serialNumber` string, expose a `getSerialNumber()` method).
+> - Step 3: Strive for maintainable design. Use delegation. (e.g., Don't put guitar search logic in the main app; put it in an `Inventory` class).
+> - Encapsulation: Identify what varies (e.g., Guitar properties) and encapsulate it away from what stays the same (e.g., the Inventory search mechanism).
+>
+> **Key takeaway:** Code that works today but breaks when requirements change tomorrow is bad code. The goal of OOA&D is to build software that is easy to modify.
+
 # Ch 01: Well-Designed Apps Rock
 
 **Source**: Head First Object-Oriented Analysis & Design | **Pages**: 36-89

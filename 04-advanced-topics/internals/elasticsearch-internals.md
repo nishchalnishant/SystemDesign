@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Elasticsearch internals — how a distributed search engine built on Apache Lucene delivers fast full-text search and analytics at scale.
+>
+> **Key topics:**
+> - Inverted index: maps term → list of document IDs; the opposite of a DB index; enables full-text search in O(1) per term
+> - Cluster topology: nodes (master/data/coordinating/ingest) → indices → shards (primary + replicas); each shard is a Lucene index
+> - Write path: document → translog (durability) → in-memory buffer → refresh every 1s → segment → flush to disk; near-real-time search
+> - Segment merging: Lucene accumulates immutable segments; background merge reduces segment count; improves read performance
+> - Query execution: coordinating node → broadcast to all shards → each shard executes locally → coordinating node merges + ranks
+> - Aggregations: bucket (group by), metric (sum/avg/percentile), pipeline — all executed at shard level and merged; very efficient
+> - Mapping and analyzers: how text is tokenized, lowercased, stemmed; wrong mapping = poor search relevance
+>
+> **Key takeaway:** Elasticsearch's power is the inverted index + distributed query fan-out — use it for full-text search, log analytics, and faceted search; don't use it as a primary data store (no ACID transactions).
+
 ---
 module: 04-advanced-topics
 topic: Internals

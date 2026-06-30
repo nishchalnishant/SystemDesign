@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The `static` keyword, the `Math` library, and Wrapper classes (Autoboxing).
+>
+> **Key concepts:**
+> - `static` methods: Methods that don't depend on an instance variable value. You call them using the Class name, not a reference variable (e.g., `Math.abs(-5)`). A static method cannot access a non-static (instance) variable.
+> - `static` variables: A variable shared by all instances of a class. There is only one copy of it, regardless of how many objects are instantiated.
+> - `final`: A `final` variable's value cannot be changed. A `final` method cannot be overridden. A `final` class cannot be extended. A `static final` variable is a constant.
+> - Wrapper Classes: Turning a primitive into an object (e.g., `int` -> `Integer`) so it can be used in an `ArrayList`. Autoboxing does this automatically in modern Java.
+>
+> **Key takeaway:** Think of `static` as "belongs to the class, not the object." If a behavior shouldn't change depending on which object is executing it, it should probably be static.
+
 # Ch 10: Numbers Matter
 
 **Source**: Head First Java, Second Edition | **Pages**: 307-348

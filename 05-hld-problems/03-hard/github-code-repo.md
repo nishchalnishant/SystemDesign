@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design GitHub — code repository hosting with Git operations, pull request workflows, code search, and CI/CD pipeline triggering at millions-of-repos scale.
+>
+> **Key design decisions:**
+> - Repository storage: Git objects (blobs, trees, commits, tags) stored in object store; repositories as bare Git repos on distributed storage (Gitaly at GitLab, network of NFS at GitHub)
+> - Repository routing: consistent hashing routes repository operations to specific storage nodes; replica set per shard for HA
+> - Clone/fetch: large repos offloaded to CDN (pack-objects for smart HTTP); popular repos cached at CDN edge; partial clone for monorepos
+> - Pull request model: PR = branch + metadata; diff computed on PR creation and cached; code review inline comments stored as GitHub Suggestions objects
+> - Code search: Elasticsearch full-text index of repository content; incremental indexing on push; indexed by repo, path, language, content
+> - Webhooks: push event → fan-out to registered webhooks; at-least-once via retry queue; CI/CD systems (GitHub Actions) triggered via webhook
+> - CI/CD: GitHub Actions = YAML workflow definition + runner infrastructure; job queue in PostgreSQL; runners pull jobs; artifact storage in S3
+>
+> **Key takeaway:** Repository storage routing is the core scalability challenge — consistent hashing with replica sets per shard ensures both load distribution and HA; Git's content-addressable storage (SHA1 objects) naturally enables deduplication.
+
 ---
 module: 05-hld-problems
 topic: Hard

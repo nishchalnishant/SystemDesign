@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** A chapter-by-chapter summary of *Designing Data-Intensive Applications (DDIA)* by Martin Kleppmann, widely considered the most important book for senior backend engineers.
+>
+> **Key concepts:**
+> - Replication: Single-leader, Multi-leader, and Leaderless (Dynamo style). Problems with replication lag (read-after-write consistency).
+> - Partitioning: Key-range vs Hash partitioning. Handling hot spots. Rebalancing partitions safely.
+> - Transactions: ACID properties. Isolation levels (Read Uncommitted, Read Committed, Repeatable Read, Serializable). Race conditions like Write Skew.
+> - Consensus: Two-Phase Commit (2PC) vs Raft/Paxos. Linearizability.
+>
+> **Key takeaway:** DDIA doesn't teach you how to pass an interview; it teaches you how databases actually work under the hood. Reading this summary provides the vocabulary (e.g., "SSTables", "Write-Ahead Log", "Linearizability") that interviewers expect from Staff-level candidates.
+
 ---
 module: 08-reference
 topic: Book Summaries

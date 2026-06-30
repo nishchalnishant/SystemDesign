@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Text Editor — a specialized LLD problem focusing on the Command pattern (Undo/Redo) and the Gap Buffer data structure.
+>
+> **Key concepts:**
+> - Core Entities: `Editor`, `Document` (Gap Buffer), `CommandManager`, `Command` (Insert/Delete).
+> - The Gap Buffer: Storing text as a single `String` or `ArrayList` is too slow for insertions ($O(N)$). A Gap Buffer allocates a large empty "gap" at the cursor position. Insertions into the gap are $O(1)$. Moving the cursor shifts the gap.
+> - Undo/Redo (Command Pattern): Every action (type 'a', hit backspace) is encapsulated in an `ICommand` object with `execute()` and `undo()` methods.
+> - Two Stacks: Maintain an `UndoStack` and a `RedoStack`. When you type, push to `UndoStack` and clear `RedoStack`. When you hit Ctrl+Z, pop from `UndoStack`, call `undo()`, and push to `RedoStack`.
+>
+> **Key takeaway:** The Command pattern with two stacks is the standard, expected answer for any Undo/Redo mechanism. Mentioning the Gap Buffer (or a Rope data structure) for the underlying text storage shows deep domain knowledge.
+
 ---
 module: 06-lld
 topic: Problems

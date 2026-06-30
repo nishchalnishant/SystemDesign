@@ -1,3 +1,20 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a Lock-Free Queue — an extremely advanced, low-level concurrency problem (Michael-Scott queue algorithm).
+>
+> **Key concepts:**
+> - Core Entities: `Node` (contains `value` and `AtomicReference<Node> next`), `Queue` (contains `AtomicReference<Node> head` and `tail`).
+> - CAS (Compare-And-Swap): Hardware-level atomic operation. `atomicRef.compareAndSet(expectedValue, newValue)`. It only updates if the current value matches what we *expect* it to be.
+> - Enqueue: 
+>   1. Read the `tail` and `tail.next`.
+>   2. Use CAS to try and set `tail.next` to the new node.
+>   3. If CAS fails (another thread snuck in), loop and try again (Spinlock).
+>   4. If CAS succeeds, use CAS to update `tail` to the new node.
+> - The ABA Problem: A thread reads 'A', another thread changes it to 'B', then back to 'A'. The first thread's CAS succeeds, but the queue state is corrupted. Solved by attaching a version number to the pointer (`AtomicStampedReference` in Java).
+>
+> **Key takeaway:** You are not expected to invent this algorithm in an interview. You are expected to know *how* CAS works, what the ABA problem is, and how `AtomicStampedReference` solves it.
+
 ---
 module: 06-lld
 topic: Problems

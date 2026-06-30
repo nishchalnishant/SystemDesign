@@ -1,3 +1,16 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design an ATM System — an extensive OOP problem that heavily utilizes the State Pattern, Chain of Responsibility, and hardware integration abstraction.
+>
+> **Key concepts:**
+> - Core Entities: `ATM` (context), `State` (interface), `CardReader`, `CashDispenser`, `BankService`, `Transaction`.
+> - State Pattern: `IdleState`, `HasCardState`, `SelectOperationState`, `DispensingState`. Handles the exact flow of the user interaction.
+> - Chain of Responsibility: Often used for the `CashDispenser`. A request for $170 goes to the $100 handler (dispenses 1, passes $70 down) -> $50 handler (dispenses 1, passes $20 down) -> $20 handler (dispenses 1).
+> - Hardware Abstraction: The ATM doesn't "know" how to physically spit out money. It calls `dispenser.dispense(amount)`, which acts as a Facade/Proxy to the hardware layer.
+>
+> **Key takeaway:** Like the Vending Machine, ATM requires the State pattern. But it adds complexity via integration with an external `BankService` (which must handle the actual balance check and deduction via atomic transactions).
+
 ---
 module: 06-lld
 topic: Problems

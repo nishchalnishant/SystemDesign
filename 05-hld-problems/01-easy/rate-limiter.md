@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a distributed rate limiter — enforcing request limits per user/IP/API key across a cluster of servers without double-counting.
+>
+> **Key design decisions:**
+> - Algorithm choice: Token Bucket (allows controlled burst, most common), Sliding Window Counter (accurate, low memory), Leaky Bucket (smooth output)
+> - Redis implementation: INCR + EXPIRE for fixed window; Lua script for atomic sliding window; sorted set (ZADD/ZREMRANGEBYSCORE) for sliding window log
+> - Distributed consistency: centralized Redis (accurate, single point) vs local counter with async sync (faster, slight over-count allowed)
+> - API Gateway vs application layer: prefer gateway (Nginx, Envoy) for centralized enforcement; application layer for fine-grained per-feature control
+> - Response headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After on 429
+> - Rule configuration: store rules in Redis or config service; hot-reload without restart; different tiers (free/pro/enterprise)
+> - Failure mode: if Redis is down → fail open (allow requests) not fail closed (block everything) to maintain availability
+>
+> **Key takeaway:** Token Bucket in Redis with Lua scripts for atomic operations — centralize the rate limit state in Redis, and fail open if Redis is unavailable.
+
 ---
 module: 05-hld-problems
 topic: Easy

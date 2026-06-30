@@ -1,3 +1,26 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** 21 hard HLD problems at SDE-3 / Staff level — multi-region systems, consensus, complex concurrency, and production operations; the most technically demanding interview questions.
+>
+> **Problems and core concepts:**
+> - Distributed Cache: consistent hashing, virtual nodes, eviction (LRU/LFU), failover, replication
+> - Distributed Message Queue (Kafka): partitions, ISR replication, consumer groups, exactly-once semantics
+> - Payment System: double-entry accounting, idempotency, PCI DSS, reconciliation
+> - Ride Sharing (Uber): geospatial indexing (S2/H3), driver matching, surge pricing, real-time ETA
+> - Google Drive: chunked uploads, delta sync, conflict resolution (CRDT/OT), permission model
+> - Chat System (Slack): WebSocket routing, channel fan-out, thread model, search indexing
+> - Search Engine (Google): web crawl → inverted index → TF-IDF/BM25 + PageRank → serving
+> - Ad Click Aggregator: Lambda/Kappa architecture, Flink stream processing, deduplication, fraud filtering
+> - Google Maps: road graph routing (Dijkstra/A*), H3 geospatial indexing, tile serving, GPS ingestion
+> - LLM Chat System: GPU routing, token streaming (SSE), context window management, cost optimization
+> - RAG System: document chunking, embedding generation, HNSW vector search, prompt construction
+> - Stock Exchange: order book (price-time priority), matching engine, market data fan-out, microsecond latency
+>
+> **Key takeaway:** Hard problems require multi-subsystem thinking + production details (failure modes, data model, SLOs) — interviewers expect you to proactively surface the hard concurrency or consistency problems.
+
+---
+
 # Hard — HLD Problems
 
 High-level design problems at **SDE-3 / Staff** level. Focus: multi-region, consensus, complex trade-offs, production operations.

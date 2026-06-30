@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Design a metrics monitoring system (Prometheus + Grafana) — time-series metric collection, storage, query, and alerting for distributed service observability.
+>
+> **Key design decisions:**
+> - Collection: pull model (Prometheus scrapes /metrics endpoint every 15s) vs push model (StatsD, Datadog Agent push to collector); pull easier to discover what's down
+> - Metric types: Counter (monotonically increasing, e.g. requests_total), Gauge (can decrease, e.g. memory_usage), Histogram (latency buckets), Summary
+> - Time-series storage: custom columnar format; data points sorted by (metric_name, labels, timestamp); compressed with delta + gorilla encoding
+> - Cardinality: high-cardinality labels (user_id, request_id) explode storage — enforce label cardinality limits; only low-cardinality labels (env, service, region)
+> - Query: PromQL — rate(requests_total[5m]) → compute per-second rate over 5 min; histogram_quantile(0.99, ...) for p99 latency
+> - Alerting: alert rules evaluated every 15s against time-series DB; fire when condition holds for >2 min (avoid flapping); route via Alertmanager to PagerDuty/Slack
+> - Long-term storage: Thanos or Cortex for multi-region aggregation + object storage retention (S3); Prometheus local storage limited to ~15 days
+>
+> **Key takeaway:** Cardinality control is the primary operational challenge — unbounded label values (user_id, trace_id) make the time-series DB explode in memory; enforce it at ingestion.
+
 ---
 module: 05-hld-problems
 topic: Hard

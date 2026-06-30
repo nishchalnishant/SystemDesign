@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Reverse Proxy — a server in front of app servers that centralizes TLS, routing, caching, and load balancing so backends stay simple.
+>
+> **Key topics:**
+> - Problem: 3+ backend servers each managing their own TLS cert, private key, and renewal → N copies of security surface
+> - Core functions: TLS termination (one cert, one private key), SSL offloading, routing by path/host, static asset serving, compression
+> - Nginx as reverse proxy: upstream blocks, proxy_pass, caching, gzip, rate limiting via limit_req
+> - Connection pooling: reverse proxy maintains persistent connections to backends, reducing per-request TCP handshake overhead
+- Differences from load balancer: reverse proxy is broader (TLS, caching, content manipulation); LB focuses on distribution logic
+> - Forward proxy vs Reverse proxy: forward = client-side (hides clients); reverse = server-side (hides servers)
+> - Where used: Nginx, HAProxy, Envoy (service mesh sidecar), Traefik (Kubernetes ingress)
+>
+> **Key takeaway:** Put Nginx or Envoy as a reverse proxy in front of every backend — TLS termination and connection pooling alone justify it.
+
 ---
 module: 02-building-blocks
 status: unread

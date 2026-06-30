@@ -1,3 +1,17 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** The Chain of Responsibility Pattern — passes requests along a chain of handlers. Upon receiving a request, each handler decides either to process it or to pass it to the next handler in the chain.
+>
+> **Key concepts:**
+> - The problem: hardcoding the routing logic for requests (e.g., a massive `if-else` block for determining if an auth token, cache, or DB should handle a request).
+> - The fix: create an abstract `Handler` class with a `setNext(Handler next)` method and a `handle(Request req)` method.
+> - The chain: link the handlers together (`authHandler.setNext(cacheHandler).setNext(dbHandler)`).
+> - Processing: the client sends the request to the *first* handler in the chain. If a handler can fully resolve it, it does; otherwise, it calls `next.handle(req)`.
+> - Use cases: Middleware in web frameworks (Express, Spring), Logger levels (DEBUG -> INFO -> ERROR), Event bubbling in UI frameworks.
+>
+> **Key takeaway:** Use this pattern when you have multiple objects that can handle a request, and the specific handler shouldn't be known a priori by the sender.
+
 ---
 module: 06-lld
 topic: Design Patterns

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Networking fundamentals for system design — OSI model, TCP vs UDP, HTTP evolution, API protocol comparison, real-time patterns, and DNS internals.
+>
+> **Key topics:**
+> - OSI 7-layer model vs practical TCP/IP 4-layer stack; which layer each component lives at
+> - TCP (reliable, ordered, 3-way handshake) vs UDP (best-effort, lower latency) — when to use each
+> - HTTP/1.1 (head-of-line blocking) → HTTP/2 (multiplexed streams) → HTTP/3 (QUIC, 0-RTT reconnect)
+> - REST vs GraphQL vs gRPC: trade-offs in overhead, caching, type safety, and browser support
+> - Real-time patterns: WebSockets (full-duplex), SSE (server push), Long Polling (overhead)
+> - DNS resolution: recursive resolver → root → TLD → authoritative; TTL and staleness
+> - Load balancing at L4 (TCP) vs L7 (HTTP): what each can and can't do
+>
+> **Key takeaway:** Choosing WebSockets vs SSE vs REST polling has major architectural implications — know the trade-offs cold before any interview.
+
 ---
 module: 01-foundations
 status: unread

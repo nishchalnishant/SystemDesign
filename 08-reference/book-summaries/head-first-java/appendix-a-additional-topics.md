@@ -5,6 +5,19 @@ subtopic: Head First Java
 status: unread
 tags: [08-reference, system-design, book-summaries]
 ---
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Leftover topics that didn't fit into the main chapters, including bit manipulation, immutability, and access modifiers.
+>
+> **Key concepts:**
+> - Bitwise Operators: Manipulating individual bits (`&`, `|`, `^`, `~`) and shifting bits (`<<`, `>>`, `>>>`).
+> - Immutability: Why `String` is immutable. It makes Strings thread-safe and allows the JVM to cache them efficiently (String Pool).
+> - Access Modifiers: `public` (anywhere), `protected` (same package + subclasses anywhere), `default` (same package only), `private` (same class only).
+> - Assertions: Using the `assert` keyword to test assumptions during development (they are ignored in production by default).
+>
+> **Key takeaway:** Access modifiers are your primary tool for encapsulation. A solid grasp of when to use `protected` vs `default` (package-private) is a hallmark of an experienced Java developer.
+
 # Appendix: Additional Topics
 
 **Source**: Head First Java, Second Edition | **Pages**: 693-722

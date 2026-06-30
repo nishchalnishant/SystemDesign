@@ -1,3 +1,21 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Behavioral Design Patterns — algorithms and the assignment of responsibilities between objects, focusing on communication patterns.
+>
+> **The 9 Patterns (Key Ones):**
+> - Strategy: Swap algorithms at runtime (e.g., Payment processing with CreditCard/PayPal). The most important behavioral pattern.
+> - Observer: Publish-Subscribe mechanism. When subject changes state, all subscribers are notified (e.g., UI reacting to data changes).
+> - State: Object alters its behavior when its internal state changes (e.g., Vending Machine states like HAS_COIN, DISPENSING).
+> - Command: Encapsulate a request as an object to support queuing, logging, and undo/redo operations.
+> - Chain of Responsibility: Pass a request along a chain of handlers (e.g., Logger filtering `DEBUG` vs `ERROR`, or Middleware).
+> - Template Method: Define the skeleton of an algorithm in a base class, letting subclasses override specific steps.
+> - Mediator, Iterator, Visitor: Less commonly asked, but cover centralized communication, sequential traversal, and adding operations to object structures respectively.
+>
+> **Key takeaway:** Strategy, Observer, and State are the "Big Three" behavioral patterns for LLD interviews. Master them first. They handle 80% of communication logic in design problems.
+
+---
+
 # Behavioral Design Patterns
 
 Behavioral patterns are concerned with algorithms and the assignment of responsibilities between objects.

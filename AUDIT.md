@@ -1,3 +1,20 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Quality audit and improvement tracker for the entire system design repo, scored against SDE-3 interview standards.
+>
+> **Key topics:**
+> - Current audit score: ~78/100 (up from 65/100), noting strengths and gaps
+> - What's strong: foundations depth, all 8 internals files, 18+ hard HLD problems, lock-free and concurrent LLD problems
+> - Priority 1 fixes: high-contention counter, hotel booking, API design template (new files)
+> - Priority 2 depth additions: strangler fig DB decomp, microservices Istio canary, e-commerce flash-sale
+> - Priority 3 new files: cloud provider comparison, failure injection guide, security deep dive, ML system design
+> - Scoring rubric across 7 categories (foundations, building blocks, HLD problems, LLD, patterns, templates, reference)
+>
+> **Key takeaway:** The repo is strong on depth but has gaps in certain HLD hard problems and cross-linking — this file tracks exactly what needs to be added next.
+
+---
+
 # SDE-3 System Design Repo — Audit & Improvement Tracker
 
 **Audit date:** 2026-06-19

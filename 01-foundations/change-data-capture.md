@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Change Data Capture (CDC) — how to stream every database insert/update/delete to downstream consumers without polling, using the database's internal replication log.
+>
+> **Key topics:**
+> - What CDC is: tapping the database's WAL/binlog to produce a stream of change events (vs polling with SELECT)
+> - Why not polling: misses deletes, has race conditions, hammers the DB, can't detect intermediate states
+> - Log-based CDC: tools like Debezium read the replication log and publish to Kafka; DB sees it as a replica
+> - Query-based CDC: uses `updated_at` timestamps — simpler but misses deletes and hard deletes
+> - Database-specific logs: PostgreSQL WAL → pg_logical, MySQL binlog, MongoDB Oplog, SQL Server CDC
+> - Use cases: cache invalidation, search index sync, audit trails, event sourcing, microservice event streams
+> - Outbox pattern: write to DB + outbox table atomically; CDC publishes outbox rows to avoid dual-write issues
+>
+> **Key takeaway:** CDC with Debezium + Kafka is the production-standard way to sync data between services without tight coupling or dual-write bugs.
+
 ---
 module: 01-foundations
 status: unread

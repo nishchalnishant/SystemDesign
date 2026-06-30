@@ -1,3 +1,21 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** 7 medium HLD problems at SDE-2 level — each requiring orchestration of multiple subsystems (3–5 building blocks) working together.
+>
+> **Problems and core concepts:**
+> - Twitter/News Feed: fan-out-on-write vs fan-out-on-read, timeline caching in Redis, celebrity problem (hybrid approach)
+> - Instagram: photo/video storage (S3), CDN delivery, follow graph (adjacency list), feed generation
+> - YouTube: video upload → transcoding pipeline (FFmpeg), multi-resolution storage (S3), CDN streaming, recommendations
+> - WhatsApp: WebSocket persistent connections, message routing via message queue, delivery receipts, group messaging fan-out
+> - Notification Service: multi-channel delivery (push/email/SMS), at-least-once with deduplication, priority queues
+> - E-Commerce Platform: product catalog, inventory management, cart → checkout → payment → order lifecycle
+> - Typeahead Search (Google): Trie with Elasticsearch backend, sub-50ms latency requirement, personalization layer
+>
+> **Key takeaway:** Medium problems test your ability to compose building blocks — always lead with data model, then add components one by one as scale demands.
+
+---
+
 # Medium — HLD Problems
 
 High-level design problems at **SDE-2** level. Focus: distributed systems, caching, replication, load balancing.

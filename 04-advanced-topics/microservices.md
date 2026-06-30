@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Microservices architecture — the trade of monolith coupling problems for distributed systems problems, and the patterns that manage the new complexity.
+>
+> **Key topics:**
+> - When to use microservices: deployment coupling pain (200 engineers, 45-min deploys), scaling coupling, team autonomy need — NOT for performance
+> - Service boundaries: Domain-Driven Design, bounded contexts, data ownership (each service owns its DB)
+> - Inter-service communication: synchronous (REST/gRPC) vs asynchronous (events); when each causes problems
+> - Service mesh (Istio/Envoy): mTLS, circuit breaking, canary traffic splitting (90/10) via VirtualService + DestinationRule
+> - Observability in microservices: distributed tracing (Jaeger), correlation IDs propagated through all service calls
+> - Deployment patterns: blue/green, canary, feature flags; rolling updates in Kubernetes
+> - Monolith-to-microservices: Strangler Fig pattern — extract services one by one; run old and new in parallel during transition
+>
+> **Key takeaway:** Don't split a monolith until the team and codebase pain is real — the operational complexity of microservices only pays off when deployment and scaling independence is genuinely needed.
+
 ---
 module: 04-advanced-topics
 status: unread

@@ -1,3 +1,19 @@
+> [!NOTE]
+> **📋 5-Minute Summary**
+>
+> **What this covers:** Consistent hashing — a technique to distribute keys across nodes so that adding/removing a node only remaps K/N keys instead of all keys.
+>
+> **Key topics:**
+> - Problem with modulo hashing: adding/removing a node remaps all keys → cache invalidation storm, full rebalance
+> - Hash ring: keyspace [0, 2^32) as a circle; each node placed at hash(node_id); key maps to first node clockwise
+> - Virtual nodes (vnodes): each physical node gets V positions on ring → even distribution; supports heterogeneous node sizes
+> - Node addition: only keys between new node and its predecessor remap → O(K/N) keys moved
+> - Node removal: only that node's keys remap to the next node clockwise → minimal disruption
+> - Where used: Cassandra (partition key), DynamoDB, Redis Cluster, consistent hashing load balancer for session stickiness
+> - Hot spots: without vnodes, uneven ring → one node gets all traffic; virtual nodes solve this
+>
+> **Key takeaway:** Always use virtual nodes in production (100–300 vnodes per physical node) — they eliminate hot spots and make scaling smooth.
+
 ---
 module: 02-building-blocks
 status: unread
