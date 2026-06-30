@@ -1,115 +1,65 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** A cross-reference guide linking theoretical system design concepts to practical interview problems that heavily feature those concepts.
+> **What this covers:** A cheat sheet linking big fancy tech words to the actual interview questions where you need to use them.
 >
 > **Key concepts:**
-> - If you want to practice WebSockets: Look at Chat Apps, Collaborative Editors, or Real-time Dashboards.
-> - If you want to practice Graph Databases: Look at Social Network News Feeds or Recommendation Systems.
-> - If you want to practice Geo-Spatial indexing (Quadtrees/Geohashes): Look at Uber/Ride-sharing or Yelp/Proximity services.
-> - If you want to practice rate limiting: Look at API Gateways or DDoS protection designs.
+> - If you want to practice **WebSockets**: Look at Chat Apps, or Live Dashboards.
+> - If you want to practice **Graph Databases**: Look at Social Network News Feeds (Friends of Friends).
+> - If you want to practice **Map coordinates (Geohashes)**: Look at Uber or Yelp.
+> - If you want to practice **Rate limiting**: Look at API Gateways or DDoS protection.
 >
-> **Key takeaway:** Use this map bidirectionally. If you feel weak on "Event Sourcing", find the problem that tests it. If you're tackling "Design Uber", use this map to verify you've included the core expected concepts (Geospatial + Real-time updates).
+> **Key takeaway:** If you feel weak on a concept like "Message Queues", find the problem that tests it (e.g., YouTube Video Processing) and study that. 
 
 ---
 module: 07-interview-templates
 topic: Concept to Problem Map
 status: unread
-tags: [07-interview-templates, cross-reference, navigation]
+tags: [07-interview-templates, cross-reference, navigation, cheat-sheets]
 ---
-# Concept → Problem Cross-Reference
+# Concept → Problem Map
 
-Use this map two ways:
-- **Learning a concept** → find which HLD problems demonstrate it in practice
-- **Preparing a problem** → find which concepts and patterns you need to know first
+> **Use this map to figure out what you actually need to study for a specific interview question.**
 
 ---
 
-## Building Block → HLD Problems
+## 🧱 Big Tech Blocks → Which problems use them?
 
-| Building Block | Problems That Use It |
+| If you want to learn about... | Practice these problems... |
 |---------------|----------------------|
-| **Caching (Redis)** | URL Shortener, Rate Limiter, Leaderboard, Twitter Feed, Instagram, Distributed Cache, Chat System, Autocomplete |
-| **CDN** | YouTube, Instagram, Pastebin, Google Drive, Dropbox |
-| **Load Balancing** | All problems — mention in every HLD |
-| **Message Queue / Kafka** | Notification Service, YouTube (encoding), Twitter Feed (fan-out), Ad Click Aggregator, Distributed Message Queue, Payment System, Ride Sharing |
-| **Sharding** | URL Shortener, Twitter Feed, Instagram, WhatsApp, Distributed Cache, Key-Value Store |
-| **Replication** | Key-Value Store, Distributed Cache, Payment System, WhatsApp |
-| **Rate Limiting** | Rate Limiter (primary), API Gateway (mention in all) |
-| **Consistent Hashing** | Distributed Cache, Key-Value Store, Distributed Message Queue |
-| **Bloom Filter** | Web Crawler (URL dedup), Distributed Cache (negative cache) |
-| **Distributed Locks** | Ticketmaster (seat reservation), Booking System, Hotel Booking |
-| **Circuit Breaker** | Payment System, Notification Service, E-Commerce |
-| **API Gateway** | All microservices problems — mention in every HLD |
-| **Service Discovery** | Microservices problems, Ride Sharing, E-Commerce |
-| **Reverse Proxy** | All problems — Nginx/Envoy in front of API servers |
+| **Caching (Redis)** | URL Shortener, Twitter Feed, Leaderboards. |
+| **CDN (Cloudflare)** | YouTube, Instagram, Netflix. (Anytime you need to load a photo or video fast). |
+| **Message Queues (Kafka)** | YouTube (processing videos), Uber (matching drivers in the background), Notifications. |
+| **Sharding (Breaking DBs into pieces)** | URL Shortener, Twitter Feed, WhatsApp. (Anytime you have a billion users). |
+| **Rate Limiting** | API Gateway design, DDoS protection. |
+| **Distributed Locks** | Ticketmaster (Don't let two people buy the same seat!), Hotel Booking. |
 
 ---
 
-## Pattern → HLD Problems
+## 🧠 Smart Algorithms → Which problems use them?
 
-| Pattern | Problems That Use It |
-|---------|----------------------|
-| **Saga** | Payment System, E-Commerce (order flow), Ride Sharing |
-| **Outbox** | Payment System, Notification Service, Order Management |
-| **CQRS** | Twitter Feed, E-Commerce, GitHub Code Repo |
-| **Event Sourcing** | GitHub Code Repo, Distributed Message Queue |
-| **Bulkhead** | Payment System, E-Commerce, Notification Service |
-| **Two-Phase Commit** | Payment System (cross-bank), Distributed Cache |
-| **Strangler Fig** | Any migration scenario — mention in system evolution questions |
-
----
-
-## Algorithm → HLD Problems
-
-| Algorithm / Data Structure | Problems |
-|---------------------------|----------|
-| **Consistent Hashing** | Distributed Cache, Key-Value Store, Distributed Message Queue |
-| **Trie** | Autocomplete, Search System |
-| **Inverted Index** | Search System, GitHub Code Repo |
-| **Quadtree / Geohash** | Ride Sharing, Google Maps, Nearby Friends |
-| **Snowflake ID** | URL Shortener, Twitter Feed, any problem needing unique IDs |
-| **Token Bucket** | Rate Limiter, API Gateway |
-| **Sliding Window** | Rate Limiter (alternative) |
-| **LRU / LFU** | Distributed Cache, CDN, any caching layer |
-| **Min-Heap** | Leaderboard (top-K), Job Scheduler (priority queue) |
-| **Skip List** | Redis sorted sets → Leaderboard, Rate Limiter |
+| The Algorithm / Math | Why do you need it? | Practice these problems |
+|---------------------------|----------|----------|
+| **Trie (Prefix Tree)** | Finding words that start with "App..." really fast. | Autocomplete, Google Search bar. |
+| **Inverted Index** | Finding which books contain the word "Wizard". | Search Engines. |
+| **Quadtree / Geohash** | Finding things on a map near you. | Uber, Yelp, Tinder, Pokemon Go. |
+| **Snowflake ID** | Generating unique 16-digit ID numbers for millions of things a second without crashing. | URL Shortener, Twitter (giving every Tweet an ID). |
+| **Token Bucket** | Keeping track of how many requests a user is allowed to make. | Rate Limiter. |
+| **Min-Heap (Priority Queue)** | Finding the "Top 10" of something instantly. | Leaderboards, Job Schedulers. |
 
 ---
 
-## HLD Problem → Concepts Needed
+## 🏗️ The Problem → What you MUST know before the interview
 
-| Problem | Must Know Before Attempting |
+| If the interview is: | You MUST study these concepts first: |
 |---------|---------------------------|
-| URL Shortener | Hashing, Base62, caching, DB sharding |
-| Rate Limiter | Token bucket, Redis atomic ops, sliding window |
-| Unique ID Generator | Snowflake, clock skew, UUID trade-offs |
-| Autocomplete | Trie, prefix caching, ranking |
-| Web Crawler | BFS/DFS, distributed queues, dedup (Bloom filter) |
-| Notification Service | Pub-sub, fan-out, Kafka, delivery guarantees |
-| Twitter Feed | Fan-out (push vs pull), Redis sorted sets, sharding |
-| Instagram | CDN, blob storage, feed generation |
-| YouTube | Chunked upload, video transcoding, CDN |
-| WhatsApp | WebSocket, message ordering, offline delivery |
-| Distributed Cache | Consistent hashing, eviction policies, replication |
-| Payment System | Idempotency, Saga, double-entry ledger, ACID |
-| Ride Sharing | Geohash, matching algorithm, Saga |
-| Google Drive | Chunking, dedup, sync conflict resolution |
-| Distributed Message Queue | Kafka internals, partitioning, consumer groups |
-| Ad Click Aggregator | Stream processing, Lambda/Kappa architecture, dedup |
-| Search System | Inverted index, crawling, ranking (TF-IDF) |
-| Stock Exchange | Order book, matching engine, low-latency design |
-| Google Maps | Graph routing (Dijkstra/A*), geohash, ETA at scale |
-| Chat System | WebSocket, message ordering, storage, offline delivery |
-
----
-
-## Concept Dependency Chains
-
-```
-Caching (concepts) → Caching Layer (Redis) → Distributed Cache (HLD) → Cache Eviction policies
-Sharding (concepts) → Sharding strategies → URL Shortener → Twitter Feed → Distributed Cache
-Message Queues → Kafka internals → Notification Service → Distributed Message Queue → Ad Click Aggregator
-Replication → Consistency models → Distributed Systems theory → Payment System
-Idempotency → Retry patterns → Saga → Payment System → Distributed Transactions
-```
+| **Design a URL Shortener** | Base62 encoding, Database Sharding, Caching. |
+| **Design a Rate Limiter** | Token bucket algorithm, Redis, Sliding windows. |
+| **Design Google Autocomplete** | Trie data structure, Caching prefixes. |
+| **Design a Web Crawler** | Breadth-First Search (BFS), Bloom filters (to not crawl the same page twice). |
+| **Design Twitter / Instagram Feed** | Push vs Pull architecture (Fan-out), CDN for images, Redis sorted sets. |
+| **Design YouTube** | Chunking videos (uploading in pieces), Video transcoding, CDN. |
+| **Design WhatsApp** | WebSockets (real-time chat), Message ordering, What happens when the user is offline? |
+| **Design Uber** | Geohash (Maps), Matching algorithms, WebSockets (seeing the car move). |
+| **Design Ticketmaster / Hotel Booking** | ACID Transactions, Distributed Locks (prevent double-booking). |
+| **Design a Payment System** | Idempotency (Never charge a credit card twice!), ACID Transactions. |

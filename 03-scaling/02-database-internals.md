@@ -1,518 +1,78 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** Database internals that matter for system design interviews — storage engines, indexes, WAL, MVCC, and transaction isolation — so you can answer follow-up questions confidently.
+> **What this covers:** How databases actually save data onto a physical hard drive, and why different databases are good at different things.
 >
 > **Key topics:**
-> - Storage engines: B-Tree (read-fast, in-place updates) vs LSM Tree (write-fast, append-only + compaction)
-> - Index types: primary (clustered), secondary (pointer to row), composite (leftmost prefix rule), covering (no row lookup)
-> - WAL (Write-Ahead Log): every write goes to sequential log before modifying data pages; enables crash recovery and replication
-> - MVCC: each transaction sees a snapshot; old row versions kept until VACUUM; readers never block writers
-> - Transaction isolation levels: Read Uncommitted → Read Committed → Repeatable Read → Serializable (and their anomalies)
-> - Query optimization: EXPLAIN/ANALYZE to find seq scans; covering indexes to avoid heap access; query planner statistics
-> - Vacuum and bloat: PostgreSQL dead tuples from MVCC; AUTOVACUUM reclaims space; bloat slows range scans
+> - **The Problem:** Saving data to a hard drive is extremely slow. If you just dump data on a drive randomly, it will take hours to find it later.
+> - **B-Trees (The Phonebook):** Used by PostgreSQL and MySQL. Data is sorted neatly as it arrives. 
+>   - *Pros:* Reading data is lightning fast because everything is alphabetical. 
+>   - *Cons:* Writing data is slow, because you have to carefully erase and rewrite sections to keep the alphabetical order perfect.
+> - **LSM Trees (The Logbook):** Used by Cassandra and DynamoDB. Data is just quickly scribbled at the very bottom of a list as fast as possible. 
+>   - *Pros:* Writing data is insanely fast. 
+>   - *Cons:* Reading data is slower, because the database has to search through a messy pile of notes.
 >
-> **Key takeaway:** When an interviewer asks "what happens under high write load?" — explain WAL sequential writes, connection limits, and why MVCC dead tuples require VACUUM.
-
----
-module: 03-scaling
-topic: Database Internals
-status: unread
-tags: [03-scaling, system-design, databases, internals]
----
-# Database Internals
-
-> **Why this file exists**: Every HLD answer involving a database will get follow-up questions: "Why not use an index here?", "What happens under high write load?", "How do you handle concurrent reads and writes?" This file gives you the internal model to answer those confidently.
-
----
-
-## File Mindmap
-
-```
-Database Internals
-├── Storage Engines
-│   ├── B-Tree → reads fast, writes update in-place; good for OLTP
-│   └── LSM Tree → writes fast (append-only); reads slower; good for write-heavy (Cassandra, RocksDB)
-├── Indexes
-│   ├── Primary index → clustered; data stored in index order; one per table
-│   ├── Secondary index → non-clustered; pointer to row; multiple per table
-│   ├── Composite index → (col_a, col_b); only useful if query uses leftmost prefix
-│   └── Covering index → index contains all columns the query needs; no row lookup
-├── Write-Ahead Log (WAL)
-│   ├── What → every write goes to append-only log BEFORE modifying data pages
-│   ├── Why → crash recovery; replay log to restore state; enables replication
-│   └── Used by → PostgreSQL, MySQL InnoDB, SQLite
-├── MVCC (Multi-Version Concurrency Control)
-│   ├── What → each transaction sees a snapshot; old versions kept until no longer needed
-│   ├── Why → readers don't block writers; writers don't block readers
-│   └── Cost → dead tuples accumulate; VACUUM in Postgres cleans them up
-├── Transaction Isolation Levels
-│   ├── Read Uncommitted → sees dirty writes; almost never used
-│   ├── Read Committed → sees only committed data; default in Postgres
-│   ├── Repeatable Read → same query returns same result within transaction
-│   └── Serializable → transactions appear to run one-at-a-time; safest, slowest
-└── Interview Angles
-    ├── "Why use a covering index?" → eliminates heap fetch; critical for hot read paths
-    ├── "What breaks under Read Committed?" → non-repeatable reads; phantom reads
-    └── "How does WAL enable replication?" → standby replays primary's WAL stream
-```
-
----
-
-
-> [!NOTE]
-> **📋 5-Minute Summary**
->
-> **What this covers:** The fundamental trade-off between LSM Trees (write-optimized) and B-Trees (read-optimized) — the two dominant database storage engine designs.
->
-> **Key topics:**
-> - B-Tree: balanced tree of disk pages; in-place updates; fast reads (O(log n)); write amplification from random I/O
-> - LSM Tree: MemTable (in-memory) → immutable SSTable on disk → background compaction; sequential writes = high throughput
-> - Write amplification: B-Tree rewrites data on every update; LSM rewrites during compaction but batches writes efficiently
-> - Read amplification: LSM must check MemTable + multiple SSTable levels; Bloom filters reduce unnecessary reads
-> - Space amplification: LSM keeps multiple versions during compaction; B-Tree is more space-efficient for random updates
-> - Compaction strategies: Size-Tiered (better write throughput), Leveled (better read performance, less space waste)
-> - Which databases use which: PostgreSQL/MySQL → B-Tree; Cassandra/RocksDB/LevelDB → LSM; HBase → LSM
->
-> **Key takeaway:** Use B-Tree (relational DBs) for read-heavy OLTP; use LSM (Cassandra, RocksDB) for write-heavy workloads — the Bloom filter bridges the read performance gap.
+> **Key takeaway:** If your app does 90% Reads (like Twitter or Wikipedia), use a B-Tree database. If your app does 90% Writes (like tracking Uber GPS locations), use an LSM Tree database.
 
 ---
 module: 03-scaling
 status: unread
-tags: [03-scaling, system-design, scaling]
+tags: [03-scaling, system-design, databases]
 ---
-## Storage Engines Deep Dive: LSM Trees vs B-Trees
+# Database Storage Internals - System Design Guide
 
-### The Core Trade-off
-
-**B-Tree**: optimized for reads. Random I/O on writes (update in place).
-**LSM Tree**: optimized for writes. Sequential I/O on writes; read amplification on queries.
-
-Neither is universally better. The choice depends on your read/write ratio and latency requirements.
-
-Real-world analogy:
-- **B-Tree** = a sorted filing cabinet. Finding a record is fast (go to the right drawer), but inserting a new document in the middle means shifting everything around.
-- **LSM Tree** = a stack of sticky notes + occasional reorganization. You always write to a new note at the top (fast), but reading requires checking all the notes to find the latest version (slow without Bloom filters).
+> This guide explains how databases store data on hard drives using simple analogies.
 
 ---
 
-### B-Tree Internals
+## 🤷‍♂️ Why Should I Care?
 
-#### Structure
+Imagine a doctor's office with a giant filing cabinet. 
 
-A B-Tree is a balanced tree where each node is a **disk page** (typically 4KB or 16KB).
+**Option 1:** Every time a patient comes in, the receptionist carefully finds the exact right alphabetical folder, inserts the new medical record, and shifts all the other folders back. 
+- *Result:* When a doctor asks for "John Smith's" file, the receptionist finds it in 2 seconds. (Reads are fast). But checking in a new patient takes 5 minutes. (Writes are slow). 
 
-```
-                    [30 | 70]
-                   /    |    \
-          [10|20]   [40|50|60]   [80|90]
-```
+**Option 2:** Every time a patient comes in, the receptionist just throws their medical record into a giant cardboard box on the floor. 
+- *Result:* Checking in a new patient takes 1 second. (Writes are fast). But when the doctor asks for "John Smith's" file, the receptionist has to dig through a messy cardboard box for 10 minutes. (Reads are slow).
 
-- **Internal nodes**: contain keys + pointers to children
-- **Leaf nodes**: contain keys + actual data (or pointers to row data)
-- Branching factor: typically 100–500 children per node
-- A tree of depth 3-4 can index billions of rows
-
-#### Write Path (Update In-Place)
-
-1. Find the correct leaf page (tree traversal: O(log n) page reads)
-2. Write the new value into that page
-3. If page is full: **page split** — create a new page, redistribute entries, update parent
-
-**The problem**: writing to a random page deep in the tree means the disk head must seek to that location. On HDD: 5-10ms seek time. Even on SSD, random 4KB writes are ~10x slower than sequential writes.
-
-#### Write-Ahead Log (WAL)
-
-Before modifying any page, databases write the change to a **WAL** (append-only log). This ensures crash recovery: if the DB crashes mid-write, replay the WAL.
-
-But WAL doesn't eliminate the random write — it adds a sequential write AND a random write (2x I/O per update in the worst case).
-
-#### Read Path
-
-1. Start at root, follow child pointers (each level = 1 page read from disk)
-2. Binary search within leaf page for exact key
-3. Total cost: O(log n) page reads = 3-4 disk reads for a billion-row table
-
-**InnoDB (MySQL) B+Tree specifics:**
-- All data stored in leaf nodes of the clustered index
-- Secondary indexes store the primary key, not a pointer — secondary index lookup = 2 traversals
-- Page size: 16KB by default
+In System Design, you have to choose which filing system you want. Do you want fast Reads (B-Trees)? Or fast Writes (LSM Trees)? You cannot have both. 
 
 ---
 
-### LSM Tree Internals
+## 📖 B-Trees (The Alphabetical Filing Cabinet)
 
-Used by: RocksDB (embedded), Cassandra, HBase, LevelDB, ScyllaDB, InfluxDB.
+Relational Databases (like PostgreSQL, MySQL, Oracle) use **B-Trees**. 
 
-#### Structure
+> **💡 Analogy:** A phonebook. Everything is strictly sorted. To find "Smith," you flip to the middle (M). Smith is after M. You flip halfway to the end (S). You found it! This is called a Binary Search.
 
-An LSM Tree has two components:
+- **How it works:** Data is stored in small, fixed-size chunks called "Pages" on the hard drive. The database builds a massive tree structure to point exactly to which Page holds which data. 
+- **The Magic:** A B-Tree is perfectly balanced. Even if you have 1 Billion users, it only takes exactly 4 "jumps" down the tree to find any user. 
+- **The Pain:** When you INSERT a new user, the database has to find the exact alphabetical page, pry it open, squeeze the new data in, and sometimes split the page in half to make room. This requires spinning the physical hard drive a lot. It is slow.
 
-1. **MemTable** (in-memory, mutable): a sorted data structure (red-black tree or skip list)
-2. **SSTables** (on-disk, immutable): Sorted String Tables — sorted, immutable files
-
-```
-Write → MemTable (in RAM)
-          │
-          │  (flush when full, ~64MB)
-          ▼
-       L0 SSTables (may have overlapping key ranges)
-          │
-          │  (compaction)
-          ▼
-       L1 SSTables (non-overlapping key ranges, ~10MB each)
-          │
-          │  (compaction)
-          ▼
-       L2 SSTables (non-overlapping, ~100MB each)
-          ...
-```
-
-#### Write Path
-
-1. Write to WAL (for crash recovery): O(1), sequential append
-2. Write to MemTable: O(log n) in-memory sorted insert
-3. When MemTable hits size limit (~64MB): **flush** to a new L0 SSTable (sequential write, ~GB/s)
-
-**No random writes at all** — every disk write is a sequential append or flush. This is why LSM Trees dominate write-heavy workloads.
-
-#### Read Path
-
-1. Check MemTable (latest writes)
-2. Check L0 SSTables (newest first — these may overlap in key range)
-3. Check L1, L2, L3... SSTables
-
-Without optimization: O(number of SSTables) reads in the worst case. In practice, mitigated by:
-
-- **Bloom Filters**: probabilistic filter per SSTable. 99%+ chance of eliminating an SSTable that doesn't contain the key. False positive rate ~1%.
-- **Sparse Index**: each SSTable has a sparse index (every ~16th key). Binary search to narrow range.
-- **Block Cache**: recently read SSTable blocks cached in RAM.
-
-#### Compaction
-
-Compaction is the background process that merges SSTables and removes stale/deleted data. It is the source of both **write amplification** and **space amplification**.
-
-#### Leveled Compaction (LCS — used by Cassandra, RocksDB default)
-
-- L0: small SSTables, may overlap
-- L1+: each level has non-overlapping key ranges; total size increases 10x per level
-- Compaction picks one SSTable from Lk and merges it with the overlapping SSTables in Lk+1
-
-```
-L0: [a-z] [a-m] [n-z]        ← 3 overlapping SSTables
-L1: [a-c] [d-h] [i-m] [n-r] [s-z]   ← non-overlapping, ~10MB each
-L2: [a-b] ... [y-z]          ← non-overlapping, ~100MB each
-```
-
-- **Read amplification**: ~5-10 SSTable reads in worst case (one per level)
-- **Write amplification**: 10-30x (each byte written to DB may be rewritten 10-30 times during compaction)
-- **Space amplification**: ~1.1x (only ~10% temporary overhead)
-
-#### Size-Tiered Compaction (STCS — used by early Cassandra)
-
-- Group SSTables by size; merge groups of similarly-sized files
-- Fewer compaction I/Os, but temporarily doubles space during merge
-
-```
-4 x 10MB SSTables → merge → 1 x 40MB SSTable → group with others...
-```
-
-- **Read amplification**: high (many overlapping SSTables, must check all)
-- **Write amplification**: 5-10x (lower than leveled)
-- **Space amplification**: up to 2x during compaction
-
-#### Time-Window Compaction (TWCS — used by Cassandra for time-series)
-
-- Group SSTables by time window (e.g., 1 hour)
-- Never merge SSTables from different time windows
-- When a window closes, compact it once, then never touch it again
-
-Designed for workloads where old data is never updated — append-only time-series.
+**Use Case:** Apps where users read data way more than they write data. (E-Commerce, Social Media feeds, Forums).
 
 ---
 
-### Write Amplification, Read Amplification, Space Amplification
+## 📝 LSM Trees (The Messy Logbook)
 
-The fundamental three-way trade-off. You can optimize for at most two.
+NoSQL Databases (like Cassandra, DynamoDB, RocksDB) use **LSM Trees (Log-Structured Merge-Trees)**.
 
-**Write Amplification (WA)**: how many bytes are actually written to disk per byte of user data.
+> **💡 Analogy:** A bartender keeping a tab. When you order a drink, he doesn't pull out a fancy alphabetical ledger. He just scribbles "John - Beer" at the very bottom of a notepad. 
 
-```
-WA = total_bytes_written_to_disk / bytes_written_by_application
-```
+- **How it works:** When you INSERT data, the database does not sort it. It just appends it to the very end of a file (called a Commit Log). Because it just writes to the end of the file, it is blazing fast. 
+- **The Magic (SSTables):** Once the messy notepad gets full, the database quickly sorts it in RAM, and saves it as a permanent, read-only file called an SSTable.
+- **The Pain:** When a user asks to READ their data, the database has to check the active notepad, and then check 5 different SSTable files to find where the data is hidden. 
+- **Compaction:** To prevent the database from drowning in files, it runs a "Compaction" process at 3 AM to merge all the small messy files into one big sorted file.
 
-- B-Tree: WA ≈ 2 (WAL + random page write), but page splits can spike it higher
-- LSM Leveled: WA ≈ 10-30 (data rewritten at each level during compaction)
-- LSM Tiered: WA ≈ 5-10
-
-**Read Amplification (RA)**: how many disk reads per user query.
-
-```
-RA = disk_reads_per_query
-```
-
-- B-Tree: RA ≈ 3-4 (depth of tree, usually 3-4 levels)
-- LSM Leveled: RA ≈ 5-10 (one read per level + Bloom filter checks)
-- LSM Tiered: RA ≈ 10-50 (many overlapping SSTables)
-
-**Space Amplification (SA)**: how much disk space is used per byte of live data.
-
-```
-SA = total_disk_used / bytes_of_live_data
-```
-
-- B-Tree: SA ≈ 1.3-2x (fragmentation, partially filled pages)
-- LSM Leveled: SA ≈ 1.1x (only ~10% of data is being compacted at any time)
-- LSM Tiered: SA ≈ 1.5-2x (temporary doubled space during merge)
-
-| Strategy | Write Amp | Read Amp | Space Amp | Best For |
-|---|---|---|---|---|
-| B-Tree | Low (2-5x) | Very Low (3-4) | Medium (1.3-2x) | Read-heavy, OLTP |
-| LSM Leveled | High (10-30x) | Low (5-10) | Very Low (1.1x) | Write-heavy, bounded reads |
-| LSM Tiered | Medium (5-10x) | High (10-50) | High (1.5-2x) | Write-heavy, scan workloads |
-| LSM TWCS | Low (1-2x) | Medium | Low | Time-series, append-only |
+**Use Case:** Apps that generate a massive, non-stop firehose of data. (IoT sensors, GPS tracking, Logging systems, Stock market tickers). 
 
 ---
 
-### Tombstones and Deletes
-
-In a B-Tree: delete the entry, compact/free the page.
-
-In an LSM Tree: **you cannot delete data in place** (SSTables are immutable). Instead:
-
-1. Write a **tombstone** marker: a special entry for the key with a "deleted" flag
-2. Tombstone sits in MemTable, gets flushed to SSTable
-3. During compaction, if a tombstone meets the original entry, both are discarded
-
-**Problem**: tombstones accumulate. If you delete data but compaction hasn't merged the tombstone with the original data, **both exist on disk simultaneously** (space amplification spike). Cassandra's `gc_grace_seconds` (default 10 days) is the window during which tombstones must be preserved to prevent resurrection of deleted data across nodes.
-
----
-
-### Crash Recovery
-
-**B-Tree recovery**: Replay WAL from last checkpoint. Pages that were partially written are fixed by WAL. O(WAL entries since last checkpoint).
-
-**LSM Tree recovery**:
-1. MemTable contents are lost on crash
-2. Replay WAL to reconstruct MemTable state
-3. SSTables on disk are already durable (each flush was an atomic file rename)
-4. No partial page writes to worry about — SSTables are immutable once written
-
----
-
-### When to Use Each
-
-#### Use B-Tree (PostgreSQL, MySQL, SQLite) when:
-
-- Read/write ratio is high (>80% reads)
-- You need secondary indexes with low read latency
-- Workload is OLTP with mixed reads and writes to the same rows
-- You need strong MVCC / isolation level guarantees
-- Small working set that fits in buffer pool
-
-#### Use LSM Tree (Cassandra, RocksDB, HBase) when:
-
-- Write throughput is the bottleneck (>50% writes)
-- Data is largely append-only or write-once (time-series, logs, events)
-- You can tolerate background compaction I/O spikes
-- You don't need complex secondary indexes or joins
-- Wide columns or sparse schema (Cassandra's design sweet spot)
-
----
-
-### RocksDB Internals (Practical Reference)
-
-RocksDB is the most widely embedded LSM engine (used by Kafka log compaction, TiKV, MyRocks, CockroachDB's storage layer).
-
-- MemTable: skip list by default (configurable to hash-skip-list, vector)
-- Block size: 4KB per block within SSTable
-- Bloom filter: 10 bits per key → ~1% false positive rate
-- Block cache: LRU cache for recently accessed SSTable blocks
-- Write batch: atomic write of multiple keys in one WAL entry
-- Column families: logical separation of key spaces, each with its own MemTable/SSTable tree
-
-**Tuning levers for interview discussion:**
-
-| Parameter | Effect |
-|---|---|
-| `write_buffer_size` | MemTable size before flush; larger = fewer L0 files = less read amplification |
-| `max_write_buffer_number` | Max MemTables before writes stall (back-pressure mechanism) |
-| `level0_slowdown_writes_trigger` | L0 file count that triggers write slowdown (compaction is behind) |
-| `compression_type` | Snappy (fast), ZSTD (better ratio) — trades CPU for I/O |
-| `bloom_filter_bits_per_key` | Higher = lower false positive rate, more memory |
-
----
-
-### Interview Deep-Dive Questions
-
-1. **Why does Cassandra use LSM Trees instead of B-Trees?**
-   Cassandra was designed for write-heavy, eventually consistent workloads with no single master. LSM Trees provide write throughput that scales linearly with nodes. Cassandra's leaderless architecture means multiple nodes can accept writes simultaneously — B-Tree's random I/O would bottleneck at disk IOPS, while LSM's sequential writes can use the full disk bandwidth.
-
-2. **A RocksDB instance has 50 L0 SSTables. What does this indicate and what are the consequences?**
-   Compaction is falling behind write throughput. L0 SSTables can have overlapping key ranges, so reads must check all 50. RocksDB will begin rate-limiting writes (`level0_slowdown_writes_trigger` is typically 20). If it reaches `level0_stop_writes_trigger` (typically 36), writes will stall completely until compaction catches up.
-
-3. **How does a Bloom filter help LSM Tree reads? What is the false positive problem?**
-   A Bloom filter for an SSTable can answer "does key X exist in this SSTable?" in O(1). If the answer is "no," skip the SSTable. If "yes" (possibly a false positive), do the actual disk read. At 10 bits/key, ~1% of "yes" answers are false positives. This means 1% of SSTable lookups are wasted disk reads. Still much better than checking every SSTable.
-
-4. **When does write amplification hurt SSD lifespan?**
-   SSDs have a rated TBW (Total Bytes Written). A 10x write amplification on a workload writing 1 TB/day means the SSD sees 10 TB/day of actual writes. A consumer SSD rated for 300 TBW would fail in 30 days. Production deployments must account for write amplification when calculating expected SSD lifespan and choosing between MLC vs TLC vs SLC NAND.
-
----
-
-### See Also
-
-- `01-foundations/storage-fundamentals.md` — IOPS, disk types, sequential vs random I/O
-- `01-foundations/databases.md` — MVCC, B-Tree indexes in PostgreSQL/MySQL
-- `04-advanced-topics/internals/cassandra-internals.md` — Cassandra's compaction strategies in detail
-- `04-advanced-topics/internals/kafka-internals.md` — Kafka log segments (LSM-inspired append-only design)
-
-
-## Indexes
-
-### How B-Tree indexes work
-
-Each internal node stores key ranges. Leaf nodes store the actual data (clustered) or pointers to rows (non-clustered). A lookup traverses ~3-4 levels for a million-row table.
-
-### Primary vs Secondary Index
-
-**Primary (clustered)**: rows are physically stored in index order. Only one per table. In InnoDB, this is always the primary key.
-
-**Secondary (non-clustered)**: a separate structure that stores (indexed_column → primary_key). A lookup hits the secondary index, then follows the pointer to the actual row (one extra I/O).
-
-### Composite Index
-
-`CREATE INDEX idx ON orders(user_id, created_at)` — useful for `WHERE user_id = ? AND created_at > ?` but **not** for `WHERE created_at > ?` alone (leftmost prefix rule).
-
-### Covering Index
-
-If all columns in a `SELECT` are in the index, the DB never touches the main table. Critical for hot read paths.
-
-```sql
--- This query is fully covered by the index below
-SELECT user_id, created_at FROM orders WHERE user_id = 42;
-CREATE INDEX idx_cover ON orders(user_id, created_at);
-```
-
-### When Indexes Hurt
-
-- High write tables: every insert/update must update all indexes
-- Low cardinality columns (e.g., `is_active BOOLEAN`): not selective enough
-- Table scans are sometimes faster than index + row lookups for large result sets
-
-### Index Internals Interviewers Probe
-
-- **Index-only scan vs heap fetch**: a secondary-index lookup normally fetches the row from the heap (one extra random I/O). A covering index avoids this. In Postgres the row must also be **visible** (MVCC) — Postgres checks the *visibility map*; if the page isn't all-visible, it still does a heap fetch even for a covering index. MySQL InnoDB doesn't have this caveat because the clustered index *is* the table.
-- **InnoDB secondary index = double lookup**: secondary indexes store the **primary key**, not a physical pointer. So a secondary lookup is: traverse secondary index → get PK → traverse clustered index. Two B+Tree walks. This is why a fat primary key (e.g., a UUID) bloats every secondary index.
-- **Clustered index on random UUID = page-split hell**: InnoDB inserts rows in PK order. A random UUIDv4 PK causes inserts into random leaf pages → constant page splits, ~2x write amplification, fragmentation. Use a monotonic key (auto-increment, UUIDv7, or Snowflake ID) for the clustered key. This is a classic "why are our inserts slow?" interview scenario.
-- **fillfactor**: leaving free space in each page (Postgres default 90%, lower it for update-heavy tables) lets updates stay on the same page (HOT updates), avoiding index churn.
-- **HOT updates (Postgres)**: if an `UPDATE` doesn't change any indexed column and the page has free space, Postgres writes the new tuple version on the same page and skips updating every index — huge win for update-heavy tables. Set `fillfactor=70–85` to enable it.
-
----
-
-## Write-Ahead Log (WAL)
-
-Before any data page is modified, the change is written to an append-only log on disk. If the server crashes mid-write, the DB replays the WAL on startup to reach a consistent state.
-
-**Why this matters for system design**:
-- **Durability**: `fsync()` on WAL = durable write; data pages can be in memory
-- **Replication**: streaming replication sends WAL records to replicas; replica applies them in order
-- **Point-in-time recovery**: archive WAL segments → restore to any moment
-
-**The fsync bottleneck and group commit**: a durable commit needs an `fsync()` on the WAL, which forces data through the OS cache to physical storage — ~0.5–2ms on NVMe, ~5–10ms on a network-attached EBS volume. That fsync, not CPU, often caps commit throughput. **Group commit** amortizes it: many concurrent transactions' WAL records are flushed in one fsync. Postgres `commit_delay` / `synchronous_commit` and MySQL `innodb_flush_log_at_trx_commit` tune this:
-- `synchronous_commit=off` (Postgres) / `innodb_flush_log_at_trx_commit=2`: ack before fsync → ~10x more commit throughput, but you can lose the last few hundred ms of committed transactions on a crash. Acceptable for analytics/event ingestion, never for a payment ledger.
-- **Full-page writes**: after a checkpoint, Postgres writes the entire 8KB page to WAL on first modification (protects against torn pages on a crash). This is why WAL volume spikes right after a checkpoint and why checkpoint tuning matters.
-
----
-
-## MVCC — Multi-Version Concurrency Control
-
-Instead of locking rows, the DB keeps multiple versions of each row. Each transaction gets a snapshot of the database at the moment it started.
-
-```
-Transaction A (started at T=100): sees row version from T=100
-Transaction B (started at T=105): sees row version from T=105
-Transaction A updates row → creates new version at T=110
-Transaction B still sees T=100 version — no lock needed
-```
-
-**Result**: readers never block writers; writers never block readers. High concurrency.
-
-**Cost**: old versions (dead tuples in Postgres) accumulate and must be vacuumed. Long-running transactions prevent cleanup → table bloat.
-
----
-
-## Transaction Isolation Levels
-
-| Isolation Level | Dirty Read | Non-Repeatable Read | Phantom Read | Typical Use |
-|---|---|---|---|---|
-| Read Uncommitted | ✓ possible | ✓ possible | ✓ possible | Almost never |
-| Read Committed | ✗ prevented | ✓ possible | ✓ possible | Default (Postgres, Oracle) |
-| Repeatable Read | ✗ | ✗ prevented | ✓ possible | MySQL InnoDB default |
-| Serializable | ✗ | ✗ | ✗ prevented | Financial systems, audits |
-
-**What the anomalies mean**:
-- **Dirty read**: you see a write that was later rolled back
-- **Non-repeatable read**: you read the same row twice, get different values (another TX committed between reads)
-- **Phantom read**: you run the same query twice, get different rows (another TX inserted/deleted between runs)
-
-**Interview framing**: "For the payment ledger, I'd use Serializable isolation on the balance update — we cannot tolerate phantom reads where two concurrent withdrawals both see the same balance and both succeed."
-
-### The Anomaly the Table Hides: Write Skew
-
-The standard anomaly table is incomplete. **Repeatable Read / Snapshot Isolation does NOT prevent write skew**, and write skew is the anomaly that actually bites real systems.
-
-Classic example: two on-call doctors, rule is "at least one must remain on call."
-```
-Both transactions read: "2 doctors on call" → both decide it's safe to go off call
-Both write: set themselves off call
-Result: 0 doctors on call — invariant violated
-```
-Each transaction read a consistent snapshot and wrote a *different* row, so there's no read-write conflict that SI detects. Only **Serializable** prevents this.
-
-- **Postgres** implements Serializable via **SSI (Serializable Snapshot Isolation)** — optimistic. It runs at snapshot-isolation speed but tracks read/write dependencies; at commit it aborts one transaction in a dangerous cycle with a `could not serialize access` error. You **must** retry on `40001`. Low overhead unless contention is high.
-- **MySQL InnoDB** implements Serializable via **2PL with next-key (gap) locks** — pessimistic. Reads take shared locks; this blocks rather than aborts, and can deadlock.
-- **Cost framing**: SSI = cheap reads, possible abort+retry under contention. 2PL = blocking, deadlocks, but no retry logic needed. Know which your DB uses.
-
-### Locking, Deadlocks, and Lost Updates
-
-- **Lost update**: two transactions read balance=100, both add 10, both write 110 → one increment lost. Read Committed and Repeatable Read both allow this with a read-then-write pattern. Fixes: `SELECT ... FOR UPDATE` (pessimistic row lock), atomic `UPDATE balance = balance + 10` (let the DB serialize), or optimistic concurrency (`WHERE version = N`, retry on 0 rows).
-- **Deadlock**: TX-A locks row 1 then waits on row 2; TX-B locks row 2 then waits on row 1. The DB's deadlock detector (runs ~every 1s in Postgres, immediate cycle detection in InnoDB) kills one victim with a deadlock error. **Mitigation**: always acquire locks in a consistent order (e.g., sort row IDs before locking), keep transactions short, and add retry-on-deadlock logic.
-- **`SELECT FOR UPDATE` vs `FOR UPDATE SKIP LOCKED`**: `SKIP LOCKED` is the standard pattern for building a queue/job-dispatcher on a relational DB — workers grab unlocked rows without blocking each other.
-- **Lock granularity**: row locks (cheap, high concurrency) vs table locks (DDL, `LOCK TABLE`). Postgres `ALTER TABLE ... ADD COLUMN` with a default used to rewrite + exclusive-lock the whole table; modern Postgres adds nullable/constant-default columns instantly. Schema migrations on hot tables are a real interview gotcha — use `CREATE INDEX CONCURRENTLY` to avoid blocking writes.
-
-### Isolation Defaults by Engine (don't get this wrong)
-
-| Engine | Default isolation | Serializable mechanism |
-|---|---|---|
-| PostgreSQL | Read Committed | SSI (optimistic) |
-| MySQL InnoDB | Repeatable Read | 2PL + next-key locks (pessimistic) |
-| Oracle | Read Committed | Snapshot ("Serializable" = SI, not true serializable) |
-| SQL Server | Read Committed (lock-based) | 2PL; optional RCSI for MVCC reads |
-
-Note MySQL's RR is *stronger* than the SQL-standard RR — next-key locks block most phantoms. Oracle's "Serializable" is actually snapshot isolation and permits write skew.
-
----
-
-## Query Execution — What Happens Inside
-
-```
-SQL query → Parser → Query Planner (optimizer) → Executor → Buffer Pool → Disk
-```
-
-**Buffer Pool**: in-memory cache of data pages. Hot pages stay in RAM; cold pages evicted (LRU). This is why `shared_buffers` in Postgres matters — bigger pool = fewer disk reads.
-
-**Query Planner**: decides index scan vs sequential scan based on table statistics (row count, cardinality). `ANALYZE` updates statistics. Stale stats → bad plans → slow queries.
-
-**EXPLAIN / EXPLAIN ANALYZE**: shows the plan the planner chose. Essential for debugging slow queries.
-
----
-
-## Interview Application
-
-| Scenario | What to say |
-|---|---|
-| "Why PostgreSQL for your payments DB?" | "ACID guarantees, Serializable isolation for balance updates, WAL-based replication for HA" |
-| "Your user profile reads are slow" | "Add covering index on (user_id, name, email) — eliminates heap fetch; profile reads are read-heavy and benefit immediately" |
-| "How does your read replica stay in sync?" | "PostgreSQL streaming replication via WAL — replica applies log records in order; typically < 100ms lag" |
-| "Cassandra for user sessions — why?" | "LSM-tree writes are fast for session upserts; we don't need strong consistency; Cassandra's eventual consistency with QUORUM reads is acceptable" |
-| "What breaks at high write load?" | "Index maintenance bottleneck — each write updates all indexes. Solution: drop low-value indexes, use partial indexes, or switch to LSM-tree storage" |
+## 🎤 Interview Questions to Practice
+
+1. **"What is the difference between a B-Tree and an LSM Tree?"**
+   *Answer:* B-Trees (used by SQL DBs) maintain data in a strictly sorted, balanced tree on disk. They offer incredibly fast Reads but slower Writes due to page-splitting. LSM Trees (used by NoSQL DBs) append data sequentially to a log and periodically merge them in the background. They offer incredibly fast Writes, but slower Reads due to searching multiple files. 
+2. **"If we are building an IoT system that ingests 100,000 temperature readings per second, what storage engine should we use?"**
+   *Answer:* An LSM-Tree based database like Cassandra. A B-Tree would thrash the disk trying to sort 100,000 inserts per second, but an LSM-Tree handles heavy write-throughput effortlessly by appending to a sequential log.
+3. **"What is Compaction in an LSM Tree?"**
+   *Answer:* It is a background process that merges multiple smaller, read-only data files (SSTables) into larger, fully-sorted files, while throwing away deleted or overwritten data. This prevents the disk from filling up and speeds up future read queries.

@@ -1,18 +1,16 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** The mental model for system design — scalability, availability, consistency, performance, and the 8 core building blocks every engineer must know.
+> **What this covers:** The absolute basics of system design. Think of this as the "mental model" you need before building any massive application.
 >
 > **Key topics:**
-> - Scalability: vertical vs horizontal scaling, when each breaks down
-> - Availability: "nines" table (99% = 3.65 days downtime/yr, 99.999% = 5.3 min/yr)
-> - Consistency: strong → sequential → causal → eventual consistency spectrum
-> - Performance: latency (p50/p99/p999) vs throughput, QPS estimation formula
-> - Key latency numbers: L1 cache 1ns, RAM 100ns, SSD 100µs, network 0.5ms, cross-region 100ms
-> - CAP theorem + PACELC: pick 2, and even without partitions choose latency vs consistency
-> - 8 building blocks: load balancer, cache, database, message queue, CDN, reverse proxy, API gateway, service discovery
+> - **Scalability:** When your app gets popular, how do you handle it? You can buy a bigger server (Vertical Scaling) or buy many small servers (Horizontal Scaling).
+> - **Availability:** How often is your app online? We measure this in "nines" (99.9% uptime means your app is down for about 8.7 hours a year).
+> - **Consistency:** When one user changes their profile picture, does everyone in the world instantly see the new picture, or is it okay if some people see the old one for a few seconds?
+> - **Performance:** Measured in Latency (how fast one person gets a response) and Throughput (how many total people can get responses at the same time).
+> - **The 8 Building Blocks:** Load Balancers, Caches, Databases, Message Queues, CDNs, Reverse Proxies, API Gateways, and Service Discovery.
 >
-> **Key takeaway:** Internalize the latency numbers and availability nines — they are the foundation of every capacity estimation and trade-off discussion.
+> **Key takeaway:** Every big app is just a combination of these 8 building blocks, balanced against the trade-offs of Speed, Availability, and Consistency.
 
 ---
 module: 01-foundations
@@ -21,378 +19,110 @@ tags: [01-foundations, system-design, foundations]
 ---
 # System Design: The Mental Model
 
-This is the entry point. Read this first, then follow the study path at the bottom to go deep on each topic.
+> Start here! This is the entry point to system design. Before you learn how to build Netflix or Twitter, you need to understand the physical limits of computers and the trade-offs engineers make every day.
 
 ---
 
-## File Mindmap
+## 🤷‍♂️ Why Should I Care?
 
-```
-System Design: The Mental Model
-├── Why It Exists
-│   ├── Problem → app works for 100 users, breaks at 10M — what fails first?
-│   └── Forces → physics: CPU ~3B cycles/s, disk ~100-200 MB/s, RAM bounded, speed of light
-├── Core Concepts
-│   ├── Scalability → handle growing load without full rewrite
-│   │   ├── Vertical → bigger machine; hits hardware ceiling
-│   │   └── Horizontal → more machines; requires distribution decisions
-│   ├── Availability → % uptime; nines: 99.9% = 8.7h/yr downtime, 99.999% = 5.3min/yr
-│   ├── Consistency → all nodes see same data at same time (vs eventual consistency)
-│   └── Performance
-│       ├── Latency → time for one request (p50 / p99 / p999)
-│       └── Throughput → requests per second; QPS = DAU × actions/day / 86400
-├── The 8 Core Building Blocks
-│   ├── Load Balancer → distribute traffic; hide server topology
-│   ├── Cache → RAM over disk; reduce DB load; 100ns vs 5ms
-│   ├── Database → persistence; ACID vs BASE
-│   ├── Message Queue → decouple producers/consumers; async work
-│   ├── CDN → edge caching; serve static content close to user
-│   ├── Reverse Proxy → SSL, routing, compression in one place
-│   ├── API Gateway → auth + rate limit + routing for microservices
-│   └── Service Discovery → find other services dynamically
-├── Key Latency Numbers
-│   ├── L1 cache → ~1ns
-│   ├── RAM → ~100ns
-│   ├── SSD random read → ~100µs
-│   ├── Network same DC → ~0.5ms
-│   ├── HDD seek → ~10ms
-│   ├── Cross-region → ~100ms
-│   └── Speed of light NYC→London → ~70ms (one-way)
-├── Availability Nines Table
-│   ├── 99% → 3.65 days/yr downtime
-│   ├── 99.9% → 8.7 hrs/yr
-│   ├── 99.99% → 52.6 min/yr
-│   └── 99.999% → 5.3 min/yr
-├── QPS / Capacity Estimation
-│   ├── Pattern → DAU × actions/day / 86,400 = QPS
-│   ├── Storage → writes/day × payload bytes × retention days
-│   └── Bandwidth → QPS × avg response size
-├── SDE-3 Differentiators
-│   ├── Quantify tradeoffs (not just name them)
-│   ├── Know failure modes before the interviewer asks
-│   ├── Discuss monitoring and alerting strategy
-│   └── Justify tech choices with numbers, not preference
-├── Study Path (Reading Order)
-│   ├── 01-foundations → mental model, DB, networking, caching, security
-│   ├── 02-building-blocks → LB, message broker, sharding, replication, etc.
-│   ├── 03-scaling → strategies, patterns
-│   ├── 04-advanced-topics → distributed systems, chaos, internals
-│   ├── 05-hld-problems → real design walkthroughs
-│   └── 06-lld → object design, patterns
-└── Interview Angles
-    ├── "Walk me through your estimation" → show QPS → storage → bandwidth math
-    ├── "What breaks first?" → identify single points of failure
-    ├── "How do you know it's working?" → metrics, SLOs, alerting
-    └── Follow-up: "If latency spikes at 99th percentile, where do you look first?"
-```
+Imagine you build a website for your local bakery. It works perfectly for 100 users. 
+Then, a famous celebrity tweets about the bakery. Suddenly, 10 million people try to load your website at the exact same second. 
+
+**What happens?** The website crashes. 
+
+Why? Because computers are bound by physics. A single computer processor can only do so many calculations per second. A hard drive can only spin so fast. 
+
+System Design is the art of figuring out *what* is going to break before it breaks, and spreading the work out across many computers so the app stays online. If you don't know system design, your app will crash the moment it becomes successful.
 
 ---
 
-## What Is System Design?
+## ⚖️ The 4 Core Questions of Every System
 
-**Question**: You've written an app that works perfectly for 100 users. Now you need it to work for 10 million. You can't rewrite it from scratch — you're in production. What breaks first, and how do you know what to fix before it breaks?
+Every time you build a big app, you have to answer four questions.
 
-**Physical constraint**: Every component in a computer system has a hard ceiling: a single CPU core executes ~3 billion cycles per second, a single disk can sustain ~100–200 MB/s sequential throughput (or ~100–200 IOPS random), a single machine has at most a few hundred GB of RAM, and a single network card is bounded by bandwidth and the speed of light. These are not engineering failures — they are physics. When your user count grows, you will eventually exceed one of these ceilings, and the system will fail in a way that is invisible until it isn't.
+### 1. Scalability (Can it grow?)
+**The Problem:** Your server can handle 1,000 requests per second. Tomorrow, you will get 10,000 requests per second. What do you do?
 
-**Minimal solution**: Put everything on one big machine. Vertical scaling (faster CPU, more RAM, bigger disk) works until you hit the hardware ceiling — which is a real, finite number. At some point, no single machine can be purchased that handles the load.
+- **Vertical Scaling (The "Hulk" Method):** Just buy a bigger, more expensive server. This is easy, but eventually, you hit a physical limit (there is no server on Earth big enough to run all of Google on one machine).
+- **Horizontal Scaling (The "Army" Method):** Buy 10 small, cheap servers and split the work between them. This is how massive companies grow indefinitely.
 
-**Production generalization**: System design is the discipline of deciding, before you hit those ceilings, which components to distribute across multiple machines, how they communicate, what data each owns, and what guarantees each provides. The decisions made early — how data is partitioned, whether the architecture is monolithic or service-oriented, what consistency guarantees the database provides — are extraordinarily expensive to undo later. Getting these right, or at least understanding the tradeoffs you're accepting, is the whole game.
+### 2. Availability (Is it online?)
+**The Problem:** Your only server's power supply randomly dies at 2:00 AM. 
 
----
+- If you have one server, your app is dead until you wake up and fix it. 
+- **The Fix:** Eliminate "Single Points of Failure." Run your app on multiple servers at the same time. If one dies, the others take over instantly. 
 
-## How Every System Is Evaluated
+Availability is measured in "Nines":
+- **99% (Two nines):** Down for 3.65 days a year. (Bad for a business).
+- **99.9% (Three nines):** Down for 8.7 hours a year. (Okay for a blog).
+- **99.999% (Five nines):** Down for just 5.3 minutes a year! (Needed for pacemakers and airplanes).
 
-Every production system lives and dies on four axes. When you're designing a system — in an interview or on the job — these are the four questions that drive every architectural decision.
+### 3. Consistency (Does everyone see the same thing?)
+**The Problem:** You have two database servers (Server A in New York, Server B in London). You update your bank account balance on Server A. A microsecond later, your phone checks your balance on Server B. 
 
-### Scalability
+- **Strong Consistency:** The system forces Server B to wait until it gets the new balance from Server A before answering your phone. It's safe, but it makes the app feel slow (adds Latency).
+- **Eventual Consistency:** Server B just gives you the old balance because it's faster. It promises to "eventually" update to the new balance in a few seconds. This is great for Facebook "Likes", but terrible for bank accounts!
 
-**Question**: Your service handles 1,000 requests/sec today. Your marketing team announces a campaign that will drive 10,000 requests/sec tomorrow. You have 12 hours. What do you do?
+### 4. Performance (Is it fast?)
+**The Problem:** How do we measure "fast"?
+- **Latency:** How long does it take for *one* user to get a response? (Measured in milliseconds).
+- **Throughput:** How many total requests can the system handle per second? (Measured in Queries Per Second, or QPS).
 
-**Physical constraint**: A single application server process can handle roughly 100–1,000 requests/sec depending on work per request. Beyond that, the CPU is saturated, or the thread pool is exhausted, or the database connection pool is full. Adding more work to the same machine doesn't help — it just adds queuing latency.
-
-**Minimal solution**: Add a second server behind a load balancer. This doubles capacity. It works until: the database behind both servers becomes the bottleneck (one DB, two app servers hammering it), or the servers need shared state (sessions, caches) that doesn't exist on both machines.
-
-**Production generalization**: Horizontal scaling — adding more identical nodes — is the standard answer. Netflix spins up thousands of additional servers within minutes during a traffic spike. The hard part is making the application stateless (so any server can handle any request) and making the data layer scale independently (read replicas, sharding, caches). Scalability means capacity grows in proportion to resources added — both compute and data tier.
-
-### Availability
-
-**Question**: Your primary database server crashes at 2am. How long until users notice, and how long until service is restored? If those numbers are hours, is that acceptable?
-
-**Physical constraint**: Hardware fails. Hard drives fail at ~1% per year; a cluster of 1,000 disks loses one per month. Network switches fail. Power supplies fail. Even well-maintained cloud VMs are restarted for host maintenance. Any single machine that your system depends on will eventually be unavailable.
-
-**Minimal solution**: Deploy one server. When it fails, restart it. Mean time to recovery (MTTR) is the time to detect + diagnose + restart, typically 5–30 minutes. For most consumer-facing systems, 30 minutes of monthly downtime (99.93% uptime) is below acceptable.
-
-**Production generalization**: Eliminate single points of failure. Replicate critical components (primary + standby DB, multiple app servers, redundant load balancers). Deploy across multiple availability zones so one datacenter failure doesn't take down the system. Build health checks and automated failover so recovery is seconds, not minutes. Availability is measured in "nines": 99.9% = 8.76 hours downtime/year; 99.99% = 52 minutes/year. Each nine is roughly 10× harder to achieve than the previous.
-
-### Consistency
-
-**Question**: A user updates their profile picture. Another user, in a different region, loads that profile 200 milliseconds later. Should they see the new picture or the old one? Does your answer change if this is a bank balance instead of a profile picture?
-
-**Physical constraint**: Network round-trip between datacenters is ~50–150ms. Writing to a database in us-east and reading from us-west within 50ms means the read happens before the write has had time to propagate. There is no way to propagate data faster than the speed of light across a continent.
-
-**Minimal solution**: Route all reads and writes to one node in one region. Every read sees the latest write because there's only one copy. This works until: that region goes down (availability fails), or the latency from far-away users is unacceptable (performance fails).
-
-**Production generalization**: Consistency is a spectrum, not a binary. Strong consistency (every read reflects the latest write) requires coordination, which costs latency. Eventual consistency (reads may be stale briefly) allows replicas to operate independently, which improves availability and latency. The right choice depends on domain: bank balances require strong consistency; social media like-counts tolerate eventual. This is the heart of the CAP theorem. → Deep dive: [Distributed Systems](../04-advanced-topics/distributed-systems.md)
-
-**PACELC — Beyond CAP**:
-
-CAP theorem only describes what happens *during a network partition* (P): choose Availability or Consistency. But network partitions are rare. What about normal operation?
-
-PACELC (Daniel Abadi, 2012) extends CAP:
-- **P** (partition) → choose **A** (availability) or **C** (consistency) — same as CAP
-- **E** (else, normal operation) → choose **L** (low latency) or **C** (consistency)
-
-```
-PACELC Matrix:
-
-System              Partition     Normal Ops     Notes
-────────────────────────────────────────────────────────────────────
-DynamoDB            PA            EL             Eventual by default; strong read adds latency
-Cassandra           PA            EL             LOCAL_QUORUM adds latency; choose per query
-CockroachDB         PC            EC             Raft consensus on every write; strong always
-Spanner             PC            EC             TrueTime sync; external consistency
-MongoDB (default)   PA            EL             Single-node reads (eventual)
-MongoDB (majority)  PC            EC             Majority read/write; higher latency
-Zookeeper/etcd      PC            EC             Consensus-based; not available under partition
-HBase               PC            EC             Strong consistency via HDFS WAL
-```
-
-**The key insight PACELC adds**: even without a partition, a system must decide between low latency (serve from local replica, possibly stale) and consistency (coordinate across replicas, adds latency). DynamoDB is PA/EL: it prioritizes availability under partition AND low latency in normal ops. Spanner is PC/EC: it provides consistency in both cases, at the cost of latency.
-
-**Interview question framing**: "We use Cassandra for our user profile store. We've chosen PA/EL — during a partition we remain available with eventual consistency, and in normal ops we use `LOCAL_ONE` for low latency. If we need stronger guarantees for account balance reads, we switch to `LOCAL_QUORUM` — moving to PA/EC for that specific query."
-
-### Performance (Latency & Throughput)
-
-**Question**: Your API returns in 50ms at P50, but in 2,000ms at P99. Half your users have a fine experience. One in a hundred users gets a two-second wait. Which number do you optimize, and why does the P99 exist at all?
-
-**Physical constraint**: Latency has irreducible floors: a disk seek takes ~4ms, a network round-trip within a datacenter takes ~0.5ms, a cross-continent round-trip takes ~150ms. Any operation that touches disk or crosses a network adds these floors to your response time. Ten sequential database queries each taking 5ms = 50ms of unavoidable latency.
-
-**Minimal solution**: Run every operation synchronously and sequentially. Latency = sum of all operation times. This is simple and correct. It breaks when any one operation is slow (a slow DB query bloats every response), and when you need high throughput (sequential processing caps at 1 request / total latency).
-
-**Production generalization**: Parallelism (execute independent operations concurrently) and caching (skip expensive operations entirely for repeat reads) are the two primary tools. Google found that every 100ms of latency costs 1% of revenue. Amazon found that 1 second of slowness reduced sales by 7%. Latency is how long a single request takes; throughput is how many requests per second the system can sustain. They often trade off: batching improves throughput but increases individual latency.
+> **💡 Analogy:** Think of a highway. Latency is how fast a single car can drive from A to B (speed limit). Throughput is how many cars can cross the bridge per minute (number of lanes). 
 
 ---
 
-## The Core Building Blocks
+## 🧱 The 8 Core Building Blocks
 
-Every large-scale system is assembled from the same fundamental components. You don't need to reinvent them — you need to know when to reach for each one and what you're accepting when you do.
+Every massive app you use (Netflix, Uber, Amazon) is built using these same 8 lego blocks:
 
-### 1. Networking & Protocols
-
-**Question**: Service A calls Service B. The call times out. Is the problem in A's code, B's code, the network between them, DNS resolution, TLS negotiation, or B's database? You have to fix it in production in the next 10 minutes. How do you even start?
-
-**Physical constraint**: Every network call crosses multiple layers: application serialization, OS TCP stack, NIC, network switches, the remote NIC, remote OS TCP stack, and finally the remote application. A packet can be dropped at any layer. Latency accumulates at each layer. Without knowing which layer introduced the problem, debugging is guesswork.
-
-**Minimal solution**: Use the OSI model as a structured debugging ladder. Start at Layer 7 (application logs): is the service returning errors? Drop to Layer 4 (TCP): is connection establishment slow? Drop to Layer 3 (IP/routing): is there packet loss?
-
-**Production generalization**: TCP/IP handles reliable delivery — every packet is acknowledged and retransmitted if lost. HTTP/REST is the lingua franca of web APIs. gRPC is what Google and Uber use internally when performance matters and you control both ends. DNS translates `google.com` into `142.250.80.46`. Understanding which layer fails tells you which tool to reach for and which team to call.
-
-→ Deep dive: [Networking](../01-foundations/networking.md)
-
-### 2. Databases
-
-**Question**: You need to store 10 billion rows of user activity events. Each write must be fast (you have 500,000 events/second). Reads are always by user ID + time range. You never join this data with other tables. Should you use PostgreSQL or Cassandra? What breaks if you choose wrong?
-
-**Physical constraint**: A relational database enforces consistency across rows and tables by acquiring locks during writes. At high write throughput, those locks create contention. A single PostgreSQL primary can sustain roughly 10,000–50,000 simple writes/second; beyond that, you need to either shard or switch to a write-optimized store.
-
-**Minimal solution**: Use one relational database for everything. Simple, unified, well-understood. Works until write throughput exceeds what one primary can handle, or data volume exceeds what one disk can store.
-
-**Production generalization**: Relational databases (PostgreSQL, MySQL) give you ACID guarantees, joins, and a decades-proven track record. NoSQL databases (Cassandra, DynamoDB, MongoDB) trade query flexibility for horizontal scalability — Cassandra's LSM-tree storage accepts writes at 500,000/second across a cluster because it never updates in-place. The wrong choice here is the hardest architectural mistake to undo. Match the database to the access pattern, not the other way around.
-
-→ Deep dive: [Databases](../01-foundations/databases.md)
-
-### 3. Caching
-
-**Question**: Your database can do 10,000 reads/sec. Your app needs 500,000 reads/sec. You cannot afford 50 database replicas. What do you do?
-
-**Physical constraint**: RAM access is ~100ns. Disk access is ~4ms — 40,000× slower. A database query that reads from disk (even a warm buffer pool read) is orders of magnitude slower than reading from memory. If reads are idempotent and data changes slowly, you're paying 40,000× the cost on every repeat access unnecessarily.
-
-**Minimal solution**: Copy the result into RAM the first time. Return from RAM on all subsequent reads. This works until: data changes (stale reads), RAM fills up (eviction), or the process restarts (cold start).
-
-**Production generalization**: Cache-aside pattern + TTL for staleness control + LRU eviction for memory pressure + warm-up jobs for cold start. Redis is a RAM-backed hash map over a network — the network adds ~0.5ms but makes the cache shared across all app instances. Twitter caches the home timelines of active users entirely in Redis — what would take a complex database query is served from memory in under 1ms. The hard problems are *what* to cache, *when* to invalidate it, and how to handle a cold cache after a restart.
-
-→ Deep dive: [Caching Layer (Building Block)](../02-building-blocks/caching-layer.md)
-
-### 4. Content Delivery Networks (CDN)
-
-**Question**: You have 10 million users worldwide, all requesting the same 50MB JavaScript bundle every time they visit your site. Your origin server is in Virginia. A user in Tokyo gets ~150ms of latency on every byte. Bandwidth costs alone would bankrupt you. What do you do?
-
-**Physical constraint**: The speed of light means a round-trip from Tokyo to Virginia takes ~150ms regardless of how fast your servers are. This is a physics ceiling, not an engineering problem. You cannot optimize your way below the latency imposed by geographic distance.
-
-**Minimal solution**: Put a copy of static files in a server close to each major user population. A server in Tokyo can respond to Tokyo users in ~10ms. This works until: the copy is stale (the original changed), you have too many distinct pieces of content to store everywhere, or the file is dynamic/user-specific.
-
-**Production generalization**: A CDN is a globally distributed network of caching servers (edge nodes) that serve content from the location closest to the user. On the first request from a region, the edge fetches from your origin and caches the result. All subsequent requests from that region are served locally. Netflix delivers over 15% of global internet traffic almost entirely through CDN — it is economically impossible to serve that from a handful of origin data centers.
-
-→ Deep dive: [CDN (Building Block)](../02-building-blocks/cdn.md) | [CDN section in Caching Layer](../02-building-blocks/caching-layer.md#7-cdn-as-distributed-cache-layer)
-
-### 5. Load Balancing
-
-**Question**: You have 10 servers, each capable of handling 1,000 requests/sec. That's 10,000 requests/sec total capacity. But every client connects to the same IP address — server 1. Servers 2–10 sit idle. How do you distribute the connections?
-
-**Physical constraint**: A server process has a bounded number of threads and file descriptors. Under TCP, each connection consumes a file descriptor (default OS limit ~65,536). Once saturated, new connections are refused regardless of whether other servers are available. There is no built-in mechanism for clients to self-distribute across a server fleet.
-
-**Minimal solution**: Put one machine in front of all servers that receives all connections and forwards each one to one backend. This is a load balancer. It solves the routing problem. It also becomes a single point of failure — if it dies, all traffic dies.
-
-**Production generalization**: Deploy redundant load balancers with failover. Use health checks to detect and stop routing to failed backends. Choose routing algorithm based on workload: round-robin for stateless services, least-connections for variable-duration requests, consistent hashing when requests for the same key should hit the same backend (e.g., caching affinity). Google's Maglev system handles millions of packets per second with sub-millisecond routing decisions.
-
-→ Deep dive: [Load Balancers](../02-building-blocks/load-balancers.md)
-
-### 6. Message Queues & Async Processing
-
-**Question**: A user uploads a photo. Your system must: resize it to 12 resolutions, extract metadata, run it through a content moderation ML model, and notify followers. That work takes 8 seconds. The user is waiting at a loading spinner. How do you give them a response in under 200ms?
-
-**Physical constraint**: CPU-bound work (image resizing, ML inference) takes real wall-clock time proportional to the complexity of the computation. You cannot make 8 seconds of CPU work complete in 200ms on a single thread — the physics don't allow it. The user's request latency and the total processing latency are decoupled problems that need decoupled solutions.
-
-**Minimal solution**: Accept the upload, store the raw file, return a 202 Accepted immediately. Process everything else asynchronously in the background. The user gets a fast response; the work still happens. This breaks when: the background work fails silently, the background process crashes mid-work, or producers are generating work faster than workers can consume it.
-
-**Production generalization**: Message queues (Kafka, RabbitMQ, SQS) are a durable buffer between producers and consumers. The sender drops a message and moves on; the receiver picks it up when ready. Messages are persisted so a crashed worker can retry. Consumer lag is measurable so you can scale workers when producers outpace them. Kafka handles millions of messages per second with durability guarantees, used by LinkedIn, Uber, and Airbnb.
-
-→ Deep dive: [Message Brokers](../02-building-blocks/message-brokers.md)
-
-### 7. Sharding & Replication
-
-**Question**: Your PostgreSQL primary is at 80% CPU handling read queries, and your dataset is 20TB — too large for one machine's disk. You cannot vertically scale further. You have two distinct problems: too many reads, and too much data. Are these the same problem? Do they have the same solution?
-
-**Physical constraint**: A single disk has a maximum I/O throughput (~500 MB/s SSD sequential). A single CPU can execute a finite number of query threads. A single machine has a maximum disk capacity. All three are hard physical ceilings, and they can be hit independently — a read-heavy workload may hit CPU before disk capacity, while a data-archival workload may hit disk before CPU.
-
-**Minimal solution**: For the read problem: make copies of the data on additional machines (replicas) and direct reads to them. This is replication. For the data volume problem: put different partitions of the data on different machines. This is sharding. These are distinct solutions to distinct constraints.
-
-**Production generalization**: Replication copies data to multiple servers — read replicas spread read load (how Instagram handled 1B users on Postgres). Sharding splits data across servers so each owns a subset — Uber shards trip data by city, so Sydney's database doesn't carry New York's rows. The two are complementary: you replicate each shard for availability, and you shard for capacity. Together they form the backbone of every distributed storage system.
-
-→ Deep dive: [Sharding](../02-building-blocks/sharding.md) | [Replication](../02-building-blocks/replication.md)
-
-### 8. Security
-
-**Question**: An attacker sends your login endpoint 1 million requests per second, each with a different username/password combination harvested from a leaked credentials database. Your server happily processes each one. Within minutes, they've accessed thousands of real user accounts. Your code has no bugs. What went wrong?
-
-**Physical constraint**: A server cannot distinguish a malicious request from a legitimate one at the packet level — both are valid TCP connections with valid HTTP bodies. Without application-layer controls, every request is treated identically regardless of intent or volume. The application layer is the only place where business context (is this request pattern anomalous?) can be evaluated.
-
-**Minimal solution**: Accept every request and authenticate it against the database. This is correct for one user. At scale with an attacker, it exhausts DB connections, leaks account existence via timing differences, and provides no circuit breaker against credential stuffing.
-
-**Production generalization**: Authentication (who are you? — OAuth 2.0, JWTs) and authorization (what are you allowed to do? — RBAC, ACLs) are necessary but not sufficient. Rate limiting, IP blocking, CAPTCHA, and anomaly detection are the controls that make authentication resistant to automated attack. Encryption (TLS in transit, AES-256 at rest) ensures that breaching the network or disk doesn't expose data. The threat model for a payment system at Stripe is completely different from a social media platform, but both have non-negotiable baseline requirements.
-
-→ Deep dive: [Security](../01-foundations/security.md)
+1. **Load Balancer:** The traffic cop. It stands in front of your 10 servers and directs incoming users to the server that is least busy.
+2. **Database:** The filing cabinet. Where permanent data (like user accounts) is safely stored on hard drives.
+3. **Cache:** The sticky note on your monitor. It stores frequently accessed data in lightning-fast RAM so you don't have to constantly dig through the slow Database.
+4. **Message Queue:** The waiting room. If users upload 10,000 photos at once, the queue holds them safely in a line so your photo-processing servers can work on them one by one without crashing.
+5. **CDN (Content Delivery Network):** The local branch. Instead of sending a heavy video file from New York to a user in Tokyo, the CDN stores a copy of the video on a server *in* Tokyo for instant loading.
+6. **Reverse Proxy:** The bouncer. It sits in front of your servers and handles things like security (SSL) and compressing files.
+7. **API Gateway:** The receptionist. For modern apps with hundreds of microservices, this is the single front door that checks your ID (Auth) before routing you to the right department.
+8. **Service Discovery:** The phonebook. When Server A needs to talk to Server B, it looks up Server B's current IP address here.
 
 ---
 
-## The SDE-3 Differentiators
+## ⏱️ Numbers Every Engineer Should Know
 
-Junior candidates know the building blocks. Senior candidates understand the hard problems that emerge when those building blocks interact at scale. These topics separate L5/SDE-3 candidates from the rest.
+In system design, we talk about speed in terms of physical distance. Memorize this table. 
 
-- **Consistency models & distributed systems** — Strong vs. eventual consistency, linearizability, the CAP theorem, consensus algorithms (Raft, Paxos). → [Distributed Systems](../04-advanced-topics/distributed-systems.md) | [Distributed Concepts](../04-advanced-topics/distributed-concepts.md)
-- **Event-driven architecture & CQRS** — Decoupling services via events, separating read and write models, event sourcing. → [Event-Driven Architecture](../04-advanced-topics/event-driven-architecture.md)
-- **Observability & tracing** — You can't fix what you can't see. Metrics, logs, distributed traces, and how to correlate them across a microservices mesh. → [Observability](../04-advanced-topics/observability.md)
-- **Chaos engineering** — Netflix's practice of deliberately breaking production to find failure modes before users do. → [Chaos Engineering](../04-advanced-topics/chaos-engineering.md)
-- **Idempotency & failure recovery** — What happens when a payment request is retried? How do you design operations that are safe to run twice? → [Distributed Concepts](../04-advanced-topics/distributed-concepts.md)
+**Human-scale analogy:** If checking the L1 cache took 1 second, then checking a hard drive would take 7.5 months!
 
----
-
-## Recommended Reading Order
-
-Follow this path for a systematic understanding that builds on itself. Each stage depends on the previous one.
-
-**Stage 1 — Foundations** (read first, everything else builds on these)
-1. [Networking](../01-foundations/networking.md) — TCP/IP, DNS, HTTP, OSI model
-2. [Databases](../01-foundations/databases.md) — SQL vs NoSQL, indexing, ACID, CAP theorem
-3. [Caching Layer](../02-building-blocks/caching-layer.md) — Strategies, eviction policies, CDN patterns
-4. [Security](../01-foundations/security.md) — Auth, encryption, rate limiting
-
-**Stage 2 — Building Blocks** (the components every system uses)
-5. [Load Balancers](../02-building-blocks/load-balancers.md)
-6. [Message Brokers](../02-building-blocks/message-brokers.md)
-7. [Sharding](../02-building-blocks/sharding.md)
-8. [Replication](../02-building-blocks/replication.md)
-9. [Caching Layer](../02-building-blocks/caching-layer.md)
-10. [CDN](../02-building-blocks/cdn.md)
-11. [API Gateway](../02-building-blocks/api-gateway.md)
-12. [Rate Limiting](../02-building-blocks/rate-limiting.md)
-
-**Stage 3 — HLD Problems** (apply what you've learned)
-13. Easy: [URL Shortener](../05-hld-problems/01-easy/url-shortener.md), [Rate Limiter](../05-hld-problems/01-easy/rate-limiter.md), [Key-Value Store](../05-hld-problems/01-easy/key-value-store.md)
-14. Medium: [Instagram](../05-hld-problems/02-medium/instagram.md), [YouTube](../05-hld-problems/02-medium/youtube.md), [WhatsApp](../05-hld-problems/02-medium/whatsapp.md)
-15. Hard: [Distributed Cache](../05-hld-problems/03-hard/distributed-cache.md), [Payment System](../05-hld-problems/03-hard/payment-system.md), [Search System](../05-hld-problems/03-hard/search-system.md)
-
-**Stage 4 — Advanced Topics** (for senior roles)
-16. [Distributed Systems](../04-advanced-topics/distributed-systems.md)
-17. [Event-Driven Architecture](../04-advanced-topics/event-driven-architecture.md)
-18. [Observability](../04-advanced-topics/observability.md)
-19. [Chaos Engineering](../04-advanced-topics/chaos-engineering.md)
-
-**Stage 5 — Interview Prep**
-20. [HLD Template](../07-interview-templates/hld-template.md)
-21. [Capacity Estimation](../07-interview-templates/capacity-estimation.md)
-22. [Trade-offs Cheat Sheet](../07-interview-templates/trade-offs-cheat-sheet.md)
-
----
-
-## Quick Reference: Numbers Every Engineer Should Know
-
-Memorize these. They come up in every capacity estimation, and rattling them off confidently signals experience.
-
-### Latency Hierarchy
-
-| Operation | Latency |
+| Operation | Latency (Time taken) |
 |-----------|---------|
-| L1 cache reference | 0.5 ns |
-| L2 cache reference | 7 ns |
-| RAM reference | 100 ns |
-| SSD read | ~1 ms |
-| HDD seek | ~10 ms |
-| Same-datacenter round trip | 0.5 ms |
-| Cross-region (CA ↔ Europe) | ~150 ms |
-
-**Human-scale analogy:** If L1 cache = 1 second, then RAM = 3 minutes, SSD = 23 days, HDD = 7.5 months, and a cross-continent network hop = 9.5 years.
-
-### Availability (The "Nines")
-
-| SLA | Downtime/Year | Downtime/Month |
-|-----|---------------|----------------|
-| 99% (2 nines) | 3.65 days | 7.2 hours |
-| 99.9% (3 nines) | 8.76 hours | 43.8 minutes |
-| 99.99% (4 nines) | 52.6 minutes | 4.38 minutes |
-| 99.999% (5 nines) | 5.26 minutes | 26.3 seconds |
-
-### QPS Conversion
-
-```
-1 day ≈ 100,000 seconds
-
-Quick formula:  QPS ≈ Daily Requests ÷ 100,000
-
-1M requests/day  ≈  10 QPS
-10M requests/day ≈  100 QPS
-1B requests/day  ≈  10,000 QPS
-
-Peak QPS ≈ Average QPS × 3
-```
-
-### Scale of Major Systems
-
-| Scale | DAU | QPS (avg) | Storage |
-|-------|-----|-----------|---------|
-| Early startup | 1K–10K | 1–10 | 10–100 GB |
-| Growing startup | 10K–1M | 10–1K | 100 GB–10 TB |
-| Large platform | 1M–100M | 1K–100K | 10 TB–1 PB |
-| Hyperscale (Google/Meta) | 100M+ | 100K–1M+ | 1 PB+ |
-
-→ Full reference with storage sizes, data object sizes, and cost estimates: [Numbers to Know](../08-reference/numbers-to-know.md)
+| L1 cache reference (CPU) | 0.5 ns (Instant) |
+| RAM reference (Memory) | 100 ns (Very Fast) |
+| SSD read (Solid State Drive)| ~1 ms (Fast) |
+| HDD seek (Hard Drive) | ~10 ms (Slow) |
+| Cross-region (NY to London) | ~150 ms (Very Slow, limited by speed of light) |
 
 ---
 
-## Interview Questions Asked
+## 🎓 The CAP Theorem (The Golden Rule)
 
-### Conceptual
-1. **"Explain CAP theorem with a real example"** → CAP says you can't have consistency + availability + partition tolerance simultaneously. During a network split, you must choose: Cassandra picks AP (returns stale data), HBase picks CP (rejects writes). Testing whether you understand the trade-off, not just the acronym.
-2. **"What is eventual consistency — give a real-world example"** → All replicas converge to the same value given no new writes. Example: DNS propagation — a record update takes minutes to reach all resolvers. Testing: do you know what "eventual" means operationally and when it's acceptable.
-3. **"What is PACELC and how is it better than CAP?"** → PACELC adds: even without partition (normal operation), you must choose latency vs consistency. CAP only covers the partition case. DynamoDB is PA/EL — available during partition, low-latency in normal ops. Testing whether you know real systems operate under PACELC constraints daily.
-4. **"What latency should you target for P99 in a user-facing API?"** → Under 200ms P99 for interactive APIs; under 1s for complex queries. P50 often looks fine while P99 is broken — testing whether you think in percentiles, not averages.
+The **CAP Theorem** states that in a distributed system (an app running on multiple servers), you can only guarantee two out of these three things:
 
-### Comparison / Trade-off
-1. **"What is the difference between consistency and availability in a distributed system?"** → Consistency = every read reflects the latest write (or errors). Availability = every request gets a response (possibly stale). You can tune one at the cost of the other via quorum sizes (W, R, N).
-2. **"When would you choose AP over CP?"** → When stale reads are acceptable and downtime is worse than inconsistency — shopping cart, DNS, social feeds. Choose CP for financial ledgers, inventory counts, or any system where stale reads cause incorrect decisions.
+1. **Consistency (C):** Everyone sees the same data at the same time.
+2. **Availability (A):** The system always responds to requests.
+3. **Partition Tolerance (P):** The system keeps working even if the network cable between the servers is cut.
 
-### Scenario / Design
-1. **"How do you design a system that needs both strong consistency AND high availability?"** → You can't have both during a partition (CAP). In practice: synchronous replication within a region for consistency + cross-region async replication for availability; route reads to leader for freshness; use quorum writes (W + R > N). Accept that during a partition you must pick one.
-2. **"What is a split-brain scenario and how do you prevent it?"** → Two nodes both believe they are the leader and accept conflicting writes. Prevent with: Raft/Paxos leader election (only one can get majority), fencing tokens (monotonically increasing token; stale leader's writes are rejected), odd number of nodes so a majority is always possible.
+**The catch:** On the internet, network cables *always* get cut eventually. So you MUST choose 'P'. 
+That means when a network breaks, you have to make a painful choice:
+- **Choose CP:** The app refuses to answer users until the network is fixed (Protects the data, hurts the user).
+- **Choose AP:** The app keeps answering users, but might give them stale or outdated data (Helps the user, risks bad data).
 
-→ Full reference with storage sizes, data object sizes, and cost estimates: [Numbers to Know](../08-reference/numbers-to-know.md)
+---
+
+## 🎤 Interview Questions to Practice
+
+1. **"Explain the CAP theorem with a real example."**
+   *Answer:* Imagine an ATM network. If the network between the ATM and the central bank goes down (Partition), the bank has to choose. It can shut down the ATM (Consistency over Availability), or it can let the user withdraw $100 hoping they have it in their account (Availability over Consistency).
+2. **"What is the difference between latency and throughput?"**
+   *Answer:* Latency is how fast a single drop of water travels through a pipe. Throughput is how many gallons of water flow out of the pipe per minute. 
+3. **"When would you use vertical scaling instead of horizontal scaling?"**
+   *Answer:* If the app is small, you don't have time to rewrite the code to support multiple servers, and buying a slightly bigger server solves the problem instantly for cheap.

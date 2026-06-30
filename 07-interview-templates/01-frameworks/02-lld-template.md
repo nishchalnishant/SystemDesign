@@ -1,711 +1,140 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** The definitive Low-Level Design (LLD) interview template to structure a 45-minute object-oriented design session.
+> **What this covers:** The ultimate cheat sheet for passing a 45-minute Low-Level Design (LLD / Object-Oriented Design) interview. 
 >
 > **Key concepts:**
-> - Phase 1: Requirements (5 min). Define the core entities and actions.
-> - Phase 2: Class Diagram / Core Entities (10 min). Identify the nouns (Classes) and their relationships (Has-A vs Is-A).
-> - Phase 3: APIs / Interface Design (10 min). Identify the verbs. What are the public methods exposed by the core orchestrator?
-> - Phase 4: Design Patterns (10 min). Where is the logic getting messy? Apply Strategy (for rules), State (for lifecycles), or Factory (for creation).
-> - Phase 5: Code Implementation (10 min). Write the skeleton code for the most complex method.
+> - **Phase 1: Requirements (The Rules):** Before writing code, figure out exactly who is using the app and what they can do. 
+> - **Phase 2: Use Cases (The Story):** Write down exactly what happens when a user clicks a button, step-by-step.
+> - **Phase 3: Classes (The Nouns):** Look at your story. Every noun (Person, Car, Ticket) becomes a Class. Every verb (Park, Pay) becomes a Method.
+> - **Phase 4: Design Patterns (The Magic Tricks):** Use famous coding tricks (like Strategy or Factory) to make your code flexible, so it doesn't break when the boss asks for a new feature tomorrow.
+> - **Phase 5: Code (The Actual Work):** Write the Java/Python code for the single hardest part of the app.
 >
-> **Key takeaway:** Do not start writing code immediately. Spend the first 20 minutes agreeing on the classes and interfaces with the interviewer. If the class diagram is wrong, the code will be wrong.
+> **Key takeaway:** Junior developers immediately start writing `class ParkingLot { ... }` on the whiteboard. Senior developers spend 20 minutes agreeing on the blueprint with the interviewer before writing a single line of code.
 
 ---
 module: 07-interview-templates
 status: unread
-tags: [07-interview-templates, system-design, interview-templates]
+tags: [07-interview-templates, system-design, interview-templates, lld, object-oriented-design]
 ---
 # LLD Interview Framework (45-60 min)
 
-## The Mental Model
-
-You're drawing blueprints for a single building, not designing the city's infrastructure. HLD asks "what components exist and how do they talk?" LLD asks "what does the code inside one component look like?"
-
-In LLD, the interviewer is watching:
-1. Can you translate a real-world problem into clean object hierarchies?
-2. Do you know when to apply design patterns — and when not to?
-3. Can you write readable, production-quality code under time pressure?
-4. Do you think about extensibility, concurrency, and edge cases?
-
-The failure mode is jumping to code before you have a class diagram. Build top-down: requirements → use cases → classes → patterns → code.
+> This guide provides a bulletproof 5-step template for Object-Oriented Design interviews, using simple analogies to help you memorize the flow.
 
 ---
 
-## Template Mindmap
+## 🤷‍♂️ The Mental Model
 
-```
-LLD Interview Framework (45-60 min)
-├── Core Problem
-│   └── Translate a real-world problem into a clean, extensible object model with code
-├── Phase 1 — Requirements (0-5 min)
-│   ├── Actors → who uses the system (User, Admin, Driver, etc.)
-│   ├── Core features → 3-5 primary use cases only
-│   └── Constraints → concurrency, persistence, throughput expectations
-├── Phase 2 — Use Cases (5-10 min)
-│   ├── Primary flows → happy path for each core feature
-│   └── Edge cases → concurrent access, invalid inputs, resource limits
-├── Phase 3 — Class Identification (10-15 min)
-│   ├── Nouns → candidate classes (Order, User, Payment, Seat)
-│   ├── Verbs → candidate methods (reserve(), cancel(), process())
-│   └── Adjectives → candidate attributes or enums (OrderStatus, SeatType)
-├── Phase 4 — Class Diagram (15-25 min)
-│   ├── Relationships: inheritance, composition, aggregation, dependency
-│   ├── Interfaces → define contracts before implementations
-│   └── Attributes + method signatures per class
-├── Phase 5 — Design Patterns (25-35 min)
-│   ├── Factory → object creation without exposing instantiation logic
-│   ├── Strategy → interchangeable algorithms (pricing, discount, routing)
-│   ├── Observer → event-driven updates (notification, audit log)
-│   ├── Singleton → shared resource (DB connection pool, config)
-│   └── Decorator → layered behavior (logging, rate limiting, auth)
-├── Phase 6 — Core Code (35-55 min)
-│   ├── Code the most complex class or method in full
-│   ├── Handle concurrency if relevant (synchronized, locks, atomic ops)
-│   └── Show null checks, boundary conditions, error paths
-├── When to Use
-│   └── ✓ "Design the classes for X" or "write the code for Y" style questions
-└── Interview Angles
-    ├── "Why did you use Strategy here?" → justify each pattern by the problem it solves
-    ├── "How do you handle concurrent bookings?" → locking strategy, optimistic vs pessimistic
-    └── "How would you add X feature?" → show extensibility via open/closed principle
-```
+High-Level Design (HLD) asks: *"How do we build a whole city?"* (Databases, Load Balancers, Servers). 
+Low-Level Design (LLD) asks: *"How do we build the plumbing inside one specific house?"* (Classes, Functions, Variables).
+
+In an LLD interview, the interviewer gives you a prompt like: **"Design a Parking Lot."** 
+They are grading you on 4 things:
+1. Can you turn a real-world object (a Car) into clean computer code?
+2. Do you know Design Patterns? (e.g., How to handle 5 different types of payments without writing a massive `if/else` statement).
+3. Is your code readable?
+4. What happens if two cars try to park in the exact same spot at the exact same millisecond? (Concurrency).
 
 ---
 
-## Interview Flow Timeline
+## ⏱️ The 45-Minute Timeline
 
-| Phase | Time | Activity |
-|-------|------|----------|
-| **1. Requirements** | 0-5 min | Actors, core features, constraints |
-| **2. Use Cases** | 5-10 min | Primary flows, edge cases |
-| **3. Class Identification** | 10-15 min | Nouns → classes, verbs → methods |
-| **4. Class Diagram** | 15-25 min | Relationships, UML, attributes |
-| **5. Design Patterns** | 25-35 min | Pattern selection + justification |
-| **6. Code Key Methods** | 35-50 min | Implement 2-3 critical methods |
-| **7. Trade-offs & Extensions** | 50-60 min | SOLID check, extensions, concurrency |
+| Phase | Time | What You Do |
+|-------|------|-------------|
+| **1. Requirements** | 0-5 min | Who uses this? What can they do? |
+| **2. Use Cases** | 5-10 min | Write the step-by-step story. |
+| **3. Classes** | 10-15 min | Find the Nouns and Verbs. |
+| **4. Design Patterns** | 15-25 min | Apply famous coding tricks. |
+| **5. Core Code** | 25-45 min | Actually write the code on the whiteboard. |
 
 ---
 
-## Phase 1: Requirements (0-5 min)
+## 🏗️ Phase 1: Requirements (0-5 min)
 
-### The Three Questions to Always Ask
-
-```
-1. Who are the actors? (who uses this system)
-2. What are the must-have use cases? (top 3-5 only)
-3. What are the constraints? (concurrency? extensibility? language?)
-```
-
-### Identifying Actors
-- **Human actors**: Customer, Admin, Attendant, Player
-- **System actors**: Payment Gateway, Notification Service, Timer
-
-### Identifying Constraints (ask explicitly)
-- "Should this be thread-safe for concurrent access?"
-- "Do we need to support new vehicle/payment/piece types later? (extensibility)"
-- "Any memory or performance constraints I should know about?"
-
-### Example — "Design a Parking Lot System"
-
-```
-Actors:
-  - Customer (parks and retrieves vehicle)
-  - Attendant (issues and processes tickets)
-  - Admin (configures lot capacity and rates)
-
-Core Features (must-have):
-  - Park a vehicle (car, bike, truck)
-  - Calculate parking fee based on duration
-  - Find and assign an available spot
-  - Release a spot on vehicle exit
-
-Should-have:
-  - Different spot types (compact, large, handicap)
-  - Multiple payment methods
-
-Out-of-scope:
-  - Online reservations
-  - Real-time availability UI
-  - License plate recognition
-```
-
-### What NOT to ask:
-- Technology stack questions ("should I use Java or Python?") — state your preference and proceed
-- Database questions — LLD is about in-memory object design, not persistence
-- Network/API questions — that's HLD territory
+Ask the "Three Golden Questions":
+1. **Who are the Actors?** (e.g., Customer, Parking Attendant, Admin).
+2. **What are the core features?** (e.g., Park a car, Pay for ticket).
+3. **What are the constraints?** (e.g., "Do we need to support electric vehicle charging spots later?")
 
 ---
 
-## Phase 2: Use Cases (5-10 min)
+## 📖 Phase 2: Use Cases (5-10 min)
 
-### Use Case Template
+Write a short, step-by-step story of the "Happy Path" (when everything goes perfectly) and the "Sad Path" (when things break).
 
-Write 2-3 primary use cases in this format — it forces you to think about flows before classes:
-
-```
-UC1: Park Vehicle
-  Actor: Customer
-  Precondition: Customer has a vehicle, lot has available spots
-  Main Flow:
-    1. Customer arrives with vehicle
-    2. System checks for available spot by vehicle type
-    3. System assigns the spot
-    4. System issues ticket with entry time
-    5. Customer receives ticket
-  Exception Flows:
-    - No spots available → throw NoSpotAvailableException
-    - Invalid vehicle type → throw InvalidVehicleException
-
-UC2: Exit and Pay
-  Actor: Customer
-  Precondition: Customer has valid ticket
-  Main Flow:
-    1. Customer presents ticket at exit
-    2. System retrieves ticket by ticket_id
-    3. System records exit time
-    4. System calculates fee (rate × duration)
-    5. Customer pays
-    6. System releases spot
-  Exception Flows:
-    - Invalid/lost ticket → throw InvalidTicketException
-    - Payment failure → spot remains occupied, retry
-```
-
-### How to prioritize use cases
-Implement the core happy path first, then the most likely failure path.
-
-For parking lot: `parkVehicle()` and `exitAndPay()` are the two critical flows — everything else can be discussed without coding.
+> **💡 Example Use Case (Park a Car):**
+> 1. Customer arrives at the gate.
+> 2. System checks if the lot is full. 
+> 3. System finds an empty spot.
+> 4. System prints a Ticket.
+> *Sad Path:* The lot is full. The system throws a `LotFullException`.
 
 ---
 
-## Phase 3: Class Identification (10-15 min)
+## 🧱 Phase 3: Classes (The Nouns & Verbs)
 
-### The Noun-Verb Technique
+Look at the story you just wrote. 
+- **Every Noun is a Class.** (Customer, Spot, Ticket, ParkingLot).
+- **Every Verb is a Method.** (arrive(), findSpot(), printTicket()).
 
-Read your use cases back. Extract:
-- **Nouns** → candidate classes (entities, actors, value objects)
-- **Verbs** → candidate methods on those classes
-
-**Parking Lot nouns:** ParkingLot, Floor, ParkingSpot, Vehicle, Car, Bike, Truck, Ticket, Payment
-
-**Parking Lot verbs (mapped to methods):**
-```
-parkVehicle()      → ParkingLot
-findAvailableSpot() → ParkingLot
-assignVehicle()    → ParkingSpot
-isAvailable()      → ParkingSpot
-calculateFee()     → PricingStrategy
-markExit()         → Ticket
-getDurationHours() → Ticket
-process()          → Payment
-```
-
-### Relationship Types — Know These Cold
-
-| Relationship | Meaning | Example |
-|---|---|---|
-| IS-A (Inheritance) | "is a kind of" | Car IS-A Vehicle |
-| HAS-A (Composition) | "owns, can't exist without" | ParkingLot HAS-A ParkingSpot |
-| HAS-A (Aggregation) | "has, but can exist independently" | ParkingLot HAS-A Vehicle |
-| USES (Association/Dependency) | "uses temporarily" | ParkingLot USES PricingStrategy |
-
-**Composition vs. Aggregation — the key question:**
-> "If the parent is destroyed, does the child cease to exist?"
-> Yes → Composition. No → Aggregation.
-
-ParkingLot destroyed → ParkingSpots no longer make sense → Composition.
-ParkingLot closed → Vehicles still exist → Aggregation.
+### The 4 Relationships (How classes talk to each other)
+You must explain how your classes are connected:
+1. **IS-A (Inheritance):** A Car *is a* Vehicle. 
+2. **HAS-A (Composition):** A ParkingLot *has a* ParkingSpot. If you destroy the ParkingLot, the ParkingSpots cease to exist. 
+3. **HAS-A (Aggregation):** A ParkingLot *has a* Car. But if you destroy the ParkingLot, the Car simply drives away. It still exists!
+4. **USES (Dependency):** A ParkingLot *uses* a PricingCalculator to figure out the fee. 
 
 ---
 
-## Phase 4: Class Diagram (15-25 min)
+## 🎩 Phase 4: Design Patterns (15-25 min)
 
-### Core Classes — Parking Lot
+This is how you prove you are a Senior Developer. If your code relies on massive `if/else` blocks, you will fail. You must use Patterns. 
 
-```java
-// ─── Enums ────────────────────────────────────────────────────────────────
+### 1. Strategy Pattern (The Interchangeable Tool)
+**The Problem:** The Parking Lot charges $5/hour on weekdays, but $10/hour on weekends, and $2/hour for motorcycles. 
+**The Fix:** Don't write a giant `if/else` block. Create an Interface called `PricingStrategy`. Create three separate files (`WeekdayPricing`, `WeekendPricing`, `MotorcyclePricing`). The Parking Lot just asks the Strategy for the price, without caring how the math works. 
 
-enum VehicleType { BIKE, CAR, TRUCK }
-enum SpotType    { COMPACT, LARGE, HANDICAP }
-enum PaymentMethod  { CASH, CREDIT_CARD, UPI }
-enum PaymentStatus  { PENDING, SUCCESS, FAILED }
+### 2. Factory Pattern (The Assembly Line)
+**The Problem:** You need to create different types of Vehicles (Car, Truck, Motorcycle), but creating them requires complex setup. 
+**The Fix:** Create a `VehicleFactory`. When the app needs a new Car, it asks the Factory to build one. 
 
-// ─── Vehicle hierarchy ────────────────────────────────────────────────────
-
-abstract class Vehicle {
-    - String licensePlate
-    - VehicleType type
-    + Vehicle(String licensePlate, VehicleType type)
-    + String getLicensePlate()
-    + VehicleType getType()
-}
-
-class Car   extends Vehicle { + Car(String plate)   }
-class Bike  extends Vehicle { + Bike(String plate)  }
-class Truck extends Vehicle { + Truck(String plate) }
-
-// ─── ParkingSpot ─────────────────────────────────────────────────────────
-
-class ParkingSpot {
-    - String spotId
-    - SpotType type
-    - boolean isOccupied
-    - Vehicle vehicle           // null if unoccupied
-    + boolean isAvailable()
-    + boolean canFit(VehicleType type)
-    + void assignVehicle(Vehicle v)
-    + void removeVehicle()
-}
-
-// ─── Ticket ───────────────────────────────────────────────────────────────
-
-class Ticket {
-    - String ticketId
-    - Vehicle vehicle
-    - ParkingSpot spot
-    - Instant entryTime
-    - Instant exitTime          // null until exit
-    + void markExit(Instant exitTime)
-    + double getDurationHours()
-}
-
-// ─── Payment ──────────────────────────────────────────────────────────────
-
-class Payment {
-    - String paymentId
-    - double amount
-    - PaymentMethod method
-    - PaymentStatus status
-    + boolean process()
-}
-
-// ─── ParkingLot (top-level orchestrator) ─────────────────────────────────
-
-class ParkingLot {
-    - Map<String, ParkingSpot> spots
-    - Map<String, Ticket> activeTickets
-    - PricingStrategy pricingStrategy
-    + Ticket parkVehicle(Vehicle vehicle)
-    + double exitAndPay(String ticketId, PaymentMethod method)
-    + ParkingSpot findAvailableSpot(VehicleType type)    // private
-}
-```
-
-### UML Diagram
-
-```
-┌─────────────────────────────────┐
-│         ParkingLot              │
-├─────────────────────────────────┤
-│ - spots: Map<String,ParkingSpot>│
-│ - activeTickets: Map            │
-│ - pricingStrategy               │
-├─────────────────────────────────┤
-│ + parkVehicle(Vehicle): Ticket  │
-│ + exitAndPay(ticketId): double  │
-└──────────────┬──────────────────┘
-               │ composes (1..*)
-               ▼
-┌──────────────────────┐         ┌──────────────────┐
-│     ParkingSpot      │◄────────│     Ticket        │
-├──────────────────────┤ refs    ├──────────────────┤
-│ - spotId             │         │ - ticketId        │
-│ - type: SpotType     │         │ - entryTime       │
-│ - isOccupied         │         │ - exitTime        │
-├──────────────────────┤         ├──────────────────┤
-│ + isAvailable()      │         │ + markExit()      │
-│ + canFit(VehicleType)│         │ + getDuration()   │
-│ + assignVehicle()    │         └────────┬─────────┘
-│ + removeVehicle()    │                  │ refs
-└──────────────────────┘                  ▼
-                               ┌──────────────────┐
-                               │    Vehicle        │◄──┐
-                               ├──────────────────┤   │
-                               │ - licensePlate   │   │ IS-A
-                               │ - type           │   │
-                               └──────────────────┘   │
-                                    ▲   ▲   ▲         │
-                                    │   │   │─────────┘
-                               ┌────┘   │   └────┐
-                             Car      Bike     Truck
-
-interface PricingStrategy
-  └── HourlyPricing
-  └── FlatRatePricing
-  └── WeekendPricing
-```
-
-### Whiteboard vs. verbal approach
-- On whiteboard: draw boxes, write attribute names (no types), arrow for relationships
-- Verbally: "ParkingLot composes ParkingSpot — the spots can't exist outside the lot. Ticket has references to both the Vehicle and the ParkingSpot it was assigned."
+### 3. Singleton Pattern (The Highlander)
+**The Problem:** You accidentally created two ParkingLots in memory, and now the system is double-booking spots.
+**The Fix:** Use a Singleton to guarantee that only exactly ONE `ParkingLot` object can ever exist in the computer's memory at the same time. 
 
 ---
 
-## Phase 5: Design Patterns (25-35 min)
+## 💻 Phase 5: Core Code (25-45 min)
 
-### Pattern Selection Guide
+Do not write getter and setter methods (`getName()`). It is a waste of time. 
+Only write the code for the single hardest part of the system. 
 
-| Problem you have | Pattern to use |
-|---|---|
-| Only one instance should exist | Singleton |
-| Object creation logic is complex | Factory / Abstract Factory |
-| Behavior should be swappable at runtime | Strategy |
-| One object needs to notify many others | Observer |
-| New features need to wrap existing behavior | Decorator |
-| Need to navigate a tree of objects uniformly | Composite |
-| Step-by-step algorithm with customizable steps | Template Method |
-| Object passes through stages/handlers | Chain of Responsibility |
-| Undo/redo of operations | Command |
-| Stateful behavior that changes per state | State |
-
-### How to mention patterns naturally (not mechanically)
-
-DON'T say: "I will now apply the Strategy pattern."
-
-DO say: "The fee calculation needs to change depending on pricing tier — hourly, flat, weekend discount. Rather than a big if/else here, I'd pull this out into a PricingStrategy interface so each pricing type is its own class. That's the Strategy pattern — it lets us add new pricing rules without touching ParkingLot."
-
-### Pattern 1: Singleton — ParkingLot
-
-**When to use:** There is physically one parking lot. One instance ensures centralized state.
-**When NOT to use:** If you might have multiple lots — remove Singleton, use a Factory.
-
-```java
-class ParkingLot {
-    private static volatile ParkingLot instance;
-    
-    private ParkingLot() { /* initialize spots */ }
-    
-    public static ParkingLot getInstance() {
-        if (instance == null) {
-            synchronized (ParkingLot.class) {
-                if (instance == null) {          // double-checked locking
-                    instance = new ParkingLot();
-                }
-            }
-        }
-        return instance;
-    }
-}
-```
-**Mention:** "The volatile keyword prevents instruction reordering — important for thread safety in double-checked locking."
-
----
-
-### Pattern 2: Factory — Vehicle Creation
-
-**When to use:** Creation logic varies by type; callers shouldn't know concrete classes.
-
-```java
-class VehicleFactory {
-    public static Vehicle create(VehicleType type, String plate) {
-        switch (type) {
-            case CAR:   return new Car(plate);
-            case BIKE:  return new Bike(plate);
-            case TRUCK: return new Truck(plate);
-            default:    throw new IllegalArgumentException("Unknown type: " + type);
-        }
-    }
-}
-
-// Usage — caller only knows VehicleType, not concrete class
-Vehicle v = VehicleFactory.create(VehicleType.CAR, "KA-01-AB-1234");
-```
-
----
-
-### Pattern 3: Strategy — Pricing
-
-**When to use:** The algorithm varies (hourly, flat, peak) and must be switchable at runtime.
-
-```java
-interface PricingStrategy {
-    double calculateFee(double hours);
-}
-
-class HourlyPricing implements PricingStrategy {
-    private final double ratePerHour;
-    
-    HourlyPricing(double rate) { this.ratePerHour = rate; }
-    
-    public double calculateFee(double hours) {
-        return Math.ceil(hours) * ratePerHour;  // round up to next hour
-    }
-}
-
-class FlatRatePricing implements PricingStrategy {
-    private final double flatRate;
-    
-    FlatRatePricing(double rate) { this.flatRate = rate; }
-    
-    public double calculateFee(double hours) {
-        return flatRate;
-    }
-}
-
-class PeakHoursPricing implements PricingStrategy {
-    private final double peakRate;
-    private final double offPeakRate;
-    
-    public double calculateFee(double hours) {
-        // simplified: half peak, half off-peak
-        return (hours / 2 * peakRate) + (hours / 2 * offPeakRate);
-    }
-}
-```
-
----
-
-### Pattern 4: Observer — Spot Availability Notification
-
-**When to use:** Multiple systems (display boards, mobile app, reservation system) need to react when a spot opens up.
-
-```java
-interface ParkingObserver {
-    void onSpotReleased(ParkingSpot spot);
-}
-
-class DisplayBoard implements ParkingObserver {
-    public void onSpotReleased(ParkingSpot spot) {
-        System.out.println("Spot " + spot.getSpotId() + " now available");
-    }
-}
-
-// In ParkingLot:
-class ParkingLot {
-    private List<ParkingObserver> observers = new ArrayList<>();
-    
-    public void addObserver(ParkingObserver obs) { observers.add(obs); }
-    
-    private void notifyObservers(ParkingSpot spot) {
-        observers.forEach(obs -> obs.onSpotReleased(spot));
-    }
-}
-```
-
----
-
-## Phase 6: Code Key Methods (35-50 min)
-
-### What to implement vs. what to explain verbally
-
-**Implement (write actual code):**
-- The most complex method (usually the orchestrator method)
-- Any method that involves the design pattern you picked
-- Any method with a tricky edge case (concurrency, null handling)
-
-**Explain verbally:**
-- Boilerplate getters/setters
-- Simple constructors
-- Obvious one-liners
-
-**For parking lot — implement these three:**
-
-### Method 1: parkVehicle()
-
+> **💡 Example (Parking a Car in Java):**
 ```java
 public synchronized Ticket parkVehicle(Vehicle vehicle) {
-    if (vehicle == null) {
-        throw new IllegalArgumentException("Vehicle cannot be null");
-    }
+    // 1. Check for errors
+    if (vehicle == null) throw new Exception("No vehicle!");
     
+    // 2. Find a spot
     ParkingSpot spot = findAvailableSpot(vehicle.getType());
-    if (spot == null) {
-        throw new NoSpotAvailableException(
-            "No available spot for vehicle type: " + vehicle.getType()
-        );
-    }
+    if (spot == null) throw new Exception("Lot is full!");
     
+    // 3. Park it
     spot.assignVehicle(vehicle);
     
-    String ticketId = UUID.randomUUID().toString();
-    Ticket ticket = new Ticket(ticketId, vehicle, spot, Instant.now());
-    activeTickets.put(ticketId, ticket);
-    
+    // 4. Give them a ticket
+    Ticket ticket = new Ticket(vehicle, spot, Time.now());
     return ticket;
 }
 ```
 
-**Mention:** "I made this synchronized to prevent two threads from assigning the same spot simultaneously. In a distributed system, we'd use distributed locking instead."
-
-### Method 2: findAvailableSpot()
-
-```java
-private ParkingSpot findAvailableSpot(VehicleType vehicleType) {
-    return spots.values().stream()
-        .filter(ParkingSpot::isAvailable)
-        .filter(spot -> spot.canFit(vehicleType))
-        .findFirst()
-        .orElse(null);
-}
-
-// In ParkingSpot:
-public boolean canFit(VehicleType vehicleType) {
-    switch (this.type) {
-        case COMPACT:
-            return vehicleType == VehicleType.BIKE || vehicleType == VehicleType.CAR;
-        case LARGE:
-            return true;  // can fit any vehicle
-        case HANDICAP:
-            return vehicleType == VehicleType.CAR;  // policy decision
-        default:
-            return false;
-    }
-}
-```
-
-**Mention:** "This is O(n) over all spots. For a large lot, we could maintain separate queues per spot type to make this O(1) — a `Map<SpotType, Queue<ParkingSpot>>`."
-
-### Method 3: exitAndPay()
-
-```java
-public double exitAndPay(String ticketId, PaymentMethod paymentMethod) {
-    Ticket ticket = activeTickets.get(ticketId);
-    if (ticket == null) {
-        throw new InvalidTicketException("Ticket not found: " + ticketId);
-    }
-    
-    ticket.markExit(Instant.now());
-    double hours = ticket.getDurationHours();
-    double fee = pricingStrategy.calculateFee(hours);
-    
-    Payment payment = new Payment(UUID.randomUUID().toString(), fee, paymentMethod);
-    boolean success = payment.process();
-    
-    if (!success) {
-        throw new PaymentFailedException("Payment failed for ticket: " + ticketId);
-    }
-    
-    // Release spot only after successful payment
-    ticket.getSpot().removeVehicle();
-    activeTickets.remove(ticketId);
-    notifyObservers(ticket.getSpot());
-    
-    return fee;
-}
-
-// In Ticket:
-public double getDurationHours() {
-    long durationMs = Duration.between(entryTime, exitTime).toMillis();
-    return durationMs / (1000.0 * 60 * 60);
-}
-```
-
-### Error Handling Approach
-
-Define custom exceptions — interviewers notice this:
-```java
-class NoSpotAvailableException extends RuntimeException {
-    NoSpotAvailableException(String msg) { super(msg); }
-}
-
-class InvalidTicketException extends RuntimeException {
-    InvalidTicketException(String msg) { super(msg); }
-}
-
-class PaymentFailedException extends RuntimeException {
-    PaymentFailedException(String msg) { super(msg); }
-}
-```
-
-### Concurrency Considerations
-
-Raise these even if not asked:
-
-```
-1. parkVehicle() and releaseSpot() both modify spot state
-   → synchronized on ParkingLot or use ReentrantLock per spot
-
-2. Multiple readers of activeTickets are fine, but writes need protection
-   → Use ConcurrentHashMap<String, Ticket> for activeTickets
-
-3. If ParkingLot is Singleton + multi-threaded:
-   → double-checked locking with volatile (shown in Singleton section)
-
-4. If deployed across multiple servers:
-   → Distributed lock (Redis SETNX) on spot assignment
-   → Idempotency key on ticket creation
-```
+### The Secret Weapon: Concurrency
+Notice the word `synchronized` in the code above? 
+If two cars arrive at the exact same millisecond, and there is only 1 spot left, a badly written app will give both cars the exact same spot! 
+By adding `synchronized`, you force the computer to process one car at a time. Mentioning this will instantly impress the interviewer. 
 
 ---
 
-## Phase 7: Trade-offs & Extensions (50-60 min)
+## 🎤 Phrase to use to end the interview perfectly:
 
-### SOLID Principles Checklist (run through this quickly)
-
-**S — Single Responsibility:**
-- ParkingSpot only manages spot state (not pricing, not ticketing) ✓
-- Ticket only tracks a parking session ✓
-- PricingStrategy only calculates fee ✓
-
-**O — Open/Closed:**
-- New vehicle type: add a class, no existing code changes ✓
-- New pricing model: add a PricingStrategy implementation ✓
-
-**L — Liskov Substitution:**
-- Car/Bike/Truck can replace Vehicle anywhere Vehicle is used ✓
-- HourlyPricing/FlatRatePricing are interchangeable via interface ✓
-
-**I — Interface Segregation:**
-- PricingStrategy has one focused method — not a god interface ✓
-
-**D — Dependency Inversion:**
-- ParkingLot depends on PricingStrategy interface, not HourlyPricing ✓
-- Easy to inject mock PricingStrategy in tests ✓
-
-### Extension Q&A Template
-
-**Q: How would you add a reservation system?**
-> Add a `Reservation` class with `reservationTime`, `vehicleType`, `spotType`, `customerId`. Add a `reserveSpot()` method to ParkingLot that pre-allocates a spot and marks it as reserved (not available for walk-ins). `findAvailableSpot()` skips reserved spots.
-
-**Q: What if we have multiple parking lots in different cities?**
-> Remove the Singleton. Create a `ParkingLotFactory` or a `ParkingLotRegistry` that manages multiple instances keyed by locationId. Each ParkingLot gets a `location: Location` field.
-
-**Q: How would you handle electric vehicles needing charging spots?**
-> Add `EV` to VehicleType, `CHARGING` to SpotType. Add `ChargingSpot extends ParkingSpot` with a `chargerType` attribute. The `canFit()` logic on ChargingSpot handles EV compatibility.
-
-**Q: How do you make fee calculation time-of-day aware?**
-> The PricingStrategy already handles this — add `TimeAwarePricing implements PricingStrategy` that checks the entry/exit hour and applies different rates. ParkingLot passes the ticket's timestamps to `calculateFee()`.
-
----
-
-## Pattern Quick Reference
-
-| Problem | Pattern | Parking Lot Example |
-|---|---|---|
-| Enforce single instance | Singleton | ParkingLot manager |
-| Encapsulate creation logic | Factory | VehicleFactory |
-| Swap algorithms at runtime | Strategy | PricingStrategy |
-| Notify multiple dependents | Observer | DisplayBoard, MobileApp |
-| Add behavior without subclassing | Decorator | LoggingParkingLot wraps ParkingLot |
-| Tree of objects, uniform interface | Composite | Floor → Row → Spot |
-| Request passes through handlers | Chain of Responsibility | Payment → validation → processing → logging |
-| Encapsulate a request as object | Command | ParkCommand, ExitCommand (for undo) |
-| Object behavior varies by state | State | Spot: Available/Occupied/Reserved/Maintenance |
-| Fixed algorithm, customizable steps | Template Method | FeeCalculator with abstract getRate() |
-
----
-
-## Common Traps in LLD Interviews
-
-1. **Coding before designing** — drawing classes on the whiteboard takes 5 minutes; refactoring code takes 15
-2. **Over-using Singleton** — using it for everything signals copy-paste thinking; justify it or skip it
-3. **Missing extensibility** — hard-coding `if (type == CAR)` everywhere; use polymorphism
-4. **Forgetting concurrency** — any system accessed by multiple threads needs at least one mention of synchronization
-5. **Not writing custom exceptions** — `throw new RuntimeException("error")` signals junior code
-6. **God classes** — ParkingLot doing pricing, spot finding, payment processing, AND notifications; split responsibilities
-7. **Using getters/setters for everything** — violates encapsulation; tell objects to do things, don't pull data out and do it yourself
-8. **Ignoring null handling** — `findAvailableSpot()` returns null; if you don't handle it, `parkVehicle()` will NPE
-9. **Pattern name-dropping without justification** — "I used Strategy here" without explaining why or what problem it solves
-10. **Not thinking about testing** — Singleton makes testing hard; if asked, say "I'd add a reset method or use dependency injection in tests"
-
----
-
-## Quick Verbal Template for Opening Answer
-
-When you first hear the problem, say this before writing anything:
-
-> "Let me start by identifying the actors and core use cases. Then I'll extract the main classes, define their relationships, and we can look at which design patterns apply naturally. I'll code the 2-3 most interesting methods once we agree on the design. Sound good?"
-
-This signals process, buys you thinking time, and aligns with what interviewers actually want to see.
+> "To summarize, I separated the code using the Single Responsibility Principle. The `ParkingSpot` class only cares about holding a car, while the `PricingStrategy` class only cares about math. Because of this, if the boss asks us to add 'Holiday Pricing' tomorrow, we can just add one new file without touching or breaking any of the existing Parking Lot code."

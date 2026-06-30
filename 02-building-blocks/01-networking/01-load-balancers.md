@@ -1,257 +1,91 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** Load balancers — distributing incoming traffic across multiple servers to improve availability, throughput, and latency.
+> **What this covers:** How to handle millions of users by spreading them across multiple servers.
 >
 > **Key topics:**
-> - L4 (Transport Layer) vs L7 (Application Layer): L4 routes by IP/port (faster), L7 routes by HTTP path/headers (smarter)
-> - Routing algorithms: Round Robin, Weighted Round Robin, Least Connections, IP Hash, Consistent Hashing
-> - Health checks: active (ping) vs passive (error rate monitoring); removing unhealthy instances from rotation
-> - Sticky sessions: directing same client to same server — useful for stateful apps; risks: uneven distribution
-> - Global Server Load Balancing (GSLB): DNS-based routing across datacenters for multi-region failover
-> - Hardware LB (F5, Citrix) vs Software LB (Nginx, HAProxy, Envoy) vs Cloud LB (AWS ALB/NLB)
-> - Failure modes: LB becomes SPOF → active-passive or active-active redundant LB pairs
+> - **The Problem:** One server can only handle so much traffic before it crashes.
+> - **The Solution:** A Load Balancer (LB). It acts like a traffic cop, directing incoming requests to different servers so no single server gets overwhelmed.
+> - **Layer 4 vs Layer 7:** Layer 4 LBs are dumb and fast (they just look at IP addresses). Layer 7 LBs are smart and slightly slower (they look at the actual HTTP request, like the URL or cookies).
+> - **Algorithms:** How does the LB decide which server gets the next user? Round Robin (take turns), Least Connections (give to the least busy server), or IP Hash (same user always goes to the same server).
+> - **Health Checks:** The LB constantly checks if a server is alive. If a server dies, the LB stops sending traffic to it.
 >
-> **Key takeaway:** Use L7 (ALB) for microservices routing with path-based rules; use L4 (NLB) for raw TCP performance and database traffic.
+> **Key takeaway:** You cannot build a scalable system without a Load Balancer. It is the absolute first step in moving from a single server to a distributed system.
 
 ---
 module: 02-building-blocks
 status: unread
-tags: [02-building-blocks, system-design, building-blocks]
+tags: [02-building-blocks, system-design, networking]
 ---
-# Load Balancers
+# Load Balancers - System Design Guide
 
-> **Distribute incoming traffic across multiple servers to improve availability, throughput, and latency.**
-
----
-
-## File Mindmap
-
-```
-Load Balancers
-├── Why It Exists
-│   ├── Problem → single server at 90% CPU, need 10× throughput; vertical scaling maxes out at ~2×
-│   └── Forces → single machine has hard CPU/RAM/NIC ceiling; more traffic requires more machines
-├── Core Concepts
-│   ├── L4 (Transport Layer) → routes by IP + TCP port; no content inspection; faster
-│   │   ├── Use case → raw TCP/UDP, database traffic, latency-critical paths
-│   │   └── Examples → AWS NLB, HAProxy TCP mode
-│   └── L7 (Application Layer) → routes by HTTP headers, URL path, cookies; slower but smarter
-│       ├── Use case → microservices routing, A/B testing, sticky sessions
-│       └── Examples → AWS ALB, Nginx, Envoy
-├── Routing Algorithms
-│   ├── Round Robin → request 1→S1, 2→S2, 3→S3, 4→S1 … equal distribution
-│   │   └── Weighted → server capacity differs; heavier server gets more share
-│   ├── Least Connections → route to server with fewest active connections
-│   │   └── Best for → long-lived connections (WebSocket, DB conn)
-│   ├── IP Hash → hash(client_IP) % N → same client always hits same server
-│   │   └── Use case → stateful apps where session lives on server (not recommended)
-│   └── Consistent Hashing → hash(request_key) on a ring; minimal reshuffling when N changes
-│       └── Use case → CDN, distributed caches, session affinity without IP lock-in
-├── Health Checks
-│   ├── Active → LB sends probe (HTTP GET /health) at interval; removes if N failures
-│   ├── Passive → LB watches real traffic; removes server after N consecutive errors (5xx)
-│   └── Flapping → server oscillates UP/DOWN; fix with cooldown period before re-adding
-├── SSL Termination
-│   ├── LB decrypts HTTPS; backends receive plain HTTP
-│   ├── Saves CPU on backends; one cert in one place
-│   └── Cost → TLS handshake ~1ms CPU per new connection; handled at LB
-├── Real-World Tools
-│   ├── AWS ALB → L7; path/host routing; Lambda/ECS integration
-│   ├── AWS NLB → L4; ultra-low latency; preserves client IP
-│   ├── GCP Load Balancer → global anycast; single IP worldwide
-│   ├── Nginx → software LB + reverse proxy; highly configurable
-│   └── Kubernetes → Service (L4) + Ingress (L7) controller pattern
-├── Failure Scenarios
-│   ├── LB down → active-active pair; DNS failover; VRRP/keepalived
-│   ├── Backend down → health check removes it; retry on next server
-│   ├── Sticky session breaks → session store in Redis, not server memory
-│   └── Uneven load → consistent hash or least-connections; monitor per-server QPS
-├── Implementation Patterns
-│   ├── Single LB → dev/small setups; single point of failure
-│   ├── Active-Active pair → both serve traffic; LB has its own LB (DNS or ECMP)
-│   └── Global LB + Regional LB → DNS → Global (anycast) → Regional → servers
-├── Trade-offs
-│   ├── Pros → horizontal scale; no single server bottleneck; health isolation
-│   └── Cons → LB is now the SPOF; extra hop latency; SSL offload compute cost
-└── Interview Angles
-    ├── "L4 vs L7?" → L4 fast/simple, L7 smart/features; choose by use case
-    ├── "How do you handle sticky sessions?" → prefer stateless; use Redis for session state
-    ├── "What happens when LB goes down?" → active-active; DNS TTL; VRRP
-    └── Follow-up: "How does consistent hashing reduce reshuffling vs modulo?"
-```
+> This guide explains how to distribute traffic across multiple servers using simple analogies.
 
 ---
 
-## 1. Why Load Balancers Exist
+## 🤷‍♂️ Why Should I Care?
 
-**Question**: Your single app server handles 5,000 req/s and is at 90% CPU. You need 50,000 req/s in three months. A bigger machine tops out at ~2× the throughput before you hit hardware limits. What do you do?
+Imagine you own a tiny coffee shop with one barista. It works great for 10 customers a day. But suddenly, your shop goes viral on TikTok, and 10,000 people show up at once. Your single barista has a mental breakdown, the espresso machine explodes, and your shop closes.
 
-**Physical constraint**: A single CPU has a fixed instruction-per-second ceiling. A single NIC saturates at ~10–100 Gbps. A single process can only hold so many concurrent TCP connections. No matter how much you spend on vertical scaling, one machine has one set of CPU, memory, and I/O limits — and at some point those limits are absolute.
+This is what happens when you build an app on a single server. A single computer only has so much CPU and RAM. When too many users arrive, the server crashes.
 
-**Minimal solution**: Put two servers behind a DNS record with two A-entries. Round-trip DNS resolves to one or the other. Works until: one server dies and DNS still points to it (requests fail for minutes until TTL expires), servers receive uneven load because clients cache DNS, and you have no way to drain one server for a deploy.
+To fix this, you hire 10 baristas. But if 10,000 people rush the counter at once, it's still chaos. 
+You need to hire a **Manager (The Load Balancer)** to stand at the front door. The Manager forms a single line, looks at the 10 baristas, and says: "You go to Barista 1. You go to Barista 2. You go to Barista 3."
 
-**Production generalization**: A dedicated load balancer sits in front of the pool. It maintains live health checks so dead servers are removed in seconds (not minutes). It tracks connection state to implement smarter algorithms. It terminates TLS once instead of on each app server. Everything a DNS hack cannot do is what a load balancer provides.
-
----
-
-## 2. Core Principles
-
-### L4 vs L7
-
-| Layer | What it sees | Routing based on | Use case |
-|-------|----------------|-------------------|----------|
-| **L4 (Transport)** | IP, port | IP + port (e.g. TCP connection) | Simple, fast; no app awareness |
-| **L7 (Application)** | Full HTTP | URL, headers, cookies, body | Path-based routing, SSL termination, sticky sessions |
-
-**L4 analogy**: A postal sorting machine at a distribution center. It reads only the destination address and ZIP code on the envelope and drops it into the correct bin. It does not open the envelope, does not know what is inside, and does not care. Fast, mechanical, no judgment — just routing by address (IP + port).
-
-**L7 analogy**: A human mail clerk at a large law firm. They open each envelope, read the letter, and decide: "This is a contract dispute — goes to floor 3. This is a tax matter — goes to floor 7." Slower than a machine, but capable of context-aware routing based on the actual content (HTTP headers, URL path, cookies, request body).
-
-**Architecture (simplified)**:
-
-```
-                    ┌─────────────────┐
-  Clients ─────────▶│ Load Balancer   │─────────▶ Server 1
-                    │ (L4 or L7)      │─────────▶ Server 2
-                    └─────────────────┘─────────▶ Server 3
-```
-
-### Common Algorithms
-
-| Algorithm | Description | Pros | Cons |
-|-----------|-------------|------|------|
-| **Round Robin** | Rotate through servers in order | Simple, even in steady state | Ignores load and latency |
-| **Least Connections** | Send to server with fewest active connections | Adapts to slow/long requests | Slightly more state |
-| **Weighted Round Robin** | Round robin with weights (e.g. 2:1) | Handles heterogeneous capacity | Static weights |
-| **Consistent Hash** | Same client/key → same server | Cache affinity, session stickiness | Rebalancing when nodes change |
-| **IP Hash** | hash(client IP) % N | Sticky by IP | Uneven if IPs skewed |
-
-**Algorithm analogies (back to the hotel)**:
-
-- **Round Robin**: The front desk assigns rooms in strict order — Room 101, 102, 103, 104, back to 101. Every guest gets the next room in the rotation regardless of whether the previous occupant is still in the shower. Simple and fair in theory; ignores actual occupancy.
-
-- **Least Connections**: The front desk checks a live board showing which floor has the fewest occupied rooms and directs the next guest there. If floor 3 had a conference group that just checked out, the next five guests all go to floor 3. Adapts to reality, not just the rotation.
-
-- **Weighted Round Robin**: Floor 9 has a larger suite that can host twice as many guests. So the front desk sends two guests to floor 9 for every one it sends to the other floors. Accounts for servers with different hardware capacity (e.g. 8 CPU vs 4 CPU machines).
-
-- **Consistent Hash**: VIP loyalty members always get assigned to the same floor, no matter when they arrive or how many other guests are staying. Their preferences, saved settings, and room layout are already known on that floor. This mirrors sticky sessions: the same user (or cache key) always routes to the same backend so session state and local caches remain warm.
-
-- **IP Hash**: Room assignment is based on the guest's home country ZIP code. Same ZIP → same floor, every time. Predictable but can cause imbalance if guests from one ZIP code dominate.
-
-### Power of Two Choices (P2C)
-
-A probabilistic algorithm that dramatically outperforms both round-robin and least-connections with minimal overhead.
-
-**Algorithm**:
-1. Pick **two servers at random** from the pool
-2. Of the two, send the request to the one with **fewer active connections**
-
-That's it. Two random choices, pick the lesser-loaded one.
-
-**Why it works** — the math:
-
-- Pure random selection: a heavily loaded server is selected with probability 1/N (proportional to its share of the pool). Under high load, requests pile up unevenly.
-- Least-connections: O(N) scan or O(log N) priority queue to find the minimum every request. Under high concurrency, this becomes a contention bottleneck.
-- P2C: the expected maximum load on any server is **O(log log N)** instead of **O(log N / log log N)** for random. This is the "power of two choices" theorem — a tiny improvement in information (seeing 2 servers instead of 1) gives an exponential improvement in load distribution.
-
-**Intuition**: You don't need to see all servers. Seeing just two and picking the better one is enough to break symmetry and avoid hot spots. Like choosing the shorter of two checkout lines at a grocery store — you don't need to check all lines.
-
-**Performance comparison** (1000 servers, 10000 requests/server target load):
-
-| Algorithm | Max overload factor | Overhead |
-|---|---|---|
-| Random | ~7x (Θ(log N / log log N)) | O(1) |
-| P2C | ~2x (Θ(log log N)) | O(1), 2 random lookups |
-| Least-connections | ~1.1x | O(log N) per request |
-
-P2C achieves near least-connections quality with O(1) overhead. Used by: Nginx (upstream random with `two`), Envoy, NGINX Plus, Finagle (Twitter's RPC library).
-
-```
-# Nginx upstream config for P2C
-upstream backend {
-    random two least_conn;
-    server backend1.example.com;
-    server backend2.example.com;
-    server backend3.example.com;
-}
-```
-
-**When not to use P2C**: when you need strict session affinity (consistent hash is better) or when servers have vastly different capacities (weighted least-connections is better).
-
-### Health Checks
-
-- **Active**: LB periodically sends HTTP/TCP checks to each server.
-- **Passive**: LB infers health from request success/failure.
-- Unhealthy servers are removed from the pool until they pass again.
-
-**Health check analogy**: The hotel manager calls each room's phone every 5 minutes. If a room doesn't answer after 3 tries, the front desk stops sending new guests there. Once the room answers again (the server recovers), it is added back to the rotation. The key challenge is **flapping** — a room that answers on some calls and not others causes guests to be assigned and then re-routed repeatedly. Tune the failure threshold (e.g. 3 missed checks before removal, 2 passed checks before reinstatement) to avoid bouncing.
+A Load Balancer is the piece of software (or hardware) that sits in front of your servers and distributes the incoming traffic, ensuring no single server gets overwhelmed. 
 
 ---
 
-## 3. Real-World Usage
+## 🚦 Types of Load Balancers (Layer 4 vs Layer 7)
 
-- **AWS ALB/NLB**: ALB (L7) for HTTP/HTTPS; NLB (L4) for TCP/UDP, low latency.
-- **GCP Load Balancing**: Global HTTP(S) vs regional TCP/UDP.
-- **Nginx / HAProxy**: On-prem or in-cluster L7/L4 load balancing.
-- **Kubernetes**: Service + kube-proxy (L4) or Ingress (L7).
+Load balancers operate at different "Layers" of the OSI model. 
 
-**Concrete scenario — e-commerce checkout**:  
-The checkout service handles payment processing (long-running requests, ~2s each). Round robin would pile up slow requests on one server while others are idle. Least-connections ensures that the server currently processing 10 payments doesn't get the 11th until another server finishes theirs. This is why Least Connections is the preferred algorithm for workloads with variable request duration.
+### Layer 4 Load Balancer (The Fast Traffic Cop)
+> **💡 Analogy:** A traffic cop waving cars into different lanes. The cop doesn't care who is driving, what they are wearing, or where they are going. They just look at the license plate and wave them through instantly.
 
----
+- **How it works:** It only looks at the **IP Address and TCP Port**. It knows nothing about the actual HTTP request (like the URL or cookies). 
+- **Pros:** Lightning fast. It uses almost zero CPU.
+- **Cons:** It is "dumb." It can't route traffic based on the URL.
 
-## 4. Trade-offs
+### Layer 7 Load Balancer (The Smart Concierge)
+> **💡 Analogy:** A hotel concierge. You walk in and say, "I am here for a wedding." The concierge understands your request and points you to the ballroom. If you say, "I am here for a massage," they point you to the spa.
 
-| Choice | Pros | Cons |
-|--------|------|------|
-| **L4** | Fast, low CPU, no decryption | No URL/header routing, no content-based logic |
-| **L7** | Path-based routing, SSL termination, caching | Higher latency and CPU |
-| **Round Robin** | Simple | Can send traffic to overloaded or slow nodes |
-| **Least Connections** | Better for variable request duration | Needs connection tracking |
-| **Consistent Hash** | Sticky sessions, cache affinity | Rebalancing on node add/remove |
-
-**When to use**: Multiple app instances; need HA or horizontal scaling.  
-**When not**: Single instance (no need); or when a different component (e.g. API gateway) already does routing and you only need internal L4.
+- **How it works:** It opens the data packet and looks at the **HTTP Request**. It can see the URL (e.g., `/images` vs `/video`). 
+- **Pros:** Extremely smart. If the user asks for `/images`, the LB can send them to a server specifically optimized for photos! It can also read cookies to ensure a user stays logged in.
+- **Cons:** Slightly slower than Layer 4, because it takes CPU power to open and read every request.
 
 ---
 
-## 5. Failure Scenarios
+## 🧠 Routing Algorithms (How does it choose?)
 
-| Scenario | Mitigation |
-|----------|------------|
-| LB itself fails | Active-passive or active-active LB pair; DNS/anycast failover |
-| All backends down | Return 503; circuit breaker at caller |
-| One backend slow | Least-connections or timeouts; remove from pool on repeated failure |
-| Health check wrong | Tune check interval and threshold; avoid flapping |
+When a new user arrives, how does the Load Balancer decide which server to send them to?
 
-**The LB as a SPOF**: If the hotel has only one front desk agent and they call in sick, no guests get assigned rooms — the whole hotel stops. This is why you run an active-passive or active-active pair. In active-passive, a backup LB watches the primary via a heartbeat (like a second agent watching the front desk) and takes over the Virtual IP if the primary stops responding. In active-active, both agents are at the desk sharing the load, and a DNS or anycast layer distributes incoming traffic between them.
-
----
-
-## 6. Performance Considerations
-
-- **Latency**: L4 adds minimal latency (microseconds); L7 adds more (SSL handshake, HTTP parsing). Use L4 when you don't need L7 features.
-- **Throughput**: LB can become a CPU bottleneck at high TLS volume. Scale vertically or distribute via multiple LBs with anycast.
-- **Connection limits**: Max concurrent connections per backend and global; tune keep-alive timeouts and connection pool size.
-
-**SSL termination cost**: Terminating TLS at the LB means every inbound TLS handshake is paid by the LB's CPU. At 100k connections/second, this is significant. Options: use a dedicated SSL accelerator, distribute termination across multiple LB instances, or offload to a CDN layer above.
+1. **Round Robin (Taking Turns):**
+   - *How it works:* Server 1, then Server 2, then Server 3, then back to Server 1. 
+   - *Best for:* When all your servers are exactly the same size. 
+2. **Least Connections (The Smart Choice):**
+   - *How it works:* The LB looks at which server currently has the fewest active users, and sends the next person there.
+   - *Best for:* When some users take a long time (like uploading a massive video) and other users are fast. This prevents one server from getting stuck with all the slow users.
+3. **IP Hash (The Sticky Choice):**
+   - *How it works:* It runs math on the user's IP address to assign them to a server. This guarantees that User A will *always* be sent to Server 1, every single time.
+   - *Best for:* Storing session data in a server's local RAM (though you really shouldn't do this — use Redis instead!).
 
 ---
 
-## 7. Implementation Patterns
+## 🩺 Health Checks
 
-- **Single LB**: Simple; LB is SPOF. Use for dev or low-criticality.
-- **Active-Passive**: Standby LB takes over on failure (VIP or DNS).
-- **Active-Active**: Multiple LBs share traffic (e.g. DNS round-robin or anycast). Requires stateless backends or shared session store.
+What happens if Server 2 catches on fire? If the Load Balancer doesn't know it's dead, it will keep sending 33% of your users into a burning building, resulting in errors.
+
+To prevent this, the Load Balancer constantly sends a **Health Check** (a tiny ping message) to every server every 5 seconds. 
+If a server fails to respond to 3 pings in a row, the LB marks it as "Dead" and instantly stops sending traffic to it. When the server is fixed and starts replying again, the LB slowly adds it back into the rotation.
 
 ---
 
-## Quick Revision
+## 🎤 Interview Questions to Practice
 
-- **L4**: IP+port; fast, no app logic. **L7**: URL/headers; routing, SSL, stickiness.
-- **Algorithms**: Round robin (simple rotation), least connections (adapts to variable load), consistent hash (sticky/cache affinity).
-- **Health checks**: Remove unhealthy backends; tune thresholds to avoid flapping.
-- **Failure**: LB HA (active-passive or active-active); backend failures handled by pool removal and timeouts.
-- **Hotel analogy**: Front desk = LB; floors = servers; room assignment policy = algorithm; manager calling rooms = health check.
-- **Interview**: "We use an L7 LB for path-based routing and SSL termination; least-connections so long-running payment requests don't pile up on one server; active-passive LB pair so the load balancer itself isn't a SPOF."
+1. **"What is the difference between a Layer 4 and Layer 7 Load Balancer?"**
+   *Answer:* A Layer 4 LB is fast and "dumb"—it routes purely based on IP addresses and ports without reading the content. A Layer 7 LB is "smart"—it reads the actual HTTP request (URLs, headers, cookies) and can make advanced routing decisions, like sending `/video` requests to specialized video servers.
+2. **"How does a Load Balancer handle a server crash?"**
+   *Answer:* By using active Health Checks. It continuously pings the backend servers. If a server stops responding, the LB removes it from the pool until it becomes healthy again, ensuring users never see an error.
+3. **"When would you use the 'Least Connections' algorithm instead of 'Round Robin'?"**
+   *Answer:* Round Robin works perfectly if every request takes the exact same amount of time. But if some requests take 1 millisecond and others take 10 seconds, Round Robin might accidentally send all the 10-second requests to the same server, crashing it. Least Connections prevents this by dynamically sending traffic to whichever server is currently doing the least work.
