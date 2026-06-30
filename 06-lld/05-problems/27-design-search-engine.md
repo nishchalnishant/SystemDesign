@@ -2,491 +2,374 @@
 module: 06-lld
 topic: Problems
 status: unread
-tags: [06-lld, system-design, problems]
+tags: [06-lld, lld, search-engine, inverted-index, tfidf, tokenization]
 ---
-# Design Search Engine (Mini Google)
+# Design Search Engine (Inverted Index)
 
 > **Difficulty**: Hard
-> **Topics**: Inverted Index, TF-IDF, Ranking, Tokenization
-> **Key Concepts**: Inverted index as the core data structure, multi-keyword intersection/union, TF-IDF scoring.
+> **Asked at**: Amazon, Google, LinkedIn
+> **Key Patterns**: Inverted Index, TF-IDF ranking, Strategy (tokenizer), Iterator (result pagination)
 
 ---
 
-## Real-Life Analogy
+## Understanding the Problem
 
-Open any textbook and flip to the **back-of-book index**. You see entries like:
+Design a simple search engine that indexes text documents, processes queries, and returns ranked results using TF-IDF scoring.
+
+---
+
+## Clarifying Questions
+
+**You**: "What's the primary data structure — inverted index?"
+**Interviewer**: "Yes, inverted index mapping term → list of (document_id, positions)."
+
+**You**: "What ranking algorithm — BM25, TF-IDF, or simple term frequency?"
+**Interviewer**: "TF-IDF is fine for this exercise."
+
+**You**: "Do we support boolean queries (AND/OR/NOT) or just keyword search?"
+**Interviewer**: "Keyword search with relevance ranking."
+
+**You**: "What about phrase matching or stemming?"
+**Interviewer**: "Mention them as extensions — basic tokenization (lowercase, strip punctuation) is enough."
+
+**You**: "Do we need to support document updates?"
+**Interviewer**: "Yes — re-index on update."
+
+---
+
+## Final Requirements
+
+**In scope:**
+1. Add / update / delete documents
+2. Index documents using inverted index (term → postings list)
+3. Search by keyword(s); return ranked results by TF-IDF score
+4. Basic tokenization: lowercase, remove punctuation, split on whitespace
+
+**Out of scope:**
+- Stemming / lemmatization (follow-up)
+- Boolean query parser
+- Persistent index (in-memory only)
+- Distributed indexing
+
+---
+
+## Core Entities and Relationships
+
+| Entity | Responsibility |
+|--------|---------------|
+| `Document` | doc_id, title, content, word_count |
+| `InvertedIndex` | term → PostingsList (doc_id, positions, tf) |
+| `Posting` | doc_id, term_frequency, positions in document |
+| `SearchEngine` | Orchestrates index, search, ranking |
+| `Tokenizer` | Splits and normalizes text into terms |
+| `TFIDFRanker` | Scores documents per query term using TF-IDF |
+| `SearchResult` | doc_id, title, score, snippet |
+
+`SearchEngine` owns the `InvertedIndex`. On query, it fetches postings for each term, computes TF-IDF per (term, doc) pair, aggregates score per doc, returns sorted results.
+
+---
+
+## Class Design
+
+### Document
 
 ```
-banana    ...  12, 47, 103, 218
-recipe    ...  47, 103, 312
+class Document:
+- doc_id: str
+- title: str
+- content: str
+- word_count: int  # computed on index
 ```
 
-This is an inverted index. Instead of scanning every page to find where "banana" appears, you look it up directly and get the exact page list. Building the index means reading every page, extracting every word, and recording which page it appeared on.
+### Posting
 
-The **Indexer** is the person who built the back-of-book index. The **Searcher** is you flipping to the back. A search for "banana recipe" means: find pages with "banana" AND pages with "recipe" → intersect the two lists → pages 47 and 103 are your results. Ranking them means: page 47 mentions "banana" 5 times and "recipe" 3 times; page 103 mentions each only once → page 47 ranks higher.
+```
+class Posting:
+- doc_id: str
+- term_frequency: int       # count of term in this document
+- positions: list[int]      # word offsets for phrase matching
+```
 
-The architectural insight: **read performance is everything**. The index is built offline (slow, expensive) so that queries are answered in milliseconds.
+### InvertedIndex
 
----
+```
+class InvertedIndex:
+- index: dict[str, list[Posting]]   # term → postings
+- doc_count: int
+- doc_lengths: dict[str, int]       # doc_id → total word count
 
-## Phase 1: Requirements
++ add_posting(term, posting: Posting)
++ get_postings(term) -> list[Posting]
++ remove_doc(doc_id)
++ document_frequency(term) -> int
+```
 
-### Functional Requirements
-- **Index a document**: Accept a document ID and text content; extract tokens and update the index.
-- **Keyword search**: Support single-keyword and multi-keyword queries.
-  - AND query: return documents containing ALL keywords.
-  - OR query: return documents containing ANY keyword.
-- **Ranked results**: Sort results by relevance score (frequency count, or TF-IDF).
-- **Remove document**: Delete a document and its entries from the index.
+### SearchEngine
 
-### Non-Functional Requirements
-- **Latency**: Queries must return in <100ms even with millions of indexed documents.
-- **Throughput**: High read QPS (search is far more frequent than indexing).
-- **Consistency**: Index updates may be slightly delayed (near-real-time, like Elasticsearch).
+```
+class SearchEngine:
+- index: InvertedIndex
+- documents: dict[str, Document]
+- tokenizer: Tokenizer
 
-### Concurrency Constraints
-- Multiple threads can index new documents concurrently: use `ConcurrentHashMap` or segment locks on the index.
-- Reads and writes can be concurrent: Elasticsearch uses **immutable segments** — new documents go to a new in-memory segment; segments are merged in the background.
-
----
-
-## Phase 2: Use Cases
-
-### Actors
-- **User**: Types a search query.
-- **Publisher/Crawler**: Submits documents for indexing.
-- **Search Engine**: Indexes, scores, and ranks documents.
-
-### UC1: Index a Document
-**Actor**: Publisher
-**Flow**:
-1. Publisher submits `{id: "doc1", content: "Apple banana smoothie recipe"}`.
-2. Tokenizer lowercases and splits: `["apple", "banana", "smoothie", "recipe"]`.
-3. For each token, `InvertedIndex` records: `token → {docId, frequency}`.
-4. Document is stored in the document store for snippet retrieval.
-
-### UC2: Search a Query
-**Actor**: User
-**Flow**:
-1. User searches `"banana recipe"`.
-2. Query parser splits into tokens: `["banana", "recipe"]`.
-3. For each token, look up the posting list in `InvertedIndex`.
-4. Intersect posting lists (AND) or union (OR).
-5. Score each result document (sum of TF scores for matched tokens).
-6. Sort by score descending; return top-K results.
-
-### UC3: Remove a Document
-**Actor**: Publisher
-**Flow**:
-1. Publisher calls `removeDocument("doc1")`.
-2. Engine scans all posting lists and removes entries for `doc1`.
-3. Document is removed from the document store.
-   - In real Elasticsearch: documents are soft-deleted (marked, not removed); compact on merge.
-
----
-
-## Phase 3: Class Diagram
-
-### Core Entities
-- **SearchEngine**: Facade. Coordinates `Indexer`, `Searcher`, `Ranker`.
-- **InvertedIndex**: Core data structure. `Map<token, Map<docId, Posting>>`.
-- **Posting**: Per-document metadata for a token (frequency, position list).
-- **Document**: Raw content + ID. Stored separately from the index.
-- **Ranker**: Strategy interface for scoring/sorting results.
-
-### Key Design Decisions
-- The index maps `word → {docId → Posting}` (inner map keyed by docId) rather than `word → List<Posting>` — this enables O(1) frequency increment during indexing and O(1) docId lookup during AND intersection.
-- `Ranker` is a Strategy — swapping from frequency-count to TF-IDF to BM25 requires only replacing the `Ranker` implementation.
-- AND search uses **shortest-posting-list-first**: intersect the rarest word first to prune early.
-
-```mermaid
-classDiagram
-    class SearchEngine {
-        -InvertedIndex index
-        -Map~String, Document~ docStore
-        -Ranker ranker
-        +indexDocument(id, content)
-        +removeDocument(id)
-        +search(query, mode) List~SearchResult~
-    }
-
-    class InvertedIndex {
-        -Map~String, Map~String, Posting~~ map
-        +addTerm(term, docId)
-        +removeTerm(term, docId)
-        +getPostings(term) Map~String, Posting~
-        +allTerms() Set~String~
-    }
-
-    class Posting {
-        +String docId
-        +int frequency
-        +List~Integer~ positions
-        +increment(position)
-    }
-
-    class Document {
-        +String id
-        +String content
-    }
-
-    class Ranker {
-        <<interface>>
-        +score(docId, postings) double
-        +rank(Map~String, List~Posting~~) List~SearchResult~
-    }
-
-    class FrequencyRanker { +score() +rank() }
-    class TfIdfRanker { +score() +rank() }
-
-    class SearchResult {
-        +String docId
-        +double score
-        +String snippet
-    }
-
-    SearchEngine --> InvertedIndex
-    SearchEngine --> Document
-    SearchEngine --> Ranker
-    InvertedIndex --> Posting
-    Ranker <|.. FrequencyRanker
-    Ranker <|.. TfIdfRanker
-    SearchEngine --> SearchResult
++ index_document(doc: Document)
++ update_document(doc_id, title, content)
++ delete_document(doc_id)
++ search(query: str, top_k=10) -> list[SearchResult]
 ```
 
 ---
 
-## Phase 4: Design Patterns Applied
+## Implementation
 
-### 1. Inverted Index (Core Data Structure)
-**What**: `Map<String, Map<String, Posting>>` — for each word, a map from docId to its posting (frequency + positions).
-**Why**: Transforms search from O(N×D) (scan every word in every document) to O(1) per token lookup. This is why Google can search billions of pages in under 100ms. Without an inverted index, you're doing `grep` over the entire corpus on every query.
+### Core Method: `index_document`
 
-### 2. Strategy Pattern (Ranker)
-**What**: `Ranker` interface with `FrequencyRanker` (simple sum of term frequencies) and `TfIdfRanker` (TF×IDF scoring).
-**Why**: Ranking algorithms are the key differentiator between search engines and evolve continuously. Making `Ranker` pluggable lets you A/B test BM25 vs TF-IDF vs your custom model without touching the indexing or retrieval logic.
+**Core logic:**
+1. Tokenize document content
+2. For each token, track position and count (term frequency)
+3. Update inverted index: add/update posting for this doc_id
+4. Store document in doc registry
 
-### 3. Facade Pattern (SearchEngine)
-**What**: `SearchEngine` hides the internal pipeline: tokenize → index lookup → intersection/union → score → sort.
-**Why**: The caller just calls `search("banana recipe", Mode.AND)`. They don't need to know about posting lists, TF-IDF, or intersection algorithms.
+**Edge cases:**
+- Re-indexing existing doc: remove old postings first
+- Empty content → index with no terms (still stored)
 
----
+```python
+def index_document(self, doc):
+    if doc.doc_id in self.documents:
+        self.index.remove_doc(doc.doc_id)
 
-## Phase 5: Key Java Implementation
+    tokens = self.tokenizer.tokenize(doc.content)
+    doc.word_count = len(tokens)
 
-The interesting parts: (a) the AND intersection using shortest-posting-list-first optimization, and (b) TF-IDF scoring.
+    term_positions = defaultdict(list)
+    for pos, token in enumerate(tokens):
+        term_positions[token].append(pos)
 
-```java
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.*;
+    for term, positions in term_positions.items():
+        posting = Posting(
+            doc_id=doc.doc_id,
+            term_frequency=len(positions),
+            positions=positions
+        )
+        self.index.add_posting(term, posting)
 
-// --- Posting: one word's presence in one document ---
-class Posting {
-    final String docId;
-    int frequency;
-    final List<Integer> positions = new ArrayList<>();
+    self.documents[doc.doc_id] = doc
+    self.index.doc_count = len(self.documents)
+```
 
-    Posting(String docId, int position) {
-        this.docId = docId;
-        this.frequency = 1;
-        positions.add(position);
-    }
+### Tokenizer
 
-    void increment(int position) { frequency++; positions.add(position); }
-}
+```python
+class Tokenizer:
+    STOP_WORDS = {'the', 'is', 'a', 'an', 'in', 'of', 'and', 'or', 'to', 'for'}
 
-// --- Inverted Index ---
-class InvertedIndex {
-    // word → { docId → Posting }
-    private final ConcurrentHashMap<String, ConcurrentHashMap<String, Posting>> map = new ConcurrentHashMap<>();
+    def tokenize(self, text):
+        text = text.lower()
+        text = re.sub(r'[^\w\s]', '', text)
+        tokens = text.split()
+        return [t for t in tokens if t not in self.STOP_WORDS]
+```
 
-    void addTerm(String term, String docId, int position) {
-        map.computeIfAbsent(term, k -> new ConcurrentHashMap<>())
-           .compute(docId, (id, existing) -> {
-               if (existing == null) return new Posting(docId, position);
-               existing.increment(position);
-               return existing;
-           });
-    }
+### Core Method: `search` with TF-IDF
 
-    void removeTerm(String term, String docId) {
-        ConcurrentHashMap<String, Posting> postings = map.get(term);
-        if (postings != null) postings.remove(docId);
-    }
+**Core logic:**
+1. Tokenize query
+2. For each query term, get postings list
+3. For each document in postings, compute TF-IDF contribution
+4. Aggregate scores per document
+5. Return top-K sorted by score
 
-    // Returns docId → Posting map for a term (empty map if term not found)
-    Map<String, Posting> getPostings(String term) {
-        return map.getOrDefault(term.toLowerCase(), new ConcurrentHashMap<>());
-    }
+**TF-IDF formula:**
+- `TF(t, d)` = term_frequency / doc_word_count  (normalized)
+- `IDF(t)` = log((N + 1) / (df + 1)) + 1  (smoothed)
+- `score(d, q)` = sum of TF × IDF for each query term in d
 
-    int documentFrequency(String term) {
-        return map.getOrDefault(term, new ConcurrentHashMap<>()).size();
-    }
+```python
+def search(self, query, top_k=10):
+    query_terms = self.tokenizer.tokenize(query)
+    if not query_terms:
+        return []
 
-    Set<String> allTerms() { return map.keySet(); }
-}
+    scores = defaultdict(float)
+    N = len(self.documents)
 
-// --- Search result ---
-record SearchResult(String docId, double score) {}
+    for term in query_terms:
+        postings = self.index.get_postings(term)
+        if not postings:
+            continue
+        df = len(postings)
+        idf = math.log((N + 1) / (df + 1)) + 1
 
-// --- Search modes ---
-enum SearchMode { AND, OR }
+        for posting in postings:
+            doc = self.documents[posting.doc_id]
+            tf = posting.term_frequency / doc.word_count
+            scores[posting.doc_id] += tf * idf
 
-// --- Search Engine (Facade) ---
-public class SearchEngine {
-    private final InvertedIndex index = new InvertedIndex();
-    private final Map<String, String> docStore = new ConcurrentHashMap<>(); // docId → content
-    private int totalDocs = 0;
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    results = []
+    for doc_id, score in ranked[:top_k]:
+        doc = self.documents[doc_id]
+        results.append(SearchResult(
+            doc_id=doc_id,
+            title=doc.title,
+            score=round(score, 4),
+            snippet=self._generate_snippet(doc, query_terms)
+        ))
+    return results
+```
 
-    // --- Indexing ---
+### InvertedIndex internals
 
-    public void indexDocument(String id, String content) {
-        docStore.put(id, content);
-        totalDocs++;
+```python
+class InvertedIndex:
+    def __init__(self):
+        self.index = defaultdict(list)
+        self.doc_count = 0
 
-        String[] tokens = tokenize(content);
-        for (int pos = 0; pos < tokens.length; pos++) {
-            index.addTerm(tokens[pos], id, pos);
-        }
-        System.out.println("Indexed: " + id + " (" + tokens.length + " tokens)");
-    }
+    def add_posting(self, term, posting):
+        self.index[term].append(posting)
 
-    public void removeDocument(String id) {
-        if (!docStore.containsKey(id)) return;
-        docStore.remove(id);
-        totalDocs--;
-        // Remove this doc from every term's posting list
-        for (String term : index.allTerms()) {
-            index.removeTerm(term, id);
-        }
-    }
+    def get_postings(self, term):
+        return self.index.get(term, [])
 
-    // --- Search ---
+    def remove_doc(self, doc_id):
+        for term in list(self.index.keys()):
+            self.index[term] = [
+                p for p in self.index[term] if p.doc_id != doc_id
+            ]
+            if not self.index[term]:
+                del self.index[term]
 
-    public List<SearchResult> search(String query, SearchMode mode) {
-        String[] queryTokens = tokenize(query);
-        if (queryTokens.length == 0) return Collections.emptyList();
-
-        Map<String, Double> docScores;
-        if (mode == SearchMode.AND) {
-            docScores = andSearch(queryTokens);
-        } else {
-            docScores = orSearch(queryTokens);
-        }
-
-        return docScores.entrySet().stream()
-            .map(e -> new SearchResult(e.getKey(), e.getValue()))
-            .sorted(Comparator.comparingDouble(SearchResult::score).reversed())
-            .collect(Collectors.toList());
-    }
-
-    // AND: only documents containing ALL query terms
-    // Optimization: start with the rarest term to prune candidate set early
-    private Map<String, Double> andSearch(String[] tokens) {
-        // Sort tokens by posting list size (ascending) — rarest term first
-        List<String> sortedTokens = Arrays.stream(tokens)
-            .sorted(Comparator.comparingInt(t -> index.getPostings(t).size()))
-            .collect(Collectors.toList());
-
-        // Start with the rarest term's document set
-        Set<String> candidates = new HashSet<>(index.getPostings(sortedTokens.get(0)).keySet());
-
-        // Intersect with each subsequent term's document set
-        for (int i = 1; i < sortedTokens.size(); i++) {
-            candidates.retainAll(index.getPostings(sortedTokens.get(i)).keySet());
-            if (candidates.isEmpty()) return Collections.emptyMap(); // Early termination
-        }
-
-        // Score surviving candidates using TF-IDF
-        return scoreDocs(candidates, tokens);
-    }
-
-    // OR: documents containing ANY query term
-    private Map<String, Double> orSearch(String[] tokens) {
-        Set<String> candidates = new HashSet<>();
-        for (String token : tokens) {
-            candidates.addAll(index.getPostings(token).keySet());
-        }
-        return scoreDocs(candidates, tokens);
-    }
-
-    // TF-IDF scoring: for each candidate doc, sum TF-IDF for each query token
-    private Map<String, Double> scoreDocs(Set<String> candidates, String[] tokens) {
-        Map<String, Double> scores = new HashMap<>();
-        for (String docId : candidates) {
-            double score = 0.0;
-            for (String token : tokens) {
-                Map<String, Posting> postings = index.getPostings(token);
-                Posting p = postings.get(docId);
-                if (p == null) continue;
-
-                // TF = frequency in this doc (normalized by doc length)
-                String docContent = docStore.get(docId);
-                int docLength = docContent == null ? 1 : tokenize(docContent).length;
-                double tf = (double) p.frequency / docLength;
-
-                // IDF = log(totalDocs / docsContainingTerm) — penalizes common words
-                int df = index.documentFrequency(token);
-                double idf = Math.log((double) (totalDocs + 1) / (df + 1));
-
-                score += tf * idf;
-            }
-            if (score > 0) scores.put(docId, score);
-        }
-        return scores;
-    }
-
-    private String[] tokenize(String text) {
-        return Arrays.stream(text.toLowerCase().split("[^a-z0-9]+"))
-            .filter(t -> !t.isEmpty())
-            .toArray(String[]::new);
-    }
-
-    // --- Demo ---
-    public static void main(String[] args) {
-        SearchEngine engine = new SearchEngine();
-
-        engine.indexDocument("doc1", "Apple banana smoothie recipe");
-        engine.indexDocument("doc2", "Banana chocolate cake recipe recipe");  // "recipe" twice
-        engine.indexDocument("doc3", "Apple pie recipe from grandma");
-        engine.indexDocument("doc4", "Chocolate banana ice cream");
-        engine.indexDocument("doc5", "Java programming language tutorial");
-
-        System.out.println("\n=== AND Search: 'banana recipe' ===");
-        // Should return: doc1, doc2, doc3 (all have both words)
-        engine.search("banana recipe", SearchMode.AND)
-            .forEach(r -> System.out.printf("  %s (score=%.4f)%n", r.docId(), r.score()));
-
-        System.out.println("\n=== OR Search: 'banana recipe' ===");
-        // Should return: doc1, doc2, doc3, doc4 (any has banana or recipe)
-        engine.search("banana recipe", SearchMode.OR)
-            .forEach(r -> System.out.printf("  %s (score=%.4f)%n", r.docId(), r.score()));
-
-        System.out.println("\n=== AND Search: 'java' ===");
-        engine.search("java", SearchMode.AND)
-            .forEach(r -> System.out.printf("  %s (score=%.4f)%n", r.docId(), r.score()));
-    }
-}
+    def document_frequency(self, term):
+        return len(self.index.get(term, []))
 ```
 
 ---
 
-## Phase 6: Trade-offs and Extensions
+## Verification
 
-### Trade-off: Frequency count vs. TF-IDF vs. BM25
-| Algorithm | Pros | Cons |
-|---|---|---|
-| Raw frequency | Simple, fast | Common words ("the", "a") dominate results |
-| TF-IDF | Penalizes common words | Doesn't account for document length variation well |
-| BM25 | Industry standard (Elasticsearch default) | More complex formula, needs tuning |
-
-### Extension: Phrase Search ("banana recipe" as a phrase, not just co-occurrence)
-Use **position lists** stored in `Posting`. For query `"banana recipe"`, look up positions for "banana" in doc1 = `[1]`, "recipe" in doc1 = `[3]`. Check if any position for "recipe" = any position for "banana" + 1. If yes, it's a phrase match.
-
-### Extension: Distributed Index (Shard by Document)
-- **Horizontal partitioning**: Each shard indexes a subset of documents (e.g., shard 1: doc1–doc1M, shard 2: doc1M+1–doc2M).
-- A query fan-outs to all shards in parallel; results are merged and re-ranked.
-- **Advantage**: Linear throughput scaling.
-
-### Extension: Near-Real-Time Indexing (Lucene approach)
-New documents go into an in-memory **segment** (a small inverted index). The background thread periodically flushes and merges in-memory segments to disk. Queries search all segments (in-memory + on-disk) and merge results. Deleted documents are marked with a bitset; physically removed during merge.
-
----
-
-## Concurrency Depth
-
-### ReentrantReadWriteLock for the Inverted Index
-
-The inverted index is a classic read-heavy data structure: queries (reads) happen 100× more often than indexing (writes). `ConcurrentHashMap` on the outer map is correct, but individual posting-list mutations need coordination:
-
-```java
-class InvertedIndex {
-    // Per-term ReadWriteLock: reads on different terms don't block each other
-    private final ConcurrentHashMap<String, ReentrantReadWriteLock> termLocks =
-        new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, List<Posting>> index = new ConcurrentHashMap<>();
-
-    private ReentrantReadWriteLock lockFor(String term) {
-        return termLocks.computeIfAbsent(term, k -> new ReentrantReadWriteLock());
-    }
-
-    public List<Posting> getPostings(String term) {
-        ReentrantReadWriteLock lock = lockFor(term);
-        lock.readLock().lock();
-        try {
-            List<Posting> postings = index.get(term);
-            return postings == null ? List.of() : new ArrayList<>(postings); // defensive copy
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
-
-    public void addDocument(int docId, List<String> tokens) {
-        Map<String, Integer> termFreq = computeTermFrequencies(tokens);
-        for (Map.Entry<String, Integer> entry : termFreq.entrySet()) {
-            String term = entry.getKey();
-            ReentrantReadWriteLock lock = lockFor(term);
-            lock.writeLock().lock();
-            try {
-                index.computeIfAbsent(term, k -> new ArrayList<>())
-                     .add(new Posting(docId, entry.getValue()));
-            } finally {
-                lock.writeLock().unlock();
-            }
-        }
-    }
-}
 ```
+Documents:
+  D1: "Python is great for data science"  → tokens: [python, great, data, science]
+  D2: "Data science with Python"          → tokens: [data, science, python]
+  D3: "Java is great for backend"         → tokens: [java, great, backend]
 
-**Why per-term locks:** a global `ReentrantReadWriteLock` on the entire index would serialize all writes — indexing "apple" blocks indexing "orange". Per-term locks allow independent terms to be indexed concurrently (fine-grained locking).
+Inverted index:
+  "python"  → [Posting(D1, tf=1), Posting(D2, tf=1)]
+  "great"   → [Posting(D1, tf=1), Posting(D3, tf=1)]
+  "data"    → [Posting(D1, tf=1), Posting(D2, tf=1)]
+  "science" → [Posting(D1, tf=1), Posting(D2, tf=1)]
 
-### Semaphore for Bounded Query Concurrency
+Query: "python data science" → terms: [python, data, science]
+N=3
 
-Search query execution is CPU-intensive (posting list intersection, scoring). Cap concurrent queries to prevent CPU saturation:
+  term="python": df=2, idf=log(4/3)+1≈1.29
+    D1: tf=1/4=0.25, score+=0.32
+    D2: tf=1/3=0.33, score+=0.43
 
-```java
-public class SearchEngine {
-    // 2× CPU count: queries have some I/O (disk reads for large posting lists)
-    private final Semaphore queryPermits =
-        new Semaphore(Runtime.getRuntime().availableProcessors() * 2, true);
+  term="data": df=2, idf≈1.29
+    D1: score→0.64, D2: score→0.86
 
-    public List<Document> search(String queryText) {
-        queryPermits.acquire();
-        try {
-            return executeQuery(queryText);
-        } finally {
-            queryPermits.release();
-        }
-    }
-}
-```
+  term="science": df=2, idf≈1.29
+    D1: score→0.96, D2: score→1.29
 
-### Thread-Pool Sizing for Parallel Segment Search
-
-In a multi-segment index (Lucene-style), query each segment in parallel:
-
-```java
-// Query execution: mostly CPU (posting list merge + scoring), some disk I/O
-// Segments typically fit in OS page cache → effectively CPU-bound
-// N_threads = N_cpu + 1 (CPU-bound)
-int segmentThreads = Runtime.getRuntime().availableProcessors() + 1;
-ExecutorService segmentSearchExecutor = Executors.newFixedThreadPool(segmentThreads);
-
-public List<Document> search(String query) {
-    List<Future<List<Document>>> futures = segments.stream()
-        .map(seg -> segmentSearchExecutor.submit(() -> seg.search(query)))
-        .collect(Collectors.toList());
-    // Merge results from all segments, re-rank globally
-    return mergeAndRank(futures.stream().map(this::getResult).collect(Collectors.toList()));
-}
+Ranking: D2(1.29) > D1(0.96) > D3(0)
 ```
 
 ---
 
-## SOLID Principles
-- **S**: `InvertedIndex` owns data structure operations; `SearchEngine` owns query orchestration; `Ranker` owns scoring.
-- **O**: New ranking algorithms extend `Ranker` interface — no existing code changes.
-- **L**: `TfIdfRanker` can substitute for `FrequencyRanker` anywhere `Ranker` is used.
-- **I**: `Ranker` interface has only what's needed — `score()` and `rank()`.
-- **D**: `SearchEngine` depends on `Ranker` abstraction injected at construction time.
+## Deep Dive & Extensibility
+
+### 1. "How would you add stemming?"
+
+Add a `Stemmer` stage to the Tokenizer pipeline (Strategy):
+
+```python
+class Tokenizer:
+    def __init__(self, stemmer=None):
+        self.stemmer = stemmer or NullStemmer()
+
+    def tokenize(self, text):
+        tokens = self._basic_tokenize(text)
+        return [self.stemmer.stem(t) for t in tokens]
+
+class PorterStemmer:
+    def stem(self, word):
+        # Porter algorithm strips suffixes: "running" → "run"
+        return stemmed_word
+```
+
+Index and query use the same stemmer — "running" and "run" map to the same posting.
+
+### 2. "How would you support boolean AND queries?"
+
+Parse query into terms, then intersect postings lists:
+
+```python
+def search_and(self, query):
+    terms = self.tokenizer.tokenize(query)
+    if not terms:
+        return []
+    postings = [set(p.doc_id for p in self.index.get_postings(t)) for t in terms]
+    postings.sort(key=len)  # intersect smallest first
+    result_docs = postings[0]
+    for p in postings[1:]:
+        result_docs &= p
+    return self._rank_and_return(result_docs, terms)
+```
+
+Intersecting from the shortest list minimizes the work.
+
+### 3. "How would you generate snippets?"
+
+Find the text window around the first query term occurrence:
+
+```python
+def _generate_snippet(self, doc, query_terms, window=50):
+    content = doc.content.lower()
+    for term in query_terms:
+        idx = content.find(term)
+        if idx != -1:
+            start = max(0, idx - window)
+            end = min(len(content), idx + len(term) + window)
+            return f"...{doc.content[start:end]}..."
+    return doc.content[:100] + "..."
+```
+
+### 4. "How would you handle document updates efficiently?"
+
+Current approach: remove all old postings for doc_id, then re-index (O(terms in index)). For large indices, use tombstone markers — mark old postings as deleted, compact periodically (like Lucene segment merges). This allows O(1) "delete" and deferred cleanup.
+
+### 5. "How would you scale to millions of documents?"
+
+Shard the inverted index by term across multiple nodes (hash(term) % num_shards). Each query fans out to all shards in parallel, results are merged and re-ranked. Use compressed postings lists (delta-encoded doc IDs) to reduce memory. Cache hot query results in Redis.
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**: Build inverted index from list of documents. Return list of doc_ids containing a given word.
+
+**Mid-level**: TF-IDF scoring. Multi-term query aggregation. Basic tokenization (lowercase, punctuation removal, stop words). Document update/delete.
+
+**Senior**: Stemming as pluggable Strategy. Boolean AND via postings intersection (shortest-first). Snippet generation. Tombstone-based incremental updates. Distributed sharding by term.
+
+---
+
+## Common Interview Questions
+
+- **Q**: What is an inverted index?
+  **A**: A map from each term to the list of documents (postings) containing it. Core data structure of every search engine — enables O(1) lookup of which documents contain a term, instead of scanning all document content linearly.
+
+- **Q**: What does TF-IDF measure?
+  **A**: TF (Term Frequency) = how often a term appears in this document (normalized by length). IDF (Inverse Document Frequency) = how rare the term is across all documents. Their product rewards documents with frequent, rare terms — unique terms signal strong relevance.
+
+- **Q**: Why normalize TF by document length?
+  **A**: Without normalization, longer documents get artificially higher scores just by having more words. Dividing term count by total word count levels the playing field.
+
+- **Q**: How do you handle stop words?
+  **A**: Remove them during tokenization. Words like "the", "is", "a" have IDF ≈ 0 (appear in nearly all documents), contributing nothing to ranking — filtering saves space and speeds up lookup.
+
+- **Q**: What's the time complexity of search?
+  **A**: O(Q × D) where Q = query terms and D = average postings list length per term. For top-K, use a min-heap of size K → O(Q × D × log K). In practice, postings lists are sorted by score so top-K emerges early.

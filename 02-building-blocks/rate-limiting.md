@@ -227,6 +227,16 @@ Used by: Redis-Cell module, Kong rate limiting plugin.
 - High-scale (millions of keys): Sliding Window Counter (O(1) space, ~exact)
 - Smoothing (outbound SMS to carrier): Leaky Bucket (constant output rate)
 
+### Distributed Rate Limiting — the Coordination Problem
+
+With N gateway nodes, a per-node local counter lets a client get N× the limit by spreading requests. Three strategies, in increasing cost/accuracy:
+
+1. **Centralized store (Redis) with atomic ops** — every node checks one shared counter. Exact, but adds a network hop (~0.5–1ms) per request and makes Redis a hot dependency. The check-and-increment **must be atomic** (Lua script or `INCR`+`EXPIRE` pipeline) — a naive `GET` then `INCR` has a race where two nodes both read count=99 under a limit of 100 and both allow.
+2. **Local counter + periodic sync** — each node enforces `limit/N` locally and reconciles with a shared store every few seconds. No per-request hop; approximate (a node may under-count during the sync window). Used at very high QPS where a Redis round-trip per request is too expensive.
+3. **Local token bucket leased from a global budget** — nodes lease tokens in bulk from a central authority. Lowest latency, eventual fairness. Roughly how large cloud-provider gateways scale rate limiting.
+
+**GCRA (Generic Cell Rate Algorithm)**: the algorithm behind `redis-cell`. It stores a single timestamp (the "theoretical arrival time") instead of a list of request times — giving sliding-window accuracy with O(1) space and one atomic compare-and-set. The production-grade answer when an interviewer pushes on "exact sliding window without O(N) memory."
+
 ### Where to Enforce
 
 - **API gateway**: Central place; one policy for all services.

@@ -50,36 +50,37 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```java
-class User {
-    private String name;
-    private List<User> peers = new ArrayList<>(); // direct references to all others
+```python
+class User:
+    def __init__(self, name):
+        self._name = name
+        self._peers = []  # direct references to all others
 
-    public void addPeer(User u) { peers.add(u); }
+    def add_peer(self, u):
+        self._peers.append(u)
 
-    public void type(String text) {
-        System.out.println(name + " typed: " + text);
-        for (User peer : peers) {
-            peer.receiveUpdate(name, text); // direct call to each peer
-        }
-    }
+    def type(self, text):
+        print(f"{self._name} typed: {text}")
+        for peer in self._peers:
+            peer.receive_update(self._name, text)  # direct call to each peer
 
-    public void receiveUpdate(String from, String text) { ... }
-}
+    def receive_update(self, from_user, text):
+        pass
 
-// Setup:
-alice.addPeer(bob);
-alice.addPeer(charlie);
-bob.addPeer(alice);
-bob.addPeer(charlie);
-charlie.addPeer(alice);
-charlie.addPeer(bob);
-// N users = N*(N-1) peer references
+
+# Setup:
+alice.add_peer(bob)
+alice.add_peer(charlie)
+bob.add_peer(alice)
+bob.add_peer(charlie)
+charlie.add_peer(alice)
+charlie.add_peer(bob)
+# N users = N*(N-1) peer references
 ```
 
 **What breaks**:
 1. **O(N²) connections**: Each user holds direct references to all others. 10 users = 90 peer links.
-2. **Tight coupling**: `User` must import `User` to hold peer references — circular dependency; each user is coupled to every other.
+2. **Tight coupling**: `User` must hold `User` peer references — circular dependency; each user is coupled to every other.
 3. **Fragile add/remove**: Adding a 4th user `Dave` requires updating every existing user's peer list.
 4. **SRP violation**: `User` manages its own content AND routes messages to peers.
 
@@ -90,50 +91,49 @@ charlie.addPeer(bob);
 The constraint: **users must not hold references to each other — communication routes through a single coordinator**.
 
 Step 1 — extract a `Mediator` interface:
-```java
-interface DocumentMediator {
-    void broadcastChange(User sender, String text);
-    void addUser(User u);
-}
+```python
+from abc import ABC, abstractmethod
+
+class DocumentMediator(ABC):
+    @abstractmethod
+    def broadcast_change(self, sender, text):
+        pass
+
+    @abstractmethod
+    def add_user(self, u):
+        pass
 ```
 
 Step 2 — each `User` only holds a reference to the mediator:
-```java
-class User {
-    private String name;
-    private DocumentMediator mediator;
+```python
+class User:
+    def __init__(self, name, mediator):
+        self._name = name
+        self._mediator = mediator
 
-    public User(String name, DocumentMediator mediator) {
-        this.name = name;
-        this.mediator = mediator;
-    }
+    def type(self, text):
+        self._mediator.broadcast_change(self, text)  # send to mediator, not to peers
 
-    public void type(String text) {
-        mediator.broadcastChange(this, text); // send to mediator, not to peers
-    }
-
-    public void receiveUpdate(String from, String text) {
-        System.out.println(name + " sees: " + from + " → " + text);
-    }
-}
+    def receive_update(self, from_user, text):
+        print(f"{self._name} sees: {from_user} → {text}")
 ```
 
 Step 3 — the mediator owns the routing:
-```java
-class CollaborativeDocument implements DocumentMediator {
-    private List<User> users = new ArrayList<>();
+```python
+class CollaborativeDocument(DocumentMediator):
+    def __init__(self):
+        self._users = []
 
-    public void addUser(User u)    { users.add(u); }
+    def add_user(self, u):
+        self._users.append(u)
 
-    public void broadcastChange(User sender, String text) {
-        for (User u : users) {
-            if (u != sender) u.receiveUpdate(sender.getName(), text);
-        }
-    }
-}
+    def broadcast_change(self, sender, text):
+        for u in self._users:
+            if u is not sender:
+                u.receive_update(sender._name, text)
 ```
 
-Adding `Dave` is now: `mediator.addUser(dave)`. No existing user changes. N users = N mediator references, not N² peer links.
+Adding `Dave` is now: `mediator.add_user(dave)`. No existing user changes. N users = N mediator references, not N² peer links.
 
 ---
 
@@ -179,55 +179,44 @@ The Mediator Pattern is a behavioral design pattern that centralizes complex com
 
 Users directly holding references to each other:
 
-```java
-// Class representing a User in a collaborative document editor
-class User {
-    private String name;
-    private List<User> others;  // List of users that have access to this user
-    
-    public User(String name) {
-        this.name = name;
-        this.others = new ArrayList<>();
-    }
-    
-    // Method to add a collaborator to this user (grants access to the user)
-    public void addCollaborator(User user) {
-        this.others.add(user);
-    }
-    
-    // Method to make a change to the document and notify all collaborators
-    public void makeChange(String change) {
-        System.out.println(this.name + " made a change: " + change);
-        for (User u : this.others) {
-            u.receiveChange(change, this);  // Notify each collaborator about the change
-        }
-    }
-    
-    // Method to receive a change notification from another user
-    public void receiveChange(String change, User fromUser) {
-        System.out.println(this.name + " received: \"" + change + "\" from " + fromUser.name);
-    }
-}
+```python
+# Class representing a User in a collaborative document editor
+class User:
+    def __init__(self, name):
+        self._name = name
+        self._others = []  # List of users that have access to this user
 
-// Client Code
-public class Main {
-    public static void main(String[] args) {
-        // Creating users
-        User alice = new User("Alice");
-        User bob = new User("Bob");
-        User charlie = new User("Charlie");
-        
-        // Adding collaborators (Alice gives access to Bob and Charlie)
-        alice.addCollaborator(bob);
-        alice.addCollaborator(charlie);
-        
-        // Alice makes a change, notifying Bob and Charlie
-        alice.makeChange(" Updated the document title");
-        
-        // Bob makes a change, notifying Alice and Charlie
-        bob.makeChange("Added a new section to the document");
-    }
-}
+    # Method to add a collaborator to this user (grants access to the user)
+    def add_collaborator(self, user):
+        self._others.append(user)
+
+    # Method to make a change to the document and notify all collaborators
+    def make_change(self, change):
+        print(f"{self._name} made a change: {change}")
+        for u in self._others:
+            u.receive_change(change, self)  # Notify each collaborator about the change
+
+    # Method to receive a change notification from another user
+    def receive_change(self, change, from_user):
+        print(f'{self._name} received: "{change}" from {from_user._name}')
+
+
+# Client Code
+if __name__ == "__main__":
+    # Creating users
+    alice = User("Alice")
+    bob = User("Bob")
+    charlie = User("Charlie")
+
+    # Adding collaborators (Alice gives access to Bob and Charlie)
+    alice.add_collaborator(bob)
+    alice.add_collaborator(charlie)
+
+    # Alice makes a change, notifying Bob and Charlie
+    alice.make_change(" Updated the document title")
+
+    # Bob makes a change, notifying Alice and Charlie
+    bob.make_change("Added a new section to the document")
 ```
 
 **Issues**:
@@ -244,78 +233,68 @@ public class Main {
 
 ## Solution: Mediator Pattern
 
-```java
-// Mediator Interface
-interface DocumentSessionMediator {
-    void broadcastChange(String change, User sender);
-    void join(User user);
-}
+```python
+from abc import ABC, abstractmethod
 
-// Concrete Mediator Class
-class CollaborativeDocument implements DocumentSessionMediator {
-    private List<User> users;
-    
-    public CollaborativeDocument() {
-        this.users = new ArrayList<>();
-    }
-    
-    @Override
-    public void join(User user) {
-        this.users.add(user);
-    }
-    
-    @Override
-    public void broadcastChange(String change, User sender) {
-        for (User user : this.users) {
-            if (user != sender) {
-                user.receiveChange(change, sender);
-            }
-        }
-    }
-}
 
-// User Class — only knows about the mediator, never about other users
-class User {
-    private String name;
-    private DocumentSessionMediator mediator;
-    
-    public User(String name, DocumentSessionMediator mediator) {
-        this.name = name;
-        this.mediator = mediator;
-    }
-    
-    // Method for users to make a change
-    public void makeChange(String change) {
-        System.out.println(this.name + " edited the document: " + change);
-        this.mediator.broadcastChange(change, this);
-    }
-    
-    // Method to receive a change from another user
-    public void receiveChange(String change, User sender) {
-        System.out.println(this.name + " saw change from " + sender.name + ": \"" + change + "\"");
-    }
-}
+# Mediator Interface
+class DocumentSessionMediator(ABC):
+    @abstractmethod
+    def broadcast_change(self, change, sender):
+        pass
 
-// Client Code
-public class Main {
-    public static void main(String[] args) {
-        CollaborativeDocument doc = new CollaborativeDocument();
-        
-        // Creating users — they each only know the mediator
-        User alice = new User("Alice", doc);
-        User bob = new User("Bob", doc);
-        User charlie = new User("Charlie", doc);
-        
-        // Joining the collaborative document
-        doc.join(alice);
-        doc.join(bob);
-        doc.join(charlie);
-        
-        // Users making changes — routed through mediator
-        alice.makeChange("Added project title");
-        bob.makeChange("Corrected grammar in paragraph 2");
-    }
-}
+    @abstractmethod
+    def join(self, user):
+        pass
+
+
+# Concrete Mediator Class
+class CollaborativeDocument(DocumentSessionMediator):
+    def __init__(self):
+        self._users = []
+
+    def join(self, user):
+        self._users.append(user)
+
+    def broadcast_change(self, change, sender):
+        for user in self._users:
+            if user is not sender:
+                user.receive_change(change, sender)
+
+
+# User Class — only knows about the mediator, never about other users
+class User:
+    def __init__(self, name, mediator):
+        self._name = name
+        self._mediator = mediator
+
+    # Method for users to make a change
+    def make_change(self, change):
+        print(f"{self._name} edited the document: {change}")
+        self._mediator.broadcast_change(change, self)
+
+    # Method to receive a change from another user
+    def receive_change(self, change, sender):
+        print(f'{self._name} saw change from {sender._name}: "{change}"')
+
+
+# Client Code
+if __name__ == "__main__":
+    doc = CollaborativeDocument()
+
+    # Creating users — they each only know the mediator
+    alice = User("Alice", doc)
+    bob = User("Bob", doc)
+    charlie = User("Charlie", doc)
+
+    # Joining the collaborative document
+    doc.join(alice)
+    doc.join(bob)
+    doc.join(charlie)
+
+    # Users making changes — routed through mediator
+    alice.make_change("Added project title")
+    bob.make_change("Corrected grammar in paragraph 2")
 ```
 
 ### Class Diagram
@@ -360,7 +339,7 @@ classDiagram
 |---|---|
 | **Tight Coupling** | Users hold only a reference to the mediator. No user knows any other user. |
 | **Adding/Removing Users Breaks Structure** | `CollaborativeDocument.join()` manages the user list centrally. Adding a user = one line. |
-| **Hard to Orchestrate Roles** | Roles (editor/viewer/admin) can be implemented in `CollaborativeDocument.broadcastChange()` — check the sender's role before broadcasting. Zero changes to the `User` class. |
+| **Hard to Orchestrate Roles** | Roles (editor/viewer/admin) can be implemented in `CollaborativeDocument.broadcast_change()` — check the sender's role before broadcasting. Zero changes to the `User` class. |
 | **Lack of SRP** | `User` only handles its own behavior. `CollaborativeDocument` handles all communication. |
 | **Scalability** | N connections (each user to the mediator) instead of N×(N-1). |
 

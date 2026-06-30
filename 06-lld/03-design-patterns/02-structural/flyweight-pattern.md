@@ -59,28 +59,22 @@ Try to reason through the memory math before reading on.
 
 ## Problem Without the Pattern
 
-```java
-class Tree {
-    private String type;
-    private byte[] texture; // 50KB per tree
-    private String color;
-    private int x;
-    private int y;
+```python
+class Tree:
+    def __init__(self, tree_type: str, texture: bytes, color: str, x: int, y: int):
+        self._type = tree_type
+        self._texture = texture  # separate copy per instance (50KB per tree)
+        self._color = color
+        self._x = x
+        self._y = y
 
-    public Tree(String type, byte[] texture, String color, int x, int y) {
-        this.type    = type;
-        this.texture = texture; // separate copy per instance
-        this.color   = color;
-        this.x       = x;
-        this.y       = y;
-    }
-}
+import random
 
-// Creating 1,000,000 trees:
-for (int i = 0; i < 1_000_000; i++) {
-    trees.add(new Tree("Oak", loadTexture("oak.png"), "green", rand(), rand()));
-}
-// Memory: 1,000,000 × 50KB = 50GB — system crash
+# Creating 1,000,000 trees:
+trees = []
+for i in range(1_000_000):
+    trees.append(Tree("Oak", load_texture("oak.png"), "green", random.randint(0, 1000), random.randint(0, 1000)))
+# Memory: 1,000,000 × 50KB = 50GB — system crash
 ```
 
 **What breaks**:
@@ -97,40 +91,40 @@ for (int i = 0; i < 1_000_000; i++) {
 The constraint: **share the invariant state across instances; keep only the unique state per object**.
 
 Step 1 — extract the shared (intrinsic) state into a separate `TreeType` object:
-```java
-class TreeType {
-    private String type;
-    private byte[] texture; // loaded once, shared by all trees of this type
-    private String color;
+```python
+class TreeType:
+    def __init__(self, tree_type: str, texture: bytes, color: str):
+        self._type = tree_type
+        self._texture = texture  # loaded once, shared by all trees of this type
+        self._color = color
 
-    public TreeType(String type, byte[] texture, String color) { ... }
-
-    public void draw(int x, int y) {
-        // render this tree type at the given coordinates
-    }
-}
+    def draw(self, x: int, y: int):
+        # render this tree type at the given coordinates
+        pass
 ```
 
 Step 2 — a factory ensures each type is created only once:
-```java
-class TreeFactory {
-    private static Map<String, TreeType> cache = new HashMap<>();
+```python
+class TreeFactory:
+    _cache: dict[str, TreeType] = {}
 
-    public static TreeType getTreeType(String type, byte[] texture, String color) {
-        return cache.computeIfAbsent(type, k -> new TreeType(type, texture, color));
-    }
-}
+    @classmethod
+    def get_tree_type(cls, tree_type: str, texture: bytes, color: str) -> TreeType:
+        if tree_type not in cls._cache:
+            cls._cache[tree_type] = TreeType(tree_type, texture, color)
+        return cls._cache[tree_type]
 ```
 
 Step 3 — the `Tree` object holds only extrinsic state (unique position) and a reference to the shared `TreeType`:
-```java
-class Tree {
-    private int x, y;
-    private TreeType type; // shared reference — not a copy
+```python
+class Tree:
+    def __init__(self, x: int, y: int, tree_type: TreeType):
+        self._x = x
+        self._y = y
+        self._type = tree_type  # shared reference — not a copy
 
-    public Tree(int x, int y, TreeType type) { this.x = x; this.y = y; this.type = type; }
-    public void draw() { type.draw(x, y); }
-}
+    def draw(self):
+        self._type.draw(self._x, self._y)
 ```
 
 Memory: 3 `TreeType` objects × 50KB = 150KB (shared). 1M `Tree` objects × 8 bytes (x, y + reference) = ~8MB. Total: ~8MB vs 50GB.
@@ -179,64 +173,43 @@ The **unique data** (stored per instance) is called **extrinsic state**.
 
 Rendering a forest on a map like Google Maps:
 
-```java
-// ================ Tree Class =================
-class Tree {
-    // Attributes that keep on changing 
-    private int x;
-    private int y;
-    
-    // Attributes that remain constant — duplicated for every tree!
-    private String name;
-    private String color;
-    private String texture;
-    
-    public Tree(int x, int y, String name, String color, String texture) {
-        this.x = x;
-        this.y = y;
-        this.name = name;
-        this.color = color;
-        this.texture = texture;
-    }
-    
-    public void draw() {
-        System.out.println("Drawing tree at (" + this.x + ", " + this.y + ") with type " + this.name);
-    }
-}
+```python
+# ================ Tree Class =================
+class Tree:
+    # Attributes that keep on changing
+    # Attributes that remain constant — duplicated for every tree!
+    def __init__(self, x: int, y: int, name: str, color: str, texture: str):
+        self._x = x
+        self._y = y
+        self._name = name
+        self._color = color
+        self._texture = texture
 
-// ================ Forest Class =================
-class Forest {
-    private List<Tree> trees;
-    
-    public Forest() {
-        this.trees = new ArrayList<>();
-    }
-    
-    public void plantTree(int x, int y, String name, String color, String texture) {
-        Tree tree = new Tree(x, y, name, color, texture);
-        this.trees.add(tree);
-    }
-    
-    public void draw() {
-        for (Tree tree : this.trees) {
-            tree.draw();
-        }
-    }
-}
+    def draw(self):
+        print(f"Drawing tree at ({self._x}, {self._y}) with type {self._name}")
 
-// =============== Client Code ==================
-public class Main {
-    public static void main(String[] args) {
-        Forest forest = new Forest();
-        
-        // Planting 1 million trees — all storing identical name/color/texture
-        for (int i = 0; i < 1000000; i++) {
-            forest.plantTree(i, i, "Oak", "Green", "Rough");
-        }
-        
-        System.out.println("Planted 1 million trees.");
-    }
-}
+# ================ Forest Class =================
+class Forest:
+    def __init__(self):
+        self._trees: list[Tree] = []
+
+    def plant_tree(self, x: int, y: int, name: str, color: str, texture: str):
+        tree = Tree(x, y, name, color, texture)
+        self._trees.append(tree)
+
+    def draw(self):
+        for tree in self._trees:
+            tree.draw()
+
+# =============== Client Code ==================
+if __name__ == "__main__":
+    forest = Forest()
+
+    # Planting 1 million trees — all storing identical name/color/texture
+    for i in range(1_000_000):
+        forest.plant_tree(i, i, "Oak", "Green", "Rough")
+
+    print("Planted 1 million trees.")
 ```
 
 **Problems**:
@@ -248,98 +221,70 @@ public class Main {
 
 ## Solution: Flyweight Pattern
 
-```java
-// ============= TreeType Class (FLYWEIGHT) ================
-// Stores only the SHARED (intrinsic) data — created once per species
-class TreeType {
-    private String name;
-    private String color;
-    private String texture;
-    
-    public TreeType(String name, String color, String texture) {
-        this.name = name;
-        this.color = color;
-        this.texture = texture;
-    }
-    
-    // Extrinsic state (x, y) is passed in — NOT stored here
-    public void draw(int x, int y) {
-        System.out.println("Drawing " + this.name + " tree at (" + x + ", " + y + ")");
-    }
-}
+```python
+# ============= TreeType Class (FLYWEIGHT) ================
+# Stores only the SHARED (intrinsic) data — created once per species
+class TreeType:
+    def __init__(self, name: str, color: str, texture: str):
+        self._name = name
+        self._color = color
+        self._texture = texture
 
-// ================ Tree Class =================
-// Stores only UNIQUE (extrinsic) data + a reference to the shared flyweight
-class Tree {
-    private int x;     // Unique per tree
-    private int y;     // Unique per tree
-    private TreeType treeType;   // Shared reference — NOT a copy
-    
-    public Tree(int x, int y, TreeType treeType) {
-        this.x = x;
-        this.y = y;
-        this.treeType = treeType;
-    }
-    
-    public void draw() {
-        this.treeType.draw(this.x, this.y);  // Passes extrinsic state to flyweight
-    }
-}
+    # Extrinsic state (x, y) is passed in — NOT stored here
+    def draw(self, x: int, y: int):
+        print(f"Drawing {self._name} tree at ({x}, {y})")
 
-// ============ TreeFactory Class (FLYWEIGHT FACTORY) ==============
-// The factory guarantees reuse — no duplicate TreeType objects ever created
-class TreeFactory {
-    private static Map<String, TreeType> treeTypeMap = new HashMap<>();
-    
-    public static TreeType getTreeType(String name, String color, String texture) {
-        String key = name + " - " + color + " - " + texture;
-        if (!treeTypeMap.containsKey(key)) {
-            treeTypeMap.put(key, new TreeType(name, color, texture));
-            System.out.println("Created new TreeType: " + key);
-        }
-        return treeTypeMap.get(key);
-    }
-}
+# ================ Tree Class =================
+# Stores only UNIQUE (extrinsic) data + a reference to the shared flyweight
+class Tree:
+    def __init__(self, x: int, y: int, tree_type: TreeType):
+        self._x = x          # Unique per tree
+        self._y = y          # Unique per tree
+        self._tree_type = tree_type  # Shared reference — NOT a copy
 
-// ================ Forest Class =================
-class Forest {
-    private List<Tree> trees;
-    
-    public Forest() {
-        this.trees = new ArrayList<>();
-    }
-    
-    public void plantTree(int x, int y, String name, String color, String texture) {
-        TreeType treeType = TreeFactory.getTreeType(name, color, texture);  // Reuses existing
-        Tree tree = new Tree(x, y, treeType);
-        this.trees.add(tree);
-    }
-    
-    public void draw() {
-        for (Tree tree : this.trees) {
-            tree.draw();
-        }
-    }
-}
+    def draw(self):
+        self._tree_type.draw(self._x, self._y)  # Passes extrinsic state to flyweight
 
-// =============== Client Code ==================
-public class Main {
-    public static void main(String[] args) {
-        Forest forest = new Forest();
-        
-        // 1 million Oak trees — only ONE TreeType("Oak","Green","Rough") object created
-        for (int i = 0; i < 1000000; i++) {
-            forest.plantTree(i, i, "Oak", "Green", "Rough");
-        }
-        
-        // Adding Pine trees — ONE new TreeType object created, reused for all pine trees
-        for (int i = 0; i < 500000; i++) {
-            forest.plantTree(i, i + 1000000, "Pine", "Dark Green", "Smooth");
-        }
-        
-        System.out.println("Total TreeType objects: " + 2); // Only 2 regardless of 1.5M trees
-    }
-}
+# ============ TreeFactory Class (FLYWEIGHT FACTORY) ==============
+# The factory guarantees reuse — no duplicate TreeType objects ever created
+class TreeFactory:
+    _tree_type_map: dict[str, TreeType] = {}
+
+    @classmethod
+    def get_tree_type(cls, name: str, color: str, texture: str) -> TreeType:
+        key = f"{name} - {color} - {texture}"
+        if key not in cls._tree_type_map:
+            cls._tree_type_map[key] = TreeType(name, color, texture)
+            print(f"Created new TreeType: {key}")
+        return cls._tree_type_map[key]
+
+# ================ Forest Class =================
+class Forest:
+    def __init__(self):
+        self._trees: list[Tree] = []
+
+    def plant_tree(self, x: int, y: int, name: str, color: str, texture: str):
+        tree_type = TreeFactory.get_tree_type(name, color, texture)  # Reuses existing
+        tree = Tree(x, y, tree_type)
+        self._trees.append(tree)
+
+    def draw(self):
+        for tree in self._trees:
+            tree.draw()
+
+# =============== Client Code ==================
+if __name__ == "__main__":
+    forest = Forest()
+
+    # 1 million Oak trees — only ONE TreeType("Oak","Green","Rough") object created
+    for i in range(1_000_000):
+        forest.plant_tree(i, i, "Oak", "Green", "Rough")
+
+    # Adding Pine trees — ONE new TreeType object created, reused for all pine trees
+    for i in range(500_000):
+        forest.plant_tree(i, i + 1_000_000, "Pine", "Dark Green", "Smooth")
+
+    print(f"Total TreeType objects: {len(TreeFactory._tree_type_map)}")  # Only 2 regardless of 1.5M trees
 ```
 
 **Result**: 1,500,000 trees exist, but only 2 `TreeType` objects are ever created. Memory for shared data: essentially zero.

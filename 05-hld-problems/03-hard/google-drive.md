@@ -2,654 +2,211 @@
 module: 05-hld-problems
 topic: Hard
 status: unread
-tags: [05-hld-problems, system-design, hard]
+tags: [05-hld-problems, system-design, hard, google-drive, file-storage, collaboration, permissions]
 ---
 # Design Google Drive
 
-> **Difficulty**: Hard
-> **Topics**: Chunked Uploads, Delta Sync, Conflict Resolution, Distributed File Storage, Version Control
-> **Time**: 60-75 minutes
-> **Companies**: Google, Dropbox, Box, Microsoft (OneDrive)
-
----
-
-## Problem Mindmap
-
-```
-Google Drive
-├── Problem Constraints
-│   ├── Scale → 1B users, 23.5EB total storage, 200M DAU, 2PB/day uploads; multi-device sync
-│   ├── Latency target → file open < 1s (cached); sync notification < 5s; upload acknowledgment < 2s
-│   └── Core hardness → delta sync (avoid re-uploading unchanged chunks) + conflict resolution for simultaneous edits
-├── Architecture Derivation
-│   ├── Step 1 → Upload full file on every change → 100MB file edited slightly = 100MB upload each time; bandwidth-prohibitive
-│   ├── Step 2 → Content-addressed chunking → split file into 4MB chunks; SHA-256 per chunk; only upload changed chunks (delta sync)
-│   ├── Step 3 → Same chunk across users? Dedup by SHA-256 → store once in S3; 30% storage saving from duplicates
-│   └── Step 4 → WebSocket sync channel → on upload complete, Kafka event → notification service → push to all user devices via WebSocket
-├── Core Components
-│   ├── Chunk Store → S3 with SHA-256 content addressing; chunks are immutable; same hash = same content = stored once
-│   ├── Sync Service → WebSocket connection per device; Kafka "file-events" topic; workers push delta to connected devices
-│   ├── Metadata DB → PostgreSQL: file tree (file_id, parent_id, name, owner_id, chunks[], version, modified_at)
-│   ├── Block Service → client SDK splits file into 4MB chunks; checksums each; uploads only new chunks; commits manifest
-│   └── S3 tiering → active files: S3 Standard; files not accessed 90 days: S3-IA; 1 year: Glacier; automatic via lifecycle policy
-├── Data Model
-│   ├── files → PostgreSQL (file_id UUID PK, owner_id, parent_folder_id, name, size, chunk_hashes[], version INT, modified_at, is_deleted)
-│   └── chunks → (chunk_hash SHA-256 PK, s3_key, size, ref_count); ref_count for garbage collection when 0
-├── APIs
-│   ├── POST /files/upload/init → {filename, size, total_chunks} → {upload_id, missing_chunk_hashes[]}
-│   ├── PUT /chunks/{hash} → raw chunk data → 200 OK (idempotent; same hash = skip if already exists)
-│   ├── POST /files/upload/commit → {upload_id, chunk_hashes[]} → {file_id, version}
-│   └── GET /files/{file_id}/changes?since_version= → [{chunk_hash, offset, operation}] delta for sync
-├── Critical Trade-offs
-│   ├── Binary files vs collaborative docs → binary: conflict copy (both versions kept, user picks); collaborative: OT/CRDT for merge
-│   ├── 4MB chunk size → balances dedup efficiency vs metadata overhead; smaller = more chunks = more metadata; larger = less dedup
-│   └── Strong vs eventual consistency for metadata → strong (PostgreSQL) for file tree; eventual for sync notifications (Kafka lag OK)
-├── Failure Scenarios
-│   ├── Upload interrupted → client SDK retracks committed chunks; resumes from last uncommitted chunk; idempotent chunk PUT
-│   ├── Sync notification lost → client polls /changes?since_version on reconnect; version vector catches up missed events
-│   └── S3 unavailable → uploads queue client-side; retry with exponential backoff; offline-first SDK for mobile
-└── Interview Angles
-    ├── Google → "Design Google Drive" → content-addressed chunks + delta sync + WebSocket notify + conflict copies = core
-    ├── Dropbox → "Design Dropbox sync" → same chunked approach; Dropbox pioneered 4MB block sync in production
-    └── Follow-up → "How do you handle 1000 devices syncing the same popular file?" → CDN for read; WebSocket fan-out via Kafka partitions
-```
+> **Difficulty**: Hard | **Asked at**: Google, Microsoft, Dropbox, Amazon
 
 ---
 
 ## Problem Statement
 
-Design a cloud storage and file synchronization service like Google Drive that allows users to upload, store, share files and folders, with real-time synchronization across multiple devices.
+Design a cloud file storage and collaboration platform like Google Drive. Users upload, organize, and share files and folders. Multiple users can view and edit documents simultaneously. The system must handle petabytes of storage, fine-grained permissions, and real-time collaboration.
 
 ---
 
-## Analogy
+## Functional Requirements
 
-A filing cabinet that syncs across all your devices. When you update a file on your laptop, your phone sees the update within seconds.
-
-Simple for one person and one device. Now imagine: you and a colleague are both editing `proposal.docx` simultaneously — from different cities. Your laptop has version 3, their desktop has version 3, you both save, and now there are two "version 4s" in conflict. Which one wins? Do you lose work? What if you're on a plane (offline) and make changes that need to merge with changes your colleague made while you were mid-flight?
-
-And scale this to 1 billion users, exabytes of data, uploading 2 petabytes per day. A single user uploading a 15GB video on a slow connection cannot tie up a connection for hours — you need to split it into chunks, upload them in parallel, and resume where you left off if the connection drops.
-
----
-
-## What Breaks Without This System?
-
-Without chunked uploads and a metadata layer, a user uploading a 15 GB file over a flaky mobile connection must restart the entire upload on any network interruption — unacceptable UX and bandwidth waste at scale. Without deduplication, 1B users storing common files (OS installers, shared templates) means storing the same bytes billions of times: petabytes of redundant storage cost. Without a sync protocol, every device polls the server for changes — at 1B users × multiple devices each, even 1-second polling intervals generate billions of wasted requests per second.
+1. **File storage**: Upload, download, organize files in folders; support any file type up to 5 GB
+2. **Sharing**: Share files and folders with specific users or via shareable link (view/comment/edit)
+3. **Real-time collaboration**: Multiple users edit Google Docs/Sheets simultaneously
+4. **Version history**: Keep previous versions; restore any version within 30 days
+5. **Search**: Search files by name, type, and content
+6. **Offline access**: Access cached files without internet; sync when reconnected
 
 ---
 
-## Derive the Architecture
+## Non-Functional Requirements
 
-**1 server, single file upload**: Client POSTs entire file; server writes to local disk. Works for a single user with small files. Breaks when: a 15 GB upload on a 1 Mbps connection takes 33 hours — any disconnection loses all progress. Fix: split file into chunks (4 MB each), upload each chunk independently, track which chunks landed.
-
-**Chunked upload, 1 server**: Client splits file into 4 MB chunks, uploads each with a chunk index. Server reassembles when all chunks arrive. Resumable: on reconnect, client asks which chunks are missing. Works for a few hundred concurrent uploads. Breaks when: 1 TB of daily uploads saturate a single server's disk I/O (~500 MB/s = 43 GB/min max). Fix: store chunks in object storage (S3-equivalent) where each chunk is an object addressed by its SHA-256 hash. Server becomes a thin metadata layer.
-
-**Object storage for chunks + metadata DB**: Each chunk stored as `chunks/{sha256}`. Two users uploading the same file store it once (content-addressed dedup). Metadata DB stores `files(user_id, name, chunk_list, version)`. Upload throughput scales with object storage horizontally. Breaks when: a file is edited on Device A while Device B is offline — when B reconnects, two version forks exist with no resolution. Fix: version all files; on conflict, create a "conflict copy" visible to the user.
-
-**Versioned metadata + conflict copies**: Each save creates a new version record. On sync, the client sends its base version; server detects if the base diverges from HEAD and returns a conflict. Client presents both versions. Breaks when: 1B users × multiple devices each must be notified of file changes. HTTP polling at 1-second intervals = billions of requests/sec. Fix: long-polling or WebSocket push — each device holds an open connection to a notification service; file changes emit events to relevant device connections.
-
-**Push notification for sync**: Notification service (fan-out based on file watchers) pushes change events to connected devices. Devices fetch only the changed metadata delta. Handles real-time sync at scale. Breaks when: metadata DB storing exabytes of file/folder records for 1B users becomes a single-shard bottleneck — even with indexes, cross-user queries (shared folders) require joining across shard boundaries. Fix: shard metadata by user_id for owned files; maintain a separate shared-folder table keyed by folder_id for cross-user access patterns.
+- **Scale**: 1B users, 15 GB free per user, 15 EB total storage
+- **Latency**: File uploads < 5s for 10 MB; document open < 2s
+- **Availability**: 99.99% — files must always be accessible
+- **Durability**: 11 nines (0.000000001% annual data loss probability) via geo-redundant storage
+- **Concurrency**: 100 simultaneous editors on a popular Google Doc
 
 ---
 
-## Why This Is Hard
+## Core Entities
 
-1. **Chunked uploads and deduplication**: Large files must be split into chunks and reassembled. The same chunk appearing in two different files (e.g., a shared template) should be stored only once. This requires content-addressed storage (SHA-256 per chunk), which has privacy implications — you can detect if someone uploaded a file you also have, without seeing the content.
-2. **Conflict resolution**: When two devices edit the same file without syncing, you have a fork. Last-write-wins loses data. Operational Transformation (Google Docs) requires a central authority. For non-collaborative files, creating a "conflict copy" is the pragmatic choice — but now you need to surface it to the user.
-3. **Real-time sync without polling**: A file updated on Device A must appear on Device B within seconds. HTTP polling wastes bandwidth. WebSockets require persistent connections from all devices. Choosing the right push mechanism at scale (1B users, many devices each) is non-trivial.
-4. **Metadata at exabyte scale**: 10 PB of metadata (filenames, folder structures, permissions) must be queryable with sub-100ms latency. Sharding by user_id keeps user data co-located but creates hotspots for highly active users. Cross-user queries (shared folders, search) require fanout across shards.
-5. **Storage tiering and cost**: Storing all files in hot storage (S3 Standard) costs too much. Files not accessed for 90+ days should tier automatically to cold storage (Glacier). But users expect instant access even to cold files — so you need transparent tiering with acceptable restore latency.
-
----
-
-## Requirements
-
-### Functional Requirements
-1. **Upload/Download files** (up to 15 GB per file)
-2. **Create folders** and organize files
-3. **Share files/folders** with permissions (view, edit)
-4. **Real-time sync** across devices
-5. **Version history** (restore previous versions)
-6. **Collaborative editing** (Google Docs-style)
-7. **Search** files by name, content, type
-8. **Trash** with 30-day retention
-
-### Non-Functional Requirements
-1. **High availability**: 99.9% uptime
-2. **Strong consistency**: Same view across devices (for metadata)
-3. **Scalability**: 1 billion users, exabytes of data
-4. **Reliability**: No data loss (11 nines durability via S3)
-5. **Low latency**: < 100ms for metadata operations
-6. **Bandwidth efficiency**: Delta sync, compression, deduplication
+| Entity | Key Fields |
+|--------|-----------|
+| `File` | file_id, owner_id, name, mime_type, size, parent_folder_id, created_at, modified_at |
+| `FileContent` | file_id, version, chunk_ids[], gcs_path, sha256 |
+| `Permission` | file_id, principal (user/group/anyone), role (viewer/commenter/editor) |
+| `Folder` | folder_id, owner_id, name, parent_folder_id |
+| `DocumentRevision` | doc_id, revision_id, ops[] (for Docs/Sheets — OT operations) |
 
 ---
 
-## Capacity Estimation
+## API Design
 
-### User & Storage Estimates
-- **Total users**: 1 billion
-- **Free tier**: 15 GB/user
-- **Paid tier** (10%): 100 GB/user average
-- **Total storage**:
-  - Free: 900M × 15 GB = 13.5 EB
-  - Paid: 100M × 100 GB = 10 EB
-  - **Total**: ~23.5 exabytes
+```http
+POST /api/v1/files/upload
+Headers: Content-Type: multipart/form-data
+Body: { file_data, "parent_folder_id": "f123", "name": "report.pdf" }
+Response 201: { "file_id": "fi456", "size": 2097152, "version": 1 }
 
-### Traffic Estimates
-- **DAU**: 200 million
-- **Files uploaded per user/day**: 5 files
-- **Average file size**: 2 MB
-- **Daily uploads**: 200M × 5 × 2 MB = **2 PB/day**
-- **Upload QPS (peak)**: 200M × 5 / 86,400 × 3 = **~35K uploads/sec**
+GET /api/v1/files/{file_id}/download
+Response 302: redirect to presigned GCS URL
 
-### Metadata Estimates
-- **Files per user**: 10,000 files
-- **Metadata size**: 1 KB per file
-- **Total metadata**: 1B users × 10K files × 1 KB = **10 PB**
+POST /api/v1/files/{file_id}/permissions
+Body: { "email": "alice@example.com", "role": "editor" }
+Response 200: { "permission_id": "p789" }
 
----
+GET /api/v1/files/{file_id}/revisions
+Response 200: { "revisions": [{ "revision_id": "r3", "modified_at": "...", "modified_by": "..." }] }
 
-## High-Level Architecture
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                        Clients                           │
-│  Desktop App    Mobile App    Web Browser                │
-└──────────────────────────┬───────────────────────────────┘
-                           │ HTTPS / WSS
-                           ▼
-                    ┌─────────────┐
-                    │ Load Balancer│
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │ API Gateway │ (Auth, Rate Limiting, TLS)
-                    └──────┬──────┘
-                           │
-         ┌─────────────────┼─────────────────┐
-         ▼                 ▼                 ▼
-  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-  │ File Service│  │ Sync Service│  │Share Service│
-  └──────┬──────┘  └──────┬──────┘  └─────────────┘
-         │                │ WebSocket
-         │                ▼
-         │         ┌─────────────┐   ┌─────────────┐
-         │         │ WebSocket   │◀──│    Kafka    │
-         │         │ Server      │   │  (Pub/Sub)  │
-         │         └─────────────┘   └─────────────┘
-         │
-         ├──────────────────┐
-         ▼                  ▼
-  ┌─────────────┐    ┌─────────────┐
-  │Chunk Service│    │  PostgreSQL  │ (Metadata: files, folders, perms)
-  │(Dedup)      │    │  + Redis    │ (Hot metadata cache)
-  └──────┬──────┘    └─────────────┘
-         │
-         ▼
-  ┌─────────────┐
-  │  S3 / Blob  │ (File chunks — 23 EB)
-  │   Storage   │
-  └─────────────┘
-
-Background Workers:
-  VersionWorker | ThumbnailGenerator | VirusScanner | SearchIndexer
+GET /api/v1/search?q=budget+2026&type=spreadsheet
+Response 200: { "files": [...] }
 ```
 
 ---
 
-## Core Components
-
-### 1. File Upload Flow with Chunking
+## High-Level Design
 
 ```
-Client-side (before upload):
-1. Split file into 4 MB chunks.
-2. Calculate SHA-256 hash for each chunk.
-3. Send chunk hashes to File Service (check deduplication).
+User (browser / mobile)
+  │
+  ▼
+API Gateway + Auth
+  │
+  ├── File Service
+  │     Upload: chunked → GCS (Google Cloud Storage)
+  │     Metadata: PostgreSQL (file tree, permissions, versions)
+  │     Download: redirect to presigned GCS URL
+  │
+  ├── Collaboration Service (for Docs/Sheets)
+  │     WebSocket connections per document
+  │     Operational Transformation (OT) server
+  │     Stores ops in Spanner; merges concurrent edits
+  │
+  ├── Search Service
+  │     Elasticsearch: file names, metadata
+  │     Content extraction: PDF/Office parser → full-text index
+  │
+  └── Notification Service
+        Kafka: file-change-events → notify collaborators
 
-For each chunk:
-  GET /chunks/exists?hash={sha256}
-  → If exists: Skip upload (server already has it — deduplication hit!)
-  → If missing: POST /chunks/{hash} with chunk data → stored to S3
-
-Final commit:
-POST /files {name, parent_folder_id, chunk_list: [{hash, index}]}
-→ File Service inserts file metadata + triggers sync event
+Storage:
+  GCS: file content (chunked, geo-redundant, 11 nines durability)
+  PostgreSQL: file metadata, folder tree, permissions, version history
+  Spanner: document revision history (globally consistent)
+  Elasticsearch: search index
 ```
 
-**Chunking Benefits:**
-- Resume uploads: Re-upload only failed chunks
-- Bandwidth efficiency: Skip unchanged chunks on re-upload
-- Deduplication: Same chunk stored once regardless of how many files reference it
-- Parallelization: Upload all chunks simultaneously (up to 10 parallel connections)
+---
 
-**Chunk Schema (PostgreSQL):**
+## Deep Dive 1: Chunked Upload for Large Files
+
+**Problem**: A user uploads a 5 GB video file. On a mobile connection, this upload may be interrupted midway. Restarting from scratch wastes bandwidth.
+
+**Resumable upload protocol**:
+
+1. **Initiate**: `POST /upload/initiate` → returns `upload_id`
+2. **Upload chunks**: Client splits file into 5 MB chunks; uploads each with byte range header
+   ```http
+   PUT /upload/{upload_id}
+   Content-Range: bytes 0-5242879/5368709120
+   Content-Length: 5242880
+   Body: <chunk data>
+   Response 200: { "received_bytes": 5242880 }
+   ```
+3. **Resume**: Client queries `GET /upload/{upload_id}/status` → `{ "received_bytes": 10485760 }` → resumes from that offset
+4. **Complete**: Final chunk returns 201 Created with the file metadata
+
+**GCS storage**: Each chunk is stored as a GCS object. After all chunks are uploaded, GCS composes them into a single object (server-side — no re-download). Chunked composition is atomic.
+
+**Content deduplication**: Before storing, compute SHA-256 of each chunk. If an identical chunk exists (same SHA-256), skip upload — reuse the existing GCS object. Effective for files with lots of padding or standard headers.
+
+---
+
+## Deep Dive 2: Real-Time Collaboration with OT
+
+**Problem**: Alice and Bob simultaneously edit "Project Plan.docx". Alice inserts "urgent" at position 10; Bob deletes the character at position 10. Applied naively, one edit will corrupt the other. How do you merge concurrent edits?
+
+**Operational Transformation (OT)**:
+- Every edit is an operation: `{ type: "insert", position: 10, text: "urgent" }` or `{ type: "delete", position: 10, count: 1 }`
+- The OT server receives operations from all clients, assigns a global sequence number, and transforms concurrent operations against each other before applying
+
+**Transform function** (Insert vs Delete):
+```python
+def transform_insert_against_delete(op_insert, op_delete):
+    # If insert position is after the delete, shift insert left
+    if op_insert.position > op_delete.position:
+        op_insert.position -= op_delete.count
+    return op_insert
+```
+
+**Server-side state machine**:
+```
+Client A sends: Op(seq=5, insert at 10, "urgent")
+Server has processed up to seq=6 (Bob's delete at 10)
+Server transforms Op_A against ops 5..6 → adjusted_position = 9
+Server applies adjusted op → assigns seq=7
+Server broadcasts seq=7 to all clients including B
+```
+
+**Client-side**: Each client maintains a local copy. Operations are applied immediately locally for responsiveness (optimistic). Server reconciliation arrives within 100ms and may reorder operations. Client transforms buffered local ops against server ops.
+
+---
+
+## Deep Dive 3: Permissions and Sharing
+
+**Problem**: A folder is shared with a team. The team's membership changes. How do you ensure permissions are checked efficiently without a slow recursive lookup on every file access?
+
+**Permission inheritance**: Files inherit permissions from their parent folder. The permission model is:
+- Explicit permissions on a file override inherited permissions
+- Effective role = max(explicit role, inherited role) — editors > commenters > viewers
+
+**Permission table** (PostgreSQL):
 ```sql
-CREATE TABLE chunks (
-    chunk_hash BYTEA PRIMARY KEY,  -- SHA-256 (32 bytes)
-    s3_key     VARCHAR(500) NOT NULL,
-    size_bytes BIGINT,
-    ref_count  INT DEFAULT 1  -- Incremented when another file references this chunk
-);
-
-CREATE TABLE file_chunks (
-    file_id      UUID,
-    chunk_index  INT,
-    chunk_hash   BYTEA REFERENCES chunks(chunk_hash),
-    PRIMARY KEY (file_id, chunk_index)
-);
-```
-
-**Deduplication privacy concern**: Content-addressed storage leaks whether two users have identical files. Mitigations: disable cross-user deduplication (store per-user copies), or use convergent encryption (deterministic encryption per chunk so deduplication still works but content is opaque).
-
----
-
-### 2. Metadata Database Schema
-
-```sql
-CREATE TABLE users (
-    user_id          BIGINT PRIMARY KEY,
-    email            VARCHAR(255) UNIQUE,
-    storage_quota_gb INT DEFAULT 15,
-    storage_used_bytes BIGINT DEFAULT 0
-);
-
-CREATE TABLE files (
-    file_id          UUID PRIMARY KEY,
-    owner_id         BIGINT REFERENCES users(user_id),
-    parent_folder_id UUID REFERENCES files(file_id),
-    name             VARCHAR(255) NOT NULL,
-    file_type        VARCHAR(50),
-    size_bytes       BIGINT,
-    is_directory     BOOLEAN DEFAULT FALSE,
-    created_at       TIMESTAMP DEFAULT NOW(),
-    modified_at      TIMESTAMP DEFAULT NOW(),
-    is_deleted       BOOLEAN DEFAULT FALSE,
-    version          INT DEFAULT 1,
-    INDEX idx_parent_owner (parent_folder_id, owner_id),
-    INDEX idx_modified (modified_at)
-);
-
-CREATE TABLE file_versions (
-    version_id     UUID PRIMARY KEY,
-    file_id        UUID REFERENCES files(file_id),
-    version_number INT,
-    chunk_list     JSONB,     -- [{chunk_hash, chunk_index}]
-    size_bytes     BIGINT,
-    created_at     TIMESTAMP DEFAULT NOW()
-);
-
 CREATE TABLE permissions (
-    permission_id   UUID PRIMARY KEY,
-    file_id         UUID REFERENCES files(file_id),
-    user_id         BIGINT REFERENCES users(user_id),
-    permission_type ENUM('view', 'edit', 'owner'),
-    granted_by      BIGINT,
-    granted_at      TIMESTAMP DEFAULT NOW(),
-    UNIQUE(file_id, user_id)
+  file_id text,
+  principal_type text,  -- user, group, domain, anyone
+  principal_id text,
+  role text,            -- viewer, commenter, editor, owner
+  can_share bool,
+  PRIMARY KEY (file_id, principal_type, principal_id)
 );
 ```
 
----
+**Efficient access check**: On every file open, check:
+1. Is the file's `owner_id` the current user? → allow
+2. Is there an explicit permission row for `(file_id, user_id)`?
+3. Is there a permission for any group the user belongs to?
+4. Walk up the folder tree: same checks for each ancestor folder
 
-### 3. Real-Time Sync Protocol
+**Caching**: Cache user's effective permission per file in Redis (`perm:{user_id}:{file_id}` → role, TTL 5 min). Invalidated when any permission on the file or ancestor folder changes.
 
-```
-Sync flow (Device A edits file, Device B should see update):
-
-Device A uploads changes
-  → File Service updates metadata in PostgreSQL
-  → File Service publishes event to Kafka:
-    { user_id: 123, file_id: "abc", version: 5, event: "file_modified" }
-
-Kafka → Sync Service (WebSocket server for this user's sessions)
-  → Sync Service pushes to all connected devices for user 123:
-    { type: "file_modified", fileId: "abc", version: 5 }
-
-Device B receives event:
-  → Compares local version (3) with remote version (5)
-  → Fetches file metadata: GET /files/abc
-  → Downloads only changed chunks (delta sync)
-  → Reconstructs updated file
-```
-
-**WebSocket Events:**
-```json
-{
-  "type": "file_modified",
-  "fileId": "abc123",
-  "version": 5,
-  "timestamp": 1644444444,
-  "modifiedBy": "user456"
-}
-```
-
-**Conflict Resolution:**
-```java
-public void resolveConflict(int localVersion, int remoteVersion,
-                             long localModified, long remoteModified) {
-    if (localVersion < remoteVersion) {
-        // Remote is newer, pull remote changes
-        downloadFile();
-    } else if (localVersion > remoteVersion) {
-        // Local is newer (offline edits), push to server
-        uploadFile();
-    } else {
-        // Same version number but both were modified (true conflict)
-        if (localModified > remoteModified) {
-            // Both survive: create a conflict copy
-            createConflictCopy();  // Creates "proposal (Conflict Copy 2026-05-12).docx"
-        }
-    }
-}
-```
-
-**When to create a conflict copy vs. auto-merge:**
-- Plain text files (code): Auto-merge via 3-way diff if feasible.
-- Binary files (Word, PDF): Create conflict copy — cannot auto-merge.
-- Google Docs format: Use CRDT/OT for real-time collaborative resolution.
+**Sharing links**: Generate `share_token` (256-bit random). Store in permissions table as `principal_type=link, principal_id=sha256(token)`. Anyone with the link makes requests with `?token=...`; server looks up permission by token hash.
 
 ---
 
-### 4. Delta Sync (Bandwidth Optimization)
-
-**rsync-style algorithm:**
-```java
-public Delta computeDelta(File localFile, File remoteFile) {
-    // Client sends rolling hash signatures for local chunks
-    List<ChunkSignature> localSignatures = localFile.getChunks().stream()
-        .map(chunk -> new ChunkSignature(chunk.getIndex(), chunk.getHash()))
-        .collect(toList());
-
-    // Server compares local signatures against remote version
-    List<ChunkDelta> delta = new ArrayList<>();
-    for (Chunk chunk : remoteFile.getChunks()) {
-        if (!localSignatures.contains(chunk.getHash())) {
-            // This chunk is new or changed — include in delta
-            delta.add(new ChunkDelta(chunk.getIndex(), chunk.getData()));
-        }
-        // Matching chunks are skipped — client already has them
-    }
-
-    return new Delta(delta);  // Client downloads only the delta
-}
-```
-
-**Impact**: Reduces bandwidth by 80%+ for small edits to large files (e.g., appending to a 1GB document).
-
----
-
-### 5. File Sharing & Permissions
-
-**Share Link Schema:**
-```sql
-CREATE TABLE share_links (
-    link_id        UUID PRIMARY KEY,
-    file_id        UUID REFERENCES files(file_id),
-    created_by     BIGINT,
-    token          VARCHAR(64) UNIQUE,  -- Cryptographically random token
-    permission     ENUM('view', 'edit'),
-    expires_at     TIMESTAMP,
-    password_hash  VARCHAR(255),        -- Optional password protection
-    created_at     TIMESTAMP DEFAULT NOW()
-);
-```
-
-**Access Control (with folder permission inheritance):**
-```java
-public boolean checkAccess(long userId, String fileId, String action) {
-    // Check direct permission on this file
-    Permission perm = db.query(
-        "SELECT permission_type FROM permissions WHERE user_id = ? AND file_id = ?",
-        userId, fileId
-    );
-
-    if (perm != null && perm.can(action)) {
-        return true;
-    }
-
-    // Inherit permission from parent folder (recursive)
-    String parent = getParentFolder(fileId);
-    if (parent != null) {
-        return checkAccess(userId, parent, action);  // Walk up folder tree
-    }
-
-    return false;  // No access found
-}
-```
-
-**Performance concern**: Recursive permission checking per request is expensive on deep folder trees. Mitigations: cache permissions in Redis (TTL 60s), materialize effective permissions in a denormalized table.
-
----
-
-### 6. Version Control
-
-**Version Retention Policy:**
-- **Last 30 days**: Keep all versions
-- **30-90 days**: Keep weekly snapshots
-- **90+ days**: Keep monthly snapshots
-- **Manually pinned versions**: Kept indefinitely
-
-**Storage Optimization (Copy-on-Write):**
-```
-Version 1: [chunk_A, chunk_B, chunk_C]
-User edits only middle section:
-Version 2: [chunk_A, chunk_B_new, chunk_C]
-            ↑ shared   ↑ new chunk   ↑ shared
-
-Storage cost of V2 = only chunk_B_new (not full file copy)
-```
-
-**Garbage Collection:**
-```sql
--- Find chunks with ref_count = 0 (no file version references them)
--- Run nightly; delete from S3 and chunks table
-DELETE FROM chunks WHERE ref_count = 0 AND created_at < NOW() - INTERVAL '7 days';
-```
-
----
-
-## Advanced Features
-
-### 1. Collaborative Editing (Google Docs)
-
-Real-time collaborative editing requires a different model than file sync — the granularity is individual keystrokes, not file versions.
-
-**Operational Transformation (OT):**
-```
-User 1: insert "Hello" at position 0
-User 2: insert "World" at position 0 (concurrent)
-
-Without OT: Both operations apply at position 0 → "WorldHello" (wrong order)
-With OT:    User 2's operation is transformed: insert "World" at position 5
-            → Result: "Hello World" (correct)
-```
-
-**CRDT (Conflict-free Replicated Data Types):**
-- Yjs library: Each character has a globally unique ID. Merge is deterministic regardless of operation order.
-- No central authority needed — peers can merge offline edits.
-- Used by Notion, Figma, Liveblocks.
-
-**For Google Drive file sync** (not Google Docs): Use version numbers + conflict copies. No need for OT/CRDT at the file level.
-
-### 2. Full-Text Search (Elasticsearch)
-
-**Index Schema:**
-```json
-{
-  "mappings": {
-    "properties": {
-      "file_id":    {"type": "keyword"},
-      "name":       {"type": "text"},
-      "content":    {"type": "text"},    // Extracted from PDF, DOCX
-      "file_type":  {"type": "keyword"},
-      "owner_id":   {"type": "keyword"},
-      "shared_with": {"type": "keyword"}, // For permission-aware search
-      "modified_at": {"type": "date"}
-    }
-  }
-}
-```
-
-**Content Extraction Pipeline (async):**
-```
-File uploaded → Kafka event → Content Extractor worker:
-- PDF: Apache Tika
-- DOCX/XLSX: Apache POI
-- Images: Tesseract OCR
-- ZIP: Recursively extract and index contents
-
-Extracted text → Elasticsearch index
-```
-
-### 3. Trash & Recovery
-
-```sql
-CREATE TABLE trash (
-    trash_id         UUID PRIMARY KEY,
-    file_id          UUID,
-    original_parent_id UUID,
-    deleted_by       BIGINT,
-    deleted_at       TIMESTAMP DEFAULT NOW(),
-    auto_delete_at   TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days')
-);
-
--- Cron job: Permanently delete files after 30 days
--- 1. Delete chunks with ref_count = 0 from S3
--- 2. Remove file_versions, file_chunks, permissions
--- 3. Remove from trash table
-DELETE FROM trash WHERE auto_delete_at < NOW();
-```
-
----
-
-## Scalability Strategies
-
-### 1. Database Sharding
-
-**Metadata sharding by user_id:**
-```
-Shard 0: user_id % 10 = 0  (contains all files owned by these users)
-Shard 1: user_id % 10 = 1
-...
-
-Benefit: User's entire folder tree co-located on one shard → fast folder listing
-Challenge: Shared files (cross-user permission lookups) require fanout to multiple shards
-Solution: Denormalize shared file metadata into recipient's shard on share event
-```
-
-### 2. CDN for Downloads
-
-```
-Popular files cached at edge CDN (CloudFront / Fastly):
-- Files accessed > N times in 24 hours → promoted to CDN cache
-- Signed URLs: Time-limited S3 URLs (expire in 15 min)
-  - Client requests download URL from File Service
-  - File Service generates signed URL: s3.generatePresignedUrl(s3_key, ttl=900s)
-  - Client downloads directly from S3/CDN (bypasses application servers)
-```
-
-### 3. S3 Storage Tiers
-
-```
-Hot files (accessed < 30 days old):   S3 Standard          ($0.023/GB/month)
-Warm files (30-90 days):              S3 Intelligent-Tiering (auto-tiers)
-Cold files (90+ days, infrequent):    S3 Glacier Instant    ($0.004/GB/month)
-Archive (>1 year, very infrequent):   S3 Glacier Deep       ($0.00099/GB/month)
-
-Transparent to user: File Service handles tier resolution and restore requests.
-Restore from Glacier: 1-5 minutes (Instant Retrieval) vs 3-5 hours (Flexible).
-```
-
----
-
-## Failure Scenarios
-
-### Upload Interrupted Mid-Chunk
-```
-Scenario: Client uploads chunks 0-5 of a 20-chunk file, then connection drops.
-
-Recovery:
-- Client stores uploaded chunk hashes in local DB.
-- On resume: GET /files/{upload_id}/status → server returns uploaded chunks.
-- Client resumes from chunk 6.
-
-Server-side: Multipart upload ID tracks partial upload state.
-Cleanup: Abort incomplete multipart uploads after 7 days (S3 lifecycle policy).
-```
-
-### Sync Conflict at Scale
-```
-Scenario: User edits file on mobile (offline), desktop (offline), then both reconnect.
-
-Effect: Two versions of the file, both claiming to be v3 from v2.
-
-Resolution:
-- Whichever sync arrives first claims v3.
-- Second sync detects version conflict (expected v2, found v3).
-- Creates "filename (Conflict Copy 2026-05-12).docx" for the second version.
-- Both versions preserved. User notified in UI.
-```
-
-### Metadata DB Failure
-```
-Impact: Cannot list files, create folders, or start new uploads.
-Recovery:
-- PostgreSQL synchronous standby with automatic failover (Patroni).
-- RTO < 2 min, RPO = 0.
-- During failover: Read-only mode (downloads from S3 still work via cached signed URLs).
-```
-
-### S3 Region Outage
-```
-Impact: New uploads fail; downloads of non-cached files fail.
-Recovery:
-- Multi-region S3 replication (Cross-Region Replication).
-- Route53 health checks fail over to replica region.
-- Trade-off: replication lag ~seconds; very recent uploads may not be in replica.
-```
-
----
-
-## Trade-offs
-
-| Aspect | Choice | Trade-off |
-|--------|--------|-----------|
-| **Chunking** | 4 MB chunks | Smaller = more deduplication; larger = less overhead per chunk |
-| **Consistency** | Strong (PostgreSQL metadata) | Higher latency vs. eventual (but users expect files to "just be there") |
-| **Sync** | WebSocket push | Persistent connection overhead vs. polling latency |
-| **Deduplication** | Hash-based (SHA-256) | Storage savings vs. potential content inference across users |
-| **Conflict resolution** | Conflict copy for binary, merge for text | Safest for binary; loses last-write-wins simplicity |
-
----
-
-## Interview Talking Points
-
-**Q: How to handle large files (100 GB+)?**
-- A: "Multipart upload: split into 4MB chunks, upload in parallel (up to 10 concurrent chunks), commit when all are received. Resume via stored chunk manifest on client side — re-upload only failed chunks. Bandwidth throttling via client-side rate limiting prevents one upload from saturating the connection for other operations."
-
-**Q: Preventing data loss?**
-- A: "Three layers: (1) S3 11-nines durability via cross-AZ storage; (2) versioning — every file edit creates a new version (no destructive updates to chunk storage); (3) cross-region replication for disaster recovery. The immutable chunk store (content-addressed) means a deleted file is just a metadata delete — chunks persist until garbage collection removes unreferenced ones."
-
-**Q: Optimizing for mobile devices?**
-- A: "Selective sync: user chooses which folders to sync locally vs. cloud-only. Photo backup: queue uploads for WiFi-only, compress before upload. Thumbnail generation: serve 200KB thumbnail from CDN instead of 5MB original. Delta sync: on re-upload, send only changed chunks. Offline mode: cache recently accessed files locally with SQLite metadata store."
-
-**Q: How do you handle the 10 PB metadata problem?**
-- A: "Shard PostgreSQL by user_id. Each user's folder tree lives on one shard — all folder listing queries are single-shard. For shared files (cross-user), denormalize: when User A shares a file with User B, write a lightweight metadata record to User B's shard pointing at the canonical file_id. Permissions check still requires looking up User A's shard, but folder listing for User B is fast."
-
----
-
-## Interview Questions Asked
-
-### Google
-1. **"Design Google Drive"** → Probe: file chunking, deduplication, sync protocol, metadata scalability. Hint: content-defined chunking (Rabin fingerprint) finds natural break points so edits don't shift all chunk boundaries; SHA-256 hash per chunk enables cross-user deduplication without revealing content.
-
-### Dropbox
-1. **"Design the Dropbox sync client"** → Probe: how client detects changes and minimizes bandwidth. Hint: client watches filesystem events (inotify/FSEvents), computes chunked hashes locally, uploads only delta chunks that changed; rsync-style rolling checksum for diff detection.
-
-### Common Follow-ups
-1. **"How does content-defined chunking differ from fixed-size chunking?"** → Fixed chunks shift on insert/delete causing all downstream chunks to look "changed"; content-defined (Rabin) finds split points based on content so only the edited region produces new chunks.
-2. **"Two users upload the identical 2GB file — do you store it twice?"** → No: SHA-256 hash of each chunk is the storage key; second upload finds all chunks already present and just creates a new metadata record pointing at existing chunk IDs (deduplication at chunk granularity).
-3. **"User edits a doc offline on laptop and phone simultaneously — how do you resolve the conflict?"** → On sync, detect version vector divergence; for binary files create a conflict copy (safe, no data loss); for text files attempt 3-way merge using common ancestor version; surface conflict to user if merge fails.
-4. **"How do you do bandwidth-efficient delta sync?"** → Client stores chunk hashes of last-synced version; on next sync, diff local hashes vs server manifest; upload only chunks whose hash changed — typically <5% of file for small edits.
-5. **"How do you handle a file larger than 100GB?"** → Multipart upload: 4MB chunks uploaded in parallel (up to 10 concurrent); server commits only after receiving manifest confirming all chunk ETags; client stores upload-session ID so interrupted uploads resume from last successful chunk.
+## Interviewer Questions by Level
+
+**Junior**:
+- How do you store 15 GB of files for 1B users? What storage backend would you use?
+- What is file sharing? What's the difference between a view and an edit permission?
+- Why is resumable upload important for large files?
+
+**Mid-level**:
+- How does chunked upload work? How does a client resume after an interrupted upload?
+- How do you implement permission inheritance (file inherits permissions from parent folder)?
+- How does content deduplication reduce storage costs?
+
+**Senior**:
+- Design the real-time collaboration system for Google Docs — how does OT prevent conflicting edits from corrupting the document?
+- How do you check permissions efficiently for a deeply nested folder structure with group memberships?
+- Design the version history system — how do you store 30 days of revision history for 15 EB of files without tripling storage costs?
+- How do you implement cross-organizational sharing (Alice at Company A shares a file with Bob at Company B)?

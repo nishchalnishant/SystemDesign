@@ -2,147 +2,50 @@
 module: 05-hld-problems
 topic: Medium
 status: unread
-tags: [05-hld-problems, system-design, medium]
+tags: [05-hld-problems, system-design, medium, twitter, news-feed, fan-out, timeline, social]
 ---
-# Design Twitter/News Feed
+# Design Twitter / News Feed
 
-> **Difficulty**: Medium
-> **Topics**: Fan-out, Timeline Generation, Caching, Redis
-> **Time**: 60 minutes
-> **Companies**: Meta, Twitter, LinkedIn, Instagram
+> **Difficulty**: Medium | **Asked at**: Twitter, Meta, LinkedIn, Google
 
 ---
 
-## Problem Mindmap
+## Problem Statement
 
-```
-Twitter/News Feed
-├── Problem Constraints
-│   ├── Scale → 500M DAU, 12K tweets/sec write, 60K feed views/sec read, 1.8T tweets/5yr storage
-│   ├── Latency target → feed load < 200ms p99; tweet publish < 500ms
-│   └── Core hardness → serving pre-built feeds at 60K QPS while handling celebrities with 100M+ followers
-├── Architecture Derivation
-│   ├── Step 1 → Pull model: query all followees on feed load → N DB queries per user = unusable at 500M DAU
-│   ├── Step 2 → Fan-out on write: push tweet to all followers' Redis feed caches → works for normal users
-│   ├── Step 3 → Celebrity problem: fan-out for 100M followers × 12K tweets/sec = impossible in real-time
-│   └── Step 4 → Hybrid: < 10K followers = fan-out on write (Kafka→Redis ZADD); ≥ 10K = fan-out on read (merge at view time)
-├── Core Components
-│   ├── Tweet Service → writes tweet to PostgreSQL; publishes to Kafka topic "tweets"
-│   ├── Fan-out Worker → Kafka consumer; fetches follower list; ZADD into each follower's Redis feed ZSET (score=timestamp)
-│   ├── Feed Redis → per-user sorted set: ZSET "feed:{user_id}" → {tweet_id: timestamp}; top-200 tweets; TTL 7 days
-│   ├── Timeline Service → ZREVRANGE feed:{user_id} for regular users; merge with celebrity pull for hybrid users
-│   └── Social Graph DB → (user_id, followee_id) indexed on both; sharded by user_id; read replica for fan-out lookups
-├── Data Model
-│   ├── tweets → (tweet_id BIGINT PK, user_id, content, media_urls[], created_at, retweet_count, like_count)
-│   └── user_feed Redis ZSET → member: tweet_id, score: unix_timestamp_ms; ZREVRANGE fetches latest first
-├── APIs
-│   ├── POST /tweet → {content, media?, reply_to?} → {tweet_id}
-│   ├── GET /feed → {cursor?} → [{tweet_id, user_id, content, created_at, ...}] (paginated via cursor)
-│   └── GET /tweet/{tweet_id}/replies → paginated reply thread
-├── Critical Trade-offs
-│   ├── Fan-out on write vs read → hybrid chosen; write for normal users (fast reads); read for celebrities (avoids O(100M) fan-out)
-│   ├── Feed depth limit → only store top-200 tweets per user in Redis; older tweets fetched from DB on scroll
-│   └── Consistency → eventual: fan-out workers may lag 1-2 sec; tweet appears in followers' feeds with slight delay
-├── Failure Scenarios
-│   ├── Fan-out worker lag → Kafka consumer lag visible; tweets arrive late but never lost; consumers auto-scale
-│   ├── Redis feed evicted → rebuild from tweet DB on cache miss; user sees slight delay on first load
-│   └── Hot celebrity tweet → fan-out skipped (≥10K followers threshold); timeline service merges at read time
-└── Interview Angles
-    ├── Twitter/X → "Design the Twitter timeline" → hybrid fan-out with celebrity threshold is the key insight
-    ├── LinkedIn → "Design LinkedIn feed" → same fan-out; weight by connection degree + content relevance score
-    └── Follow-up → "How does ranked feed work?" → ML ranking model scores tweet_id list in Redis; re-ranks before return
-```
+Design a Twitter-like social platform where users post tweets (text + media, up to 280 chars), follow other users, and see a feed (timeline) of tweets from accounts they follow. The system must handle celebrity accounts with millions of followers and serve personalized timelines at millisecond latency.
 
 ---
 
-## What Breaks Without This System
+## Functional Requirements
 
-Your social network launches with a simple news feed: when a user opens the app, you query the database for every person they follow, fetch the latest tweets from each, merge-sort by timestamp, and return the first 20. It works perfectly with 10,000 users.
-
-At 500M DAU, each user follows 200 people on average. A single feed load requires 200 DB queries, returning ~50 tweets each, then merge-sorting 10,000 rows in memory. Feed load QPS: 60K views/sec × 200 queries = **12 million DB queries/second** — against a PostgreSQL cluster that can handle ~50K queries/sec. The database falls over instantly. P99 feed load time: 8 seconds instead of 200ms.
-
-You flip to the opposite approach: fan-out on write. Every tweet is pushed into each follower's Redis feed cache at write time. Feed reads become O(1) Redis `ZRANGE`. But Cristiano Ronaldo (600M followers) posts a tweet. Your Kafka fan-out workers need to write to 600M Redis keys in ~30 seconds (before the next tweet arrives). At 50µs per Redis write, that's 600M × 50µs = **8.3 hours** of Redis write time, serialized per tweet. The fan-out queue falls hours behind reality. Followers see stale feeds.
-
-Both extremes break. The system requires a hybrid model, and deriving it from the failure modes is the only way to understand why the 10K-follower threshold exists.
-
----
-
-## Derive the Architecture
-
-**Start with fan-out on read (pull model):** On feed load, query DB for all followed users' tweets. Works at small scale.
-
-**What breaks at 60K feed views/sec?** Each view requires 200 DB queries → 12M QPS to the tweet DB. A sharded PostgreSQL cluster handles ~500K QPS total; 12M is 24× its capacity. P99 latency: seconds. **Fix: Redis feed cache.** Pre-compute each user's feed as a Redis Sorted Set (tweet_id by timestamp). `ZRANGE feed:{userId} 0 19 REV` = one Redis command instead of 200 DB queries.
-
-**What breaks when you need to populate those Redis caches?** On every tweet, fan out to all follower Redis keys. At 12K tweets/sec with average 200 followers: 12K × 200 = 2.4M Redis writes/sec. Redis Cluster handles ~5M commands/sec — manageable. Use a Kafka `fan-out` topic: tweet event → Kafka → fan-out workers → write to follower feed caches in parallel.
-
-**What breaks for a celebrity with 100M followers?** 1 tweet → 100M Redis writes. At 50µs per write, that's 5,000 CPU-seconds of work. Even with 100 fan-out workers in parallel, it takes 50 seconds. Cristiano Ronaldo tweets every few minutes; the queue never drains. **Fix: hybrid model with 10K follower threshold.** Users with < 10K followers use fan-out on write (their tweets are fanned out into follower caches immediately). Users with ≥ 10K followers ("celebrities") use fan-out on read: their tweets are NOT pre-pushed to followers' caches. Instead, at feed-read time, the Feed Service fetches the last 20 tweets from each followed celebrity directly (O(1) Redis lookup on the celebrity's own tweet list) and merges them with the pre-built cache for non-celebrity follows.
-
-**What breaks with merge at read time?** The Feed Service must merge celebrity tweets (fetched live) with the pre-built fan-out feed (from Redis cache). Merge-sorting two lists of 20 is trivial — O(40 log 40). The number of celebrities a user follows is small (most users follow < 10 celebrities). Total read-time work: fetch ~10 celebrity tweet lists + 1 ZRANGE on pre-built cache + merge = ~11 Redis commands. P99 feed load: ~5ms.
-
-**What breaks when a regular user posts their first tweet after being inactive?** The fan-out Kafka event fires asynchronously. The author queries their own feed immediately via read-your-own-writes. **Fix: write-through on the author's own cache** before enqueuing the fan-out event. The author sees their tweet instantly; followers see it within seconds as workers drain the queue.
-
-**Resulting architecture:**
-
-```
-Tweet POST → Tweet Service → Tweet DB (sharded by userId)
-                           → Kafka (fan-out topic)
-                           → author's own Redis feed cache (write-through, synchronous)
-
-Kafka fan-out workers:
-  if author.followerCount < 10K: write tweet to each follower's Redis feed:{userId} ZADD
-  if author.followerCount ≥ 10K: write tweet to celebrity's own tweet list only
-
-Feed GET → Feed Service
-         → ZRANGE feed:{userId} (pre-built cache from fan-out)
-         + for each celebrity followed: ZRANGE celebrity_tweets:{celebrityId} 0 19
-         → merge-sort in memory
-         → return top 20
-```
+1. **Post tweet**: Create a tweet (text, images, videos, polls)
+2. **Home timeline**: See tweets from followed accounts, ranked by recency or engagement
+3. **Follow/unfollow**: Directed follow graph
+4. **Retweet / Like / Reply**: Social engagement on tweets
+5. **Search**: Full-text search over tweets
+6. **Trends**: Top trending hashtags and topics in real time
 
 ---
 
-## Why This Is Hard
+## Non-Functional Requirements
 
-1. **The celebrity (hotspot) problem**: A celebrity with 100M followers posts one tweet. Naive fan-out = 100M writes to Redis in seconds. This overwhelms the write pipeline and creates hot shards in Redis.
-2. **Feed freshness vs. performance trade-off**: Pre-computed feeds (fan-out on write) are fast to read but expensive to update. On-demand feeds (fan-out on read) are cheap to write but require scanning hundreds of follows on every read.
-3. **Ordering across shards**: Tweets are stored across many DB shards. Generating a feed requires fetching from multiple shards and merge-sorting by timestamp. At 180K reads/sec, this merge-sort must be invisible.
-4. **Cache invalidation**: A user's feed cache becomes stale the moment anyone they follow tweets. At 12K tweets/sec across 500M users, you can't invalidate caches on every write — you'd evict the entire cache every second.
-5. **Read-your-own-writes**: After posting a tweet, users expect to see it in their own feed immediately. This requires careful cache write-through that doesn't require waiting for full fan-out to complete.
-
----
-
-## Scale
-
-- 1 billion users total
-- 500 million DAU (Daily Active Users)
-- Each user follows 200 people (average)
-- Each user posts 2 tweets/day on average
-- Each user views feed 10 times/day
+- **Scale**: 300M MAU, 500M tweets/day → 5,800 writes/sec; 50B timeline reads/day → 580K reads/sec
+- **Latency**: Timeline load < 200ms P99
+- **Availability**: 99.99% — timelines must load even if some services are degraded
+- **Consistency**: Eventual consistency for timeline (a new tweet may take a few seconds to appear in all followers' feeds)
+- **Fan-out**: A tweet from an account with 100M followers must not cause a 30-minute delay in delivery
 
 ---
 
-## Capacity Estimation
+## Core Entities
 
-```
-Write QPS (tweets):
-500M DAU × 2 tweets/day ÷ 86,400 sec = ~12K tweets/sec (average)
-Peak (3×): 36K tweets/sec
-
-Read QPS (feed views):
-500M DAU × 10 views/day ÷ 86,400 sec = ~60K views/sec
-Peak (3×): 180K views/sec
-
-Fan-out writes (regular users, avg 200 followers):
-12K tweets/sec × 200 followers = 2.4M Redis writes/sec
-This is why celebrities can't use fan-out on write.
-
-Storage (5 years):
-Daily tweets: 500M users × 2 = 1B tweets/day
-5 years: 1B × 365 × 5 = 1.8 trillion tweets
-Per tweet: 500 bytes (text + metadata)
-Total: 1.8T × 500B = 900 TB
-With replication (3×): 2.7 PB
-```
+| Entity | Key Fields |
+|--------|-----------|
+| `User` | user_id, username, follower_count, following_count, is_verified |
+| `Tweet` | tweet_id, user_id, text, media_urls[], created_at, like_count, retweet_count, reply_to_tweet_id |
+| `Follow` | follower_id, followee_id, created_at |
+| `Like` | user_id, tweet_id, created_at |
+| `Timeline` | user_id, tweet_id, score (denormalized, stored in Redis) |
 
 ---
 
@@ -150,348 +53,136 @@ With replication (3×): 2.7 PB
 
 ```http
 POST /api/v1/tweets
-{
-  "user_id": "user_123",
-  "content": "Hello Twitter!",
-  "media_urls": ["https://cdn.example.com/image.jpg"]
-}
-Response: 201 Created
-{
-  "tweet_id": "tweet_789",
-  "created_at": "2026-02-08T10:00:00Z"
+Body: { "text": "Hello world!", "media_ids": [], "reply_to": null }
+Response 201: { "tweet_id": "t123", "created_at": "...", "url": "https://x.com/user/t123" }
+
+GET /api/v1/timeline?user_id=u456&cursor=<tweet_id>&count=20
+Response 200: {
+  "tweets": [{ "tweet_id": "...", "text": "...", "user": {...}, "like_count": 500 }],
+  "next_cursor": "..."
 }
 
-GET /api/v1/feed?user_id=user_123&page=1&size=20
-Response: 200 OK
-{
-  "tweets": [
-    {
-      "tweet_id": "tweet_456",
-      "user_id": "user_789",
-      "username": "john_doe",
-      "content": "This is a tweet",
-      "created_at": "2026-02-08T10:00:00Z",
-      "likes": 42,
-      "retweets": 10
-    }
-  ],
-  "next_page": 2
-}
+POST /api/v1/tweets/{tweet_id}/likes
+Response 201: { "like_count": 501 }
 
-POST /api/v1/users/{user_id}/follow
-{
-  "target_user_id": "user_789"
-}
+POST /api/v1/tweets/{tweet_id}/retweets
+Response 201: { "retweet_count": 42 }
+
+GET /api/v1/search?q=systemdesign&filter=latest
+Response 200: { "tweets": [...] }
 ```
 
 ---
 
-## Database Schema
+## High-Level Design
 
-```sql
--- Users
-CREATE TABLE users (
-    user_id BIGINT PRIMARY KEY,
-    username VARCHAR(50) UNIQUE,
-    email VARCHAR(100),
-    follower_count INT DEFAULT 0,  -- Denormalized for fast celebrity checks
-    created_at TIMESTAMP
-);
+```
+Client
+  │
+  ▼
+API Gateway / Load Balancer
+  │
+  ├── Tweet Service → PostgreSQL (tweet storage, sharded by tweet_id)
+  │                → Kafka (tweet-created events)
+  │                → Elasticsearch (full-text search index)
+  │
+  ├── Timeline Service → Redis (precomputed timelines per user)
+  │                    → Fan-out Worker (consumes Kafka events)
+  │
+  ├── Follow Service → PostgreSQL (follow graph)
+  │                  → Redis (follower lists cache)
+  │
+  └── Engagement Service → Redis (like/retweet counts)
+                         → Cassandra (engagement records)
 
--- Tweets
-CREATE TABLE tweets (
-    tweet_id BIGINT PRIMARY KEY,   -- Snowflake ID (time-sortable)
-    user_id BIGINT,
-    content VARCHAR(280),
-    created_at TIMESTAMP,
-    INDEX idx_user_created (user_id, created_at DESC)
-);
-
--- Followers (bidirectional for feed generation)
-CREATE TABLE followers (
-    follower_id BIGINT,   -- Person doing the following
-    followee_id BIGINT,   -- Person being followed
-    created_at TIMESTAMP,
-    PRIMARY KEY (follower_id, followee_id),
-    INDEX idx_follower (follower_id),
-    INDEX idx_followee (followee_id)
-);
-
--- Timeline Cache in Redis:
--- Key: feed:user_123
--- Value: Sorted set of tweet IDs (score = timestamp)
--- redis.zadd("feed:user_123", {tweet_id: timestamp, ...})
--- TTL: 7 days
+Fan-out Worker (Kafka consumer):
+  On tweet-created:
+    - For regular users: push tweet_id to all followers' Redis timelines
+    - For celebrities: skip fan-out; pull on timeline read
 ```
 
 ---
 
-## Architecture
+## Deep Dive 1: Timeline Fan-Out — The Celebrity Problem
 
+**The problem**: Katy Perry has 100M followers. When she tweets, naive fan-out requires 100M Redis writes. At 1M writes/second, that's 100 seconds of fan-out — followers don't see the tweet for over a minute.
+
+**Twitter's hybrid fan-out**:
+
+**Regular users** (< ~100K followers): Fan-out on write. The fan-out worker reads the user's followers from Redis, pushes the tweet_id to each follower's Redis timeline sorted set. Fast writes enable fast reads.
+
+**Celebrity users** (> ~100K followers): Skip write-time fan-out. Instead, when a user opens their timeline:
+1. Fetch their precomputed timeline from Redis (contains tweets from non-celebrity follows)
+2. Fetch the latest tweets from celebrities they follow (direct DB read, limited to top 10 celebrities)
+3. Merge and rank both sets
+
+**Timeline storage** (Redis sorted set):
 ```
-          Client
-             ↓
-       Load Balancer
-             ↓
-    ┌────────┴────────┐
-    ↓                 ↓
-Timeline API      Tweet Write API
-    ↓                 ↓
-Redis Cache      Fan-out Service
-(Feed Cache)          ↓
-    ↓            Message Queue (Kafka)
-    ↓                 ↓
-PostgreSQL       Timeline Workers
-(Tweets DB)      (Update followers' feeds in Redis)
-                      ↓
-              Celebrity Resolver
-              (Skip fan-out for >10K followers)
+key: timeline:{user_id}
+member: tweet_id
+score: tweet_timestamp (Unix ms)
 ```
+`ZREVRANGE timeline:u456 0 19` returns the 20 most recent tweet IDs.
+
+**Celebrity identification**: A background job periodically marks accounts with > 100K followers as `is_celebrity = true`. Followed on follow/unfollow event: if a user follows a celebrity, add the celebrity to `celebrity_follows:{user_id}` Redis set. Timeline service reads this set to know which celebrities to fetch on read.
 
 ---
 
-## Fan-Out Approaches
+## Deep Dive 2: Tweet Storage and Sharding
 
-### Approach 1: Fan-Out on Write (Push Model)
+**Problem**: 500M tweets/day × 365 days × years of data = hundreds of billions of tweets. A single PostgreSQL instance cannot store this.
 
-When a user tweets, immediately push to all followers' timeline caches.
+**Sharding strategy**: Shard by `user_id`. All tweets from the same user go to the same shard. This enables efficient "user profile" queries (`SELECT * FROM tweets WHERE user_id = X ORDER BY created_at`).
 
-```
-1. User posts tweet
-2. Fan-out service: GET all follower IDs (SELECT follower_id FROM followers WHERE followee_id = ?)
-3. For each follower: redis.zadd("feed:{follower_id}", tweet_id, timestamp)
+**Snowflake tweet IDs**: Twitter uses time-ordered 64-bit IDs (Snowflake). High bits are timestamp, enabling range queries by creation time without a secondary index. Cursor-based pagination uses tweet_id as the cursor.
 
-Example:
-Normal user (200 followers) posts → 200 Redis writes → fast
-Celebrity (10M followers) posts → 10M Redis writes → catastrophic
-```
+**Timeline read for home page**: The timeline service retrieves tweet_ids from Redis, then fetches tweet content from the tweet service via batch lookup. The tweet service resolves tweet_ids to tweet objects and caches frequently read tweets in Redis (TTL = 1 hour).
 
-**Pros:** Read is O(1) — just fetch pre-computed feed from Redis
-**Cons:** Celebrity tweets cause write amplification proportional to follower count
-
-**When to use:** All users with < 10K followers
+**Cassandra as alternative**: Cassandra is better for append-only, time-series tweet data. Partition key: `user_id`, clustering key: `tweet_id DESC`. Each partition holds all tweets from one user, ordered newest-first. No sharding config needed — Cassandra handles distribution automatically.
 
 ---
 
-### Approach 2: Fan-Out on Read (Pull Model)
+## Deep Dive 3: Trending Topics and Real-Time Search
 
-When a user requests their feed, query all followed users' recent tweets on-demand.
+**Problem**: Twitter's trending hashtags must reflect what's happening right now — topics trending in the last 5-10 minutes, not the last day.
 
+**Tweet ingestion pipeline**:
 ```
-1. User requests feed
-2. GET all followed user IDs: SELECT followee_id FROM followers WHERE follower_id = ?
-3. Query tweets: SELECT * FROM tweets WHERE user_id IN (followees) ORDER BY created_at DESC LIMIT 20
-4. Merge and sort results
+Tweet posted → Kafka `tweets` topic
+  → Trending Worker: extract hashtags, mentions, keywords
+    → Flink streaming job: count occurrences in 5-minute sliding windows
+    → For each hashtag: if count > threshold → push to trending list
+  → Elasticsearch: index tweet text, hashtags, author, timestamp
 ```
 
-**Pros:** Write is O(1) — just store the tweet, no fan-out
-**Cons:** Read requires joining across potentially 200+ users, across multiple DB shards. At 180K reads/sec, this is untenable.
+**Trending algorithm**:
+- Count hashtag occurrences in 5-minute windows
+- Apply velocity weighting: a hashtag going from 100→10,000 in 5 minutes ranks higher than a hashtag steadily at 5,000
+- Geographic segmentation: trending topics differ by country/city. Separate counts per region.
+- Cache top-50 trends per region in Redis, refreshed every minute.
 
-**When to use:** Celebrities only — their tweets are fetched on-demand when followers open their feed
+**Full-text search (Elasticsearch)**:
+- Tweets indexed in real-time (< 10s from post)
+- Supports: keyword search, hashtag filter, user filter, date range, media filter
+- "Latest" tweets: `SORT_BY: created_at DESC` — Elasticsearch can sort by time efficiently with index ordering
+- "Top" tweets: Sort by engagement score (composite of likes, retweets, replies — precomputed and stored in ES document)
 
 ---
 
-### Hybrid Approach (The Real Solution)
+## Interviewer Questions by Level
 
-```
-On tweet creation:
-  IF user.follower_count < 10,000:
-    → Publish to Kafka → Timeline Workers fan out to all followers' Redis caches
-  ELSE (celebrity):
-    → Just store tweet in DB, no fan-out
+**Junior**:
+- What is a home timeline? How is it different from a user's profile page?
+- Why can't you compute the timeline from scratch on every page load?
+- What is fan-out and why is it challenging for celebrity accounts?
 
-On feed request for user X:
-  1. Fetch pre-computed feed from Redis (contains tweets from normal followed users)
-  2. Identify which followees are celebrities (follower_count >= 10,000)
-  3. Query celebrity tweets from DB (recent 7 days, limit 50 per celebrity)
-  4. Merge and sort all tweets by timestamp
-  5. Return top 20 to user
-```
+**Mid-level**:
+- Explain the hybrid fan-out approach. At what follower threshold do you switch between push and pull?
+- How do you paginate through a Twitter timeline? Why use cursor-based rather than offset-based pagination?
+- How do like counts stay accurate under high concurrency?
 
-**Implementation:**
-
-```java
-public List<Tweet> getTimeline(String userId, int page, int size) {
-    // Step 1: Get cached timeline (from fan-out on write for normal users)
-    List<String> cachedTweetIds = redis.zrevrange("feed:" + userId, 0, size * 2);
-    List<Tweet> cachedTweets = getTweetsByIds(cachedTweetIds);
-
-    // Step 2: Get celebrity followees and fetch their tweets on-demand
-    List<String> celebrityIds = getCelebrityFollowees(userId);  // > 10K followers
-    List<Tweet> allTweets;
-
-    if (!celebrityIds.isEmpty()) {
-        List<Tweet> celebrityTweets = db.query(
-            "SELECT * FROM tweets WHERE user_id IN (?) " +
-            "AND created_at > NOW() - INTERVAL '7 days' " +
-            "ORDER BY created_at DESC LIMIT 50",
-            celebrityIds
-        );
-
-        // Step 3: Merge and sort
-        allTweets = mergeAndSort(cachedTweets, celebrityTweets);
-    } else {
-        allTweets = cachedTweets;
-    }
-
-    // Step 4: Paginate
-    int start = (page - 1) * size;
-    return allTweets.subList(start, Math.min(start + size, allTweets.size()));
-}
-```
-
----
-
-## Caching Strategy
-
-```
-Redis Cache:
-Key: feed:user_123
-Type: Sorted Set (score = tweet timestamp, member = tweet_id)
-Size: Keep last 500 tweet IDs per user
-TTL: 7 days (inactive users' caches expire, rebuilt on next login)
-
-Operations:
-Add tweet:  redis.zadd("feed:user_123", timestamp, tweet_id)
-Get feed:   redis.zrevrange("feed:user_123", 0, 19)  // Top 20, newest first
-Trim old:   redis.zremrangebyrank("feed:user_123", 0, -501)  // Keep latest 500
-
-Cache-aside (for cold starts):
-1. Check Redis for timeline
-2. If miss (inactive user) → regenerate from DB (query last 7 days of followed users' tweets)
-3. Populate Redis cache
-4. Return
-```
-
-**Memory calculation:**
-```
-500M users × 500 tweet IDs × 8 bytes = 2 TB of Redis
-That's too expensive → Only cache active users (users active in last 7 days)
-Active users: 100M × 500 × 8 bytes = 400 GB → feasible with Redis cluster
-```
-
----
-
-## Scaling
-
-### Database Sharding
-
-```
-Tweets: Shard by user_id
-  Shard 1: user_id % 4 = 0
-  Shard 2: user_id % 4 = 1
-  Shard 3: user_id % 4 = 2
-  Shard 4: user_id % 4 = 3
-
-Why user_id, not tweet_id?
-  Fetching a user's tweets is the common query pattern.
-  If sharded by tweet_id, a user's tweets are on all shards (scatter-gather every time).
-  If sharded by user_id, all of one user's tweets are on one shard (single-shard query).
-
-Challenge: Follower graph spans shards
-  Solution: Replicate the followers table to each shard (acceptable — follower data is small)
-```
-
-### Redis Cluster
-
-```
-128 hash slots distributed across Redis nodes
-feed:user_123 → hash(user_123) % 128 → Node X
-
-Hot key issue: One viral user's feed in all 100M feeds = 100M writes to Redis
-Solution: Rate-limit fan-out workers. If fan-out queue exceeds threshold for a user,
-          downgrade them to celebrity mode temporarily.
-```
-
-### Fan-Out Service Scaling
-
-```
-Kafka topic: fan-out-jobs
-Partition key: tweet_author_id (ensures ordering for same author)
-Workers: 100 consumer instances
-
-Each worker:
-  1. Consume tweet event from Kafka
-  2. Batch followers (fetch 1000 at a time)
-  3. Pipeline Redis writes (MULTI/EXEC blocks of 500 operations)
-  4. Commit Kafka offset
-
-Throughput: 12K tweets/sec × 200 avg followers = 2.4M Redis writes/sec
-With 100 workers: 24K operations/worker/sec → manageable
-```
-
----
-
-## Failure Scenarios
-
-### Redis Goes Down
-
-**Impact:** Feed reads hit PostgreSQL directly
-**Mitigation:**
-- Fall back to fan-out on read from DB (slower, ~200ms vs ~5ms, but functional)
-- Redis cluster with replica failover (< 30 seconds RTO)
-- Backfill cache when Redis recovers
-
-### Fan-Out Service Falls Behind
-
-**Impact:** Followers see stale feeds during high-traffic events
-**Mitigation:**
-- Kafka retains messages for 7 days — workers catch up when load normalizes
-- For freshness SLA: fall back to partial fan-out on read for users whose cache is > 5 minutes stale
-- Priority queues: verified accounts get priority fan-out workers
-
-### Database Shard Failure
-
-**Impact:** Tweets from users on that shard unavailable
-**Mitigation:**
-- Synchronous replication to standby (PostgreSQL streaming replication)
-- Auto-failover (< 60 seconds)
-- For read queries: serve from replica until primary recovers
-
----
-
-## Trade-offs
-
-| Aspect | Fan-out on Write | Fan-out on Read | Hybrid |
-|--------|-----------------|-----------------|--------|
-| **Read latency** | ~5ms (Redis) | ~200ms (DB scatter-gather) | ~5ms + celebrity fetch |
-| **Write cost** | High (200× amplification) | Zero amplification | Low (only for < 10K followers) |
-| **Complexity** | Medium | Low | High |
-| **Celebrity handling** | Broken | Graceful | Graceful |
-| **Storage** | High (Redis per user) | Low | Medium |
-
----
-
-## Interview Tips
-
-**The most important concept to explain clearly:**
-> "The hybrid model exists because of an asymmetry: reading one user's pre-computed feed is O(1) in Redis, but writing to 100M followers' feeds is O(100M). We solve this by capping fan-out at 10K followers and pulling celebrity tweets on-demand."
-
-**Common Questions:**
-- **Q: "How do you handle a celebrity with 100M followers?"**
-  → Fan-out on read. Store tweet in DB, never push to Redis. When followers load their feed, fetch celebrity's recent tweets and merge with their pre-computed feed. The merge happens in the app server, in memory.
-
-- **Q: "What if Redis goes down?"**
-  → Fallback to DB queries. Feed generation takes ~200ms instead of ~5ms, but service stays up. Redis cluster with replicas minimizes downtime risk.
-
-- **Q: "How do you ensure a user sees their own tweet immediately?"**
-  → On tweet creation, write-through to the poster's own Redis feed synchronously before returning the API response. Fan-out to followers happens asynchronously.
-
-- **Q: "What about inactive users?"**
-  → Don't maintain their feed cache. When an inactive user opens the app, detect cache miss, regenerate feed from DB (fan-out on read for that one request), populate cache.
-
----
-
-## Interview Questions Asked
-
-### Meta
-1. **"Design Facebook News Feed."** → Tests ranking vs. chronological feed trade-off; key answer: fan-out on write for most users, ML ranking on the pre-computed candidate set, EdgeRank/Graph API to determine what content surfaces.
-
-### Google
-1. **"How do you rank content at scale?"** → Tests two-phase retrieval understanding; key answer: retrieval phase fetches a large candidate set (pre-computed fan-out), ranking phase scores with lightweight ML model (logistic regression or GBDT) under a strict latency budget.
-
-### Common Follow-ups
-1. **"How does Twitter handle the celebrity problem (e.g., Elon Musk with 150M followers)?"** → Tests hybrid fan-out knowledge; celebrity tweets are never fanned out — they're stored in a high-follower cache; on feed load, follower's pre-computed feed is merged with a real-time fetch of celebrity tweets in the app server.
-2. **"Real-time vs. eventual consistency for feed — what does Twitter choose?"** → Tests consistency trade-off reasoning; eventual consistency is acceptable for feed (users tolerate a few seconds of delay); own tweets use write-through to poster's feed for immediate visibility.
-3. **"How do you A/B test different ranking algorithms?"** → Tests experimentation infrastructure; route a percentage of traffic to a ranking variant via feature flags; log impressions and engagements per variant; compare metrics (CTR, dwell time) in an experimentation platform; ranking is stateless so switching is safe.
-4. **"How does tweet deletion propagate to all feeds?"** → Tests async propagation; soft-delete the tweet in DB immediately (returns 404 on API); publish a `tweet_deleted` event to Kafka; fan-out workers scan Redis feed lists and remove the tweet ID; CDN purge for any cached tweet detail pages; eventual consistency — brief window where deleted tweet is still visible.
+**Senior**:
+- A celebrity with 100M followers posts a tweet. Walk me through the full fan-out process end-to-end.
+- How would you design real-time trending topics with geographic segmentation?
+- How do you handle eventual consistency — a follower posts a tweet and sees it in their own timeline immediately, but their followers don't for 5 seconds?
+- Design the Twitter search system — how do you index 500M tweets/day for sub-second full-text search?

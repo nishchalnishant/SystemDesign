@@ -50,24 +50,21 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```java
-class SupportSystem {
-    public void handleRequest(Request r) {
-        if (r.type == FAQ) {
-            bot.answer(r);
-        } else if (r.type == BILLING && r.complexity == LOW) {
-            juniorAgent.handle(r);
-        } else if (r.complexity == HIGH) {
-            seniorAgent.handle(r);
-        } else {
-            manager.escalate(r);
-        }
-    }
-}
+```python
+class SupportSystem:
+    def handle_request(self, r):
+        if r.type == FAQ:
+            bot.answer(r)
+        elif r.type == BILLING and r.complexity == LOW:
+            junior_agent.handle(r)
+        elif r.complexity == HIGH:
+            senior_agent.handle(r)
+        else:
+            manager.escalate(r)
 ```
 
 **What breaks**:
-1. **OCP violation**: Adding a new tier (e.g., `TechSupport`) means editing `handleRequest`.
+1. **OCP violation**: Adding a new tier (e.g., `TechSupport`) means editing `handle_request`.
 2. **SRP violation**: `SupportSystem` must know the rules for every tier's decision boundary.
 3. **Routing logic and handling logic are mixed**: The condition that decides *who* handles is inseparable from the code that *calls* the handler.
 4. **Rigid order**: Reordering the chain requires rewriting conditions, not just reordering objects.
@@ -79,47 +76,53 @@ class SupportSystem {
 The constraint: **each handler decides whether to handle or pass — the sender should not know the chain structure**.
 
 Step 1 — extract a `Handler` interface with `handle(Request)` and a `next` link:
-```java
-abstract class SupportHandler {
-    protected SupportHandler next;
+```python
+from abc import ABC, abstractmethod
 
-    public void setNext(SupportHandler next) { this.next = next; }
+class SupportHandler(ABC):
+    def __init__(self):
+        self._next = None
 
-    public abstract void handle(Request r);
+    def set_next(self, next_handler):
+        self._next = next_handler
 
-    protected void passToNext(Request r) {
-        if (next != null) next.handle(r);
-        else System.out.println("Unhandled: " + r);
-    }
-}
+    @abstractmethod
+    def handle(self, r):
+        pass
+
+    def pass_to_next(self, r):
+        if self._next is not None:
+            self._next.handle(r)
+        else:
+            print(f"Unhandled: {r}")
 ```
 
 Step 2 — each tier is its own class that handles what it can, passes the rest:
-```java
-class BotHandler extends SupportHandler {
-    public void handle(Request r) {
-        if (r.type == FAQ) System.out.println("Bot: answered FAQ");
-        else passToNext(r);
-    }
-}
+```python
+class BotHandler(SupportHandler):
+    def handle(self, r):
+        if r.type == FAQ:
+            print("Bot: answered FAQ")
+        else:
+            self.pass_to_next(r)
 
-class JuniorAgentHandler extends SupportHandler {
-    public void handle(Request r) {
-        if (r.complexity == LOW) System.out.println("Junior: handled");
-        else passToNext(r);
-    }
-}
+class JuniorAgentHandler(SupportHandler):
+    def handle(self, r):
+        if r.complexity == LOW:
+            print("Junior: handled")
+        else:
+            self.pass_to_next(r)
 ```
 
 Step 3 — wire the chain once at setup; the sender just calls the first link:
-```java
-SupportHandler bot    = new BotHandler();
-SupportHandler junior = new JuniorAgentHandler();
-SupportHandler senior = new SeniorAgentHandler();
-bot.setNext(junior);
-junior.setNext(senior);
+```python
+bot = BotHandler()
+junior = JuniorAgentHandler()
+senior = SeniorAgentHandler()
+bot.set_next(junior)
+junior.set_next(senior)
 
-bot.handle(incomingRequest); // request propagates automatically
+bot.handle(incoming_request)  # request propagates automatically
 ```
 
 Adding `TechSupport` is now: create `TechSupportHandler`, insert it into the chain at the right position. Zero edits to existing handlers.
@@ -163,43 +166,34 @@ The Chain of Responsibility Pattern transforms particular behaviors into standal
 
 Without Chain of Responsibility, all logic is crammed into a single method:
 
-```java
-// SupportService class: Handles different types of support requests
-public class SupportService {
+```python
+class SupportService:
+    def handle_request(self, request_type):
+        if request_type == "general":
+            print("Handled by General Support")
+        elif request_type == "refund":
+            print("Handled by Billing Team")
+        elif request_type == "technical":
+            print("Handled by Technical Support")
+        elif request_type == "delivery":
+            print("Handled by Delivery Team")
+        else:
+            print("No handler available")
 
-    // Method to handle the support request based on the type of issue
-    public void handleRequest(String type) {
-        if (type.equals("general")) {
-            System.out.println("Handled by General Support");
-        } else if (type.equals("refund")) {
-            System.out.println("Handled by Billing Team");
-        } else if (type.equals("technical")) {
-            System.out.println("Handled by Technical Support");
-        } else if (type.equals("delivery")) {
-            System.out.println("Handled by Delivery Team");
-        } else {
-            System.out.println("No handler available");
-        }
-    }
 
-    // Main function: Entry point to test the chain of responsibility pattern
-    public static void main(String[] args) {
-        // Create an instance of SupportService
-        SupportService supportService = new SupportService();
-        
-        // Test with different types of requests
-        supportService.handleRequest("general");
-        supportService.handleRequest("refund");
-        supportService.handleRequest("technical");
-        supportService.handleRequest("delivery");
-        supportService.handleRequest("unknown");
-    }
-}
+# Main
+if __name__ == "__main__":
+    support_service = SupportService()
+    support_service.handle_request("general")
+    support_service.handle_request("refund")
+    support_service.handle_request("technical")
+    support_service.handle_request("delivery")
+    support_service.handle_request("unknown")
 ```
 
 | Issue | Description |
 |---|---|
-| **Violation of OCP** | Every time a new request type is added, `handleRequest` must be modified. |
+| **Violation of OCP** | Every time a new request type is added, `handle_request` must be modified. |
 | **Monolithic Code** | All logic in one method. Hard to maintain, test, and extend. Each handler is tightly coupled with the others. |
 | **Scalability** | Can't change the order of processing without modifying the core logic. Adding new handlers or reordering is cumbersome. |
 
@@ -207,89 +201,79 @@ public class SupportService {
 
 ## Solution: Chain of Responsibility
 
-```java
-// Abstract class defining the SupportHandler
-abstract class SupportHandler {
-    protected SupportHandler nextHandler;
+```python
+from abc import ABC, abstractmethod
 
-    // Method to set the next handler in the chain
-    public void setNextHandler(SupportHandler nextHandler) {
-        this.nextHandler = nextHandler;
-    }
 
-    // Abstract method to handle the request
-    public abstract void handleRequest(String requestType);
-}
+# Abstract base class defining the SupportHandler
+class SupportHandler(ABC):
+    def __init__(self):
+        self._next_handler = None
 
-// Concrete Handler for General Support
-class GeneralSupport extends SupportHandler {
-    @Override
-    public void handleRequest(String requestType) {
-        if (requestType.equalsIgnoreCase("general")) {
-            System.out.println("GeneralSupport: Handling general query");
-        } else if (nextHandler != null) {
-            nextHandler.handleRequest(requestType);
-        }
-    }
-}
+    # Method to set the next handler in the chain
+    def set_next_handler(self, next_handler):
+        self._next_handler = next_handler
 
-// Concrete Handler for Billing Support
-class BillingSupport extends SupportHandler {
-    @Override
-    public void handleRequest(String requestType) {
-        if (requestType.equalsIgnoreCase("refund")) {
-            System.out.println("BillingSupport: Handling refund request");
-        } else if (nextHandler != null) {
-            nextHandler.handleRequest(requestType);
-        }
-    }
-}
+    # Abstract method to handle the request
+    @abstractmethod
+    def handle_request(self, request_type):
+        pass
 
-// Concrete Handler for Technical Support
-class TechnicalSupport extends SupportHandler {
-    @Override
-    public void handleRequest(String requestType) {
-        if (requestType.equalsIgnoreCase("technical")) {
-            System.out.println("TechnicalSupport: Handling technical issue");
-        } else if (nextHandler != null) {
-            nextHandler.handleRequest(requestType);
-        }
-    }
-}
 
-// Concrete Handler for Delivery Support
-class DeliverySupport extends SupportHandler {
-    @Override
-    public void handleRequest(String requestType) {
-        if (requestType.equalsIgnoreCase("delivery")) {
-            System.out.println("DeliverySupport: Handling delivery issue");
-        } else if (nextHandler != null) {
-            nextHandler.handleRequest(requestType);
-        } else {
-            System.out.println("DeliverySupport: No handler found for request");
-        }
-    }
-}
+# Concrete Handler for General Support
+class GeneralSupport(SupportHandler):
+    def handle_request(self, request_type):
+        if request_type.lower() == "general":
+            print("GeneralSupport: Handling general query")
+        elif self._next_handler is not None:
+            self._next_handler.handle_request(request_type)
 
-// Client Code
-public class ChainOfResponsibilityDemo {
-    public static void main(String[] args) {
-        SupportHandler general = new GeneralSupport();
-        SupportHandler billing = new BillingSupport();
-        SupportHandler technical = new TechnicalSupport();
-        SupportHandler delivery = new DeliverySupport();
 
-        // Setting up the chain: general -> billing -> technical -> delivery
-        general.setNextHandler(billing);
-        billing.setNextHandler(technical);
-        technical.setNextHandler(delivery);
+# Concrete Handler for Billing Support
+class BillingSupport(SupportHandler):
+    def handle_request(self, request_type):
+        if request_type.lower() == "refund":
+            print("BillingSupport: Handling refund request")
+        elif self._next_handler is not None:
+            self._next_handler.handle_request(request_type)
 
-        // Testing the chain of responsibility with different request types
-        general.handleRequest("refund");    // Passes through General -> handled by Billing
-        general.handleRequest("delivery");  // Passes through General -> Billing -> Technical -> handled by Delivery
-        general.handleRequest("unknown");   // Reaches end of chain unhandled
-    }
-}
+
+# Concrete Handler for Technical Support
+class TechnicalSupport(SupportHandler):
+    def handle_request(self, request_type):
+        if request_type.lower() == "technical":
+            print("TechnicalSupport: Handling technical issue")
+        elif self._next_handler is not None:
+            self._next_handler.handle_request(request_type)
+
+
+# Concrete Handler for Delivery Support
+class DeliverySupport(SupportHandler):
+    def handle_request(self, request_type):
+        if request_type.lower() == "delivery":
+            print("DeliverySupport: Handling delivery issue")
+        elif self._next_handler is not None:
+            self._next_handler.handle_request(request_type)
+        else:
+            print("DeliverySupport: No handler found for request")
+
+
+# Client Code
+if __name__ == "__main__":
+    general = GeneralSupport()
+    billing = BillingSupport()
+    technical = TechnicalSupport()
+    delivery = DeliverySupport()
+
+    # Setting up the chain: general -> billing -> technical -> delivery
+    general.set_next_handler(billing)
+    billing.set_next_handler(technical)
+    technical.set_next_handler(delivery)
+
+    # Testing the chain of responsibility with different request types
+    general.handle_request("refund")    # Passes through General -> handled by Billing
+    general.handle_request("delivery")  # Passes through General -> Billing -> Technical -> handled by Delivery
+    general.handle_request("unknown")   # Reaches end of chain unhandled
 ```
 
 ### Class Diagram
@@ -339,7 +323,7 @@ classDiagram
 |---|---|
 | **Violation of OCP** | Add a new handler class without modifying existing code. Each handler is open for extension and closed for modification. |
 | **Monolithic Code** | Logic is separated into individual handler classes, each responsible for one type of request. |
-| **Scalability** | New handlers can be added without changing existing logic. Chain order can change by simply rearranging `setNextHandler()` calls. |
+| **Scalability** | New handlers can be added without changing existing logic. Chain order can change by simply rearranging `set_next_handler()` calls. |
 
 ---
 

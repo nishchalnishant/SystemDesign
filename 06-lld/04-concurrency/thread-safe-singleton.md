@@ -56,19 +56,17 @@ Reason through the exact interleaving before reading on.
 
 ## Race Condition Without Synchronization
 
-```java
-class Database {
-    private static Database instance; // null initially
+```python
+class Database:
+    _instance = None  # None initially
 
-    public static Database getInstance() {
-        if (instance == null) {                // Thread A checks: null → enters
-                                               // (Thread B also checks: null → enters)
-            instance = new Database();         // Thread A creates instance A
-                                               // Thread B also creates instance B — RACE
-        }
-        return instance;
-    }
-}
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:              # Thread A checks: None → enters
+                                               # (Thread B also checks: None → enters)
+            cls._instance = cls()              # Thread A creates instance A
+                                               # Thread B also creates instance B — RACE
+        return cls._instance
 ```
 
 **Exact failure interleaving**:
@@ -105,20 +103,20 @@ In multi-threaded environments, two threads can create two instances if not care
 
 ## Solution 1: Synchronized Method (Simple but Slow)
 
-```java
-public class Singleton {
-    private static Singleton instance;
-    
-    private Singleton() {}
-    
-    // Synchronized = thread-safe, but SLOW (locks every time)
-    public static synchronized Singleton getInstance() {
-        if (instance == null) {
-            instance = new Singleton();
-        }
-        return instance;
-    }
-}
+```python
+import threading
+
+class Singleton:
+    _instance = None
+    _lock = threading.Lock()
+
+    # Thread-safe but SLOW — acquires lock on every call
+    @classmethod
+    def get_instance(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
 ```
 
 **Problem**: Every call to `getInstance()` acquires lock, even after initialization (99.99% unnecessary).
@@ -127,24 +125,20 @@ public class Singleton {
 
 ## Solution 2: Double-Checked Locking (Optimal)
 
-```java
-public class Singleton {
-    // volatile ensures visibility across threads
-    private static volatile Singleton instance;
-    
-    private Singleton() {}
-    
-    public static Singleton getInstance() {
-        if (instance == null) {  // First check (no locking) - FAST PATH
-            synchronized (Singleton.class) {  // Lock only if null
-                if (instance == null) {  // Second check (with lock)
-                    instance = new Singleton();
-                }
-            }
-        }
-        return instance;  // Subsequent calls skip lock entirely
-    }
-}
+```python
+import threading
+
+class Singleton:
+    _instance = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:      # first check (no locking) — FAST PATH
+            with cls._lock:            # lock only if None
+                if cls._instance is None:  # second check (with lock)
+                    cls._instance = cls()
+        return cls._instance           # subsequent calls skip lock entirely
 ```
 
 **Why `volatile`?**
@@ -155,18 +149,18 @@ public class Singleton {
 
 ## Solution 3: Enum Singleton (Best in Java)
 
-```java
-public enum Singleton {
-    INSTANCE;
-    
-    // Add your methods here
-    public void doSomething() {
-        System.out.println("Singleton is working!");
-    }
-}
+```python
+# Python idiom: module-level singleton (modules are imported exactly once)
+# singleton.py
+class _Singleton:
+    def do_something(self):
+        print("Singleton is working!")
 
-// Usage
-Singleton.INSTANCE.doSomething();
+instance = _Singleton()  # created once at import time; thread-safe via GIL + import lock
+
+# Usage (from another module):
+# from singleton import instance
+# instance.do_something()
 ```
 
 **Why best?**
@@ -178,75 +172,73 @@ Singleton.INSTANCE.doSomething();
 
 ## Real-World Example: Thread-Safe Connection Pool
 
-```java
-public class ConnectionPool {
-    private static volatile ConnectionPool instance;
-    private final BlockingQueue<Connection> pool;
-    private static final int POOL_SIZE = 10;
-    
-    private ConnectionPool() {
-        pool = new ArrayBlockingQueue<>(POOL_SIZE);
-        for (int i = 0; i < POOL_SIZE; i++) {
-            pool.add(createConnection());
-        }
-    }
-    
-    public static ConnectionPool getInstance() {
-        if (instance == null) {
-            synchronized (ConnectionPool.class) {
-                if (instance == null) {
-                    instance = new ConnectionPool();
-                }
-            }
-        }
-        return instance;
-    }
-    
-    public Connection borrowConnection() throws InterruptedException {
-        return pool.take();  // Blocks if pool empty
-    }
-    
-    public void returnConnection(Connection conn) {
-        pool.offer(conn);
-    }
-}
+```python
+import queue
+import threading
 
-// Usage (thread-safe)
-ConnectionPool pool = ConnectionPool.getInstance();
-Connection conn = pool.borrowConnection();
-try {
-    // Use connection
-} finally {
-    pool.returnConnection(conn);
-}
+POOL_SIZE = 10
+
+class ConnectionPool:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __init__(self):
+        self._pool = queue.Queue(maxsize=POOL_SIZE)
+        for conn in self._create_connections(POOL_SIZE):
+            self._pool.put(conn)
+
+    def _create_connections(self, size):
+        return [object() for _ in range(size)]  # placeholder connections
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    def borrow_connection(self):
+        return self._pool.get()   # blocks if pool empty
+
+    def return_connection(self, conn):
+        self._pool.put(conn)
+
+# Usage (thread-safe)
+pool = ConnectionPool.get_instance()
+conn = pool.borrow_connection()
+try:
+    pass  # use connection
+finally:
+    pool.return_connection(conn)
 ```
 
 ---
 
 ## Testing Multi-Threaded Singleton
 
-```java
-@Test
-public void testThreadSafety() throws Exception {
-    int numThreads = 100;
-    Executor Executor = Executors.newFixedThreadPool(numThreads);
-    
-    Set<Singleton> instances = Collections.synchronizedSet(new HashSet<>());
-    CountDownLatch latch = new CountDownLatch(numThreads);
-    
-    for (int i = 0; i < numThreads; i++) {
-        executor.execute(() -> {
-            instances.add(Singleton.getInstance());
-            latch.countDown();
-        });
-    }
-    
-    latch.await();  // Wait for all threads
-    executor.shutdown();
-    
-    // Should be only 1 instance despite 100 threads
-    assertEquals(1, instances.size());
-}
+```python
+import threading
+import concurrent.futures
+
+def test_thread_safety():
+    num_threads = 100
+    instances = set()
+    instances_lock = threading.Lock()
+
+    def get_and_collect():
+        inst = Singleton.get_instance()
+        with instances_lock:
+            instances.add(id(inst))  # use id() since set uses __hash__/__eq__
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = [executor.submit(get_and_collect) for _ in range(num_threads)]
+        concurrent.futures.wait(futures)  # wait for all threads
+
+    # Should be only 1 unique instance id despite 100 threads
+    assert len(instances) == 1, f"Expected 1 instance, got {len(instances)}"
+
+test_thread_safety()
 ```
 
 ---

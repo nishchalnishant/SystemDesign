@@ -78,27 +78,20 @@ Every cookie made from the same cutter has the same shape — the same methods (
 
 The cookie cutter (class) is never a cookie itself. It defines what cookies look like. When you call `new`, you are pressing the cutter into dough and creating an actual, tangible object.
 
-```java
-// The cookie cutter — no memory allocated yet
-public class Car {
-    private String make;
-    private String model;
-    private int year;
+```python
+# The cookie cutter — no memory allocated yet
+class Car:
+    def __init__(self, make: str, model: str, year: int):
+        self._make = make
+        self._model = model
+        self._year = year
 
-    public Car(String make, String model, int year) {
-        this.make = make;
-        this.model = model;
-        this.year = year;
-    }
+    def start_engine(self):
+        print(f"{self._make} {self._model} engine starting.")
 
-    public void startEngine() {
-        System.out.println(this.make + " " + this.model + " engine starting.");
-    }
-}
-
-// Two cookies from the same cutter — same shape, different state
-Car civic  = new Car("Honda",  "Civic",   2022);
-Car model3 = new Car("Tesla",  "Model 3", 2023);
+# Two cookies from the same cutter — same shape, different state
+civic  = Car("Honda", "Civic",   2022)
+model3 = Car("Tesla", "Model 3", 2023)
 ```
 
 ---
@@ -129,61 +122,32 @@ In code: private fields are the internal mechanism. Public methods are the nurse
 
 Encapsulation is the bundling of data (fields) and the methods that operate on that data into a single unit (a class), while restricting direct external access to the internal state. Callers interact through a controlled public interface, which enforces invariants and prevents invalid state.
 
-### Java Example
-
-```java
-public class BankAccount {
-    // Private fields — the internal mechanism, not directly touchable
-    private String accountHolder;
-    private double balance;
-
-    public BankAccount(String accountHolder, double initialBalance) {
-        this.accountHolder = accountHolder;
-        this.balance = initialBalance;
-    }
-
-    // Public interface — the nurse's controlled interaction
-    public String deposit(double amount) {
-        if (amount > 0) {
-            this.balance += amount;
-            return "Deposited " + amount + ". New balance: " + this.balance;
-        }
-        return "Invalid deposit amount";
-    }
-
-    public String withdraw(double amount) {
-        if (amount > 0 && amount <= this.balance) {
-            this.balance -= amount;
-            return "Withdrew " + amount + ". Remaining balance: " + this.balance;
-        }
-        return "Insufficient funds";
-    }
-
-    public double getBalance() {
-        return this.balance;  // Read access — no write access without validation
-    }
-}
-```
-
-No external code can do `account.balance = -999999`. The business rules (no overdraft, no negative deposit) live inside the class, enforced by every path that touches the data.
-
-### Python Equivalent
+### Example
 
 ```python
 class BankAccount:
-    def __init__(self, holder: str, initial_balance: float):
-        self._holder = holder          # Convention: _ means "treat as private"
-        self.__balance = initial_balance  # Name-mangled: __balance → _BankAccount__balance
+    def __init__(self, account_holder: str, initial_balance: float):
+        self._account_holder = account_holder
+        self.__balance = initial_balance  # Private fields — the internal mechanism, not directly touchable
 
+    # Public interface — the nurse's controlled interaction
     def deposit(self, amount: float) -> str:
         if amount > 0:
             self.__balance += amount
             return f"Deposited {amount}. New balance: {self.__balance}"
-        return "Invalid amount"
+        return "Invalid deposit amount"
+
+    def withdraw(self, amount: float) -> str:
+        if 0 < amount <= self.__balance:
+            self.__balance -= amount
+            return f"Withdrew {amount}. Remaining balance: {self.__balance}"
+        return "Insufficient funds"
 
     def get_balance(self) -> float:
-        return self.__balance
+        return self.__balance  # Read access — no write access without validation
 ```
+
+No external code can do `account.__balance = -999999`. The business rules (no overdraft, no negative deposit) live inside the class, enforced by every path that touches the data.
 
 ### When to use in interviews
 
@@ -217,53 +181,14 @@ Abstraction is the process of exposing only the essential interface of a system 
 
 A TV remote both encapsulates its circuit board (you cannot open it) and abstracts the IR signal protocol (you do not know it exists).
 
-### Java Example
-
-```java
-// The abstract class defines WHAT operations exist — not HOW they work
-// This is the airline's booking interface: "give me a destination"
-abstract class Shape {
-    public abstract double area();
-    public abstract double perimeter();
-}
-
-// Each shape knows HOW to fulfill the contract
-class Rectangle extends Shape {
-    private double width;
-    private double height;
-
-    public Rectangle(double width, double height) {
-        this.width = width;
-        this.height = height;
-    }
-
-    @Override
-    public double area()      { return this.width * this.height; }
-
-    @Override
-    public double perimeter() { return 2 * (this.width + this.height); }
-}
-
-class Circle extends Shape {
-    private double radius;
-
-    public Circle(double radius) { this.radius = radius; }
-
-    @Override
-    public double area()      { return Math.PI * this.radius * this.radius; }
-
-    @Override
-    public double perimeter() { return 2 * Math.PI * this.radius; }
-}
-```
-
-The caller just calls `shape.area()`. It does not know or care about `Math.PI` or `width * height`. The abstraction holds.
-
-### Python Equivalent
+### Example
 
 ```python
 from abc import ABC, abstractmethod
+import math
 
+# The abstract class defines WHAT operations exist — not HOW they work
+# This is the airline's booking interface: "give me a destination"
 class Shape(ABC):
     @abstractmethod
     def area(self) -> float: ...
@@ -271,13 +196,24 @@ class Shape(ABC):
     @abstractmethod
     def perimeter(self) -> float: ...
 
+# Each shape knows HOW to fulfill the contract
+class Rectangle(Shape):
+    def __init__(self, width: float, height: float):
+        self._width = width
+        self._height = height
+
+    def area(self)      -> float: return self._width * self._height
+    def perimeter(self) -> float: return 2 * (self._width + self._height)
+
 class Circle(Shape):
     def __init__(self, radius: float):
-        self.radius = radius
+        self._radius = radius
 
-    def area(self)      -> float: return 3.14159 * self.radius ** 2
-    def perimeter(self) -> float: return 2 * 3.14159 * self.radius
+    def area(self)      -> float: return math.pi * self._radius ** 2
+    def perimeter(self) -> float: return 2 * math.pi * self._radius
 ```
+
+The caller just calls `shape.area()`. It does not know or care about `math.pi` or `width * height`. The abstraction holds.
 
 ### When to use in interviews
 
@@ -307,65 +243,10 @@ This is inheritance: the parent captures shared behavior, the children specializ
 
 Inheritance is a mechanism where a new class (subclass/child) derives from an existing class (superclass/parent). The subclass inherits the fields and methods of the parent, enabling code reuse, and establishes a hierarchical **IS-A relationship**: `Dog IS-A Animal`, `Car IS-A Vehicle`, `Doctor IS-A Staff`.
 
-### Java Example
-
-```java
-// The base: all animals share these behaviors
-class Animal {
-    protected String name;
-
-    public Animal(String name) {
-        this.name = name;
-    }
-
-    public void breathe() {
-        System.out.println(this.name + " is breathing.");
-    }
-
-    public String makeSound() {
-        return "Some generic sound";
-    }
-}
-
-// Dog IS-A Animal — inherits breathe(), specializes makeSound()
-class Dog extends Animal {
-    private String breed;
-
-    public Dog(String name, String breed) {
-        super(name);
-        this.breed = breed;
-    }
-
-    @Override
-    public String makeSound() { return "Bark!"; }
-}
-
-// Labrador IS-A Dog IS-A Animal — inherits everything, adds retrieve()
-class Labrador extends Dog {
-    public Labrador(String name) {
-        super(name, "Labrador");
-    }
-
-    public void retrieve() {
-        System.out.println(this.name + " fetches and returns the ball.");
-    }
-}
-```
-
-`myLabrador.breathe()` works even though `Labrador` never defines `breathe()`. It travels up the chain: `Labrador → Dog → Animal`.
-
-### Types of Inheritance
-
-| Type | Description | Example |
-|------|-------------|---------|
-| **Single** | One parent, one child | `Car extends Vehicle` |
-| **Multilevel** | Chain of inheritance | `Labrador → Dog → Animal` |
-| **Hierarchical** | One parent, multiple children | `Dog`, `Cat`, `Lion` all extend `Animal` |
-| **Multiple** | Multiple parents — via interfaces in Java | `Bird extends Animal implements Flying` |
-
-### Python Equivalent
+### Example
 
 ```python
+# The base: all animals share these behaviors
 class Animal:
     def __init__(self, name: str):
         self.name = name
@@ -376,14 +257,34 @@ class Animal:
     def make_sound(self) -> str:
         return "Some generic sound"
 
+# Dog IS-A Animal — inherits breathe(), specializes make_sound()
 class Dog(Animal):
     def __init__(self, name: str, breed: str):
         super().__init__(name)
-        self.breed = breed
+        self._breed = breed
 
     def make_sound(self) -> str:
         return "Bark!"
+
+# Labrador IS-A Dog IS-A Animal — inherits everything, adds retrieve()
+class Labrador(Dog):
+    def __init__(self, name: str):
+        super().__init__(name, "Labrador")
+
+    def retrieve(self):
+        print(f"{self.name} fetches and returns the ball.")
 ```
+
+`my_labrador.breathe()` works even though `Labrador` never defines `breathe()`. It travels up the chain: `Labrador → Dog → Animal`.
+
+### Types of Inheritance
+
+| Type | Description | Example |
+|------|-------------|---------|
+| **Single** | One parent, one child | `Car extends Vehicle` |
+| **Multilevel** | Chain of inheritance | `Labrador → Dog → Animal` |
+| **Hierarchical** | One parent, multiple children | `Dog`, `Cat`, `Lion` all extend `Animal` |
+| **Multiple** | Multiple parents — via interfaces in Java | `Bird extends Animal implements Flying` |
 
 ### When to use in interviews
 
@@ -414,92 +315,56 @@ Polymorphism means "many forms." It is the ability of different objects to respo
 - **Compile-time polymorphism** (Method Overloading): same method name, different parameter signatures — resolved at compile time.
 - **Runtime polymorphism** (Method Overriding): subclass provides its own implementation of a parent's method — resolved at runtime based on the actual object type.
 
-### Java Example — Runtime Polymorphism
-
-```java
-abstract class Shape {
-    public abstract double area();
-}
-
-class Circle extends Shape {
-    private double radius;
-    public Circle(double radius) { this.radius = radius; }
-
-    @Override
-    public double area() { return Math.PI * this.radius * this.radius; }
-}
-
-class Rectangle extends Shape {
-    private double width, height;
-    public Rectangle(double width, double height) {
-        this.width = width;
-        this.height = height;
-    }
-
-    @Override
-    public double area() { return this.width * this.height; }
-}
-
-class Triangle extends Shape {
-    private double base, height;
-    public Triangle(double base, double height) {
-        this.base = base;
-        this.height = height;
-    }
-
-    @Override
-    public double area() { return 0.5 * this.base * this.height; }
-}
-
-public class Main {
-    public static void main(String[] args) {
-        Shape[] shapes = {
-            new Circle(5),
-            new Rectangle(4, 6),
-            new Triangle(3, 8)
-        };
-
-        double total = 0;
-        for (Shape s : shapes) {
-            // Same call — shape.area() — different behavior per type
-            // The JVM picks the right implementation at runtime
-            total += s.area();
-        }
-        System.out.println("Total area: " + total);
-    }
-}
-```
-
-The loop has no `if/instanceof` checks. It does not need to know the actual type. It just calls `area()` and trusts each object to do the right thing.
-
-### Java Example — Compile-time Polymorphism (Overloading)
-
-```java
-class MathOperations {
-    public int add(int a, int b)           { return a + b; }
-    public int add(int a, int b, int c)    { return a + b + c; }
-    public double add(double a, double b)  { return a + b; }
-}
-
-// math.add(5, 10)       → 15     (first signature)
-// math.add(5, 10, 20)   → 35     (second signature)
-// math.add(1.5, 2.5)    → 4.0    (third signature)
-```
-
-### Python Equivalent
+### Example — Runtime Polymorphism
 
 ```python
-# Python uses duck typing — no interface declaration needed
-class Circle:
-    def __init__(self, r): self.r = r
-    def area(self): return 3.14159 * self.r ** 2
+from abc import ABC, abstractmethod
+import math
 
-class Rectangle:
-    def __init__(self, w, h): self.w = w; self.h = h
-    def area(self): return self.w * self.h
+class Shape(ABC):
+    @abstractmethod
+    def area(self) -> float: ...
 
-shapes = [Circle(5), Rectangle(4, 6)]
-total = sum(s.area() for s in shapes)  # Polymorphism — same call, different result
+class Circle(Shape):
+    def __init__(self, radius: float): self._radius = radius
+    def area(self) -> float: return math.pi * self._radius ** 2
+
+class Rectangle(Shape):
+    def __init__(self, width: float, height: float):
+        self._width = width
+        self._height = height
+    def area(self) -> float: return self._width * self._height
+
+class Triangle(Shape):
+    def __init__(self, base: float, height: float):
+        self._base = base
+        self._height = height
+    def area(self) -> float: return 0.5 * self._base * self._height
+
+shapes = [Circle(5), Rectangle(4, 6), Triangle(3, 8)]
+
+total = 0.0
+for s in shapes:
+    # Same call — s.area() — different behavior per type
+    # Python resolves the right implementation at runtime
+    total += s.area()
+print(f"Total area: {total}")
+```
+
+The loop has no `if/isinstance` checks. It does not need to know the actual type. It just calls `area()` and trusts each object to do the right thing.
+
+### Example — Compile-time Polymorphism (Overloading)
+
+Python doesn't support true method overloading by signature, but achieves the same with default/optional args:
+
+```python
+# Python idiomatic approach: use *args or default parameters
+def add(*args: float) -> float:
+    return sum(args)
+
+# add(5, 10)       → 15
+# add(5, 10, 20)   → 35
+# add(1.5, 2.5)    → 4.0
 ```
 
 ### When to use in interviews
@@ -518,27 +383,22 @@ A `Dog` IS-A `Animal`. A `SavingsAccount` IS-A `BankAccount`. The child is a spe
 
 A `Car` HAS-A `Engine`. A `House` HAS-A `Kitchen`. An `Order` HAS-A `Customer`. One object *contains* another — it is not a specialized version of it. Use composition here.
 
-```java
-// Inheritance: Car IS-A Vehicle  ✓
-class Car extends Vehicle { ... }
+```python
+# Inheritance: Car IS-A Vehicle  ✓
+class Car(Vehicle): ...
 
-// Composition: Car HAS-A Engine  ✓
-class Car {
-    private Engine engine;   // Car owns an Engine — does not inherit from it
+# Composition: Car HAS-A Engine  ✓
+class Car:
+    def __init__(self, model: str):
+        self._model = model
+        self._engine = Engine()  # Car owns an Engine — does not inherit from it
 
-    public Car(String model) {
-        this.engine = new Engine();
-    }
+    def start(self) -> str:
+        return self._engine.start()  # Delegate to the Engine
 
-    public String start() {
-        return this.engine.start();  // Delegate to the Engine
-    }
-}
-
-class Engine {
-    public String start() { return "Engine running."; }
-    public String stop()  { return "Engine off."; }
-}
+class Engine:
+    def start(self) -> str: return "Engine running."
+    def stop(self)  -> str: return "Engine off."
 ```
 
 ### When to prefer composition over inheritance
@@ -566,27 +426,25 @@ Imagine you move to a new city and update your address on 10 separate government
 
 **DRY in code:** every piece of knowledge should have a single, authoritative representation. When you copy-paste logic, you create multiple "forms" that will diverge.
 
-```java
-// Violation: tax logic duplicated in two services
-class OrderService {
-    public double calculateTax(double amount) { return amount * 0.18; }
-}
-class InvoiceService {
-    public double calculateTax(double amount) { return amount * 0.18; }
-}
+```python
+# Violation: tax logic duplicated in two services
+class OrderService:
+    def calculate_tax(self, amount: float) -> float: return amount * 0.18
 
-// DRY: one authoritative source
-class TaxCalculator {
-    private static final double TAX_RATE = 0.18;
-    public static double calculate(double amount) { return amount * TAX_RATE; }
-}
+class InvoiceService:
+    def calculate_tax(self, amount: float) -> float: return amount * 0.18
 
-class OrderService {
-    public double calculateTax(double amount) { return TaxCalculator.calculate(amount); }
-}
-class InvoiceService {
-    public double calculateTax(double amount) { return TaxCalculator.calculate(amount); }
-}
+# DRY: one authoritative source
+TAX_RATE = 0.18
+
+def calculate_tax(amount: float) -> float:
+    return amount * TAX_RATE
+
+class OrderService:
+    def calculate_tax(self, amount: float) -> float: return calculate_tax(amount)
+
+class InvoiceService:
+    def calculate_tax(self, amount: float) -> float: return calculate_tax(amount)
 ```
 
 When the tax rate changes, you update one constant. Not five files.
@@ -599,21 +457,27 @@ A Swiss Army knife has a blade, scissors, screwdriver, bottle opener, and toothp
 
 **KISS in code:** the simplest solution that correctly solves the problem is usually the best solution. Do not reach for patterns, abstractions, and frameworks until the problem genuinely requires them.
 
-```java
-// Over-engineered: Strategy pattern + Factory just to add two numbers
-interface Operation { double execute(double a, double b); }
-class AddOperation implements Operation {
-    public double execute(double a, double b) { return a + b; }
-}
-class CalculatorFactory {
-    public static Operation getOperation(String type) {
-        if (type.equals("ADD")) return new AddOperation();
-        throw new IllegalArgumentException("Unknown operation");
-    }
-}
+```python
+# Over-engineered: Strategy pattern + Factory just to add two numbers
+from abc import ABC, abstractmethod
 
-// KISS:
-public double add(double a, double b) { return a + b; }
+class Operation(ABC):
+    @abstractmethod
+    def execute(self, a: float, b: float) -> float: ...
+
+class AddOperation(Operation):
+    def execute(self, a: float, b: float) -> float: return a + b
+
+class CalculatorFactory:
+    @staticmethod
+    def get_operation(op_type: str) -> Operation:
+        if op_type == "ADD":
+            return AddOperation()
+        raise ValueError(f"Unknown operation: {op_type}")
+
+# KISS:
+def add(a: float, b: float) -> float:
+    return a + b
 ```
 
 Apply patterns when the problem requires extensibility or multiple implementations. Not before.
@@ -626,20 +490,17 @@ You do not own a car. You might buy one in five years. Building a garage now —
 
 **YAGNI in code:** do not implement features until they are actually needed. Speculative code — built "just in case" — must still be maintained, tested, and understood by every engineer who reads it, while delivering zero current value.
 
-```java
-// Violation: implementing features for requirements that do not exist yet
-class UserService {
-    public User createUser(String name, String email) { ... }                  // needed now
-    public User createUserInTenant(String name, String email, String tenantId) { ... } // maybe someday
-    public User createUserFromLDAP(LDAPEntry entry) { ... }                   // hypothetical enterprise need
-}
+```python
+# Violation: implementing features for requirements that do not exist yet
+class UserService:
+    def create_user(self, name: str, email: str): ...                          # needed now
+    def create_user_in_tenant(self, name: str, email: str, tenant_id: str): ...  # maybe someday
+    def create_user_from_ldap(self, ldap_entry): ...                           # hypothetical enterprise need
 
-// YAGNI:
-class UserService {
-    public User createUser(String name, String email) {
-        return new User(name, email);
-    }
-}
+# YAGNI:
+class UserService:
+    def create_user(self, name: str, email: str):
+        return User(name, email)
 ```
 
 Add the LDAP integration when an enterprise customer actually requires it. Until then, it is dead code.
@@ -654,37 +515,39 @@ The correct interaction: "That will be $45." The customer handles their own wall
 
 **Law of Demeter in code:** an object should only call methods on (1) itself, (2) objects passed in as parameters, (3) objects it created, (4) its own direct fields. It should not chain through returned objects — that traverses "strangers."
 
-```java
-// Violation: cashier reaching into customer → wallet → money
-public void processPayment(Customer customer, double amount) {
-    customer.getWallet().getMoney().deduct(amount);
-}
-// If Wallet is refactored, this breaks — and this code had no right to know about Wallet.
+```python
+# Violation: cashier reaching into customer → wallet → money
+def process_payment(customer, amount: float):
+    customer.get_wallet().get_money().deduct(amount)
+# If Wallet is refactored, this breaks — and this code had no right to know about Wallet.
 
-// Law of Demeter: talk to your direct friend only
-public void processPayment(Customer customer, double amount) {
-    customer.pay(amount);  // Tell the customer to pay — they handle their own wallet
-}
+# Law of Demeter: talk to your direct friend only
+def process_payment(customer, amount: float):
+    customer.pay(amount)  # Tell the customer to pay — they handle their own wallet
 
-class Customer {
-    private Wallet wallet;
-    public void pay(double amount) { this.wallet.deduct(amount); }
-}
+class Customer:
+    def __init__(self):
+        self._wallet = Wallet()
+
+    def pay(self, amount: float):
+        self._wallet.deduct(amount)
 ```
 
 Another common violation:
 
-```java
-// Violation
-String city = order.getCustomer().getAddress().getCity();
+```python
+# Violation
+city = order.get_customer().get_address().get_city()
 
-// Better: Order exposes what callers need, hides its internal structure
-String city = order.getCustomerCity();
+# Better: Order exposes what callers need, hides its internal structure
+city = order.get_customer_city()
 
-class Order {
-    private Customer customer;
-    public String getCustomerCity() { return customer.getCity(); }
-}
+class Order:
+    def __init__(self, customer):
+        self._customer = customer
+
+    def get_customer_city(self) -> str:
+        return self._customer.get_city()
 ```
 
 ---

@@ -52,19 +52,31 @@ Try to count before reading on.
 
 With 3 platforms and 3 quality settings, pure inheritance creates one class per combination:
 
-```java
-class WebSDPlayer    { public void play(String title) { ... } }
-class WebHDPlayer    { public void play(String title) { ... } }
-class Web4KPlayer    { public void play(String title) { ... } }
-class MobileSDPlayer { public void play(String title) { ... } }
-class MobileHDPlayer { public void play(String title) { ... } }
-class Mobile4KPlayer { public void play(String title) { ... } }
-class SmartTVSDPlayer { ... }
-class SmartTVHDPlayer { ... }
-class SmartTV4KPlayer { ... }
-// 3 platforms × 3 qualities = 9 classes
-// Add SmartWatch → 3 more classes
-// Add 8K quality → 4 more classes (one per platform)
+```python
+class WebSDPlayer:
+    def play(self, title: str): ...
+
+class WebHDPlayer:
+    def play(self, title: str): ...
+
+class Web4KPlayer:
+    def play(self, title: str): ...
+
+class MobileSDPlayer:
+    def play(self, title: str): ...
+
+class MobileHDPlayer:
+    def play(self, title: str): ...
+
+class Mobile4KPlayer:
+    def play(self, title: str): ...
+
+class SmartTVSDPlayer: ...
+class SmartTVHDPlayer: ...
+class SmartTV4KPlayer: ...
+# 3 platforms × 3 qualities = 9 classes
+# Add SmartWatch → 3 more classes
+# Add 8K quality → 4 more classes (one per platform)
 ```
 
 **What breaks**:
@@ -81,34 +93,38 @@ The constraint: **the two dimensions (platform and quality) must vary independen
 
 Step 1 — recognize the two hierarchies: what you're doing (platform abstraction) and how (quality implementation). Separate them:
 
-```java
-// Implementation hierarchy: how the video is rendered
-interface VideoQuality {
-    void load(String title);
-}
-class HDQuality implements VideoQuality {
-    public void load(String title) { System.out.println("Streaming " + title + " in HD"); }
-}
+```python
+from abc import ABC, abstractmethod
 
-// Abstraction hierarchy: which platform
-abstract class VideoPlayer {
-    protected VideoQuality quality;  // bridge — holds the implementation
-    public VideoPlayer(VideoQuality q) { this.quality = q; }
-    abstract void play(String title);
-}
-class WebPlayer extends VideoPlayer {
-    public WebPlayer(VideoQuality q) { super(q); }
-    public void play(String title) {
-        System.out.print("Web: ");
-        quality.load(title);  // delegates to whichever quality was injected
-    }
-}
+# Implementation hierarchy: how the video is rendered
+class VideoQuality(ABC):
+    @abstractmethod
+    def load(self, title: str):
+        pass
+
+class HDQuality(VideoQuality):
+    def load(self, title: str):
+        print(f"Streaming {title} in HD")
+
+# Abstraction hierarchy: which platform
+class VideoPlayer(ABC):
+    def __init__(self, quality: VideoQuality):
+        self.quality = quality  # bridge — holds the implementation
+
+    @abstractmethod
+    def play(self, title: str):
+        pass
+
+class WebPlayer(VideoPlayer):
+    def play(self, title: str):
+        print("Web: ", end="")
+        self.quality.load(title)  # delegates to whichever quality was injected
 ```
 
 Step 2 — compose at runtime:
-```java
-VideoPlayer player = new WebPlayer(new HDQuality()); // HD on Web
-VideoPlayer player = new MobilePlayer(new UltraHDQuality()); // 4K on Mobile
+```python
+player = WebPlayer(HDQuality())          # HD on Web
+player = MobilePlayer(UltraHDQuality())  # 4K on Mobile
 ```
 
 Now: 3 platforms + 3 qualities = 6 classes instead of 9. Adding SmartWatch = 1 class. Adding 8K = 1 class. They work with all combinations automatically.
@@ -144,38 +160,27 @@ Both can vary independently.
 
 Consider building a video player with multiple platforms and multiple quality options:
 
-```java
-// Each class is a platform + quality combination
-class WebHDPlayer implements PlayQuality {
-    public void play(String title) {
-        System.out.println("Web Player: Playing " + title + " in HD");
-    }
-}
+```python
+# Each class is a platform + quality combination
+class WebHDPlayer:
+    def play(self, title: str):
+        print(f"Web Player: Playing {title} in HD")
 
-class MobileHDPlayer implements PlayQuality {
-    public void play(String title) {
-        System.out.println("Mobile Player: Playing " + title + " in HD");
-    }
-}
+class MobileHDPlayer:
+    def play(self, title: str):
+        print(f"Mobile Player: Playing {title} in HD")
 
-class SmartTVUltraHDPlayer implements PlayQuality {
-    public void play(String title) {
-        System.out.println("Smart TV: Playing " + title + " in ultra HD");
-    }
-}
+class SmartTVUltraHDPlayer:
+    def play(self, title: str):
+        print(f"Smart TV: Playing {title} in ultra HD")
 
-class Web4KPlayer implements PlayQuality {
-    public void play(String title) {
-        System.out.println("Web Player: Playing " + title + " in 4K");
-    }
-}
+class Web4KPlayer:
+    def play(self, title: str):
+        print(f"Web Player: Playing {title} in 4K")
 
-public class Main {
-    public static void main(String[] args) {
-        PlayQuality player = new WebHDPlayer();
-        player.play("Interstellar");
-    }
-}
+if __name__ == "__main__":
+    player = WebHDPlayer()
+    player.play("Interstellar")
 ```
 
 **The problem**: 3 platforms × 4 quality options = 12 classes. Add one new platform? 4 more classes. Add one new quality? 3 more classes. This is the combinatorial explosion the Bridge Pattern eliminates.
@@ -184,73 +189,57 @@ public class Main {
 
 ## Solution: Bridge Pattern
 
-```java
-// ======== Implementor Interface =========
-interface VideoQuality {
-    void load(String title);
-}
+```python
+from abc import ABC, abstractmethod
 
-// ============ Concrete Implementors ==============
-class SDQuality implements VideoQuality {
-    public void load(String title) {
-        System.out.println("Streaming " + title + " in SD Quality");
-    }
-}
+# ======== Implementor Interface =========
+class VideoQuality(ABC):
+    @abstractmethod
+    def load(self, title: str):
+        pass
 
-class HDQuality implements VideoQuality {
-    public void load(String title) {
-        System.out.println("Streaming " + title + " in HD Quality");
-    }
-}
+# ============ Concrete Implementors ==============
+class SDQuality(VideoQuality):
+    def load(self, title: str):
+        print(f"Streaming {title} in SD Quality")
 
-class UltraHDQuality implements VideoQuality {
-    public void load(String title) {
-        System.out.println("Streaming " + title + " in 4K Ultra HD Quality");
-    }
-}
+class HDQuality(VideoQuality):
+    def load(self, title: str):
+        print(f"Streaming {title} in HD Quality")
 
-// ========== Abstraction ==========
-abstract class VideoPlayer {
-    protected VideoQuality quality;
-    
-    public VideoPlayer(VideoQuality quality) {
-        this.quality = quality;
-    }
-    
-    abstract void play(String title);
-}
+class UltraHDQuality(VideoQuality):
+    def load(self, title: str):
+        print(f"Streaming {title} in 4K Ultra HD Quality")
 
-// =========== Refined Abstractions ==============
-class WebPlayer extends VideoPlayer {
-    public WebPlayer(VideoQuality quality) { super(quality); }
-    
-    void play(String title) {
-        System.out.println("Web Platform:");
-        quality.load(title);
-    }
-}
+# ========== Abstraction ==========
+class VideoPlayer(ABC):
+    def __init__(self, quality: VideoQuality):
+        self.quality = quality
 
-class MobilePlayer extends VideoPlayer {
-    public MobilePlayer(VideoQuality quality) { super(quality); }
-    
-    void play(String title) {
-        System.out.println("Mobile Platform:");
-        quality.load(title);
-    }
-}
+    @abstractmethod
+    def play(self, title: str):
+        pass
 
-// Client Code
-public class Main {
-    public static void main(String[] args) {
-        // Playing on Web with HD Quality
-        VideoPlayer player1 = new WebPlayer(new HDQuality());
-        player1.play("Interstellar");
-        
-        // Playing on Mobile with Ultra HD Quality
-        VideoPlayer player2 = new MobilePlayer(new UltraHDQuality());
-        player2.play("Inception");
-    }
-}
+# =========== Refined Abstractions ==============
+class WebPlayer(VideoPlayer):
+    def play(self, title: str):
+        print("Web Platform:")
+        self.quality.load(title)
+
+class MobilePlayer(VideoPlayer):
+    def play(self, title: str):
+        print("Mobile Platform:")
+        self.quality.load(title)
+
+# Client Code
+if __name__ == "__main__":
+    # Playing on Web with HD Quality
+    player1 = WebPlayer(HDQuality())
+    player1.play("Interstellar")
+
+    # Playing on Mobile with Ultra HD Quality
+    player2 = MobilePlayer(UltraHDQuality())
+    player2.play("Inception")
 ```
 
 Now: 2 platforms + 3 quality types = 5 classes total.  

@@ -169,6 +169,15 @@ Maps doesn't wait for you to arrive and find the door locked — it polls busine
 
 When the registry is unavailable, clients fall back to their last cached list — like using an offline Maps cache when you lose signal. Stale is better than nothing, but health checks ensure the list stays fresh when the registry recovers.
 
+### AP vs CP Registry — the Key Design Choice
+
+This is the classic interview probe and it's a direct CAP trade-off applied to the registry itself:
+
+- **AP registry (Eureka)**: During a network partition, each Eureka peer keeps serving its last-known instance list rather than refusing reads. You may route to a dead instance (stale entry), but discovery never goes fully dark. Eureka even has self-preservation mode: if it loses too many heartbeats at once, it assumes a network problem (not mass instance death) and stops evicting, to avoid wiping the registry during a partition. Right default for service discovery, where availability usually matters more than perfect accuracy — a client-side circuit breaker / retry handles the occasional stale entry.
+- **CP registry (etcd, Consul, ZooKeeper)**: Backed by Raft/Paxos. The minority side of a partition refuses writes (and optionally reads) to guarantee no split-brain — you never get two conflicting answers, but the minority partition can't register or discover until quorum is restored. Right default when you need a single authoritative view (leader election, config, K8s control plane).
+
+The interview-ready summary: "Service discovery generally favors AP — a stale endpoint plus a client-side circuit breaker beats a registry that stops answering. Use CP when the registry is also doing coordination (leader election, locking), where a wrong answer is worse than no answer."
+
 ---
 
 ## 6. Performance Considerations

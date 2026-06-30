@@ -59,19 +59,16 @@ Write the `PaymentProcessor.pay(amount)` method for all four types before readin
 
 ## Problem Without the Pattern
 
-```java
-class PaymentProcessor {
-    public void pay(String type, double amount) {
-        if (type.equals("STRIPE")) {
-            // 20 lines of Stripe SDK setup and API calls
-        } else if (type.equals("PAYPAL")) {
-            // 20 lines of PayPal OAuth and API calls
-        } else if (type.equals("CRYPTO")) {
-            // 20 lines of wallet address resolution and broadcast
-        }
-        // 4th type: edit this method
-    }
-}
+```python
+class PaymentProcessor:
+    def pay(self, payment_type, amount):
+        if payment_type == "STRIPE":
+            pass  # 20 lines of Stripe SDK setup and API calls
+        elif payment_type == "PAYPAL":
+            pass  # 20 lines of PayPal OAuth and API calls
+        elif payment_type == "CRYPTO":
+            pass  # 20 lines of wallet address resolution and broadcast
+        # 4th type: edit this method
 ```
 
 **What breaks**:
@@ -87,35 +84,34 @@ class PaymentProcessor {
 The constraint: **the algorithm (how to pay) must be swappable without changing the class that uses it**.
 
 Step 1 — extract the varying part (the payment algorithm) behind an interface:
-```java
-interface PaymentStrategy {
-    void pay(double amount);
-}
+```python
+from abc import ABC, abstractmethod
+
+class PaymentStrategy(ABC):
+    @abstractmethod
+    def pay(self, amount):
+        pass
 ```
 
 Step 2 — each algorithm is its own class:
-```java
-class StripeStrategy implements PaymentStrategy {
-    public void pay(double amount) { /* Stripe logic */ }
-}
-class PayPalStrategy implements PaymentStrategy {
-    public void pay(double amount) { /* PayPal logic */ }
-}
+```python
+class StripeStrategy(PaymentStrategy):
+    def pay(self, amount):
+        pass  # Stripe logic
+
+class PayPalStrategy(PaymentStrategy):
+    def pay(self, amount):
+        pass  # PayPal logic
 ```
 
 Step 3 — the context holds a reference to the interface, not a concrete class:
-```java
-class PaymentProcessor {
-    private PaymentStrategy strategy;
+```python
+class PaymentProcessor:
+    def __init__(self, strategy):
+        self._strategy = strategy
 
-    public PaymentProcessor(PaymentStrategy strategy) {
-        this.strategy = strategy;
-    }
-
-    public void pay(double amount) {
-        strategy.pay(amount);   // delegates — no branching
-    }
-}
+    def pay(self, amount):
+        self._strategy.pay(amount)  # delegates — no branching
 ```
 
 Adding the 4th payment type is now one new class, zero edits to `PaymentProcessor`. That is the pattern.
@@ -129,11 +125,11 @@ Adding the 4th payment type is now one new class, zero edits to `PaymentProcesso
 
 **A GPS with multiple route options.**
 
-When you enter a destination in Google Maps, it shows you three buttons: **Fastest**, **Shortest**, **Avoid Tolls**. Each button is a different routing *strategy*. You pick one at runtime. The GPS (context) doesn't care which one you pick — it just calls `getRoute()` and the selected strategy figures out the path.
+When you enter a destination in Google Maps, it shows you three buttons: **Fastest**, **Shortest**, **Avoid Tolls**. Each button is a different routing *strategy*. You pick one at runtime. The GPS (context) doesn't care which one you pick — it just calls `get_route()` and the selected strategy figures out the path.
 
 If Google needed to add "Avoid Highways" in the future, they'd add a new strategy class, not rewrite the GPS. The GPS code doesn't change.
 
-**Without Strategy**: One massive `getRoute()` method with `if type=="fastest"`, `else if type=="shortest"`, `else if type=="avoid_tolls"` — a new option means modifying this method every time.
+**Without Strategy**: One massive `get_route()` method with `if type=="fastest"`, `else if type=="shortest"`, `else if type=="avoid_tolls"` — a new option means modifying this method every time.
 
 **With Strategy**: Each routing algorithm is its own class. Adding a new option = adding a new class, no existing code touched.
 
@@ -152,95 +148,81 @@ If Google needed to add "Avoid Highways" in the future, they'd add a new strateg
 
 Without Strategy, adding payment methods requires modifying the core class:
 
-```java
-// Bad! Every new payment method requires modifying this class
-class PaymentProcessor {
-    public void pay(String type, int amount) {
-        if (type.equals("credit_card")) {
-            // Validate card, call bank API...
-        } else if (type.equals("paypal")) {
-            // Login to PayPal, charge...
-        } else if (type.equals("crypto")) {
-            // Validate wallet, broadcast transaction...
-        }
-        // Adding "UPI" means editing this method — violates OCP
-    }
-}
+```python
+# Bad! Every new payment method requires modifying this class
+class PaymentProcessor:
+    def pay(self, payment_type, amount):
+        if payment_type == "credit_card":
+            pass  # Validate card, call bank API...
+        elif payment_type == "paypal":
+            pass  # Login to PayPal, charge...
+        elif payment_type == "crypto":
+            pass  # Validate wallet, broadcast transaction...
+        # Adding "UPI" means editing this method — violates OCP
 ```
 
 ---
 
 ## Solution: Strategy Pattern
 
-```java
-// 1. Strategy Interface — the contract all algorithms must fulfill
-interface PaymentStrategy {
-    void pay(int amount);
-}
+```python
+from abc import ABC, abstractmethod
 
-// 2. Concrete Strategies — each algorithm is its own class
-class CreditCardStrategy implements PaymentStrategy {
-    private String cardNumber;
-    
-    public CreditCardStrategy(String cardNumber) {
-        this.cardNumber = cardNumber;
-    }
-    
-    @Override
-    public void pay(int amount) {
-        System.out.println("Paid " + amount + " using Credit Card " + cardNumber);
-    }
-}
 
-class PayPalStrategy implements PaymentStrategy {
-    private String email;
-    
-    public PayPalStrategy(String email) {
-        this.email = email;
-    }
-    
-    @Override
-    public void pay(int amount) {
-        System.out.println("Paid " + amount + " using PayPal " + email);
-    }
-}
+# 1. Strategy Interface — the contract all algorithms must fulfill
+class PaymentStrategy(ABC):
+    @abstractmethod
+    def pay(self, amount):
+        pass
 
-class CryptoStrategy implements PaymentStrategy {
-    @Override
-    public void pay(int amount) {
-        System.out.println("Paid " + amount + " using Bitcoin");
-    }
-}
 
-// 3. Context — holds a reference to the current strategy, delegates to it
-class ShoppingCart {
-    private PaymentStrategy paymentStrategy;
-    
-    public void setPaymentStrategy(PaymentStrategy strategy) {
-        this.paymentStrategy = strategy;
-    }
-    
-    public void checkout(int amount) {
-        paymentStrategy.pay(amount);  // Delegate — doesn't know or care which strategy
-    }
-}
+# 2. Concrete Strategies — each algorithm is its own class
+class CreditCardStrategy(PaymentStrategy):
+    def __init__(self, card_number):
+        self._card_number = card_number
 
-// Usage
-public class Main {
-    public static void main(String[] args) {
-        ShoppingCart cart = new ShoppingCart();
+    def pay(self, amount):
+        print(f"Paid {amount} using Credit Card {self._card_number}")
 
-        // Use Credit Card
-        cart.setPaymentStrategy(new CreditCardStrategy("1234-5678"));
-        cart.checkout(100);
 
-        // Switch to PayPal at runtime — same cart, different algorithm
-        cart.setPaymentStrategy(new PayPalStrategy("user@example.com"));
-        cart.checkout(200);
-        
-        // Adding UPI later requires zero changes to ShoppingCart
-    }
-}
+class PayPalStrategy(PaymentStrategy):
+    def __init__(self, email):
+        self._email = email
+
+    def pay(self, amount):
+        print(f"Paid {amount} using PayPal {self._email}")
+
+
+class CryptoStrategy(PaymentStrategy):
+    def pay(self, amount):
+        print(f"Paid {amount} using Bitcoin")
+
+
+# 3. Context — holds a reference to the current strategy, delegates to it
+class ShoppingCart:
+    def __init__(self):
+        self._payment_strategy = None
+
+    def set_payment_strategy(self, strategy):
+        self._payment_strategy = strategy
+
+    def checkout(self, amount):
+        self._payment_strategy.pay(amount)  # Delegate — doesn't know or care which strategy
+
+
+# Usage
+if __name__ == "__main__":
+    cart = ShoppingCart()
+
+    # Use Credit Card
+    cart.set_payment_strategy(CreditCardStrategy("1234-5678"))
+    cart.checkout(100)
+
+    # Switch to PayPal at runtime — same cart, different algorithm
+    cart.set_payment_strategy(PayPalStrategy("user@example.com"))
+    cart.checkout(200)
+
+    # Adding UPI later requires zero changes to ShoppingCart
 ```
 
 ### Class Diagram
@@ -282,17 +264,21 @@ classDiagram
 
 ## Real-World Examples
 
-### 1. Sorting (Java Collections)
-```java
-List<String> names = Arrays.asList("John", "Alice", "Bob");
+### 1. Sorting (Python)
+```python
+names = ["John", "Alice", "Bob"]
 
-// Strategy 1: Natural Order
-Collections.sort(names);
+# Strategy 1: Natural Order
+names.sort()
 
-// Strategy 2: Custom Comparator (Strategy injected via lambda)
-Collections.sort(names, (a, b) -> b.compareTo(a)); // Reverse order
+# Strategy 2: Custom key (Strategy injected via lambda)
+names.sort(key=lambda x: x[-1])  # Sort by last character
+
+# Strategy 3: Using functools.cmp_to_key for full comparator
+from functools import cmp_to_key
+names.sort(key=cmp_to_key(lambda a, b: -1 if a > b else 1))  # Reverse order
 ```
-`Comparator` is literally the Strategy interface in Java.
+The `key` parameter is the Strategy interface in Python sorting.
 
 ### 2. Navigation Apps (Route Planning)
 - `FastestRouteStrategy`: Optimize for shortest time.
@@ -300,7 +286,7 @@ Collections.sort(names, (a, b) -> b.compareTo(a)); // Reverse order
 - `AvoidTollsStrategy`: Minimize toll costs.
 - `WalkingStrategy`: Pedestrian-optimized path.
 
-Each strategy implements the same `getRoute(origin, destination)` interface.
+Each strategy implements the same `get_route(origin, destination)` interface.
 
 ### 3. Compression
 - `ZipCompressionStrategy`
@@ -336,4 +322,4 @@ File manager picks the strategy based on format selected. Core compression logic
 - **Template Method**: Uses inheritance. The skeleton is fixed in a base class; subclasses fill in specific steps. Not swappable at runtime.
 
 **Q: How does dependency injection relate to Strategy?**
-- DI is often the mechanism used to inject a specific Strategy implementation into the Context. In Spring: `@Autowired PaymentStrategy strategy` where the bean is configured externally.
+- DI is often the mechanism used to inject a specific Strategy implementation into the Context. The concrete strategy is configured externally and injected at construction time.

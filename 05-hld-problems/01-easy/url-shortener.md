@@ -2,653 +2,174 @@
 module: 05-hld-problems
 topic: Easy
 status: unread
-tags: [05-hld-problems, system-design, easy]
+tags: [05-hld-problems, system-design, easy, hashing, base62, caching]
 ---
-# Design URL Shortener
+# Design a URL Shortener (Bitly)
 
-> **Difficulty**: Easy
-> **Topics**: Hashing, Base62 Encoding, Database Sharding
-> **Time**: 45-60 minutes
-> **Companies**: Google, Amazon, Meta, Microsoft
+> **Difficulty**: Easy | **Asked at**: Amazon, Google, Meta, Microsoft
 
 ---
 
-## Problem Mindmap
+## Problem Statement
 
-```
-URL Shortener
-├── Problem Constraints
-│   ├── Scale → 100M URLs/month = 40 writes/sec, 4B redirects/month = 12K reads/sec peak
-│   ├── Storage → 500 bytes/URL × 100M × 12 months × 5yr = 15TB total
-│   ├── Latency target → redirect < 10ms (cached), no tolerable loss of short codes
-│   └── Core hardness → collision-free unique key generation at write + sub-10ms redirect at massive read scale
-├── Architecture Derivation
-│   ├── Step 1 → MD5(url)[0:7] → hash collisions at 100M URLs; can't guarantee uniqueness
-│   ├── Step 2 → Auto-increment counter + Base62 encode → no collision, but single DB = SPOF
-│   ├── Step 3 → Distributed counter (Redis INCR or ticket server) → scalable, no collision
-│   └── Step 4 → CDN → LB → App servers → Redis read-through cache → PostgreSQL shards → handles 12K reads/sec, 40 writes/sec
-├── Core Components
-│   ├── Encoder → Base62(counter) → 7 chars = 62^7 = 3.5T unique URLs
-│   ├── Redis cache → hot short codes (20% URLs = 80% traffic); TTL 24h LRU eviction
-│   ├── PostgreSQL → source of truth for short_code → long_url mapping; sharded by code prefix
-│   ├── CDN → serves redirect for globally popular URLs; Cache-Control: max-age=86400
-│   └── Kafka → async click analytics (no write latency impact on redirect path)
-├── Data Model
-│   ├── urls table → (short_code PK, long_url, user_id, created_at, expires_at, click_count)
-│   └── analytics events → (short_code, timestamp, ip_hash, country, referrer) → write-only append
-├── APIs
-│   ├── POST /shorten → {long_url, custom_alias?, ttl?} → {short_url}
-│   ├── GET /{short_code} → 302 redirect to long_url (301 for permanent = breaks analytics)
-│   └── GET /api/stats/{short_code} → {clicks, countries, referrers, timeline}
-├── Critical Trade-offs
-│   ├── 301 vs 302 → 302 chosen → browser doesn't cache; every hit tracked for analytics
-│   ├── Counter vs Hash → Counter+Base62 chosen → no collisions, predictable length, fast
-│   └── Custom alias → stored in shared short_code namespace; UNIQUE constraint prevents collision
-├── Failure Scenarios
-│   ├── Redis miss → fall through to PostgreSQL; no data loss, just latency spike
-│   ├── Counter node failure → switch to backup Redis replica; DB UNIQUE constraint prevents duplicates
-│   └── DB shard unavailable → read replicas serve reads; writes queue; expired URLs return 404
-└── Interview Angles
-    ├── Scale → "How do you get to 12K reads/sec?" → CDN + Redis; DB is rarely hit
-    ├── Uniqueness → "What if two users shorten the same URL?" → two codes, both valid; no dedup by default
-    ├── Custom alias → "How do you prevent collisions with generated codes?" → shared namespace + UNIQUE constraint
-    └── Follow-up → "How do you handle URL expiry?" → TTL column + background sweeper + Redis TTL aligned
-```
+Design a URL shortening service like Bitly. Users submit a long URL and receive a short URL (e.g., `short.ly/abc1234`). When someone visits the short URL, they are redirected to the original long URL.
 
 ---
 
-## What Breaks Without This System
+## Functional Requirements
 
-Without a URL shortener, every shared link is the raw long URL. A tweet containing `https://example.com/products/electronics/laptops/dell-xps-15-9500-15-6-inch-4k-uhd-display?ref=newsletter&utm_source=email&utm_medium=cta&discount=SAVE20` has already consumed the character budget and is unclickable in many SMS clients and printed materials. Marketing campaigns can't track click-through. QR codes encoding 200-character URLs become dense and fail to scan on cheap scanners.
-
-The physical constraint: short codes must be globally unique across every server in the fleet, derived in under a millisecond, and the resulting 7-character string must map back to exactly one URL forever — or until explicitly deleted.
-
----
-
-## Derive the Architecture
-
-**Start with 1 server:**
-A single app server with a PostgreSQL database. On write: generate a short code, insert a row. On read: query by short code, return 302 redirect.
-
-**What breaks at 40 writes/sec + 4,000 reads/sec (100M URLs/month)?**
-Read QPS = 4,000. PostgreSQL can serve this with a B-tree index on `short_code`. Nothing breaks yet.
-
-**What breaks at peak (12,000 reads/sec)?**
-A single PostgreSQL primary can serve roughly 5,000–8,000 indexed reads/sec before connection exhaustion. P99 latency climbs past 100ms. Add a Redis cache: the hot 20% of URLs that generate 80% of traffic live in a 15 GB Redis cluster. Cache hit rate reaches 95%. The remaining 5% miss to PostgreSQL, which now handles only 600 reads/sec — well within limits.
-
-**What breaks at 6 billion URLs over 5 years?**
-At 2.5 KB/URL × 6B = 15 TB of data, a single PostgreSQL node runs out of disk and its B-tree becomes too large to cache. Add sharding: `hash(short_code) % N` routes each short code to a specific shard. Each shard holds 1/N of the data. N=4 shards × ~4 TB each fits on commodity hardware.
-
-**What breaks with a single ID generator?**
-If short codes are generated by one counter service, that service is a single point of failure. Two app servers generating codes independently may collide. Add a Snowflake ID generator: 10-bit machine ID + 12-bit sequence = up to 4,096 unique IDs per millisecond per machine, no coordination needed.
-
-**Resulting architecture:** CDN → Load Balancer → Stateless App Servers → Redis (hot URLs) → PostgreSQL shards (durable storage) + ID Generator Service.
+1. **Shorten URL**: Given a long URL, return a unique short URL
+2. **Redirect**: GET short URL → 302 redirect to original long URL
+3. **Custom aliases**: User can optionally specify the short code (e.g., `short.ly/mycompany`)
+4. **Analytics**: Track click count per short URL
+5. **Expiration**: Short URLs can have an optional TTL
 
 ---
 
-## Why This Is Hard
+## Non-Functional Requirements
 
-The service looks trivial until you examine the edges:
-
-1. **Uniqueness at scale**: 100M URLs/month means ~40 short codes generated every second. Generating unique IDs across many stateless servers without collisions requires careful coordination.
-2. **Read-hot, write-rare**: Redirect traffic (reads) dwarfs creation traffic (writes) by 100:1. The critical path — the redirect — must be sub-10ms. One slow database read kills this.
-3. **Abuse surface**: A URL shortener is essentially a free redirect proxy. Without rate limiting and malicious-domain detection, it becomes a phishing tool.
-4. **Cache invalidation**: Deleted or expired URLs cached in browsers (301 redirects) can never be recalled. That permanent decision has lasting consequences.
-5. **Analytics accuracy vs. load**: Tracking every click accurately requires hitting your server on every redirect; letting the browser cache it (301) saves load but kills analytics.
+- **Scale**: 100M new URLs/month → 40 writes/sec; 10B redirects/month → 4,000 reads/sec avg, 12,000 peak
+- **Latency**: P99 redirect < 10ms (cached); create < 100ms
+- **Availability**: 99.99% uptime — no single point of failure
+- **Durability**: Short codes must never be lost or reassigned
+- **Storage**: ~15 TB over 5 years (100M URLs/month × 12 × 5 × 2.5 KB)
 
 ---
 
-## Requirements Gathering
+## Core Entities
 
-### Functional Requirements
-
-**Must-Have:**
-1. Generate short URL from long URL
-2. Redirect short URL to long URL (301/302)
-3. Short URLs never expire by default
-
-**Nice-to-Have:**
-4. Custom aliases (e.g., `short.ly/mycompany`)
-5. Analytics (clicks, geographic, referrers)
-6. Expiration time (TTL)
-7. Rate limiting
-
-### Non-Functional Requirements
-
-**Performance:**
-- Latency: P99 < 100ms for redirects
-- Throughput: 10K writes/sec, 100K reads/sec (10:1 read:write ratio)
-
-**Availability:**
-- 99.99% uptime (53 minutes downtime/year)
-- No single point of failure
-
-**Scalability:**
-- 100M new URLs/month
-- 10B redirects/month
-
-**Security:**
-- Prevent spam/malicious URLs
-- Rate limiting per user/IP
-
-**Reliability:**
-- URLs never lost (durable storage)
-- Eventual consistency acceptable
-
----
-
-## Capacity Estimation
-
-### Traffic Estimates
-
-```
-Given:
-- 100M new URLs/month
-- 100:1 read:write ratio
-
-Writes (creates):
-100M/month ÷ 30 days ÷ 86,400 sec/day = 40 URLs/sec (average)
-Peak (3×): 120 writes/sec
-
-Reads (redirects):
-40 writes/sec × 100 = 4,000 reads/sec (average)
-Peak (3×): 12,000 reads/sec
-```
-
-### Storage Estimates
-
-```
-Per URL record:
-├─ short_code (7 chars): 7 bytes
-├─ long_url (2 KB avg): 2,000 bytes
-├─ user_id (BIGINT): 8 bytes
-├─ created_at (TIMESTAMP): 8 bytes
-├─ metadata (JSONB): 500 bytes
-└─ Total: ~2.5 KB per URL
-
-5 years of URLs:
-100M/month × 12 months × 5 years = 6 billion URLs
-6B × 2.5 KB = 15 TB
-
-With replication (3×): 45 TB
-With indexes (2×): 90 TB
-
-Final Estimate: 90-100 TB for 5 years
-```
-
-### Bandwidth Estimates
-
-```
-Writes:
-120 writes/sec × 2.5 KB = 300 KB/sec ≈ 2.4 Mbps
-
-Reads:
-12,000 reads/sec × 2.5 KB = 30 MB/sec ≈ 240 Mbps (peak)
-```
-
-### Cache Requirements (80/20 Rule)
-
-```
-Assumption: 20% of URLs generate 80% of traffic
-
-Daily redirects:
-12,000 reads/sec × 86,400 sec = 1B redirects/day
-
-Cache hot URLs (estimate 0.1% of total):
-6B URLs × 0.001 = 6M URLs
-6M × 2.5 KB = 15 GB cache (feasible)
-
-Redis cache: 32 GB instance (covers hot URLs + overhead)
-```
+| Entity | Key Fields |
+|--------|-----------|
+| `URL` | short_code (PK), long_url, user_id, created_at, expires_at, click_count |
+| `User` | user_id, api_key, rate_limit_tier |
+| `AnalyticsEvent` | short_code, clicked_at, ip_hash, country, referrer |
 
 ---
 
 ## API Design
 
-### REST Endpoints
-
-**1. Create Short URL**
 ```http
 POST /api/v1/urls
-Content-Type: application/json
+Body: { "long_url": "https://...", "custom_alias": "mylink", "ttl_days": 365 }
+Response 201: { "short_url": "https://short.ly/abc1234", "short_code": "abc1234" }
 
-Request:
-{
-  "long_url": "https://example.com/very/long/url",
-  "custom_alias": "mylink",         // optional
-  "expiration": "2026-12-31T23:59:59Z"  // optional
-}
-
-Response: 201 Created
-{
-  "short_url": "https://short.ly/abc1234",
-  "long_url": "https://example.com/very/long/url",
-  "short_code": "abc1234",
-  "created_at": "2026-02-08T10:00:00Z",
-  "expires_at": null
-}
-```
-
-**2. Redirect Short URL**
-```http
 GET /{short_code}
+Response 302: Location: <long_url>   (or 404 if not found / expired)
 
-Response: 301 Moved Permanently OR 302 Found
-Location: https://example.com/very/long/url
-```
+GET /api/v1/urls/{short_code}/stats
+Response 200: { "click_count": 12345, "created_at": "...", "expires_at": "..." }
 
-**301 vs 302 — The Decision That Matters:**
-- **301 (Moved Permanently)**: Browser caches the redirect. Reduces load on servers but prevents accurate analytics. Once a user's browser caches it, you can never recall or update it.
-- **302 (Found/Moved Temporarily)**: Browser contacts your server on every click. Higher load but 100% accurate analytics and ability to update the destination.
-- **Rule of thumb**: Use 302 if analytics is a functional requirement.
-
-**3. Get URL Info (Optional)**
-```http
-GET /api/v1/urls/{short_code}
-
-Response: 200 OK
-{
-  "short_code": "abc1234",
-  "long_url": "https://example.com/very/long/url",
-  "created_at": "2026-02-08T10:00:00Z",
-  "click_count": 12345
-}
-```
-
-**4. Delete URL**
-```http
 DELETE /api/v1/urls/{short_code}
-
-Response: 204 No Content
+Response 204
 ```
 
----
-
-## Database Schema
-
-### SQL Schema (PostgreSQL)
-
-```sql
-CREATE TABLE urls (
-    short_code VARCHAR(7) PRIMARY KEY,
-    long_url TEXT NOT NULL,
-    user_id BIGINT,  -- NULL for anonymous users
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP,  -- NULL = never expires
-    click_count BIGINT DEFAULT 0,
-    INDEX idx_user_id (user_id),
-    INDEX idx_created_at (created_at)
-);
-
-CREATE TABLE analytics (
-    id BIGSERIAL PRIMARY KEY,
-    short_code VARCHAR(7) REFERENCES urls(short_code),
-    clicked_at TIMESTAMP DEFAULT NOW(),
-    ip_address INET,
-    user_agent TEXT,
-    referer TEXT,
-    country VARCHAR(2)
-);
-
--- Partitioning analytics by date for efficient queries
-CREATE TABLE analytics_2026_02 PARTITION OF analytics
-    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
-```
-
-### NoSQL Schema (DynamoDB)
-
-```
-Table: URLs
-Partition Key: short_code (String)
-Attributes:
-  - long_url (String)
-  - user_id (String)
-  - created_at (Number) // Unix timestamp
-  - expires_at (Number) // TTL for DynamoDB auto-delete
-  - click_count (Number)
-
-GSI: user_id-created_at-index
-  - Partition Key: user_id
-  - Sort Key: created_at
-  - Purpose: Query user's URLs sorted by creation time
-```
+**301 vs 302**: Use 302 (temporary redirect). 301 tells browsers to cache the redirect permanently — every subsequent click goes directly to the destination, bypassing your server entirely and killing analytics. 302 ensures every click hits your server.
 
 ---
 
 ## High-Level Design
 
-### Architecture
-
 ```
-┌─────────┐
-│ Client  │
-└────┬────┘
-     │
-     ▼
-┌──────────────────┐
-│ CDN/CloudFlare   │  (DDoS protection, rate limiting)
-└─────────┬────────┘
-          │
-          ▼
-┌──────────────────┐
-│  Load Balancer   │  (ALB, Nginx)
-│  (Round Robin)   │
-└─────────┬────────┘
-          │
-     ┌────┴────┐
-     │         │
-     ▼         ▼
-┌─────────┐ ┌─────────┐
-│  App    │ │  App    │  (Stateless, auto-scaling 10-100 instances)
-│ Server  │ │ Server  │
-└────┬────┘ └────┬────┘
-     │           │
-     ├───────────┤
-     │           │
-     ▼           ▼
-┌──────────────────────┐     ┌──────────────┐
-│  Redis Cache (15GB)  │────▶│ Cache-Aside  │
-│  - LRU eviction      │     │ 95% hit rate │
-└──────────┬───────────┘     └──────────────┘
-           │
-           │ Cache Miss (5%)
-           ▼
-┌────────────────────────────────┐
-│   PostgreSQL (Primary)         │
-│   - URLs table                 │
-│   - Write: 120 QPS             │
-└────────────┬───────────────────┘
-             │
-             │ Async Replication
-             ▼
-  ┌──────────────────────────┐
-  │  Read Replicas (×3)      │  (For analytics, fallback reads)
-  │  - Replication lag: <1s  │
-  └──────────────────────────┘
-
-┌──────────────────────────────┐
-│  ID Generation Service       │  (Snowflake, Zookeeper-based)
-│  - Distributed counter       │
-└──────────────────────────────┘
+Client
+  │
+  ▼
+CDN (CloudFront / Fastly)
+  │  ← serves cached redirects for globally hot short codes
+  ▼
+Load Balancer
+  │
+  ▼
+App Servers (stateless, horizontally scaled)
+  │          │
+  ▼          ▼
+Redis      ID Generator
+(hot URL   (Snowflake /
+ cache)     ticket server)
+  │
+  ▼
+PostgreSQL (sharded by hash(short_code))
+  │
+  ▼
+Kafka → Analytics Consumer → ClickHouse
 ```
+
+**Short code generation**: Use a distributed counter (Redis `INCR` or ticket server) to get a globally unique integer, then encode it as Base62 (0-9, a-z, A-Z). 7 Base62 characters = 62^7 = 3.5 trillion unique codes.
+
+**Why not MD5/SHA256?**: Hashing produces a fixed output from the URL content. Two users shortening the same URL would get the same code (acceptable) but different URLs could collide at 7 characters (unacceptable at 100M URLs).
+
+**Read path**: Client → CDN → (cache hit: 302 response) or (cache miss: App Server → Redis → DB → 302 response). Redis holds 20% of URLs that handle 80% of traffic. TTL aligned with URL expiry.
+
+**Write path**: App Server → ID Generator → Base62 encode → INSERT into PostgreSQL shard → write to Redis.
+
+**Database sharding**: Hash `short_code` to select shard. 4 shards × ~4 TB each handles 5-year storage. Each shard has read replicas.
 
 ---
 
-## Data Flow
+## Deep Dive 1: Unique ID Generation at Scale
 
-### Write Flow (Create Short URL)
+**Problem**: Two stateless app servers generating IDs simultaneously must not produce duplicates.
 
-```
-1. Client → POST /api/v1/urls {"long_url": "..."}
-2. Load Balancer → App Server
-3. App Server:
-   a. Generate unique short code (see algorithms below)
-   b. Check if short_code exists in DB (collision check)
-   c. INSERT into PostgreSQL: (short_code, long_url, user_id, ...)
-   d. Update Redis cache (write-through): SET short_code → long_url
-4. Return {"short_url": "https://short.ly/abc1234"}
-```
+**Option 1 — Redis INCR**: All servers call `INCR counter` on a Redis primary. Redis is single-threaded; INCR is atomic. Single point of failure — mitigated by Redis Sentinel/Cluster. Throughput: ~100K INCR/sec. Sufficient for 40 writes/sec.
 
-### Read Flow (Redirect Short URL)
+**Option 2 — Ticket Server**: A dedicated MySQL/PostgreSQL row with `AUTO_INCREMENT`. Each app server fetches a batch of 1,000 IDs at once, uses them locally. Reduces network round-trips 1,000×. Survives brief ticket server unavailability (in-flight batch). Single table = single shard, but workload is tiny.
 
-```
-1. Client → GET /abc1234
-2. Load Balancer → App Server
-3. App Server:
-   a. Check Bloom Filter in-memory: if false, return 404 immediately
-      (saves DB load for invalid/random short codes)
-   b. Check Redis cache: GET abc1234
-   c. If HIT (95% of requests):
-      → Return long_url from cache (2ms latency)
-   d. If MISS (5%):
-      → Query PostgreSQL: SELECT long_url FROM urls WHERE short_code = 'abc1234'
-      → Update cache: SET abc1234 → long_url (TTL: 24 hours)
-      → Return long_url (50ms latency)
-4. Return HTTP 301/302 redirect to long_url
-5. (Async) Increment click_count via Kafka message queue to analytics service
-```
+**Option 3 — Snowflake IDs**: 64-bit integer = timestamp (41 bits) + machine ID (10 bits) + sequence (12 bits). Generates 4,096 unique IDs/ms/machine without coordination. Encode to Base62 for the short code. K-ordered — recent URLs sort together, simplifying range queries on `created_at`.
+
+**Recommendation**: Ticket server with batch pre-allocation is simplest and sufficient. Snowflake if you need machine-autonomous generation.
 
 ---
 
-## Deep Dive Topics
+## Deep Dive 2: Redirect Latency Optimization
 
-### 1. Short Code Generation
+**Target**: P99 < 10ms for 12K redirects/sec.
 
-**Requirements:**
-- Unique (no collisions)
-- Short (7 characters = 62^7 = 3.5 trillion combinations)
-- URL-safe characters: `[a-zA-Z0-9]` (Base62)
+**Layer 1 — CDN**: CloudFront edge nodes cache `GET /{short_code}` → 302 response. Cache-Control: max-age=3600 for non-expiring URLs. Cache miss rate: ~5% for popular URLs (CDN hit rate: 95%). CDN serves the request from the PoP nearest the user, eliminating intercontinental RTT.
 
-**Option A: Hash-based (MD5/SHA + Base62)**
+**Layer 2 — Redis read-through cache**: App server checks Redis before touching PostgreSQL. Cache key: `url:{short_code}`, value: `long_url`. TTL matches URL expiry. Hot URLs stay in Redis indefinitely (LRU eviction only on memory pressure). 32 GB Redis covers ~12M URL mappings (2.5 KB each).
 
-```java
-public String generateShortCode(String longUrl) {
-    MessageDigest md = MessageDigest.getInstance("MD5");
-    byte[] hashBytes = md.digest(longUrl.getBytes());
-    String hashHex = bytesToHex(hashBytes);  // 32 hex chars
+**Layer 3 — Read replicas**: PostgreSQL read replicas in each region handle the 5% Redis misses. Reads are simple point lookups on the primary key index — O(log n), sub-millisecond at shard size.
 
-    long decimal = Long.parseLong(hashHex.substring(0, 8), 16);
-    String shortCode = Base62.encode(decimal).substring(0, 7);
-
-    return shortCode;
-}
-
-// Collision handling
-while (db.exists(shortCode)) {
-    longUrl += String.valueOf(new Random().nextInt(1000));
-    shortCode = generateShortCode(longUrl);
-}
-```
-
-**Pros:** Deterministic (same URL always maps to same short code — natural deduplication)
-**Cons:** Collision possible; retry logic adds latency
+**Cache warming on write**: When a URL is created, immediately write to Redis. Avoids a cold miss on the first click (common for viral links shared seconds after creation).
 
 ---
 
-**Option B: Auto-Incrementing Counter + Base62 (Recommended)**
+## Deep Dive 3: Custom Aliases and Collision Prevention
 
-```java
-public String generateShortCode(long counter) {
-    String encoded = Base62.encode(counter);
-    return String.format("%7s", encoded).replace(' ', '0');  // Pad to 7 chars
-}
+**Problem**: User-specified custom aliases (e.g., `short.ly/amazon`) share the same namespace as system-generated codes. A generated code could collide with an existing custom alias.
 
-// Usage
-long counter = db.incrementCounter();  // Distributed counter (e.g., PostgreSQL sequence)
-String shortCode = generateShortCode(counter);
-```
+**Solution**: Store all short codes in the same `urls` table with a UNIQUE constraint on `short_code`. 
 
-**Pros:** Guaranteed unique, zero collisions
-**Cons:** Sequential — slightly predictable, no natural deduplication for same URL
+For custom aliases:
+1. Validate format: 3–20 chars, alphanumeric + hyphens only
+2. Attempt INSERT with the user's alias as `short_code`
+3. If UNIQUE constraint violation → alias taken, return 409 Conflict with a suggestion
 
----
+For generated codes:
+1. Fetch next counter value → Base62 encode → attempt INSERT
+2. On collision (astronomically rare with counter-based generation): retry with next counter value
 
-**Option C: Snowflake ID (Distributed ID Generator)**
+**Reservation system**: For high-value custom aliases (brand names), allow pre-reservation via admin API before a URL is created. Stored as a `reserved_aliases` table. Checked before INSERT.
 
-```
-Snowflake ID (64 bits):
-├─ 1 bit: Unused (sign bit)
-├─ 41 bits: Timestamp (milliseconds since epoch)
-├─ 10 bits: Machine ID (1024 machines)
-├─ 12 bits: Sequence number (4096 IDs/ms per machine)
-```
-
-```java
-long snowflakeId = idGenerator.getId();  // e.g., 123456789012345L
-String shortCode = Base62.encode(snowflakeId).substring(0, 7);
-```
-
-**Pros:** Distributed, no coordination across servers, time-ordered (useful for analytics)
-**Cons:** Requires a separate ID generation service
+**Rate limiting custom aliases**: Limit to 10 custom aliases per user per day to prevent namespace squatting.
 
 ---
 
-### 2. Scaling the Database
+## Interviewer Questions by Level
 
-**Sharding Strategy:**
+**Junior**:
+- How does Base62 encoding work? Why 7 characters?
+- What's the difference between 301 and 302? Which do you use and why?
+- How do you handle a short code that doesn't exist?
 
-```
-Shard by: hash(short_code) % num_shards
+**Mid-level**:
+- Walk me through the write path from "user submits URL" to "short URL returned"
+- How does the Redis cache stay consistent when a URL is deleted?
+- How would you shard the database? What's the sharding key?
+- What happens when Redis is down?
 
-Example (4 shards):
-├─ Shard 0: short_codes with hash % 4 = 0
-├─ Shard 1: short_codes with hash % 4 = 1
-├─ Shard 2: short_codes with hash % 4 = 2
-└─ Shard 3: short_codes with hash % 4 = 3
-
-Lookup:
-shard_id = hash(short_code) % 4
-db = shards[shard_id]
-result = db.query("SELECT * FROM urls WHERE short_code = ?", short_code)
-```
-
-**Pros:** Even distribution, horizontal scaling
-**Cons:** Cross-shard queries are expensive (e.g., "get all URLs for a user")
-
-**Solution for user queries:** Use a Global Secondary Index in DynamoDB or replicate to a separate analytics DB
-
----
-
-### 3. Caching Strategy and Bloom Filter
-
-**Cache-Aside (Lazy Loading):**
-
-```java
-public String getLongUrl(String shortCode) {
-    // 0. Check Bloom Filter — eliminates bogus requests before any I/O
-    if (!bloomFilter.mightContain(shortCode)) {
-        throw new NotFoundException();
-    }
-
-    // 1. Check cache
-    String longUrl = redis.get("url:" + shortCode);
-    if (longUrl != null) {
-        return longUrl;  // Cache HIT
-    }
-
-    // 2. Cache MISS → Query DB
-    longUrl = db.query(
-        "SELECT long_url FROM urls WHERE short_code = ?",
-        shortCode
-    );
-
-    // 3. Update cache
-    if (longUrl != null) {
-        redis.setex("url:" + shortCode, 86400, longUrl);  // TTL: 24 hours
-    }
-
-    return longUrl;
-}
-```
-
-**Cache Eviction:** LRU (Least Recently Used)
-**Cache Size:** 32 GB (covers 6M hot URLs)
-
-**Why Bloom Filters matter here:** Malicious or curious users can fire millions of requests for random 7-character codes. Without a Bloom filter, every miss hits the DB. A Bloom filter stores all valid short codes in ~1 GB of RAM and rejects definitively-invalid codes in microseconds. False positives (a code that passes the filter but isn't in the DB) are fine — they just cause one extra DB miss. False negatives are impossible by design.
-
----
-
-### 4. Rate Limiting
-
-**Token Bucket Algorithm (per user/IP):**
-
-```java
-public void createUrl(String userId, String longUrl) {
-    String key = "rate_limit:" + userId;
-    Integer tokens = Integer.parseInt(redis.get(key) != null ? redis.get(key) : "10");
-
-    if (tokens <= 0) {
-        throw new RateLimitExceededException("Try again in 1 minute");
-    }
-
-    // Deduct token
-    redis.decr(key);
-    redis.expire(key, 60);  // Refill after 60 seconds
-
-    String shortCode = generateShortCode(...);
-    db.insert(shortCode, longUrl, userId);
-}
-```
-
-**Limits:**
-- 10 URLs/minute per user (free tier)
-- 1000 URLs/minute per user (paid tier)
-
----
-
-## Trade-offs
-
-| Aspect | Choice | Alternative | Trade-off |
-|--------|--------|-------------|-----------|
-| **Short code generation** | Counter + Base62 | MD5 hash | Uniqueness guarantee vs. natural dedup |
-| **Redirect type** | 302 | 301 | Analytics accuracy vs. server load |
-| **Caching** | Redis (cache-aside) | No cache | Cost vs. latency |
-| **DB** | PostgreSQL + sharding | DynamoDB | SQL flexibility vs. operational simplicity |
-| **Analytics** | Async via Kafka | Synchronous increment | Throughput vs. strict accuracy |
-
----
-
-## Failure Scenarios & Mitigation
-
-### Scenario 1: Database Primary Failure
-
-**Impact:** Cannot create new URLs; writes fail
-**Mitigation:**
-- Promote read replica to primary (automated failover via RDS Multi-AZ)
-- Reads continue from replicas — cached redirects are completely unaffected
-- **RTO**: < 5 minutes, **RPO**: < 1 minute of data loss
-
-### Scenario 2: Cache Failure (Redis Down)
-
-**Impact:** All redirect requests hit the database (performance degradation, not outage)
-**Mitigation:**
-- Read replicas absorb load (12K QPS is tolerable for Postgres with good indexing)
-- Service degrades gracefully to ~50ms latency instead of ~2ms
-- Auto-restart Redis with persistent storage (RDB snapshots + AOF log)
-
-### Scenario 3: ID Generation Service Down
-
-**Impact:** Cannot generate new short codes
-**Mitigation:**
-- Pre-generate 1M IDs and store in a local buffer on each app server
-- Fallback to hash-based generation (adds collision risk but unblocks writes)
-- Multi-region ID service (active-active) as primary fix
-
----
-
-## Monitoring & Alerts
-
-**Key Metrics:**
-```
-- Success rate: 99.99% (SLA)
-- P99 redirect latency: <100ms
-- QPS: 12K reads/sec, 120 writes/sec
-- Cache hit rate: >95%
-- Database connection pool usage: <80%
-```
-
-**Alerts:**
-```
-- P0: Success rate < 99.9% for 5 min → Page on-call
-- P1: P99 latency > 200ms for 10 min → Ticket
-- P2: Cache hit rate < 90% → Investigate
-```
-
----
-
-## Interview Tips
-
-**Common Questions:**
-1. **"How do you generate short codes?"** → Counter-based approach with Base62 encoding. Explain the tradeoff between Option A (deterministic hash), B (counter), and C (Snowflake).
-2. **"What if the database goes down?"** → Read replicas handle reads; automated failover for writes; cached redirects still work.
-3. **"How do you prevent spam/phishing?"** → Rate limiting, CAPTCHA for anonymous users, domain blacklist, malware scanning on creation.
-4. **"How do you scale to billions of URLs?"** → Shard by hash(short_code), Redis cache for hot URLs, read replicas, CDN for static redirects.
-5. **"301 or 302?"** → Ask if analytics is a requirement first. If yes, 302. If not, 301 reduces load.
-
-**Time Allocation:**
-- Requirements: 5 min
-- Estimation: 5 min
-- API + Schema: 5 min
-- Architecture: 10 min
-- Deep dives (short code gen, sharding, caching, Bloom filters): 20 min
-- Failure scenarios: 5 min
+**Senior**:
+- How do you guarantee uniqueness of short codes across a multi-region deployment?
+- How would you detect and block malicious URLs (phishing, malware)?
+- How does the CDN handle URL expiry? (CDN cached 302 pointing to an expired URL)
+- Design the analytics pipeline — how do you count 10B clicks/month without impacting redirect latency?
+- How would you support vanity URL campaigns with guaranteed availability (a Fortune 500 company's marketing launch)?

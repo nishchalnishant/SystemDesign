@@ -163,6 +163,17 @@ A magazine with 5 printing presses. Write quorum W=3: the editor needs 3 presses
 - **Read scaling**: More replicas → more read capacity; balance with replication load and storage cost.
 - **Replication lag**: Depends on write volume and replica capacity; can be seconds under load.
 
+### Semi-Synchronous — the Production Default
+
+Fully sync (wait for all replicas) is too slow and stalls on any single slow replica; fully async risks data loss on leader failure. **Semi-sync** is the middle ground most production RDBMS use: the leader waits for **at least one** replica to acknowledge before confirming the write, then the rest replicate async. This bounds data loss (the acked replica can be promoted with no loss) without paying the latency of waiting for every replica. MySQL semi-sync (`rpl_semi_sync_master_wait_for_slave_count`) and PostgreSQL `synchronous_commit` with a quorum-based `synchronous_standby_names` (e.g. `ANY 1 (r1, r2, r3)`) both implement this. The gotcha an interviewer probes: a semi-sync leader can fall back to async if no replica acks within a timeout — re-introducing the loss window it was meant to prevent. The fix is to make the leader block (refuse writes) rather than degrade, mirroring `min.insync.replicas` in Kafka.
+
+### Consensus Replication (Raft) — How the Leader Is Actually Chosen
+
+Leader-follower assumes a leader exists; **how it's elected and how writes commit safely** is the deeper question. Raft (etcd, Consul, CockroachDB, TiKV) replicates a log via consensus:
+- **Terms**: Logical clock incremented each election; a higher term always wins, which prevents a recovered old leader from overwriting newer data (it sees the higher term and steps down).
+- **Commit rule**: An entry is committed only once it's replicated to a **majority** — so a committed write survives any minority failure, and a new leader is guaranteed to have every committed entry (it can't win an election without an up-to-date log).
+- This is why Raft-backed stores are CP: the minority side of a partition can't reach majority, so it stops accepting writes rather than diverge — eliminating split brain by construction.
+
 ---
 
 ## 7. Implementation Patterns

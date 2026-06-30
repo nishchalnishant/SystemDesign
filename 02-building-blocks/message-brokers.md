@@ -153,9 +153,30 @@ A **dead-letter queue (DLQ)** is like a shelf on the kitchen pass for tickets th
 
 ## 6. Performance Considerations
 
-- **Throughput**: Kafka and similar can do millions of msg/s with partitioning and batching.
-- **Latency**: Trade-off between batching (higher throughput, higher latency) and immediate send (lower latency, lower throughput).
-- **Persistence**: Disk vs memory; replication factor; affects durability and cost.
+- **Throughput**: Kafka and similar can do millions of msg/s with partitioning and batching. A single broker sustains ~100–500 MB/s; throughput scales with partitions and brokers.
+- **Latency**: Trade-off between batching (higher throughput, higher latency) and immediate send (lower latency, lower throughput). `linger.ms` (how long the producer waits to fill a batch) and `batch.size` are the two knobs: `linger.ms=0` minimizes latency; `linger.ms=5–100` maximizes throughput by amortizing network overhead.
+- **Persistence**: Disk vs memory; replication factor; affects durability and cost. Kafka achieves high disk throughput via sequential appends + OS page cache + zero-copy (`sendfile`) — the broker never deserializes the message, so disk-based Kafka often outperforms memory-based brokers.
+
+### Producer Durability Knobs (Kafka)
+
+| `acks` | Meaning | Durability | Latency |
+|--------|---------|------------|---------|
+| `acks=0` | Fire and forget; don't wait for broker | Can lose on broker failure | Lowest |
+| `acks=1` | Wait for leader to write | Lost if leader dies before replication | Medium |
+| `acks=all` (+ `min.insync.replicas=2`) | Wait for ISR quorum | No loss while one ISR survives | Highest |
+
+`acks=all` with `min.insync.replicas=2` and replication factor 3 is the standard "no data loss" config. If too few replicas are in-sync, the producer blocks rather than silently dropping durability.
+
+### Consumer Lag — the Key Operational Metric
+
+**Consumer lag** = (latest offset produced) − (last offset committed by the group), per partition. It is the single most important health signal for a streaming pipeline — rising lag means consumers can't keep up. Monitor it (Burrow, Kafka Lag Exporter, `kafka-consumer-groups --describe`) and alert before lag becomes unacceptable end-to-end latency. Reduce lag by adding consumers (up to partition count), increasing per-consumer parallelism, or increasing partitions.
+
+### Rebalancing — the Hidden Cost of Scaling Consumers
+
+When a consumer joins or leaves a group, Kafka triggers a **rebalance**: partition ownership is reshuffled. In a classic stop-the-world rebalance, all consumers in the group pause — a latency spike. Mitigations an interviewer probes for:
+- **Cooperative/incremental rebalancing** (`CooperativeStickyAssignor`, Kafka 2.4+): only the moved partitions pause, not the whole group.
+- **Static membership** (`group.instance.id`): a consumer that briefly disconnects (deploy, GC) keeps its partitions instead of forcing a full rebalance, as long as it returns within `session.timeout.ms`.
+- Tune `max.poll.interval.ms` so a slow consumer isn't wrongly evicted mid-batch (a common cause of rebalance storms).
 
 ---
 
@@ -222,7 +243,7 @@ pending.forEach(e -> {
 ## Interview Questions Asked
 
 ### Conceptual
-1. **"How does Kafka guarantee ordering?"** → Ordering is guaranteed per partition, not across partitions. Produce all related messages to the same partition (by the same key) to ensure order. Testing: do you know ordering is scoped to partition, and that scaling partitions breaks global order.
+1. **"How does Kafka guarantee ordering?"** → Ordering is guaranteed per partition, not across partitions. Produce all related messages to the same partition (by the same key) to ensure order. Gotcha: you cannot freely increase partition count later — keys are hashed `hash(key) % partition_count`, so adding partitions reshuffles the key→partition mapping and breaks per-key ordering for existing keys. Plan partition count up front (over-provision) or use a stable custom partitioner. Also: with a default async producer, retries can reorder messages on a single partition unless you set `max.in.flight.requests.per.connection=1` or enable the idempotent producer (which preserves order even with retries). Testing: do you know ordering is scoped to partition, that scaling partitions breaks both global order and per-key order, and that producer retries can reorder.
 2. **"What is a consumer group and how does partition assignment work?"** → A consumer group is a set of consumers sharing a topic's partitions — each partition is assigned to exactly one consumer in the group. Adding consumers scales throughput up to the partition count; beyond that, consumers are idle. Testing: understanding of Kafka's horizontal scaling model.
 3. **"Explain exactly-once semantics in Kafka"** → Requires idempotent producer (dedup by sequence number) + transactional API (atomic write across partitions + offset commit). Expensive — most systems use at-least-once + idempotent consumers instead. Testing: do you know exactly-once exists but understand the cost.
 4. **"What is a dead letter queue and when would you use one?"** → A separate queue where messages are routed after N failed processing attempts. Prevents poison messages from blocking the main queue indefinitely. Use when you can't discard failed messages — inspect, alert, and retry later. Testing: failure handling design.

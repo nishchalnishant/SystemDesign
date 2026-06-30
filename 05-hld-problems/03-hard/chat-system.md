@@ -2,352 +2,198 @@
 module: 05-hld-problems
 topic: Hard
 status: unread
-tags: [05-hld-problems, system-design, hard]
+tags: [05-hld-problems, system-design, hard, chat, websocket, message-routing, group-chat]
 ---
-# Design Chat System (WhatsApp/Telegram)
+# Design a Chat System (Slack)
 
-> **Difficulty**: Hard
-> **Topics**: WebSockets, Long Polling, Real-time Delivery, Consistency, Offline Support
-> **Time**: 60 minutes
-> **Companies**: Meta (WhatsApp/Messenger), Telegram, Discord, Slack
-
----
-
-## Problem Mindmap
-
-```
-Chat System (WhatsApp/Telegram)
-├── Problem Constraints
-│   ├── Scale → 2B users, 100B messages/day = 1.16M messages/sec, 200M concurrent connections = 4K gateway servers
-│   ├── Latency target → message delivery < 100ms (online users); offline delivery within seconds of reconnect
-│   └── Core hardness → routing 1.16M msgs/sec across 4K stateful gateways + message ordering + offline durability
-├── Architecture Derivation
-│   ├── Step 1 → HTTP polling → 2B users × 1 poll/sec = 2B req/sec pure overhead; 99% requests produce nothing
-│   ├── Step 2 → WebSocket per user → server pushes; 1 server handles ~50K connections; need routing across servers
-│   ├── Step 3 → Redis presence registry: user_id → gateway_id → route messages to correct server; offline → queue in Cassandra
-│   └── Step 4 → Server-side sequence numbers per conversation → monotonic INCR; client re-orders on gap detection
-├── Core Components
-│   ├── WebSocket Gateway → stateful; 50K connections/server; heartbeat every 30s updates Redis TTL
-│   ├── Redis presence → "presence:{user_id}" → {gateway_id, last_active}; TTL 30s; refreshed by heartbeat
-│   ├── Message Service → stateless; Redis lookup → forward to gateway or queue in Cassandra if offline
-│   ├── Cassandra → partition by chat_id, cluster by message_id TIMEUUID DESC; 100B msgs/day = 20TB/day; 7-day = 140TB
-│   └── Snowflake message IDs → 41-bit timestamp + 10-bit machine + 12-bit sequence; sortable; monotonic per conversation
-├── Data Model
-│   ├── messages → Cassandra (chat_id BIGINT, message_id TIMEUUID, sender_id BIGINT, content TEXT, status TINYINT, PRIMARY KEY (chat_id, message_id DESC))
-│   └── conversations → PostgreSQL (conversation_id, type ENUM[1:1, GROUP], participants[], created_at, last_message_id)
-├── APIs
-│   ├── WS /connect → upgrade HTTP; register presence in Redis; subscribe to message events
-│   ├── WS send → {recipient_id, message_id, encrypted_payload, chat_id} → ACK {SENT}
-│   └── GET /messages/{chat_id}?after={message_id} → [{message_id, sender_id, content, status}] paginated
-├── Critical Trade-offs
-│   ├── Fan-out on write vs read → fan-out on write for groups ≤ 256 members (WhatsApp limit); each member gets inbox write
-│   ├── Cassandra vs PostgreSQL → Cassandra for messages; write-heavy time-series; no joins; partition by chat_id = fast inbox
-│   └── E2EE → Signal Protocol Double Ratchet; server stores only encrypted blobs; keys on device; server blind to content
-├── Failure Scenarios
-│   ├── Gateway crash → heartbeat TTL expires; user goes offline in Redis; messages queue in Cassandra; client reconnects + fetches
-│   ├── Redis split-brain → brief stale routing; delivery attempt fails; fallback to offline path (Cassandra + FCM push notification)
-│   └── Message duplication on retry → TIMEUUID as idempotency key; Cassandra INSERT IF NOT EXISTS; client deduplicates by message_id
-└── Interview Angles
-    ├── Meta → "Design WhatsApp" → WebSocket gateways + Redis presence routing + Cassandra offline = complete answer
-    ├── Telegram → "How do you handle 256-member group messages?" → fan-out on write to each member's Cassandra inbox via Kafka workers
-    └── Follow-up → "Exactly-once delivery?" → at-least-once in practice; client-side Bloom filter of seen message_ids for dedup before render
-```
+> **Difficulty**: Hard | **Asked at**: Slack, Discord, Microsoft, Meta
 
 ---
 
 ## Problem Statement
 
-Design a one-on-one and group chat application like WhatsApp.
-- **One-on-one chat**: User A sends message to User B.
-- **Group chat**: User A sends to Group (B, C, D).
-- **Status**: Sent, Delivered, Read receipts.
-- **Online/Offline Status**.
-
-**Scale:**
-- 2 Billion Users.
-- 100 Billion messages/day.
-- Low Latency (Real-time).
+Design a team chat system like Slack. Users belong to workspaces, send messages in channels or direct messages, and receive messages in real time. The system must support thousands of members per channel, message history search, file sharing, and high availability.
 
 ---
 
-## Analogy
+## Functional Requirements
 
-Two people shouting between buildings — works nearby but breaks at scale. A walkie-talkie solves it for 2. A dispatch center (WebSocket server with message routing) solves it for millions.
-
-Think of your chat gateway as a dispatcher at a massive phone exchange. When User A sends a message, the dispatcher has to know exactly which switchboard (gateway machine) User B is connected to, route the call, and confirm delivery — all in under 100ms. The hard part: message ordering, offline delivery, and 2 billion simultaneous connections.
-
----
-
-## What Breaks Without This System?
-
-Without persistent WebSocket connections and a message routing layer, clients must poll for new messages over HTTP. At 2B users polling every second = 2B req/sec — no web infrastructure can sustain that. Even at 5-second intervals, that's 400M req/sec of pure overhead producing no messages for the vast majority of requests. Without durable offline storage, a message sent to a user who is offline simply disappears — recipients miss messages every time they lose connectivity, which is the core failure mode of SMS and makes the product unreliable as a communication tool.
+1. **Direct messages**: 1-on-1 real-time messaging
+2. **Channels**: Group conversations with up to 10,000 members
+3. **Message history**: Persistent, searchable message history
+4. **File sharing**: Upload and share files up to 1 GB
+5. **Reactions and threads**: Emoji reactions and threaded replies
+6. **Online presence**: Show who is online in the workspace
+7. **Search**: Full-text search across message history
 
 ---
 
-## Derive the Architecture
+## Non-Functional Requirements
 
-**1 server, HTTP polling**: Clients poll `GET /messages?since=last_seen_id` every second. Server queries DB for new messages. Works for 100 users. Breaks when: 1M users × 1 req/sec = 1M req/sec on a server that handles ~10K HTTP req/sec — 99% of requests are wasted (no new messages). Fix: replace polling with a persistent connection that the server pushes to.
-
-**Single server, WebSocket connections**: Each client holds a persistent WebSocket connection. Server pushes messages directly to the connected socket. Eliminates polling. A single Node.js server handles ~50K concurrent WebSocket connections. Breaks when: 200M concurrent users ÷ 50K/server = 4,000 gateway servers — to route A's message to B, the sender's server must know which of the 4,000 servers B is connected to. Fix: maintain a connection registry (user_id → server_id) in Redis, looked up on every message send.
-
-**Connection registry in Redis**: On connect, write `user_id → gateway_server_id` to Redis (TTL = session lifetime). On message send: (1) look up B's server_id in Redis, (2) forward message to that server via internal channel, (3) that server pushes to B's WebSocket. Handles 200M concurrent connections across 4K gateways. Breaks when: User B is offline — the registry lookup fails, the message has nowhere to go and is dropped. Fix: if B is offline, persist the message to a durable message store keyed by B's user_id; deliver in order when B reconnects.
-
-**Durable offline message store**: Messages written to Cassandra partitioned by (recipient_user_id, conversation_id). On reconnect, client fetches undelivered messages ordered by sequence number. Handles offline delivery with no message loss. Breaks when: User A sends "Hello" and "How are you?" in quick succession — the two messages may arrive at the server in different orders due to network jitter, and Cassandra inserts may be timestamped identically (clock skew). Fix: assign a monotonic sequence number per conversation on the server side (not client timestamp) before inserting.
-
-**Server-side sequence numbers per conversation**: A sequence counter (Redis INCR or DB auto-increment) assigns monotonically increasing IDs per conversation. Clients display messages in sequence order, not arrival order. Out-of-order delivery is corrected at render time. Breaks when: a 1:1 message to a 256-member group requires delivering to all 256 members individually — at 100B messages/day with average group size 10, fan-out = 1T delivery operations/day. Fan-out for a 256-member group with all members online = 256 WebSocket pushes + 256 DB writes per message. Fix: async fan-out via a message queue — one write to the queue triggers worker pool to handle the 256 deliveries without blocking the sender.
+- **Scale**: 10M daily active users, 1B messages/day → 11,600 messages/sec
+- **Latency**: Message delivery < 100ms P99 for online users in the same region
+- **Availability**: 99.99% — workspace messaging must not be interrupted
+- **Ordering**: Messages in a channel must be delivered in order
+- **Storage**: 1B messages/day × 500 bytes avg = 500 GB/day raw message storage
 
 ---
 
-## Why This Is Hard
+## Core Entities
 
-1. **Connection scale**: A single server handles ~50K WebSocket connections. At 2B users with ~10% concurrency, you need tens of thousands of gateway machines — and you must know which user is on which machine in real time.
-2. **Message ordering**: User A sends "Hello" then "How are you?" The network may deliver them out of order. Timestamps can't be trusted (clock skew). You need sequence numbers per conversation.
-3. **Offline delivery**: User B is on a plane. Messages must queue durably and flush in order when B reconnects — possibly hours later on a different device.
-4. **Group fan-out**: A single message to a 256-member group requires 255 individual deliveries, each with independent delivery acknowledgment. At scale, this creates a write amplification problem.
-5. **Read receipts at scale**: "Read by all" in a 256-person group means tracking 256 individual ACKs per message. Storing and querying this efficiently is an OLAP-level problem masquerading as a chat feature.
-
----
-
-## Requirements
-
-### Functional
-1. 1:1 Chat & Group Chat (Max 256 members).
-2. Message Acknowledgment (Sent, Delivered, Read).
-3. Last Seen / Online Status.
-4. Media Support (Images/Video) - (Design separate Asset Service).
-5. **Persistent History**: Multi-device login support.
-
-### Non-Functional
-- **Low Latency**: < 100ms delivery.
-- **Consistency**: Order of messages must be preserved (e.g., "Hello" before "How are you?").
-- **Availability**: High.
-- **Security**: End-to-End Encryption (E2EE) (Optional advanced topic).
+| Entity | Key Fields |
+|--------|-----------|
+| `Workspace` | workspace_id, name, plan, member_count |
+| `User` | user_id, workspace_id, username, display_name, status |
+| `Channel` | channel_id, workspace_id, name, type (public/private/dm), member_ids[] |
+| `Message` | message_id, channel_id, sender_id, text, attachments[], created_at, thread_id |
+| `Reaction` | message_id, emoji, user_ids[] |
+| `Membership` | user_id, channel_id, last_read_message_id, joined_at |
 
 ---
 
-## Connection Management (The "Real-time" Magic)
+## API Design
 
-### Protocols
-1. **HTTP (REST)**: Good for Login, Profile Update, History Fetch. **Bad for receiving messages** (High latency/overhead).
-2. **Long Polling**: Client holds connection open. Server responds when data arrives. Better but heavy on server resources.
-3. **WebSockets (Selected)**: Bi-directional persistent connection. Server pushes messages instantly. Ideal for Chat.
+```http
+WebSocket: wss://chat.slack.com/ws?workspace_id=W123&token=<auth>
 
-### Dealing with 2 Billion Connections
-- A single server can manage ~50K concurrent WebSockets (Network IO bound).
-- Need **Connection Gateway** layer (Horizontally Scaled).
-- **Stateful**: Gateway knows "User A is connected to Box 42".
-- Uses **Redis / Zookeeper** to map `UserID -> GatewayMachineID`.
+WS: send message
+{
+  "type": "message",
+  "channel_id": "C456",
+  "text": "Hello team!",
+  "client_msg_id": "uuid-local"
+}
 
----
+WS: receive message
+{
+  "type": "message",
+  "message_id": "M789",
+  "channel_id": "C456",
+  "sender": { "user_id": "U123", "name": "Alice" },
+  "text": "Hello team!",
+  "ts": "1735689600.123456"
+}
 
-## Architecture
-
-```
-       User A                   User B
-         │                        ▲
-         ▼                        │
-   ┌─────────────┐          ┌─────────────┐
-   │ Chat        │◀────────▶│ Chat        │
-   │ Gateway 1   │          │ Gateway 2   │ (Maintains WebSockets)
-   └─────┬───────┘          └──────┬──────┘
-         │                         ▲
-         ▼                         │
-   ┌─────────────┐          ┌─────────────┐
-   │ Message     │─────────▶│ Message     │
-   │ Service     │          │ Service     │ (Stateless)
-   └─────┬───────┘          └─────────────┘
-         │
-         ├───▶ Kafka (Topic: "chat-messages")
-         │
-         ▼
-   ┌─────────────┐
-   │ Cassandra   │ (Chat History / Inbox)
-   │ / HBase     │
-   └─────────────┘
-
-   ┌─────────────┐
-   │ Redis       │ (UserID → GatewayMachineID mapping)
-   │             │ (LastActive, Online Status)
-   └─────────────┘
+REST:
+GET /api/v1/channels/{channel_id}/messages?oldest=<ts>&latest=<ts>&limit=100
+POST /api/v1/channels/{channel_id}/messages/{message_id}/reactions
+POST /api/v1/messages/{message_id}/replies
+GET /api/v1/search?q=deployment+steps&workspace_id=W123
 ```
 
 ---
 
-## Message Flow (1:1 Chat)
+## High-Level Design
 
-1. **User A** sends message via WebSocket to **Gateway 1**.
-2. **Message Service** persists message to **Cassandra** (Status: `SENT`).
-3. **Message Service** queries Redis: "Where is User B connected?"
-4. If **User B** Online (Gateway 2):
-   - Forward message to **Gateway 2**.
-   - Gateway 2 pushes to **User B** via WebSocket.
-   - User B sends ACK (`DELIVERED`) → Gateway 2 → A.
-5. If **User B** Offline:
-   - Push Notification Service (FCM/APNS) triggers "You have a new message".
-   - Message sits in DB. When B connects, fetch unread messages.
+```
+Client (WebSocket)
+  │
+  ▼
+WebSocket Gateway (stateful — holds WS connections)
+  │  Connection registry: Redis hash { user_id → gateway_id }
+  │
+  ▼
+Message Service
+  │ 1. Validate + persist to Cassandra
+  │ 2. Publish to Kafka channel-messages (partition by channel_id)
+  │
+  ▼
+Fan-out Service (Kafka consumer)
+  │ For each message in channel C:
+  │   lookup members of C (Redis cache)
+  │   for each member who is online:
+  │     find their gateway (Redis)
+  │     push via internal gRPC to that gateway
+  │   for each member who is offline:
+  │     increment their unread count (Redis)
+  │     queue for push notification
+  │
+  ▼
+WebSocket Gateway → Client
+
+Storage:
+  Cassandra: messages (partition by channel_id, cluster by message_id)
+  PostgreSQL: channels, workspaces, memberships (relational)
+  Elasticsearch: full-text search index
+  S3: file attachments
+```
 
 ---
 
-## Data Schema (Cassandra/NoSQL)
+## Deep Dive 1: Fan-Out for Large Channels
 
-**Why NoSQL?**
-- Write-heavy (100B/day).
-- Horizontal scaling easier.
-- Consistency: `local_quorum` sufficient.
+**Problem**: A Slack channel with 10,000 members receives a message. The fan-out service must notify all 10,000 online members. At 11,600 messages/sec globally, and assuming channels average 100 members, that's 1.16M notifications/sec. For a channel with 10,000 members, one message requires 10,000 targeted WebSocket pushes.
 
-### Message Table
-```sql
--- Partition Key: chat_id (keeps chat messages together on the same node)
--- Clustering Key: message_id (time-based sort order like Snowflake / KSUID)
+**Naive fan-out bottleneck**: Looking up 10,000 members' gateway assignments from Redis per message = 10,000 Redis GET calls. At 100 µs/call, that's 1 second just for lookups.
+
+**Batched Redis MGET**: Instead of 10,000 individual GET calls, batch into Redis pipeline calls of 100 keys each = 100 pipeline calls × 100 keys = 10,000 lookups in ~50ms.
+
+**Channel member cache**: Cache channel membership in Redis as a sorted set: `channel_members:{channel_id}` = SET of user_ids. For 10K members, one SMEMBERS call returns all 10K. Cached for 5 minutes; invalidated on join/leave.
+
+**Selective fan-out**: Only notify members who are **online** (have an active WebSocket). Offline members get their unread count incremented in Redis; messages are fetched via REST when they reconnect. This reduces fan-out for large channels from 10K pushes to (10K × active_fraction) pushes — typically 20-30% are online.
+
+**Fan-out queue sharding**: Fan-out work is partitioned by `channel_id` across fan-out workers. All messages to the same channel are processed by the same worker (prevents out-of-order notification delivery for the same channel).
+
+---
+
+## Deep Dive 2: Message Ordering and the Timestamp Problem
+
+**Problem**: Two users send messages simultaneously to the same channel. Both messages must appear in a consistent order for all viewers of the channel.
+
+**Wall clock unreliability**: Two servers in different data centers will have slightly different wall clocks. Using server timestamps as the ordering key → two simultaneous messages may appear in different orders for different viewers.
+
+**Slack's approach — `ts` (timestamp-based ID)**:
+- Each message gets a `ts` value: `{unix_epoch}.{microseconds}`, e.g., `1735689600.123456`
+- The Message Service assigns `ts` using a per-channel sequence: a Redis atomic counter `msg_seq:{channel_id}` ensures monotonically increasing sequence numbers within a channel
+- `message_id = f"{channel_id}.{seq_num}"` guarantees strict ordering within a channel
+
+**Cassandra storage**:
+```
 CREATE TABLE messages (
-    chat_id      BIGINT,
-    message_id   TIMEUUID,
-    sender_id    BIGINT,
-    content      TEXT,
-    media_url    TEXT,
-    status       TINYINT, -- 1: Sent, 2: Delivered, 3: Read
-    PRIMARY KEY (chat_id, message_id DESC)
-);
+  channel_id text,
+  message_id text,  -- Snowflake-like, time-ordered
+  sender_id text,
+  text text,
+  created_at timestamp,
+  PRIMARY KEY (channel_id, message_id)
+) WITH CLUSTERING ORDER BY (message_id DESC);
 ```
-
-### User Presence Table (Redis, not Cassandra)
-```
-Key:   "presence:{user_id}"
-Value: { gateway_id: "gw-42", last_active: 1700000000, status: "online" }
-TTL:   30 seconds (refreshed by heartbeat)
-```
+Partition key: `channel_id` — all messages in a channel go to the same partition. Clustering key: `message_id` DESC — messages sorted newest-first within partition. One Cassandra query retrieves a page of messages in order.
 
 ---
 
-## Group Chat Complexity
+## Deep Dive 3: Message Search
 
-**Scenario**: Group of 200 people.
-- User A sends message.
-- Server needs to deliver to 199 users.
+**Problem**: Slack's search must find "deployment steps" across all messages in a 5,000-member workspace with 3 years of history. Users expect results in < 1 second.
 
-**Approach**:
-1. **Message Service** fetches Group Members from SQL DB.
-2. **Fan-out**:
-   - For small groups (<100): Loop and push to each member's Gateway.
-   - For large groups/channels (>5K): Write to a Message Queue (Kafka), workers process fan-out in batches.
-3. **Optimization**: Don't confirm "Delivered" until X% receive, or just show "Sent". "Read by All" is expensive O(N).
+**Elasticsearch** per workspace:
+- Index: one document per message with fields: `message_id, channel_id, sender_id, text, ts, workspace_id`
+- Shard by `workspace_id` — keeps workspace data co-located, enables fast per-workspace queries
+- Analyzer: English stemming + stopword removal on `text` field
+- Query: `{ "bool": { "must": { "match": { "text": "deployment steps" } }, "filter": { "term": { "workspace_id": "W123" } } } }`
 
-**Fan-out Write vs Fan-out Read trade-off:**
-- **Fan-out on Write** (WhatsApp): Write message to each recipient's inbox at send time. Fast reads, expensive writes.
-- **Fan-out on Read** (Twitter): Single storage; each reader fetches at query time. Cheap writes, expensive reads.
-- For chat (max 256 members): Fan-out on Write is acceptable.
+**Authorization in search**: User can only see messages in channels they're a member of. Filter: `"terms": { "channel_id": [list of user's channel_ids] }`. User's channel list is cached in Redis.
+
+**Indexing pipeline**: Messages flow from Cassandra → Kafka → Elasticsearch indexer. Indexing lag ~2 seconds. Messages become searchable within 2 seconds of being sent.
+
+**File attachment search**: File names and text content (from OCR/PDF parsing) are indexed alongside the message. Image OCR runs asynchronously after upload: S3 → Lambda (Tesseract OCR) → Elasticsearch update.
 
 ---
 
-## Sequencing & Consistency
+## Interviewer Questions by Level
 
-**Problem**: User A sends `Msg1` then `Msg2`. B receives `Msg2` then `Msg1`.
+**Junior**:
+- Why does Slack use WebSockets instead of HTTP for message delivery?
+- What is a Slack workspace and channel? How are they related?
+- What happens to messages when a user is offline?
 
-**Solution**:
-- **Sequence Numbers**: Assign incremental ID (Sequence ID) per Chat ID.
-- **Client-Side Re-ordering**:
-  - Client receives `Seq 5`. Last seen `Seq 3`.
-  - Client knows `Seq 4` is missing.
-  - Buffer `Seq 5`, request `Seq 4`, then display in order.
-- **Timestamps**: Unreliable due to clock skew. Use **Snowflake IDs** or **Logical Clocks**.
+**Mid-level**:
+- How do you route a message from one user's WebSocket gateway to another user's WebSocket gateway?
+- How do you ensure messages in a channel appear in the same order for all viewers?
+- How does search work in Slack? What makes it different from a regular DB query?
 
-**Snowflake ID structure:**
-```
-64-bit ID:
-├─ 41 bits: Timestamp (milliseconds since epoch) → sortable
-├─ 10 bits: Machine ID
-└─ 12 bits: Sequence number (per machine per ms)
-```
-
----
-
-## Failure Scenarios
-
-### Gateway Crash
-```
-User B is connected to Gateway 7.
-Gateway 7 crashes.
-
-Effect:
-- B's WebSocket connection drops.
-- Redis still shows B → Gateway 7 (stale).
-- Messages sent to Gateway 7 fail.
-
-Mitigation:
-- Gateway sends heartbeat to Redis (TTL 10s).
-- On TTL expiry: B appears offline; messages queue in DB.
-- B reconnects to a new gateway; fetches missed messages on reconnect.
-```
-
-### Kafka Consumer Lag
-```
-Group chat fan-out falls behind.
-200K messages/sec but fan-out workers processing 150K/sec.
-
-Mitigation:
-- Add consumer instances (Kafka partitions allow parallel consumption).
-- Circuit breaker: If lag > 1M messages, alert + auto-scale.
-```
-
-### Message Duplication (Network Retry)
-```
-Gateway 1 forwards message to Gateway 2.
-Gateway 2 processes but response is lost.
-Gateway 1 retries.
-Gateway 2 receives duplicate.
-
-Mitigation:
-- Message deduplication via idempotent message_id (TIMEUUID).
-- Gateway 2: INSERT IF NOT EXISTS.
-```
-
-### Split Brain (Redis Failover)
-```
-Redis primary dies; replica promoted.
-Brief window where UserID → GatewayID mapping is stale.
-
-Mitigation:
-- Accept a brief inconsistency: message delivery attempt fails, fallback
-  to "offline" path (queue in DB + push notification).
-- Messages will sync on next heartbeat.
-```
-
----
-
-## Capacity Estimates
-
-```
-Messages:
-100B messages/day ÷ 86,400s = 1.16M messages/sec
-
-Storage (Cassandra):
-Average message: 200 bytes
-100B × 200B = 20 TB/day
-7-day retention: 140 TB
-
-WebSocket connections:
-2B users × 10% concurrent = 200M connections
-200M ÷ 50K per server = 4,000 gateway servers
-
-Redis (presence):
-200M active users × 100 bytes = 20 GB (fits in memory)
-```
-
----
-
-## Interview Talking Points
-
-**Q: "How to handle 'Last Seen'?"**
-- A: "Heartbeat mechanism. Client pings server every 30s. Store in Redis `User:LastActive`. If >1 min, show 'Last seen at X'. Don't write to hard DB every ping — only on session close."
-
-**Q: "Multi-device Syncing?"**
-- A: "Treat each device as a separate 'User' entity in routing: `UserA_Mobile`, `UserA_Desktop`. Fan-out message to ALL active sessions of User A. Maintain a per-device offset (like Kafka consumer offset) so each device knows what it has and hasn't received."
-
-**Q: "End-to-End Encryption?"**
-- A: "Signal Protocol. Keys generated on client. Server only stores encrypted blob. Server cannot read messages. Only the device with the Private Key can decrypt. The tricky part: key exchange when a user adds a new device."
-
-**Q: "How do you handle 100B messages/day without Cassandra melting?"**
-- A: "Cassandra is optimized for write-heavy time-series workloads. Partition by chat_id keeps all messages for a conversation on the same node. Clustering by TIMEUUID gives free time-ordered retrieval. No joins, no transactions required."
-
-**Q: "What's the hardest part you haven't solved above?"**
-- A: "Exactly-once delivery in the presence of client restarts. We do at-least-once (message duplication possible). Fixing this requires the client to participate in deduplication — store seen message_ids in a local bloom filter and discard duplicates before rendering."
+**Senior**:
+- Design the fan-out system for a 10,000-member channel. How do you deliver a message to all online members within 100ms?
+- How do you handle a workspace with 500,000 members (Enterprise Grid) where a message posted in #general must reach all members?
+- How do you implement message retention policies — automatically delete messages older than 90 days across petabytes of Cassandra data?
+- Design the Slack status/presence system — how do you track and broadcast online/offline/DND status for millions of users?

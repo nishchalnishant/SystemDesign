@@ -63,31 +63,26 @@ Try this before reading on.
 
 The obvious implementation:
 
-```java
-class ConnectionPool {
-    private List<Connection> connections;
+```python
+class ConnectionPool:
+    def __init__(self):
+        self.connections = []
+        for _ in range(10):
+            self.connections.append(self._open_new_connection())
 
-    public ConnectionPool() {
-        connections = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            connections.add(openNewConnection());
-        }
-    }
+    def acquire(self): ...
+    def release(self, c): ...
 
-    public Connection acquire() { ... }
-    public void release(Connection c) { ... }
-}
+# In ServiceA:
+pool_a = ConnectionPool()  # opens 10 connections
 
-// In ServiceA:
-ConnectionPool poolA = new ConnectionPool(); // opens 10 connections
-
-// In ServiceB:
-ConnectionPool poolB = new ConnectionPool(); // opens another 10 connections
+# In ServiceB:
+pool_b = ConnectionPool()  # opens another 10 connections
 ```
 
 **What breaks**:
 1. **Resource duplication**: 2 services = 20 open connections, all independent. The pool can't enforce a global limit.
-2. **Inconsistency**: `poolA.release(c)` returns `c` to `poolA`'s list. `ServiceB` never sees it — it's draining its own pool.
+2. **Inconsistency**: `pool_a.release(c)` returns `c` to `pool_a`'s list. `ServiceB` never sees it — it's draining its own pool.
 3. **No shared state**: Any attempt to track "how many connections are active" is per-instance, not global.
 
 The real requirement isn't "create a connection pool" — it's "there must be exactly **one** pool, shared by everyone."
@@ -99,25 +94,28 @@ The real requirement isn't "create a connection pool" — it's "there must be ex
 The constraint: **only one instance must ever exist**.
 
 Step 1 — block external construction:
-```java
-class ConnectionPool {
-    private ConnectionPool() { } // prevent new ConnectionPool()
-}
+```python
+class ConnectionPool:
+    def __init__(self):
+        pass  # prevent direct instantiation via __new__ override
 ```
 
 Step 2 — the class holds its own instance:
-```java
-class ConnectionPool {
-    private static ConnectionPool instance = new ConnectionPool();
-    private ConnectionPool() { }
-}
+```python
+class ConnectionPool:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 ```
 
 Step 3 — expose a global access point:
-```java
-public static ConnectionPool getInstance() {
-    return instance;
-}
+```python
+@classmethod
+def get_instance(cls):
+    return cls()
 ```
 
 That's the entire pattern. Everything below is refinements: lazy initialization, thread-safety under concurrency, preventing serialization bypass.
@@ -146,120 +144,118 @@ That's the entire pattern. Everything below is refinements: lazy initialization,
 
 ### Basic Singleton (Not Thread-Safe)
 
-```java
-public class Singleton {
-    private static Singleton instance;
-    
-    private Singleton() {
-        // Private constructor prevents external instantiation
-    }
-    
-    public static Singleton getInstance() {
-        if (instance == null) {
-            instance = new Singleton();
-        }
-        return instance;
-    }
-}
+```python
+class Singleton:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def get_instance(cls):
+        return cls()
 ```
 
-**Problem**: Not thread-safe. Two threads can both see `instance == null` simultaneously and create two separate instances.
+**Problem**: Not thread-safe. Two threads can both see `_instance is None` simultaneously and create two separate instances.
 
 ---
 
 ### Thread-Safe Singleton (Double-Checked Locking)
 
-```java
-public class ThreadSafeSingleton {
-    private static volatile ThreadSafeSingleton instance;
-    
-    private ThreadSafeSingleton() {}
-    
-    public static ThreadSafeSingleton getInstance() {
-        if (instance == null) {                          // First check (no locking — fast path)
-            synchronized (ThreadSafeSingleton.class) {
-                if (instance == null) {                  // Second check (with lock — safe path)
-                    instance = new ThreadSafeSingleton();
-                }
-            }
-        }
-        return instance;
-    }
-}
+```python
+import threading
+
+class ThreadSafeSingleton:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:                  # First check (no locking — fast path)
+            with cls._lock:
+                if cls._instance is None:          # Second check (with lock — safe path)
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
+    @classmethod
+    def get_instance(cls):
+        return cls()
 ```
 
-**Key**: `volatile` ensures all threads see the latest value (prevents CPU cache inconsistency). Double-check reduces lock overhead once instance is created.
+**Key**: The double-check reduces lock overhead once the instance is created. Python's GIL provides some protection, but the explicit lock is still best practice for correctness.
 
 ---
 
-### Enum Singleton (Best in Java)
+### Module-Level Singleton (Best in Python)
 
-```java
-public enum Singleton {
-    INSTANCE;
-    
-    public void doSomething() {
-        // Business logic
-    }
-}
+```python
+# singleton_instance.py — module-level instance, imported everywhere
+class _Singleton:
+    def do_something(self):
+        pass  # Business logic
 
-// Usage
-Singleton.INSTANCE.doSomething();
+instance = _Singleton()  # Created once when module is first imported
+
+# Usage (in any other module):
+# from singleton_instance import instance
+# instance.do_something()
 ```
 
-**Why best**: Thread-safe by JVM, serialization-safe, and immune to reflection attacks (Java prevents creating a second enum instance via reflection).
+**Why best**: Python's module system guarantees a module is only imported once per interpreter session — the module-level object is naturally a singleton. No locks, no `__new__` tricks, no reflection attacks.
 
 ---
 
 ## Real-World Example: Database Connection Pool
 
-```java
-public class ConnectionPool {
-    private static volatile ConnectionPool instance;
-    private List<Connection> availableConnections;
-    private List<Connection> usedConnections;
-    private static final int MAX_POOL_SIZE = 10;
-    
-    private ConnectionPool() {
-        availableConnections = new ArrayList<>();
-        usedConnections = new ArrayList<>();
-        
-        for (int i = 0; i < MAX_POOL_SIZE; i++) {
-            availableConnections.add(createNewConnection());
-        }
-    }
-    
-    public static ConnectionPool getInstance() {
-        if (instance == null) {
-            synchronized (ConnectionPool.class) {
-                if (instance == null) {
-                    instance = new ConnectionPool();
-                }
-            }
-        }
-        return instance;
-    }
-    
-    public synchronized Connection getConnection() {
-        if (availableConnections.isEmpty()) {
-            throw new RuntimeException("No available connections");
-        }
-        Connection connection = availableConnections.remove(0);
-        usedConnections.add(connection);
-        return connection;
-    }
-    
-    public synchronized void releaseConnection(Connection connection) {
-        usedConnections.remove(connection);
-        availableConnections.add(connection);
-    }
-}
+```python
+import threading
 
-// Usage
-ConnectionPool pool = ConnectionPool.getInstance();  // Same object every time
-Connection conn = pool.getConnection();
-// Use connection
-pool.releaseConnection(conn);
+class ConnectionPool:
+    _instance = None
+    _lock = threading.Lock()
+    MAX_POOL_SIZE = 10
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
+        self._pool_lock = threading.Lock()
+        self._available_connections = [self._create_new_connection() for _ in range(self.MAX_POOL_SIZE)]
+        self._used_connections = []
+
+    def _create_new_connection(self):
+        pass  # returns a Connection object
+
+    @classmethod
+    def get_instance(cls):
+        return cls()
+
+    def get_connection(self):
+        with self._pool_lock:
+            if not self._available_connections:
+                raise RuntimeError("No available connections")
+            connection = self._available_connections.pop(0)
+            self._used_connections.append(connection)
+            return connection
+
+    def release_connection(self, connection):
+        with self._pool_lock:
+            self._used_connections.remove(connection)
+            self._available_connections.append(connection)
+
+# Usage
+pool = ConnectionPool.get_instance()  # Same object every time
+conn = pool.get_connection()
+# Use connection
+pool.release_connection(conn)
 ```
 
 ### Class Diagram
@@ -301,36 +297,29 @@ classDiagram
 
 Prefer DI over Singleton for testability:
 
-```java
-// Bad: Singleton
-public class UserService {
-    public void createUser() {
-        DatabasePool.getInstance().getConnection();  // Hidden dependency!
-    }
-}
+```python
+# Bad: Singleton
+class UserService:
+    def create_user(self):
+        DatabasePool.get_instance().get_connection()  # Hidden dependency!
 
-// Good: Dependency Injection
-public class UserService {
-    private final DatabasePool pool;
-    
-    public UserService(DatabasePool pool) {  // Explicit dependency, mockable in tests
-        this.pool = pool;
-    }
-    
-    public void createUser() {
-        pool.getConnection();
-    }
-}
+# Good: Dependency Injection
+class UserService:
+    def __init__(self, pool):  # Explicit dependency, mockable in tests
+        self._pool = pool
+
+    def create_user(self):
+        self._pool.get_connection()
 ```
 
-The DI approach lets you inject `new InMemoryConnectionPool()` in tests — the Singleton approach doesn't.
+The DI approach lets you inject `InMemoryConnectionPool()` in tests — the Singleton approach doesn't.
 
 ---
 
 ## When to Use in Interviews
 
-- When designing a logger, config manager, or connection pool: "I'd use Singleton with double-checked locking and a `volatile` field to ensure thread safety."
-- When the interviewer asks about thread safety: "Basic Singleton with lazy init is not thread-safe. I'd use either DCL + volatile, or an Enum Singleton."
+- When designing a logger, config manager, or connection pool: "I'd use Singleton with double-checked locking and a lock to ensure thread safety."
+- When the interviewer asks about thread safety: "Basic Singleton with lazy init is not thread-safe. I'd use either DCL + a threading.Lock, or a module-level instance."
 - When discussing tradeoffs: "I'd prefer DI over Singleton for anything testable. Singleton is fine for stateless shared resources like a logger."
 
 ---
@@ -339,8 +328,8 @@ The DI approach lets you inject `new InMemoryConnectionPool()` in tests — the 
 
 | Violation | Symptom | Fix |
 |---|---|---|
-| Non-volatile `instance` with DCL | Race condition; two instances possible | Add `volatile` keyword |
-| Singleton for every service | Hard to test, hidden coupling | Use DI framework (Spring, Guice) |
+| No lock in DCL | Race condition; two instances possible | Add `threading.Lock()` |
+| Singleton for every service | Hard to test, hidden coupling | Use DI framework |
 | Mutable global state in Singleton | Concurrent writes cause bugs | Make Singleton immutable or use synchronization |
 
 ---
@@ -351,7 +340,7 @@ The DI approach lets you inject `new InMemoryConnectionPool()` in tests — the 
 - "To ensure a single shared instance for resources like a connection pool or config manager. But I'd prefer DI for testability."
 
 **Q: "Is your Singleton thread-safe?"**
-- "Yes, using double-checked locking with a `volatile` field. The first null check avoids the lock on the hot path; the second null check inside the synchronized block prevents double instantiation."
+- "Yes, using double-checked locking with a `threading.Lock`. The first None check avoids the lock on the hot path; the second None check inside the lock prevents double instantiation."
 
 **Q: "What's wrong with Singleton?"**
 - "It introduces hidden global state, violates DIP (classes depend on a concrete singleton), and makes unit testing hard since you can't easily swap the instance."

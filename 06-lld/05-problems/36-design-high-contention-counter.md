@@ -2,271 +2,367 @@
 module: 06-lld
 topic: Problems
 status: unread
-tags: [06-lld, system-design, problems, concurrency]
+tags: [06-lld, lld, high-contention-counter, striped-counter, longadder, eventual-consistency]
 ---
-# LLD: Design a High-Contention Counter
+# Design High-Contention Counter
 
-> **Implement a counter that supports millions of concurrent increments per second with minimal contention, correct final reads, and optional approximate-read semantics.**
-
----
-
-## Problem Statement
-
-Design a counter that:
-- `void increment()` — increment the counter by 1, called from many threads simultaneously
-- `long get()` — return the current count (exact or approximate depending on variant)
-- Thread-safe: 100+ threads increment concurrently
-- Target: 10M+ increments/second on an 8-core machine
+> **Difficulty**: Hard
+> **Asked at**: Amazon, Cloudflare, Stripe
+> **Key Patterns**: Striped counters (LongAdder pattern), CAS loops, Eventual consistency
 
 ---
 
-## Why This Is Hard
+## Understanding the Problem
 
-A naive `long count++` is not atomic — it compiles to read-modify-write: three instructions, not one. Two threads reading the same value both increment it and write back, losing one update.
-
-```
-Thread A: read count=5
-Thread B: read count=5
-Thread A: write count=6
-Thread B: write count=6   ← lost increment
-```
-
-**High contention** means every attempted fix creates a new bottleneck:
-- `synchronized`: serializes all threads → throughput collapses to single-thread speed
-- `AtomicLong.incrementAndGet()`: uses CAS (Compare-And-Swap); under extreme contention, CAS loops spin-retry → CPU waste
-- Single shared variable: all threads fight over the same cache line → cache line ping-pong across CPU cores
+Design a counter that supports high-throughput concurrent increment operations without becoming a bottleneck. A naive shared integer with a lock is a sequential bottleneck at high concurrency.
 
 ---
 
-## Solution 1: AtomicLong (Baseline)
+## Clarifying Questions
 
-Use `java.util.concurrent.atomic.AtomicLong` with CAS.
+**You**: "What operations do we need — increment only, or also decrement and get?"
+**Interviewer**: "Increment, decrement, and get. Increment/decrement are the hot path."
 
-```java
-public class AtomicCounter {
-    private final AtomicLong count = new AtomicLong(0);
+**You**: "Is the read (get) expected to be perfectly accurate in real time?"
+**Interviewer**: "Reads can be slightly stale — eventual consistency is acceptable."
 
-    public void increment() {
-        count.incrementAndGet();
-    }
+**You**: "What's the scale — how many threads concurrently?"
+**Interviewer**: "Hundreds of threads. Single-machine, in-process."
 
-    public long get() {
-        return count.get();
-    }
-}
-```
+**You**: "What's the use case — request counter, like counter, vote counter?"
+**Interviewer**: "General purpose — think page view counter or rate limiter base counter."
 
-**How CAS works:**
-```
-compareAndSet(expected, expected + 1):
-  if (current == expected) { current = expected + 1; return true; }
-  else { return false; }  // retry
-```
-
-**Problem under high contention:** Many threads read value=5, all try CAS(5, 6). Only one succeeds. All others retry. Under 100 threads, each increment may require O(N) retries → throughput degrades from O(1) to O(N) per increment.
-
-**Verdict**: Good up to ~20–50 threads. Breaks down beyond that.
+**You**: "Can we use Python's threading module?"
+**Interviewer**: "Yes — simulate the design. Discuss where Python's GIL helps and where it doesn't."
 
 ---
 
-## Solution 2: LongAdder — Striped Counter (Production Choice)
+## Final Requirements
 
-`java.util.concurrent.atomic.LongAdder` (Java 8+) solves high-contention CAS retries via **counter striping**: instead of one shared value, maintain an array of cells, each on a separate cache line. Each thread increments a cell based on its thread ID (with fallback hashing). `sum()` adds all cells.
+**In scope:**
+1. `increment(delta=1)` — high-throughput, concurrent-safe
+2. `decrement(delta=1)` — high-throughput, concurrent-safe
+3. `get()` — returns approximate current value (may be slightly stale)
+4. `reset()` — reset counter to 0
 
-```java
-public class LongAdderCounter {
-    private final LongAdder count = new LongAdder();
-
-    public void increment() {
-        count.increment();           // adds to thread-local cell
-    }
-
-    public long get() {
-        return count.sum();          // sums all cells — not a point-in-time snapshot
-    }
-
-    public long getAndReset() {
-        return count.sumThenReset(); // atomically sum + zero all cells
-    }
-}
-```
-
-**Internal structure:**
-```
-LongAdder
-├── base: long          ← uncontended path; CAS here first
-└── cells: Cell[]       ← allocated on first contention
-    ├── Cell[0]: value=1201  ← Thread group 0 increments here
-    ├── Cell[1]: value=988   ← Thread group 1 increments here
-    ├── Cell[2]: value=1055  ← Thread group 2 increments here
-    └── Cell[3]: value=756   ← Thread group 3 increments here
-sum() = base + cells[0] + cells[1] + cells[2] + cells[3] = 4000
-```
-
-**Cache line padding:** Each `Cell` is annotated `@Contended` (JVM flag: `-XX:-RestrictContended`), which pads the cell to 128 bytes (2 cache lines). Prevents false sharing — updating Cell[0] doesn't invalidate Cell[1]'s cache line on another CPU.
-
-**Thread-to-cell mapping:** Uses `Thread.probe` (a per-thread random hash) to pick a cell. On collision, rehashes. Cell array grows (doubles) on contention, up to `Runtime.getRuntime().availableProcessors()`.
-
-**Throughput:** Near-linear scaling to CPU core count. 8 cores → ~8× throughput vs single AtomicLong.
-
-**Trade-off:** `sum()` is **not atomic** — a thread can increment between two `get()` calls within `sum()`. Use LongAdder when you need throughput and can tolerate brief read inconsistency (metrics, rate counters). Use AtomicLong when you need atomic read-modify-write semantics.
+**Out of scope:**
+- Distributed counter (across multiple machines)
+- Persistent counter (disk)
+- Exactly-once increment semantics
 
 ---
 
-## Solution 3: Manual Striped Counter (Custom Variant)
+## Core Entities and Relationships
 
-When LongAdder's cell growth heuristic isn't optimal for your workload, implement striping explicitly.
+| Entity | Responsibility |
+|--------|---------------|
+| `NaiveCounter` | Single int + lock; baseline (serializes all increments) |
+| `StripedCounter` | N cells; each increment targets a cell by thread ID or random → reduces contention N× |
+| `CASCounter` | Single int; CAS retry loop; no lock |
+| `LongAdderCounter` | Combines CAS base with striped cells (Java LongAdder pattern) |
 
-```java
-public class StripedCounter {
-    private static final int STRIPES = 64;  // power of 2; tune to CPU count
-    private final AtomicLong[] cells;
-    private static final int MASK = STRIPES - 1;
+`StripedCounter` is the primary recommendation for high concurrency. `CASCounter` demonstrates lock-free techniques. `LongAdderCounter` is the production-grade hybrid.
 
-    public StripedCounter() {
-        cells = new AtomicLong[STRIPES];
-        for (int i = 0; i < STRIPES; i++) {
-            cells[i] = new AtomicLong(0);
-        }
-    }
+---
 
-    public void increment() {
-        // Thread.currentThread().getId() spreads threads across stripes
-        int idx = (int)(Thread.currentThread().getId() & MASK);
-        cells[idx].incrementAndGet();
-    }
+## Class Design
 
-    public long get() {
-        long sum = 0;
-        for (AtomicLong cell : cells) {
-            sum += cell.get();
-        }
-        return sum;
-    }
-}
+### NaiveCounter (baseline)
+
+```
+class NaiveCounter:
+- value: int
+- lock: threading.Lock
+
++ increment(delta=1)
++ decrement(delta=1)
++ get() -> int
 ```
 
-**Problem:** Without `@Contended` padding, `cells[]` array elements are adjacent in memory. Multiple cells share a cache line → false sharing. Use Guava's `Striped` or pad manually (see below).
+### StripedCounter
 
-**Manual padding:**
-```java
-// Pad each long to occupy a full cache line (64 bytes)
-@jdk.internal.vm.annotation.Contended
-static final class PaddedLong {
-    volatile long value = 0;
-}
+```
+class StripedCounter:
+- cells: list[int]       # N cells, one per stripe
+- locks: list[Lock]      # one lock per cell
+- num_stripes: int
+
++ increment(delta=1)
++ decrement(delta=1)
++ get() -> int           # sum of all cells (may be slightly stale)
++ reset()
+```
+
+### CASCounter (lock-free simulation)
+
+```
+class CASCounter:
+- _value: int
+- _lock: Lock            # only for CAS simulation; real CAS uses CPU instruction
+
++ increment(delta=1)
++ get() -> int
 ```
 
 ---
 
-## Solution 4: Guava Striped (Library Approach)
+## Implementation
 
-Guava's `com.google.common.util.concurrent.AtomicLongMap` provides a striped concurrent map where each key has independent contention. Useful for per-key counters (e.g., per-user request counts).
+### NaiveCounter (baseline — the bottleneck)
 
-```java
-AtomicLongMap<String> counters = AtomicLongMap.create();
+```python
+class NaiveCounter:
+    def __init__(self):
+        self._value = 0
+        self._lock = threading.Lock()
 
-// Thread-safe increment per user
-counters.incrementAndGet("user:123");
+    def increment(self, delta=1):
+        with self._lock:
+            self._value += delta
 
-// Thread-safe read
-long count = counters.get("user:123");
+    def decrement(self, delta=1):
+        with self._lock:
+            self._value -= delta
+
+    def get(self):
+        with self._lock:
+            return self._value
 ```
 
-Internally uses a `ConcurrentHashMap<K, AtomicLong>` — each key bucket is independent. For a single counter, use `LongAdder` instead.
+**Problem**: Every increment acquires the same lock. Under 100 threads, 99 threads wait for the 1 holding the lock. Throughput = 1 increment / lock-acquisition-time, regardless of CPU count.
+
+### StripedCounter (primary recommendation)
+
+Distribute increments across N independent cells. Threads are assigned a cell (by `thread_id % num_stripes` or randomly). Each cell has its own lock — threads on different stripes never contend. `get()` sums all cells.
+
+```python
+class StripedCounter:
+    def __init__(self, num_stripes=None):
+        cpu_count = os.cpu_count() or 4
+        self.num_stripes = num_stripes or cpu_count * 4
+        self.cells = [0] * self.num_stripes
+        self.locks = [threading.Lock() for _ in range(self.num_stripes)]
+
+    def _stripe_index(self):
+        # Use thread identity to pick a stripe (consistent per-thread)
+        return threading.get_ident() % self.num_stripes
+
+    def increment(self, delta=1):
+        idx = self._stripe_index()
+        with self.locks[idx]:
+            self.cells[idx] += delta
+
+    def decrement(self, delta=1):
+        idx = self._stripe_index()
+        with self.locks[idx]:
+            self.cells[idx] -= delta
+
+    def get(self):
+        # Sum without holding all locks (slightly stale but O(stripes))
+        return sum(self.cells)
+
+    def get_exact(self):
+        # Hold all locks for a consistent snapshot
+        for lock in self.locks:
+            lock.acquire()
+        try:
+            return sum(self.cells)
+        finally:
+            for lock in self.locks:
+                lock.release()
+
+    def reset(self):
+        for i, lock in enumerate(self.locks):
+            with lock:
+                self.cells[i] = 0
+```
+
+**Throughput**: 100 threads × 1 increment/lock-time, but contention is distributed. Effective throughput scales toward O(num_stripes × 1/lock-time).
+
+### CASCounter (lock-free)
+
+```python
+class CASCounter:
+    def __init__(self):
+        self._value = 0
+        self._lock = threading.Lock()  # simulation only
+
+    def _cas(self, expected, new_val):
+        with self._lock:
+            if self._value == expected:
+                self._value = new_val
+                return True
+            return False
+
+    def increment(self, delta=1):
+        while True:
+            current = self._value
+            if self._cas(current, current + delta):
+                return
+
+    def get(self):
+        return self._value
+```
+
+**Note**: In Python, `+=` on an integer is effectively atomic due to the GIL, but in Java/C++ without a lock, CAS is needed. The CASCounter demonstrates the pattern; in production Python you'd use `threading.Lock` or rely on the GIL.
+
+### LongAdderCounter (Java LongAdder pattern)
+
+The Java `LongAdder` uses a CAS-protected base value plus a dynamic array of `Cell`s. Under low contention: CAS the base. Under contention (CAS failure): hash thread to a cell, increment that cell. `sum()` = base + sum(cells).
+
+```python
+class LongAdderCounter:
+    def __init__(self):
+        self._base = 0
+        self._base_lock = threading.Lock()
+        self._cells = []
+        self._cell_locks = []
+        self._cells_initialized = threading.Event()
+        self._num_cells = (os.cpu_count() or 4) * 2
+
+    def increment(self, delta=1):
+        # Try base first (fast path for low contention)
+        if self._base_lock.acquire(blocking=False):
+            self._base += delta
+            self._base_lock.release()
+        else:
+            # Contention detected — use striped cells
+            self._ensure_cells()
+            idx = threading.get_ident() % self._num_cells
+            with self._cell_locks[idx]:
+                self._cells[idx] += delta
+
+    def _ensure_cells(self):
+        if not self._cells:
+            self._cells = [0] * self._num_cells
+            self._cell_locks = [threading.Lock() for _ in range(self._num_cells)]
+
+    def get(self):
+        with self._base_lock:
+            total = self._base
+        for i, lock in enumerate(self._cell_locks):
+            with lock:
+                total += self._cells[i]
+        return total
+
+    def reset(self):
+        with self._base_lock:
+            self._base = 0
+        for i, lock in enumerate(self._cell_locks):
+            with lock:
+                self._cells[i] = 0
+```
 
 ---
 
-## Solution 5: Distributed Counter (HLD extension)
-
-When the counter spans multiple nodes (e.g., global request count across 100 API servers):
-
-### Option A: Redis INCR
-```
-INCR global:request_count   → atomic, single-node
-INCRBY global:request_count 100  → batched increment
-```
-- Atomic at Redis level
-- Single Redis node is a bottleneck for extreme rates (>500K ops/s)
-- Use Redis Cluster with key hashing: `INCR counter:{shard_id}` + periodic merge
-
-### Option B: Count-Min Sketch / HyperLogLog (approximate)
-For **distinct** counts (unique users, unique IPs):
-```
-PFADD unique_visitors "user:123"   → HyperLogLog add
-PFCOUNT unique_visitors            → approximate distinct count (±0.81% error)
-PFMERGE total unique:day1 unique:day2  → merge across shards
-```
-- Memory: 12KB per HyperLogLog regardless of cardinality
-- Trade-off: 0.81% error vs exact count requiring O(N) memory
-
-### Option C: Local buffer + periodic flush
-Each API server maintains a `LongAdder` locally. A background thread flushes to Redis every 1 second:
-```
-INCRBY global:count localAdder.sumThenReset()
-```
-- Reduces Redis write rate by 1000× (1 Redis call per second vs 1M per second)
-- Trade-off: up to 1 second lag in global count visibility
-
----
-
-## Comparison Table
-
-| Approach | Throughput | Exact Read | Use Case |
-|---|---|---|---|
-| `synchronized` | Low | Yes | Simple, low concurrency |
-| `AtomicLong` | Medium | Yes | < 50 threads |
-| `LongAdder` | High | Approx (sum) | Metrics, rate counters |
-| Manual `StripedCounter` | High | Approx | Custom stripe count needed |
-| Redis `INCR` | Medium (network) | Yes | Cross-process, single node |
-| Redis + local buffer | High | Eventual | High-rate distributed |
-| HyperLogLog | Very high | ±0.81% | Distinct count only |
-
----
-
-## When to Use Which
+## Verification
 
 ```
-Single JVM, < 50 threads → AtomicLong
-Single JVM, 50+ threads, writes >> reads → LongAdder
-Single JVM, need per-key counters → AtomicLongMap (Guava)
-Cross-process, moderate rate → Redis INCR
-Cross-process, high rate (>100K/s) → local LongAdder + Redis flush
-Distinct count (unique users) → HyperLogLog
-Need exact distributed count with strong consistency → distributed transaction (expensive, avoid)
+StripedCounter, 4 stripes, 8 threads
+Thread assignments by ident % 4:
+  T1→stripe0, T2→stripe1, T3→stripe2, T4→stripe3
+  T5→stripe0, T6→stripe1, T7→stripe2, T8→stripe3
+
+All 8 threads call increment() simultaneously:
+  T1 and T5 contend for locks[0] → one waits (1 wait pair)
+  T2 and T6 contend for locks[1] → one waits
+  T3 and T7 contend for locks[2] → one waits
+  T4 and T8 contend for locks[3] → one waits
+  
+  4 pairs contend independently (vs NaiveCounter where 7 threads wait)
+  All 8 increments complete in ≈ 2 × lock_time (2 rounds, 4 parallel)
+
+NaiveCounter: same 8 threads → 8 × lock_time (sequential)
+
+get():
+  cells = [2, 2, 2, 2], sum = 8 ✓
 ```
 
 ---
 
-## Interview Deep-Dives
+## Deep Dive & Extensibility
 
-**Q: Why does LongAdder outperform AtomicLong under contention?**
-A: AtomicLong uses a single CAS variable. Under 100-thread contention, threads spin-retry on the same cache line. LongAdder spreads writes across `N` cells (one per CPU). CAS failures on Cell[0] don't affect Cell[1] — each thread mostly succeeds on first try. The cost shifts from retry loops to a slightly more expensive `sum()`.
+### 1. "How does Python's GIL affect this design?"
 
-**Q: When is `sum()` not safe to use?**
-A: When you need a consistent snapshot at a specific point in time. `sum()` iterates the cell array; increments can happen between reading Cell[0] and Cell[3]. For billing, use `AtomicLong` or a database transaction. For metrics dashboards, `sum()` is fine.
+The GIL (Global Interpreter Lock) serializes Python bytecode execution — only one thread runs Python at a time. This means `counter += 1` is somewhat protected for simple Python integers. However:
+- GIL is released during I/O and C extensions — not reliable for pure correctness
+- The GIL doesn't eliminate all races in compound operations
+- Performance is still limited by GIL contention — `StripedCounter` reduces GIL acquisition frequency
 
-**Q: How do you implement a rate limiter using these primitives?**
-A: Use a `LongAdder` per time window. On each request: `count.increment()`. In a background thread, every second: `long windowCount = count.sumThenReset()`. Compare `windowCount` to rate limit. `sumThenReset()` is a single CAS on the base + individual cell resets — not perfectly atomic but close enough for rate limiting.
+In Java/C++/Go (no GIL): CAS and striped counters are essential — not just optimization.
 
-**Q: What is false sharing and how does `@Contended` fix it?**
-A: CPU cache operates on 64-byte cache lines. If Cell[0] and Cell[1] share a cache line, Thread A updating Cell[0] invalidates Thread B's cached copy of Cell[1], even though they're different logical variables. Thread B must reload the cache line from L3/RAM. `@Contended` adds padding so each cell occupies its own cache line.
+### 2. "How would you build a distributed counter (across multiple machines)?"
+
+Three approaches with different consistency trade-offs:
+
+**Eventually consistent** (e.g., CRDT): each node maintains its own counter, periodically gossips with others, computes sum:
+```python
+# Each node: {node_id: local_count}
+# Global count = sum of all nodes' local counts
+# Merge: take max of each node's count (for increment-only)
+```
+
+**Redis INCR**: single Redis instance, atomic `INCR` command, O(1) and durable. Bottleneck at very high rates → use Redis Cluster or pipeline batched increments.
+
+**Kafka**: each increment is a message. Counter = total messages in a topic. Exact but with latency.
+
+### 3. "What if `get_exact()` is too expensive?"
+
+For approximate counts, skip locking during `get()`:
+```python
+def get(self):
+    return sum(self.cells)   # racy but approximately correct
+```
+
+The worst case: one cell is in mid-update. The count is off by at most `delta` for that one operation — acceptable for page view counters, not for financial transactions.
+
+### 4. "How would you implement a rate limiter using this counter?"
+
+```python
+class RateLimiter:
+    def __init__(self, max_per_second):
+        self.counter = StripedCounter()
+        self.max = max_per_second
+        self._reset_thread = threading.Thread(target=self._reset_loop, daemon=True)
+        self._reset_thread.start()
+
+    def allow(self):
+        if self.counter.get() >= self.max:
+            return False
+        self.counter.increment()
+        return True
+
+    def _reset_loop(self):
+        while True:
+            time.sleep(1.0)
+            self.counter.reset()
+```
 
 ---
 
-## Quick Revision
+## Interviewer Questions by Level
 
-- **Problem**: `count++` is not atomic; `AtomicLong` CAS spins under high contention
-- **Solution**: `LongAdder` — stripe across cells, one per CPU; CAS failures become independent
-- **Key trade-off**: LongAdder `sum()` is not a point-in-time snapshot → don't use for billing
-- **Distributed**: local `LongAdder` + periodic flush to Redis; HyperLogLog for distinct counts
-- **False sharing**: pad each cell to 128 bytes with `@Contended` to keep cells on separate cache lines
+**Junior**: `NaiveCounter` with a single lock. Explain why it's a bottleneck. Mention the GIL.
+
+**Mid-level**: `StripedCounter` — N cells, N locks, thread → cell by hash. `get()` sums cells (approximately). Explain contention reduction factor.
+
+**Senior**: LongAdder pattern (fast path CAS on base, fall back to cells on contention). `get_exact()` requiring all locks. Distributed counter (CRDT, Redis INCR, Kafka). GIL implications in Python vs Java. Rate limiter application.
 
 ---
 
-## See Also
+## Common Interview Questions
 
-- `06-lld/05-problems/24-design-lock-free-queue.md` — CAS mechanics, ABA problem
-- `06-lld/05-problems/25-design-concurrent-lru-cache.md` — lock striping, ConcurrentHashMap internals
-- `06-lld/04-concurrency/concurrency-patterns.md` — Java Memory Model, happens-before
-- `02-building-blocks/rate-limiting.md` — applying counters to token bucket / sliding window
+- **Q**: Why is a single lock on a counter a bottleneck?
+  **A**: All threads must acquire the same lock serially. With N threads, N-1 always wait. Throughput is bounded by 1/lock-acquisition-time regardless of CPU count — you can't parallelize it.
+
+- **Q**: How does striping reduce contention?
+  **A**: Distribute the counter across N cells, each with its own lock. A thread picks its cell (by thread ID hash). Threads on different cells never contend. With N stripes and N threads evenly distributed, throughput scales N× compared to a single lock.
+
+- **Q**: Why is `get()` on a StripedCounter approximate?
+  **A**: Reading all cells without holding all locks simultaneously means some cells might be in mid-update. The sum might be off by at most one delta per stripe. For most use cases (page views, metrics), this is acceptable.
+
+- **Q**: What is Java's LongAdder and how does it improve on AtomicLong?
+  **A**: `AtomicLong` uses a single CAS — under high contention, many threads repeatedly fail CAS and retry (spin). `LongAdder` uses a CAS base + striped cells: successful CAS updates the base; failed CAS redirects to a cell by thread hash. Under low contention it's as fast as `AtomicLong`; under high contention, throughput scales linearly.
+
+- **Q**: When would you use a high-contention counter over a simple database column?
+  **A**: DB column: durable, consistent, but each increment is a network round-trip + disk write (low throughput, high latency). In-memory striped counter: millions of increments/second, no disk, but lost on crash and single-machine only. Use in-memory for hot real-time metrics; periodically flush to DB for durability.

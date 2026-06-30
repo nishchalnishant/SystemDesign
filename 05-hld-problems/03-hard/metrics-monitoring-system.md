@@ -2,361 +2,226 @@
 module: 05-hld-problems
 topic: Hard
 status: unread
-tags: [05-hld-problems, system-design, hard]
+tags: [05-hld-problems, system-design, hard, monitoring, metrics, prometheus, time-series, alerting]
 ---
-# Metrics & Monitoring System
+# Design a Metrics Monitoring System (Prometheus + Grafana)
 
-> Design a system that ingests 1M+ data points/sec from 10,000 services, stores them for 10+ years, and serves real-time queries and alerts.
-
----
-
-## Problem Mindmap
-
-```
-Metrics & Monitoring System
-├── Why It Exists
-│   ├── 10,000 services × 100 metrics/sec = 1M points/sec
-│   ├── On-call engineer needs: what broke, when, why
-│   └── SLA enforcement requires real-time alerting (<1 min lag)
-├── Ingestion Layer
-│   ├── Push model → agents push to collector (StatsD, Telegraf)
-│   │   ├── Pro: works behind NAT/firewall, low scrape latency
-│   │   └── Con: hard to detect dead agents
-│   └── Pull model → collector scrapes /metrics endpoint (Prometheus)
-│       ├── Pro: collector controls rate, dead service is obvious
-│       └── Con: requires service discovery, open ports
-├── Storage: Time-Series DB
-│   ├── Gorilla compression (Facebook) → 1.37 bytes/point vs 16 bytes raw
-│   ├── LSM tree writes → sequential disk, high ingest throughput
-│   ├── Chunk-based storage → 2h chunks in Prometheus TSDB
-│   └── Cardinality → labels explode series count (the #1 scaling problem)
-├── Query Engine
-│   ├── PromQL / InfluxQL / MetricsQL
-│   ├── Range queries → scan across time window
-│   ├── Aggregations → sum/avg/rate across label dimensions
-│   └── Downsampling → compact old data (1s → 1m → 1h)
-├── Alerting Pipeline
-│   ├── Rule evaluation → every 15s check threshold
-│   ├── Pending → Firing state machine (avoid flapping)
-│   ├── Alertmanager → dedup, group, silence, route
-│   └── Notifications → PagerDuty / Slack / email
-├── Long-Term Storage
-│   ├── Thanos → sidecar uploads blocks to S3; global query view
-│   ├── Cortex → horizontally scalable Prometheus-as-a-service
-│   └── M3DB → Uber's TSDB, column-oriented for compression
-└── Scale Numbers
-    ├── Prometheus: ~10M active series per instance
-    ├── Datadog: 10+ trillion points/day globally
-    └── Retention: hot (30d SSD) → warm (1yr HDD) → cold (10yr S3)
-```
+> **Difficulty**: Hard | **Asked at**: Google, Datadog, Netflix, Uber
 
 ---
 
-## 1. Why Metrics & Monitoring Exists
+## Problem Statement
 
-**Question**: You deploy 10,000 microservices. One of them starts throwing errors at 3 AM. How do you know which one, what metric crossed a threshold, and what changed 5 minutes before?
-
-**Physical constraint**: 10,000 services × 100 metrics/sec × 8 bytes/point = 8 MB/sec raw data. Over 30 days = ~20 TB. Raw storage doesn't compress well; query over 20 TB for a single dashboard is too slow.
-
-**Minimal solution**: Log every metric to a file, grep when something breaks. Breaks at: files grow unbounded, grep across 10,000 hosts is serial, no alerting, no aggregation, no cross-service correlation.
-
-**Production generalization**: Dedicated time-series database with compression, a pull-based scraping model with service discovery, label-based dimensional data model, a separate alerting engine that evaluates rules continuously, and tiered storage (SSD → HDD → object store) for cost-efficient long-term retention.
+Design a metrics monitoring and alerting system. Services emit metrics (counters, gauges, histograms). The system collects and stores metrics at second-level granularity, provides a query language for dashboards, and alerts on-call engineers when metrics breach thresholds.
 
 ---
 
-## 2. Core Concepts
+## Functional Requirements
 
-### 2.1 Data Model
-
-A metric is a `(name, labels, timestamp, value)` tuple:
-
-```
-http_request_duration_seconds{service="checkout", method="POST", status="200"} 0.243 1716220800
-```
-
-- **Metric name**: what is measured
-- **Labels (tags)**: dimensions for filtering/grouping — creates a **time series** per unique label combination
-- **Cardinality**: total number of distinct time series = `∏(label cardinalities)`. Adding `user_id` label with 10M users creates 10M series → **cardinality explosion**
-
-### 2.2 Metric Types
-
-| Type | Description | Example |
-|------|-------------|---------|
-| Counter | Monotonically increasing | `http_requests_total` |
-| Gauge | Current value, goes up/down | `memory_usage_bytes` |
-| Histogram | Buckets of observed values | `request_duration_seconds_bucket{le="0.1"}` |
-| Summary | Client-side quantiles | `rpc_duration_seconds{quantile="0.99"}` |
-
-### 2.3 Pull vs Push
-
-| Dimension | Pull (Prometheus) | Push (StatsD/Telegraf) |
-|-----------|-------------------|------------------------|
-| Dead service detection | Immediate (scrape fails) | Requires heartbeat timeout |
-| NAT/firewall traversal | Needs open port | Works everywhere |
-| Control over scrape rate | Collector controls | Agent controls |
-| Discovery requirement | Yes (SD needed) | No |
-| Fan-out writes | No | Yes (agent pushes to N collectors) |
-
-### 2.4 TSDB Compression: Gorilla Algorithm (Facebook, 2015)
-
-**Problem**: 10B data points/min at Facebook, storing 64-bit floats + 64-bit timestamps = 16 bytes each.
-
-**Insight**: Adjacent timestamps differ by a small delta; adjacent values are often close (XOR with previous value has many leading zeros).
-
-**Timestamp encoding**:
-- Store first timestamp raw (64 bits)
-- Store delta from expected interval (e.g., delta = actual − 60s)
-- Encode delta-of-delta with variable-length bits: 0→0bits, 10→7bits, 110→9bits, 1110→12bits, 1111→32bits
-
-**Value encoding (XOR)**:
-- XOR current float with previous float
-- If XOR == 0: 1 bit ('0')
-- Else: encode meaningful bits between leading/trailing zeros
-
-**Result**: 1.37 bytes/point average (vs 16 bytes raw) = **11.7× compression**.
-
-### 2.5 Alerting State Machine
-
-```
-INACTIVE ──(condition true for pending_time)──► PENDING
-PENDING  ──(condition still true)──────────────► FIRING
-FIRING   ──(condition false)───────────────────► INACTIVE
-PENDING  ──(condition false before firing)─────► INACTIVE
-```
-
-Pending period prevents alert flapping on transient spikes. Typical: 5 minutes pending before firing.
+1. **Metric ingestion**: Services push or expose metrics (time series: metric_name + labels + value + timestamp)
+2. **Storage**: Store metrics at 10-second resolution for 2 weeks; downsampled to 1-minute for 1 year
+3. **Querying**: PromQL-style queries: aggregation (sum, avg, rate), label filtering
+4. **Dashboards**: Visualize metric series over time (Grafana integration)
+5. **Alerting**: Evaluate alert rules every 30 seconds; notify via PagerDuty/email/Slack on breach
+6. **Anomaly detection**: Detect unusual metric values compared to historical baselines
 
 ---
 
-## 3. Architecture
+## Non-Functional Requirements
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Services Layer                           │
-│  [svc-1 :8080/metrics]  [svc-2 :8080/metrics]  [svc-N ...]     │
-└──────────────────────┬──────────────────────────────────────────┘
-                       │ HTTP scrape (pull) every 15s
-┌──────────────────────▼──────────────────────────────────────────┐
-│                    Collector Layer                               │
-│  Prometheus / Victoria Metrics / Thanos Receiver                │
-│  ├── Service Discovery (Consul/K8s) to find targets             │
-│  ├── Scrape scheduler (consistent hashing for sharding)         │
-│  └── Remote Write → forward to long-term storage                │
-└──────────────────────┬──────────────────────────────────────────┘
-                       │
-         ┌─────────────┴─────────────┐
-         ▼                           ▼
-┌────────────────┐        ┌──────────────────────┐
-│  Local TSDB    │        │  Long-Term Store      │
-│  (30d, SSD)   │        │  Thanos / Cortex / M3 │
-│  2h chunks     │        │  S3 + index (years)   │
-└────────┬───────┘        └──────────┬───────────┘
-         │                           │
-         └──────────┬────────────────┘
-                    ▼
-         ┌──────────────────┐
-         │   Query Engine   │
-         │   PromQL / HTTP  │
-         └──────┬───────────┘
-                │
-    ┌───────────┴────────────┐
-    ▼                        ▼
-┌────────┐         ┌──────────────────┐
-│Grafana │         │  Alert Manager   │
-│Dashbrd │         │  (dedup/group/   │
-└────────┘         │   route/silence) │
-                   └────────┬─────────┘
-                            ▼
-                  ┌──────────────────┐
-                  │  Notifications   │
-                  │  PagerDuty/Slack │
-                  └──────────────────┘
-```
-
-### Sharding Collectors
-
-10M series cannot fit in one Prometheus. Shard by:
-1. **Horizontal sharding**: consistent hash on `{job, instance}` → route to shard N
-2. **Functional sharding**: infra metrics on shard-1, app metrics on shard-2
-3. **Federation**: Prometheus scrapes other Prometheus instances for aggregated view
+- **Scale**: 10,000 services × 500 metrics each = 5M unique time series; 500K data points/sec
+- **Query latency**: Dashboard queries < 5s for 24-hour range; < 30s for 30-day range
+- **Availability**: 99.99% — if monitoring is down, engineers are flying blind
+- **Storage efficiency**: 5M series × 1 point/10s × 2 weeks = 86B data points; must compress efficiently
+- **Alert latency**: Alert fires within 60 seconds of threshold breach
 
 ---
 
-## 4. Real-World Usage
+## Core Entities
 
-| System | Approach | Scale |
-|--------|----------|-------|
-| Prometheus + Thanos | Pull-based, TSDB blocks on S3, global query | Standard k8s stack |
-| Datadog | Push (DogStatsD agent), proprietary TSDB, SaaS | 10T+ points/day |
-| InfluxDB | Push, TSM storage engine, SQL-like Flux query | Self-hosted option |
-| Victoria Metrics | Prometheus-compatible, better compression, single binary | 10M series/node |
-| M3DB | Distributed TSDB by Uber, tiered storage, Prometheus-compatible | Uber-scale |
-| Cortex | Horizontally scalable Prometheus, multi-tenant | Cloud-native |
-
----
-
-## 5. Trade-offs
-
-| Decision | Option A | Option B | Winner |
-|----------|----------|----------|--------|
-| Pull vs Push | Pull (Prometheus) | Push (StatsD) | Pull for k8s, Push for IoT/mobile |
-| Storage | Local TSDB | Remote S3 (Thanos) | Local for hot, S3 for cold |
-| Cardinality control | Drop high-card labels | Quota enforcement | Both needed |
-| Retention cost | Keep raw forever | Downsample after 30d | Downsample for cost |
-| Multi-tenancy | Separate Prometheus/tenant | Cortex shared cluster | Cortex at scale |
+| Entity | Key Fields |
+|--------|-----------|
+| `Metric` | metric_name, labels (key=value map), data_type (counter/gauge/histogram) |
+| `Sample` | metric_id, timestamp, value (float64) |
+| `AlertRule` | rule_id, name, query, threshold, operator, severity, for_duration, notification_channels |
+| `Alert` | alert_id, rule_id, status (pending/firing/resolved), started_at, labels |
+| `Dashboard` | dashboard_id, panels[{ title, query, visualization_type }] |
 
 ---
 
-## 6. Failure Scenarios
+## API Design
 
-### 6.1 Cardinality Explosion
-**Symptom**: Prometheus OOM; query times out; disk fills in hours.
-**Cause**: Label with unbounded values (user ID, session ID, trace ID).
-**Fix**: Enforce cardinality limits per metric at ingestion. Block labels with >10,000 unique values.
+```http
+# Ingestion (Prometheus scrape model)
+GET /metrics  (on each service)
+Response: text/plain (Prometheus exposition format)
+  # HELP http_requests_total Total HTTP requests
+  # TYPE http_requests_total counter
+  http_requests_total{method="GET",status="200"} 12345 1735689600000
 
-### 6.2 Scrape Target Avalanche
-**Symptom**: New Prometheus restarts and simultaneously scrapes 50,000 targets → TCP storm.
-**Fix**: Stagger scrape times with jitter; use scrape_timeout < scrape_interval.
+# Push model (for short-lived jobs)
+POST /api/v1/push
+Body: { "metric": "batch_job_duration_seconds", "labels": {"job": "etl"}, "value": 42.3 }
 
-### 6.3 Alert Storm During Incident
-**Symptom**: One infrastructure failure fires 10,000 alerts.
-**Fix**: Alertmanager group_by + group_wait (30s) + group_interval (5m) collapses related alerts into one notification.
+# Query
+GET /api/v1/query_range?query=rate(http_requests_total[5m])&start=2026-06-29T00:00:00Z&end=2026-06-29T01:00:00Z&step=60s
+Response 200: { "data": { "resultType": "matrix", "result": [{ "metric": {...}, "values": [[timestamp, value]] }] } }
 
-### 6.4 TSDB Block Corruption
-**Symptom**: Prometheus cannot start after crash; WAL corrupted.
-**Fix**: WAL replay on startup; Thanos uploads completed blocks to S3 as durable backup. Lost in-progress window: up to 2h chunk.
-
----
-
-## 7. Performance Numbers
-
-| Operation | Latency | Notes |
-|-----------|---------|-------|
-| Prometheus scrape | ~1ms | 15s interval default |
-| TSDB write (WAL append) | <1µs | Sequential write |
-| Gorilla-compressed point | 1.37 bytes avg | vs 16 bytes raw |
-| Simple PromQL query (30d range) | ~200ms | Local TSDB, 10M series |
-| Thanos global query (1y range, S3) | 2–10s | Cross-shard, object store |
-| Alertmanager evaluation cycle | 15s | Configurable |
-| P99 notification delivery | <60s | From breach to PagerDuty |
-
----
-
-## 8. Java Implementation Sketch
-
-### 8.1 Time-Series Write Path (TSDB append simulation)
-
-```java
-public class TimeSeriesDB {
-    // WAL: Write-Ahead Log — durability before in-memory write
-    private final WriteAheadLog wal;
-    // Active chunk map: seriesId → current 2h chunk
-    private final ConcurrentHashMap<Long, Chunk> activeChunks;
-    private final BlockStore blockStore; // completed 2h blocks
-
-    public void append(long seriesId, long timestampMs, double value) {
-        // 1. Write to WAL first (crash recovery)
-        wal.append(seriesId, timestampMs, value);
-
-        // 2. Get or create active chunk for this series
-        Chunk chunk = activeChunks.computeIfAbsent(seriesId,
-            id -> new Chunk(timestampMs, TWO_HOURS_MS));
-
-        // 3. If chunk full (2h elapsed), seal and start new
-        if (chunk.isExpired(timestampMs)) {
-            blockStore.seal(seriesId, chunk);   // persist completed block
-            chunk = new Chunk(timestampMs, TWO_HOURS_MS);
-            activeChunks.put(seriesId, chunk);
-        }
-
-        // 4. Gorilla-encode and append to chunk
-        chunk.appendGorilla(timestampMs, value);
-    }
-}
-```
-
-### 8.2 Alerting Rule Evaluator
-
-```java
-@Scheduled(fixedRate = 15_000) // every 15 seconds
-public void evaluateAlertRules() {
-    for (AlertRule rule : alertRules) {
-        QueryResult result = queryEngine.execute(rule.getPromQL());
-        boolean isFiring = result.getValue() > rule.getThreshold();
-
-        AlertState current = alertStateMap.get(rule.getId());
-        AlertState next = transition(current, isFiring, Instant.now());
-        alertStateMap.put(rule.getId(), next);
-
-        if (next == AlertState.FIRING && current != AlertState.FIRING) {
-            alertManager.send(Alert.from(rule, result));
-        }
-    }
-}
-
-private AlertState transition(AlertState current, boolean firing, Instant now) {
-    return switch (current) {
-        case INACTIVE -> firing ? AlertState.PENDING : AlertState.INACTIVE;
-        case PENDING  -> firing
-            ? (pendingDuration(now) > rule.getPendingSeconds()
-                ? AlertState.FIRING : AlertState.PENDING)
-            : AlertState.INACTIVE;
-        case FIRING   -> firing ? AlertState.FIRING : AlertState.INACTIVE;
-    };
-}
-```
-
-### 8.3 Cardinality Guard (label validation at ingest)
-
-```java
-public class CardinalityGuard {
-    // labelName → distinct value count
-    private final ConcurrentHashMap<String, AtomicLong> labelCardinality = new ConcurrentHashMap<>();
-    private static final long MAX_CARDINALITY = 10_000;
-
-    public boolean allow(String labelName, String labelValue) {
-        // HyperLogLog would be more memory-efficient at scale
-        long count = labelCardinality
-            .computeIfAbsent(labelName, k -> new AtomicLong(0))
-            .incrementAndGet();
-        if (count > MAX_CARDINALITY) {
-            log.warn("Cardinality explosion: label={} count={}", labelName, count);
-            return false; // drop this metric
-        }
-        return true;
-    }
-}
+# Alert rules
+POST /api/v1/rules
+Body: { "name": "high_error_rate", "query": "rate(errors_total[5m]) > 0.05", "for": "2m", "severity": "critical" }
 ```
 
 ---
 
-## 9. Quick Revision
+## High-Level Design
 
-- **Pull model** (Prometheus): collector scrapes `/metrics`; dead services are immediately detectable
-- **Gorilla compression**: delta-of-delta timestamps + XOR values → 1.37 bytes/point
-- **Cardinality explosion**: unbounded label (user_id) × metrics count → OOM; enforce limits at ingest
-- **2h chunk**: Prometheus TSDB unit; sealed → uploaded to S3 by Thanos sidecar
-- **Alert pending period**: prevents flapping; must stay firing for N minutes before notification
-- **Thanos**: global query view across multiple Prometheus; blocks stored in S3
-- **Cortex/M3**: multi-tenant, horizontally scalable Prometheus replacement for large orgs
+```
+Services (10,000 instances)
+  │ Expose /metrics endpoint (Prometheus format)
+  │ OR push to Push Gateway (for batch jobs)
+  ▼
+Scrape Manager (Prometheus-style)
+  │ Poll each service /metrics every 15s
+  │ Parse exposition format → stream to ingestion pipeline
+  ▼
+Kafka: metric-samples (partitioned by metric_name hash)
+  │
+  ▼
+Storage Writers
+  │ Batch write to TSDB (time-series DB)
+  │ Downsampling: 10s → 1min (Flink rolling window)
+  ▼
+TSDB (Prometheus TSDB or VictoriaMetrics or Thanos)
+  │ Hot tier: 2 weeks at 10s resolution (local SSD)
+  │ Cold tier: 1 year at 1-min resolution (S3 via Thanos)
+  ▼
+Query Engine
+  │ Parse PromQL → translate to TSDB scans
+  │ Grafana calls query engine for dashboard panels
+  ▼
+Alert Manager
+  │ Evaluate alert rules every 30s (query engine)
+  │ State: pending → firing → resolved
+  │ Route: PagerDuty (critical), Slack (warning), email (info)
+```
 
 ---
 
-## 10. See Also
+## Deep Dive 1: Time-Series Storage and Compression
 
-- `04-advanced-topics/distributed-concepts.md` — CAP, eventual consistency
-- `02-building-blocks/message-brokers.md` — async pipeline for metric ingestion
-- `05-hld-problems/03-hard/distributed-job-scheduler.md` — alert rule evaluation scheduling
+**Problem**: 500K data points/sec sustained for 2 weeks = 86B data points. At 16 bytes each (timestamp + float64), that's 1.4 TB uncompressed. How do you store this efficiently?
+
+**Prometheus TSDB compression (Gorilla encoding)**:
+
+**Delta-of-delta encoding for timestamps**:
+```
+Raw timestamps: 1735689600, 1735689610, 1735689620, 1735689630 (10s apart)
+Deltas: 10, 10, 10, 10
+Delta-of-deltas: 10, 0, 0, 0  → encode as: initial delta=10, then 0s
+Compressed: ~1-2 bits per timestamp instead of 8 bytes (64-bit)
+```
+
+**XOR compression for float values**:
+```
+Raw values: 42.0, 42.1, 41.9, 42.2 (similar floating-point values)
+XOR of consecutive values: small number of differing bits
+Encode: leading zeros count + significant XOR bits
+Result: ~3.5 bytes per sample instead of 8 bytes
+```
+
+**Combined**: Gorilla encoding achieves ~1.37 bytes per sample on average, reducing 1.4 TB to ~120 GB for 2 weeks of data. With additional ZSTD compression of chunk files: ~60-80 GB.
+
+**Chunk files**: TSDB stores data in 2-hour chunks per series, in a columnar format (all timestamps together, all values together). Each chunk is written atomically and immutable after sealing. Enables efficient range scans.
 
 ---
 
-## 11. Interview Questions Asked
+## Deep Dive 2: Query Processing at Scale
 
-1. **Google/Meta**: "Design a metrics system for 10,000 microservices. How do you handle 1M data points/sec ingestion?"
-2. **Stripe**: "How does Prometheus TSDB compression work? Why can't you use a regular relational DB?"
-3. **Netflix**: "Pull vs push model for metrics collection — when would you choose each?"
-4. **Datadog**: "A metric has a label `user_id`. Why is this a problem? How do you fix it?"
-5. **Amazon**: "Your alert fires 5,000 times during a single incident. How does Alertmanager collapse this?"
-6. **Uber**: "How do you store 10 years of metrics cost-effectively? Describe the storage tiers."
-7. **LinkedIn**: "How do you shard Prometheus when a single instance can't hold all time series?"
-8. **Cloudflare**: "How would you design a global view query across 50 regional Prometheus instances?"
+**Problem**: A Grafana dashboard runs the query `rate(http_requests_total{status="5xx"}[5m])` across 10,000 service instances for the past 24 hours. This requires reading thousands of series across billions of data points.
+
+**PromQL evaluation**:
+```
+rate(metric[5m]) = (last_value - first_value) / 5m per series
+```
+
+1. **Series selection**: Scan TSDB index for all series matching `http_requests_total, status="5xx"`. The TSDB inverted index maps label values to series IDs. 10,000 matching series found in ~10ms.
+
+2. **Chunk loading**: For a 24-hour range, each series has 12 chunks (2h each). 10,000 series × 12 chunks = 120,000 chunks to load. Parallelized across TSDB workers. Each chunk is ~1 KB → 120 MB total read.
+
+3. **Evaluation**: For each time step (every 60s for a 24h range = 1,440 steps), compute rate for each series. Aggregate with `sum()` if needed.
+
+**Thanos for long-range queries**: Historical data (> 2 weeks) lives in S3 (Thanos object store). Thanos Query dispatches queries to both local Prometheus (recent) and Thanos Store (historical), merges results. Long-range queries (30-day) are slower (30s acceptable for dashboard load).
+
+**Recording rules**: Pre-compute expensive aggregations as new metrics:
+```yaml
+# Pre-compute sum of errors across all services every 30s
+- record: job:errors_total:rate5m
+  expr: sum by (job) (rate(errors_total[5m]))
+```
+Dashboard queries hit the pre-computed metric instead of re-aggregating 10,000 series each time.
+
+---
+
+## Deep Dive 3: Alerting and Notification Routing
+
+**Problem**: A metric breaches a threshold. The alert must fire, notify the right on-call engineer (not just "someone"), and suppress duplicate notifications during a long outage.
+
+**Alert state machine**:
+```
+INACTIVE → PENDING (threshold breached) → FIRING (after "for" duration) → RESOLVED
+```
+
+The `for: 2m` clause prevents flapping — a metric must breach the threshold continuously for 2 minutes before the alert fires. This suppresses noisy alerts from brief spikes.
+
+**Alert evaluation** (Alert Manager):
+```python
+def evaluate_rule(rule):
+    result = query_engine.instant_query(rule.query)
+    if result.value > rule.threshold:
+        if rule.state == INACTIVE:
+            rule.state = PENDING
+            rule.pending_since = now()
+        elif rule.state == PENDING and (now() - rule.pending_since) > rule.for_duration:
+            rule.state = FIRING
+            notify(rule)
+    else:
+        if rule.state in (PENDING, FIRING):
+            rule.state = RESOLVED
+            notify_resolved(rule)
+```
+
+**Notification routing**: Alert labels (severity, team, service) route to different channels:
+```yaml
+routes:
+  - match: { severity: critical }
+    receiver: pagerduty-oncall
+  - match: { severity: warning }
+    receiver: slack-alerts
+  - default:
+    receiver: email-ops
+```
+
+**Inhibition rules**: If a datacenter goes down (high-severity alert), suppress all lower-severity alerts from that datacenter. Prevents alert storms.
+
+**Silencing**: On-call engineer creates a silence (start_time, end_time, label matchers) during planned maintenance. Matching alerts don't notify.
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**:
+- What is a metric? What's the difference between a counter and a gauge?
+- What is the Prometheus scrape model? How does it collect metrics from services?
+- What is an alert threshold? What does "for: 2m" in an alert rule mean?
+
+**Mid-level**:
+- How does Prometheus's Gorilla encoding compress time series data? What's the compression ratio?
+- What is a recording rule? Why would you use one?
+- How does an alert state machine work? What is the difference between PENDING and FIRING?
+
+**Senior**:
+- Design the TSDB (time-series database) storage engine — from ingestion to disk layout to query.
+- How do you scale Prometheus beyond a single machine? (Thanos, Cortex, VictoriaMetrics)
+- Design an anomaly detection system that flags unusual metric values without manually configured thresholds.
+- A monitoring outage occurs. How do you design the monitoring system to be self-monitoring — alert if Prometheus itself stops scraping?

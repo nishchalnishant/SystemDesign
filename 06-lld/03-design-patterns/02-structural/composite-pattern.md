@@ -56,35 +56,29 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-The `instanceof` approach:
+The `isinstance` approach:
 
-```java
-class Cart {
-    public double totalPrice(List<Object> items) {
-        double total = 0;
-        for (Object item : items) {
-            if (item instanceof Product) {
-                total += ((Product) item).getPrice();
-            } else if (item instanceof Bundle) {
-                Bundle bundle = (Bundle) item;
-                for (Object inner : bundle.getItems()) {
-                    if (inner instanceof Product) {
-                        total += ((Product) inner).getPrice();
-                    } else if (inner instanceof Bundle) {
-                        // recurse manually again...
-                    }
-                }
-            }
-        }
-        return total;
-    }
-}
+```python
+class Cart:
+    def total_price(self, items: list) -> float:
+        total = 0
+        for item in items:
+            if isinstance(item, Product):
+                total += item.get_price()
+            elif isinstance(item, Bundle):
+                for inner in item.get_items():
+                    if isinstance(inner, Product):
+                        total += inner.get_price()
+                    elif isinstance(inner, Bundle):
+                        # recurse manually again...
+                        pass
+        return total
 ```
 
 **What breaks**:
-1. **`instanceof` chains break on new types**: Adding `DigitalProduct` requires editing `totalPrice()`.
+1. **`isinstance` chains break on new types**: Adding `DigitalProduct` requires editing `total_price()`.
 2. **Manual recursion**: The caller must know that `Bundle` can nest, and must replicate the recursion logic everywhere it handles items.
-3. **No uniform interface**: You cannot call `.getPrice()` on both `Product` and `Bundle` — they require different code paths.
+3. **No uniform interface**: You cannot call `.get_price()` on both `Product` and `Bundle` — they require different code paths.
 4. **SRP violation**: `Cart` knows the internal structure of `Bundle`.
 
 ---
@@ -94,43 +88,48 @@ class Cart {
 The constraint: **treat individual objects and compositions uniformly through a common interface**.
 
 Step 1 — define a common interface:
-```java
-interface CartItem {
-    double getPrice();
-}
+```python
+from abc import ABC, abstractmethod
+
+class CartItem(ABC):
+    @abstractmethod
+    def get_price(self) -> float:
+        pass
 ```
 
 Step 2 — leaf (individual item) implements the interface directly:
-```java
-class Product implements CartItem {
-    private double price;
-    public double getPrice() { return price; }
-}
+```python
+class Product(CartItem):
+    def __init__(self, price: float):
+        self._price = price
+
+    def get_price(self) -> float:
+        return self._price
 ```
 
 Step 3 — composite (bundle) implements the same interface and delegates to its children:
-```java
-class Bundle implements CartItem {
-    private List<CartItem> items = new ArrayList<>();
+```python
+class Bundle(CartItem):
+    def __init__(self):
+        self._items: list[CartItem] = []
 
-    public void add(CartItem item) { items.add(item); }
+    def add(self, item: CartItem):
+        self._items.append(item)
 
-    public double getPrice() {
-        return items.stream().mapToDouble(CartItem::getPrice).sum();
-        // recursion happens automatically — a Bundle inside a Bundle just delegates again
-    }
-}
+    def get_price(self) -> float:
+        return sum(item.get_price() for item in self._items)
+        # recursion happens automatically — a Bundle inside a Bundle just delegates again
 ```
 
 Step 4 — the caller is identical for both:
-```java
-CartItem singleProduct = new Product(10.0);
-CartItem giftBundle    = new Bundle();
-((Bundle)giftBundle).add(new Product(5.0));
-((Bundle)giftBundle).add(new Product(3.0));
+```python
+single_product = Product(10.0)
+gift_bundle = Bundle()
+gift_bundle.add(Product(5.0))
+gift_bundle.add(Product(3.0))
 
-System.out.println(singleProduct.getPrice()); // 10.0
-System.out.println(giftBundle.getPrice());    // 8.0 — recursion is automatic
+print(single_product.get_price())  # 10.0
+print(gift_bundle.get_price())     # 8.0 — recursion is automatic
 ```
 
 ---
@@ -163,9 +162,9 @@ Documents/                    <- Folder (composite)
 When your objects form a **tree (part-whole hierarchy)** and you want to treat individual objects (leaves) and groups of objects (composites) through the **same interface**.
 
 Without Composite, client code must constantly check types:
-```java
-if (item instanceof Product) { ... }
-else if (item instanceof ProductBundle) { ... }
+```python
+if isinstance(item, Product): ...
+elif isinstance(item, ProductBundle): ...
 ```
 
 This is fragile, breaks polymorphism, and makes recursive structures impossible.
@@ -176,87 +175,63 @@ This is fragile, breaks polymorphism, and makes recursive structures impossible.
 
 Consider an e-commerce checkout system:
 
-```java
-import java.util.*;
+```python
+# Represents a single product
+class Product:
+    def __init__(self, name: str, price: float):
+        self._name = name
+        self._price = price
 
-// Represents a single product
-class Product {
-    private String name;
-    private double price;
-    
-    public Product(String name, double price) {
-        this.name = name;
-        this.price = price;
-    }
-    
-    public double getPrice() {
-        return price;
-    }
-    
-    public void display(String indent) {
-        System.out.println(indent + "Product: " + name + " – ₹" + price);
-    }
-}
+    def get_price(self) -> float:
+        return self._price
 
-// Represents a bundle of products
-class ProductBundle {
-    private String bundleName;
-    private List<Product> products;
-    
-    public ProductBundle(String bundleName) {
-        this.bundleName = bundleName;
-        this.products = new ArrayList<>();
-    }
-    
-    public void addProduct(Product product) {
-        products.add(product);
-    }
-    
-    public double getPrice() {
-        return products.stream().mapToDouble(Product::getPrice).sum();
-    }
-    
-    public void display(String indent) {
-        System.out.println(indent + "Bundle: " + bundleName);
-        for (Product product : products) {
-            product.display(indent + "  ");
-        }
-    }
-}
+    def display(self, indent: str):
+        print(f"{indent}Product: {self._name} – ₹{self._price}")
 
-// Main logic
-public class Main {
-    public static void main(String[] args) {
-        Product book = new Product("Book", 500);
-        Product headphones = new Product("Headphones", 1500);
-        Product charger = new Product("Charger", 800);
-        
-        ProductBundle iphoneCombo = new ProductBundle("iPhone Combo Pack");
-        iphoneCombo.addProduct(headphones);
-        iphoneCombo.addProduct(charger);
-        
-        // Cart must use Object — no shared interface
-        List<Object> cart = Arrays.asList(book, iphoneCombo);
-        
-        double total = 0;
-        for (Object item : cart) {
-            if (item instanceof Product) {           // Type checking everywhere
-                ((Product) item).display("  ");
-                total += ((Product) item).getPrice();
-            } else if (item instanceof ProductBundle) {
-                ((ProductBundle) item).display("  ");
-                total += ((ProductBundle) item).getPrice();
-            }
-        }
-        
-        System.out.println("\nTotal Price: ₹" + total);
-    }
-}
+# Represents a bundle of products
+class ProductBundle:
+    def __init__(self, bundle_name: str):
+        self._bundle_name = bundle_name
+        self._products: list[Product] = []
+
+    def add_product(self, product: Product):
+        self._products.append(product)
+
+    def get_price(self) -> float:
+        return sum(p.get_price() for p in self._products)
+
+    def display(self, indent: str):
+        print(f"{indent}Bundle: {self._bundle_name}")
+        for product in self._products:
+            product.display(indent + "  ")
+
+# Main logic
+if __name__ == "__main__":
+    book = Product("Book", 500)
+    headphones = Product("Headphones", 1500)
+    charger = Product("Charger", 800)
+
+    iphone_combo = ProductBundle("iPhone Combo Pack")
+    iphone_combo.add_product(headphones)
+    iphone_combo.add_product(charger)
+
+    # Cart must use plain list — no shared interface
+    cart = [book, iphone_combo]
+
+    total = 0
+    for item in cart:
+        if isinstance(item, Product):           # Type checking everywhere
+            item.display("  ")
+            total += item.get_price()
+        elif isinstance(item, ProductBundle):
+            item.display("  ")
+            total += item.get_price()
+
+    print(f"\nTotal Price: ₹{total}")
 ```
 
 **Problems**:
-- `instanceof` checks scattered throughout client code.
-- Cart must be typed as `List<Object>` — unsafe.
+- `isinstance` checks scattered throughout client code.
 - `ProductBundle` cannot contain another `ProductBundle` (no recursive structure, so "bundle of bundles" is impossible).
 - Any new item type requires changing every piece of client code.
 
@@ -264,94 +239,78 @@ public class Main {
 
 ## Solution: Composite Pattern
 
-```java
-import java.util.*;
+```python
+from abc import ABC, abstractmethod
 
-// Interface for items that can be added to the cart
-interface CartItem {
-    double getPrice();
-    void display(String indent);
-}
+# Interface for items that can be added to the cart
+class CartItem(ABC):
+    @abstractmethod
+    def get_price(self) -> float:
+        pass
 
-// Product class implementing CartItem — the LEAF
-class Product implements CartItem {
-    private String name;
-    private double price;
-    
-    public Product(String name, double price) {
-        this.name = name;
-        this.price = price;
-    }
-    
-    public double getPrice() {
-        return price;
-    }
-    
-    public void display(String indent) {
-        System.out.println(indent + "Product: " + name + " – ₹" + price);
-    }
-}
+    @abstractmethod
+    def display(self, indent: str):
+        pass
 
-// ProductBundle class implementing CartItem — the COMPOSITE
-class ProductBundle implements CartItem {
-    private String bundleName;
-    private List<CartItem> items;  // Contains CartItems, which can be Products OR other Bundles
-    
-    public ProductBundle(String bundleName) {
-        this.bundleName = bundleName;
-        this.items = new ArrayList<>();
-    }
-    
-    public void addItem(CartItem item) {
-        items.add(item);
-    }
-    
-    public double getPrice() {
-        return items.stream().mapToDouble(CartItem::getPrice).sum();  // Recursive
-    }
-    
-    public void display(String indent) {
-        System.out.println(indent + "Bundle: " + bundleName);
-        for (CartItem item : items) {
-            item.display(indent + "  ");  // Polymorphism handles the rest
-        }
-    }
-}
+# Product class implementing CartItem — the LEAF
+class Product(CartItem):
+    def __init__(self, name: str, price: float):
+        self._name = name
+        self._price = price
 
-// Main logic
-public class Main {
-    public static void main(String[] args) {
-        // Individual Products (Leaves)
-        CartItem book = new Product("Atomic Habits", 499);
-        CartItem phone = new Product("iPhone 15", 79999);
-        CartItem earbuds = new Product("AirPods", 15999);
-        CartItem charger = new Product("20W Charger", 1999);
-        
-        // Bundle contains individual products
-        ProductBundle iphoneCombo = new ProductBundle("iPhone Essentials Combo");
-        iphoneCombo.addItem(phone);
-        iphoneCombo.addItem(earbuds);
-        iphoneCombo.addItem(charger);
-        
-        // Bundle can also contain another bundle — recursive composition
-        ProductBundle schoolKit = new ProductBundle("Back to School Kit");
-        schoolKit.addItem(new Product("Notebook Pack", 249));
-        schoolKit.addItem(new Product("Pen Set", 99));
-        schoolKit.addItem(new Product("Highlighter", 149));
-        
-        // Cart is simply List<CartItem> — both products and bundles treated uniformly
-        List<CartItem> cart = Arrays.asList(book, iphoneCombo, schoolKit);
-        
-        System.out.println("Your Amazon Cart:");
-        double total = 0;
-        for (CartItem item : cart) {
-            item.display("  ");       // No instanceof. No casting. Pure polymorphism.
-            total += item.getPrice();
-        }
-        
-        System.out.println("\nTotal: ₹" + total);
-    }
-}
+    def get_price(self) -> float:
+        return self._price
+
+    def display(self, indent: str):
+        print(f"{indent}Product: {self._name} – ₹{self._price}")
+
+# ProductBundle class implementing CartItem — the COMPOSITE
+class ProductBundle(CartItem):
+    def __init__(self, bundle_name: str):
+        self._bundle_name = bundle_name
+        self._items: list[CartItem] = []  # Contains CartItems, which can be Products OR other Bundles
+
+    def add_item(self, item: CartItem):
+        self._items.append(item)
+
+    def get_price(self) -> float:
+        return sum(item.get_price() for item in self._items)  # Recursive
+
+    def display(self, indent: str):
+        print(f"{indent}Bundle: {self._bundle_name}")
+        for item in self._items:
+            item.display(indent + "  ")  # Polymorphism handles the rest
+
+# Main logic
+if __name__ == "__main__":
+    # Individual Products (Leaves)
+    book = Product("Atomic Habits", 499)
+    phone = Product("iPhone 15", 79999)
+    earbuds = Product("AirPods", 15999)
+    charger = Product("20W Charger", 1999)
+
+    # Bundle contains individual products
+    iphone_combo = ProductBundle("iPhone Essentials Combo")
+    iphone_combo.add_item(phone)
+    iphone_combo.add_item(earbuds)
+    iphone_combo.add_item(charger)
+
+    # Bundle can also contain another bundle — recursive composition
+    school_kit = ProductBundle("Back to School Kit")
+    school_kit.add_item(Product("Notebook Pack", 249))
+    school_kit.add_item(Product("Pen Set", 99))
+    school_kit.add_item(Product("Highlighter", 149))
+
+    # Cart is simply list[CartItem] — both products and bundles treated uniformly
+    cart: list[CartItem] = [book, iphone_combo, school_kit]
+
+    print("Your Amazon Cart:")
+    total = 0
+    for item in cart:
+        item.display("  ")       # No isinstance. No casting. Pure polymorphism.
+        total += item.get_price()
+
+    print(f"\nTotal: ₹{total}")
 ```
 
 ---
@@ -404,7 +363,7 @@ classDiagram
 | **Composite** | Container that holds Leaves or other Composites. Delegates operations to children. | `ProductBundle` |
 | **Component** | The common interface both implement. | `CartItem` |
 
-The composite's `getPrice()` is recursive: it calls `getPrice()` on each child, and if a child is itself a `ProductBundle`, it recurses again. This works to any depth.
+The composite's `get_price()` is recursive: it calls `get_price()` on each child, and if a child is itself a `ProductBundle`, it recurses again. This works to any depth.
 
 ---
 
@@ -413,7 +372,7 @@ The composite's `getPrice()` is recursive: it calls `getPrice()` on each child, 
 - You have a **tree/hierarchical structure**: folders in folders, departments in departments, UI components in containers.
 - You want to treat **leaves and composites uniformly** so client code doesn't distinguish them.
 - You need **recursive operations**: total size, total price, rendering, serialization.
-- You want to avoid `instanceof` chains in client code.
+- You want to avoid `isinstance` chains in client code.
 
 ---
 
@@ -421,10 +380,10 @@ The composite's `getPrice()` is recursive: it calls `getPrice()` on each child, 
 
 | Issue | Solution |
 |---|---|
-| **`instanceof` everywhere** | Both `Product` and `ProductBundle` implement `CartItem`. The loop calls `item.getPrice()` directly — no type checking needed. |
-| **`List<Object>` unsafe cart** | Cart is now `List<CartItem>`. Type-safe. |
-| **Bundle can't contain Bundle** | `ProductBundle` holds `List<CartItem>`. Any `CartItem` (including another `ProductBundle`) can be added. |
-| **Code duplication** | `getPrice()` and `display()` logic written once per class. The loop is written once. |
+| **`isinstance` everywhere** | Both `Product` and `ProductBundle` implement `CartItem`. The loop calls `item.get_price()` directly — no type checking needed. |
+| **Unsafe cart list** | Cart is now `list[CartItem]`. Type-safe. |
+| **Bundle can't contain Bundle** | `ProductBundle` holds `list[CartItem]`. Any `CartItem` (including another `ProductBundle`) can be added. |
+| **Code duplication** | `get_price()` and `display()` logic written once per class. The loop is written once. |
 
 ---
 
@@ -438,5 +397,5 @@ The composite's `getPrice()` is recursive: it calls `getPrice()` on each child, 
 ## Disadvantages
 
 - **Overkill for flat structures**: If you never need nesting, the interface adds unnecessary abstraction.
-- **Type safety concerns**: Sometimes you genuinely need to distinguish leaves from composites (e.g., you can only call `addItem()` on bundles, not products). The common interface hides this.
+- **Type safety concerns**: Sometimes you genuinely need to distinguish leaves from composites (e.g., you can only call `add_item()` on bundles, not products). The common interface hides this.
 - **SRP strain at scale**: The composite manages both its children and the business logic, which can grow complex.

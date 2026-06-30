@@ -62,25 +62,24 @@ Try it before reading on.
 
 The direct approach — `StockMarket` calls each component explicitly:
 
-```java
-class StockMarket {
-    private double price;
-    private PriceAlert alert;
-    private Chart chart;
-    private NewsFeed feed;
+```python
+class StockMarket:
+    def __init__(self, alert, chart, feed):
+        self._price = 0
+        self._alert = alert
+        self._chart = chart
+        self._feed = feed
 
-    public void setPrice(double price) {
-        this.price = price;
-        alert.onPriceChanged(price);  // hardcoded dependency
-        chart.onPriceChanged(price);  // hardcoded dependency
-        feed.onPriceChanged(price);   // hardcoded dependency
-    }
-}
+    def set_price(self, price):
+        self._price = price
+        self._alert.on_price_changed(price)  # hardcoded dependency
+        self._chart.on_price_changed(price)  # hardcoded dependency
+        self._feed.on_price_changed(price)   # hardcoded dependency
 ```
 
 **What breaks**:
-1. **Tight coupling**: `StockMarket` must import and know about `PriceAlert`, `Chart`, and `NewsFeed`. It can't compile without them.
-2. **OCP violation**: Adding a 4th subscriber (e.g., `MobileNotification`) means editing `StockMarket.setPrice()`.
+1. **Tight coupling**: `StockMarket` must know about `PriceAlert`, `Chart`, and `NewsFeed`. It can't function without them.
+2. **OCP violation**: Adding a 4th subscriber (e.g., `MobileNotification`) means editing `StockMarket.set_price()`.
 3. **SRP violation**: `StockMarket` manages stock prices AND knows the notification routing table.
 4. **Untestable**: You cannot test price changes without constructing all three dependent objects.
 
@@ -91,34 +90,38 @@ class StockMarket {
 The constraint: **`StockMarket` must not know who is listening**.
 
 Step 1 — extract a common interface all subscribers implement:
-```java
-interface Observer {
-    void onPriceChanged(double price);
-}
+```python
+from abc import ABC, abstractmethod
+
+class Observer(ABC):
+    @abstractmethod
+    def on_price_changed(self, price):
+        pass
 ```
 
 Step 2 — `StockMarket` holds a list of `Observer`, never concrete types:
-```java
-class StockMarket {
-    private List<Observer> observers = new ArrayList<>();
-    private double price;
+```python
+class StockMarket:
+    def __init__(self):
+        self._observers = []
+        self._price = 0
 
-    public void addObserver(Observer o)    { observers.add(o); }
-    public void removeObserver(Observer o) { observers.remove(o); }
-}
+    def add_observer(self, o):
+        self._observers.append(o)
+
+    def remove_observer(self, o):
+        self._observers.remove(o)
 ```
 
 Step 3 — on state change, iterate the list:
-```java
-public void setPrice(double price) {
-    this.price = price;
-    for (Observer o : observers) {
-        o.onPriceChanged(price);
-    }
-}
+```python
+    def set_price(self, price):
+        self._price = price
+        for o in self._observers:
+            o.on_price_changed(price)
 ```
 
-Adding `MobileNotification` is now: implement `Observer`, call `market.addObserver(new MobileNotification())`. Zero edits to `StockMarket`. That is the pattern.
+Adding `MobileNotification` is now: implement `Observer`, call `market.add_observer(MobileNotification())`. Zero edits to `StockMarket`. That is the pattern.
 
 ---
 
@@ -151,98 +154,89 @@ The channel and subscribers are **loosely coupled**: the channel only knows subs
 
 ### Example: Stock Market Ticker
 
-```java
-import java.util.ArrayList;
-import java.util.List;
+```python
+from abc import ABC, abstractmethod
 
-// 1. Subject (Observable)
-interface StockSubject {
-    void registerObserver(StockObserver o);
-    void removeObserver(StockObserver o);
-    void notifyObservers();
-}
 
-class StockMarket implements StockSubject {
-    private List<StockObserver> observers;
-    private String stockSymbol;
-    private double price;
-    
-    public StockMarket() {
-        observers = new ArrayList<>();
-    }
-    
-    public void setPrice(String stockSymbol, double price) {
-        this.stockSymbol = stockSymbol;
-        this.price = price;
-        notifyObservers(); // State changed — notify ALL subscribers automatically
-    }
-    
-    @Override
-    public void registerObserver(StockObserver o) {
-        observers.add(o);
-    }
-    
-    @Override
-    public void removeObserver(StockObserver o) {
-        observers.remove(o);
-    }
-    
-    @Override
-    public void notifyObservers() {
-        for (StockObserver observer : observers) {
-            observer.update(stockSymbol, price);
-        }
-    }
-}
+# 1. Subject (Observable)
+class StockSubject(ABC):
+    @abstractmethod
+    def register_observer(self, o):
+        pass
 
-// 2. Observer Interface
-interface StockObserver {
-    void update(String stockSymbol, double price);
-}
+    @abstractmethod
+    def remove_observer(self, o):
+        pass
 
-// 3. Concrete Observers — each decides what to do with the notification
-class MobileApp implements StockObserver {
-    private String name;
-    
-    public MobileApp(String name) { this.name = name; }
-    
-    @Override
-    public void update(String stockSymbol, double price) {
-        System.out.println("Mobile App (" + name + "): " + stockSymbol + " is now $" + price);
-    }
-}
+    @abstractmethod
+    def notify_observers(self):
+        pass
 
-class DisplayBoard implements StockObserver {
-    @Override
-    public void update(String stockSymbol, double price) {
-        System.out.println("Wall Display: " + stockSymbol + " -> " + price);
-    }
-}
 
-// Usage
-public class Main {
-    public static void main(String[] args) {
-        StockMarket nasdaq = new StockMarket();
-        
-        StockObserver app1 = new MobileApp("User A");
-        StockObserver app2 = new MobileApp("User B");
-        StockObserver board = new DisplayBoard();
-        
-        // Subscribe
-        nasdaq.registerObserver(app1);
-        nasdaq.registerObserver(app2);
-        nasdaq.registerObserver(board);
-        
-        // State change — all three notified
-        System.out.println("--- Market Open ---");
-        nasdaq.setPrice("AAPL", 150.00);
-        
-        // User B unsubscribes — only app1 and board notified from now on
-        System.out.println("--- Market Update ---");
-        nasdaq.removeObserver(app2);
-        nasdaq.setPrice("AAPL", 155.00);
-    }
-}
+class StockMarket(StockSubject):
+    def __init__(self):
+        self._observers = []
+        self._stock_symbol = None
+        self._price = 0.0
+
+    def set_price(self, stock_symbol, price):
+        self._stock_symbol = stock_symbol
+        self._price = price
+        self.notify_observers()  # State changed — notify ALL subscribers automatically
+
+    def register_observer(self, o):
+        self._observers.append(o)
+
+    def remove_observer(self, o):
+        self._observers.remove(o)
+
+    def notify_observers(self):
+        for observer in self._observers:
+            observer.update(self._stock_symbol, self._price)
+
+
+# 2. Observer Interface
+class StockObserver(ABC):
+    @abstractmethod
+    def update(self, stock_symbol, price):
+        pass
+
+
+# 3. Concrete Observers — each decides what to do with the notification
+class MobileApp(StockObserver):
+    def __init__(self, name):
+        self._name = name
+
+    def update(self, stock_symbol, price):
+        print(f"Mobile App ({self._name}): {stock_symbol} is now ${price}")
+
+
+class DisplayBoard(StockObserver):
+    def update(self, stock_symbol, price):
+        print(f"Wall Display: {stock_symbol} -> {price}")
+
+
+# Usage
+if __name__ == "__main__":
+    nasdaq = StockMarket()
+
+    app1 = MobileApp("User A")
+    app2 = MobileApp("User B")
+    board = DisplayBoard()
+
+    # Subscribe
+    nasdaq.register_observer(app1)
+    nasdaq.register_observer(app2)
+    nasdaq.register_observer(board)
+
+    # State change — all three notified
+    print("--- Market Open ---")
+    nasdaq.set_price("AAPL", 150.00)
+
+    # User B unsubscribes — only app1 and board notified from now on
+    print("--- Market Update ---")
+    nasdaq.remove_observer(app2)
+    nasdaq.set_price("AAPL", 155.00)
 ```
 
 ### Class Diagram
@@ -316,7 +310,7 @@ Subject sends data directly to observer: `observer.update(data)`
 - **Cons**: Subject must know what data the observer needs. Creates coupling if different observers need different subsets of data.
 
 ### Pull Model
-Subject notifies that *something changed*, observer pulls the data it needs: `observer.update()` → `subject.getData()`
+Subject notifies that *something changed*, observer pulls the data it needs: `observer.update()` → `subject.get_data()`
 - **Pros**: Flexible — each observer fetches only the fields it cares about.
 - **Cons**: Two round trips (notify + get). Observer needs a reference to the subject.
 
@@ -324,7 +318,7 @@ Subject notifies that *something changed*, observer pulls the data it needs: `ob
 
 ## Real-World Examples
 
-1. **Java Swing**: `addActionListener()` — button clicks notify registered listeners.
+1. **Python `signal` / event libraries**: `tkinter` button `command=` callbacks, `PyQt` signals/slots.
 2. **React/Redux**: Store updates → connected components re-render.
 3. **Kafka/RabbitMQ**: Producers publish events; consumers subscribe. Distributed Observer.
 4. **YouTube**: Channel uploads → all subscribers notified.
@@ -332,31 +326,36 @@ Subject notifies that *something changed*, observer pulls the data it needs: `ob
 
 ---
 
-## Java Built-in Support
+## Python Built-in Support
 
-Java had `java.util.Observable` (now deprecated). Use `PropertyChangeListener` instead:
+Python's event-driven approach often uses callable lists or libraries like `blinker`:
 
-```java
-import java.beans.PropertyChangeListener;
-import java.beans.PropertyChangeSupport;
+```python
+# Simple observable mixin using callable lists
+class Observable:
+    def __init__(self):
+        self._listeners = []
 
-class NewsAgency {
-    private String news;
-    private PropertyChangeSupport support;
+    def add_listener(self, fn):
+        self._listeners.append(fn)
 
-    public NewsAgency() {
-        support = new PropertyChangeSupport(this);
-    }
+    def remove_listener(self, fn):
+        self._listeners.remove(fn)
 
-    public void addPropertyChangeListener(PropertyChangeListener pcl) {
-        support.addPropertyChangeListener(pcl);
-    }
+    def _notify(self, *args, **kwargs):
+        for fn in self._listeners:
+            fn(*args, **kwargs)
 
-    public void setNews(String value) {
-        support.firePropertyChange("news", this.news, value);
-        this.news = value;
-    }
-}
+
+class NewsAgency(Observable):
+    def __init__(self):
+        super().__init__()
+        self._news = None
+
+    def set_news(self, value):
+        old = self._news
+        self._news = value
+        self._notify(old, value)
 ```
 
 ---
@@ -369,6 +368,6 @@ class NewsAgency {
 - **Open/Closed**: Add new observer types without touching the Subject at all.
 
 **Cons:**
-- **Memory Leaks**: "Lapsed Listener Problem" — if you register but never deregister, observers are never garbage collected. Common in Android and Swing.
+- **Memory Leaks**: "Lapsed Listener Problem" — if you register but never deregister, observers are never garbage collected. Common in GUI frameworks.
 - **Ordering**: Notification order among observers is typically undefined.
 - **Cascade effects**: One notification can trigger updates that trigger more notifications. Hard to trace in complex systems.

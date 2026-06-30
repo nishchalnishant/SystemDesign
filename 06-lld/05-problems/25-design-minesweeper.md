@@ -2,370 +2,390 @@
 module: 06-lld
 topic: Problems
 status: unread
-tags: [06-lld, system-design, problems]
+tags: [06-lld, lld, minesweeper, flood-fill, bfs, dfs, recursion]
 ---
 # Design Minesweeper
 
 > **Difficulty**: Medium
-> **Topics**: Flood Fill (DFS/BFS), 2D Grid, Recursion
-> **Key Concepts**: Cell state machine, adjacency counting, flood-fill reveal algorithm.
+> **Asked at**: Amazon, Google, Meta
+> **Key Patterns**: Flood Fill (BFS/DFS), State Machine (cell state), Factory (board setup)
 
 ---
 
-## Real-Life Analogy
+## Understanding the Problem
 
-Think of a minefield on a military training map. The map is a grid of squares. Some squares hide a mine; most are safe. When a soldier carefully checks a square and finds it empty, they also learn **how many of its 8 neighbors contain mines** — that number is written on the square. If a safe square has **zero** neighboring mines, the soldier can safely reveal all its neighbors too, and their neighbors, in a chain reaction — a flood fill.
-
-The game is exactly this: a 10×10 (or larger) grid where each cell is either a mine or a number. Click a mine → game over. Click a `0` → an ever-expanding safe zone opens up around you, stopping only when it hits numbered cells. Click a numbered cell → just reveal that one number.
-
-The interesting engineering challenge: the **flood-fill** must expand efficiently without revisiting cells (no infinite loops), and the **first click should never be a mine** — which means we delay mine placement until after the first click.
+Design the classic Minesweeper game. The player reveals cells on a grid; unrevealed mines explode and end the game; blank cells auto-expand via flood fill; revealed mine counts guide the player.
 
 ---
 
-## Phase 1: Requirements
+## Clarifying Questions
 
-### Functional Requirements
-- Initialize an N×M grid with a configurable number of mines.
-- Player clicks a cell to reveal it.
-  - If mine: game over, reveal all mines.
-  - If zero adjacent mines: recursively reveal all connected zero-cells and their numeric borders.
-  - If N adjacent mines (N > 0): display the number.
-- Player can flag/unflag a cell to mark a suspected mine.
-- Win condition: all non-mine cells are revealed.
-- First click guarantee: first revealed cell is never a mine.
+**You**: "What are the grid dimensions and mine count?"
+**Interviewer**: "Configurable: rows, cols, and num_mines."
 
-### Non-Functional Requirements
-- **Correctness**: Flood fill must terminate (no revisiting revealed cells).
-- **Performance**: For a 1000×1000 grid, flood fill must use BFS (not recursive DFS) to avoid stack overflow.
+**You**: "Do we use BFS or DFS for flood fill?"
+**Interviewer**: "Either works — explain your choice."
 
-### Concurrency Constraints
-- Single-player game; no concurrency needed at the core.
-- If building a multiplayer variant, use optimistic locking on cell state.
+**You**: "Is this backend logic or do we need rendering?"
+**Interviewer**: "Backend only."
+
+**You**: "What about first-click safety (never hit a mine on the first reveal)?"
+**Interviewer**: "Nice catch — yes, guarantee first click is safe."
+
+**You**: "Do we need a flagging mechanic?"
+**Interviewer**: "Yes — player can flag cells they suspect are mines."
 
 ---
 
-## Phase 2: Use Cases
+## Final Requirements
 
-### Actors
-- **Player**: Clicks cells, toggles flags.
-- **Game Engine**: Manages board state, evaluates win/loss, runs flood fill.
+**In scope:**
+1. Configurable grid: rows × cols with num_mines
+2. Reveal a cell: mine → GAME_OVER; blank → BFS flood fill; numbered → show count
+3. First click guaranteed safe (re-place mine if needed)
+4. Flag/unflag cells
+5. Win detection: all non-mine cells revealed
 
-### UC1: Start Game
-**Actor**: Player
-**Flow**:
-1. Player selects 10×10 board with 10 mines.
-2. Engine creates grid of unrevealed cells (mines not placed yet).
-3. Engine displays the masked grid.
-
-### UC2: Player Clicks Cell
-**Actor**: Player
-**Flow**:
-1. Player clicks `(r, c)`.
-2. If this is the **first click**: place mines now, excluding `(r, c)` and its 8 neighbors.
-3. Pre-compute `adjMines` count for all cells.
-4. Reveal `(r, c)`:
-   - If mine: mark `GAME_OVER`, reveal all mines.
-   - If `adjMines == 0`: trigger BFS flood fill from `(r, c)`.
-   - If `adjMines > 0`: reveal just this cell.
-5. Check win condition: `totalCells - revealedCount == numMines`.
-
-### UC3: Player Flags Cell
-**Actor**: Player
-**Flow**:
-1. Player right-clicks `(r, c)`.
-2. If unrevealed: toggle `isFlagged`. Flagged cells cannot be accidentally clicked.
-3. No validation — player can flag any unrevealed cell, even non-mines.
+**Out of scope:**
+- UI rendering
+- Multiplayer
+- Timer / leaderboard
+- Hint mode
 
 ---
 
-## Phase 3: Class Diagram
+## Core Entities and Relationships
 
-### Core Entities
-- **MinesweeperGame**: Controller. Manages game state (`PLAYING`, `WON`, `LOST`). Delegates to `Board`.
-- **Board**: The 2D grid. Owns mine placement, adjacency calculation, and flood-fill logic.
-- **Cell**: Single square. Value object tracking: `isMine`, `adjMines`, `isRevealed`, `isFlagged`.
+| Entity | Responsibility |
+|--------|---------------|
+| `Board` | Grid of cells; mine placement; flood fill |
+| `Cell` | State (HIDDEN, REVEALED, FLAGGED), is_mine, adjacent_mine_count |
+| `CellState` | Enum: HIDDEN, REVEALED, FLAGGED |
+| `Game` | Orchestrates reveal/flag, tracks state (IN_PROGRESS, WON, LOST) |
+| `GameState` | Enum: IN_PROGRESS, WON, LOST |
+| `MinesPlacer` | Randomly places mines (excludes first-click cell) |
 
-### Key Design Decisions
-- Mine placement is **deferred to first click** for fairness.
-- `adjMines` is **pre-calculated** once after mine placement — O(1) lookup during play instead of recalculating on each reveal.
-- Flood fill uses **BFS with a visited check** (`isRevealed`) to prevent infinite loops and stack overflow.
+`Game` delegates grid logic to `Board`. Board computes adjacent counts at setup. Flood fill is iterative BFS on `Board.reveal()`.
 
-```mermaid
-classDiagram
-    class MinesweeperGame {
-        +Board board
-        +GameState state
-        +boolean firstClick
-        +click(row, col)
-        +flag(row, col)
-        +isWon() boolean
-    }
+---
 
-    class Board {
-        +Cell[][] grid
-        +int rows
-        +int cols
-        +int numMines
-        +int revealedCount
-        +placeMines(excludeR, excludeC)
-        +calculateAdjacency()
-        +floodFill(r, c)
-        +revealCell(r, c) boolean
-        -getNeighbors(r, c) List~int[]~
-    }
+## Class Design
 
-    class Cell {
-        +boolean isMine
-        +int adjMines
-        +boolean isRevealed
-        +boolean isFlagged
-        +reveal()
-    }
+### Cell
 
-    class GameState {
-        <<enumeration>>
-        PLAYING
-        WON
-        LOST
-    }
+| Requirement | What Cell must track |
+|-------------|---------------------|
+| "Is mine" | is_mine: bool |
+| "Adjacent count" | adjacent_mines: int (0–8) |
+| "Reveal/flag" | state: CellState |
 
-    MinesweeperGame --> Board
-    MinesweeperGame --> GameState
-    Board --> Cell
+```
+class Cell:
+- is_mine: bool
+- adjacent_mines: int
+- state: CellState
+
++ is_hidden() -> bool
++ is_revealed() -> bool
++ is_flagged() -> bool
+```
+
+### Board
+
+```
+class Board:
+- rows: int
+- cols: int
+- grid: list[list[Cell]]
+
++ Board(rows, cols, num_mines, safe_cell=None)
++ reveal(row, col) -> RevealResult   # MINE, BLANK, NUMBER
++ flag(row, col) -> bool
++ unflag(row, col) -> bool
++ get_cell(row, col) -> Cell
++ is_all_revealed() -> bool
++ _place_mines(num_mines, exclude: set[tuple])
++ _compute_adjacent_counts()
++ _flood_fill(row, col)
+```
+
+### Game
+
+```
+class Game:
+- board: Board
+- state: GameState
+- rows: int
+- cols: int
+- num_mines: int
+- first_move: bool
+
++ Game(rows, cols, num_mines)
++ reveal(row, col) -> GameState
++ flag(row, col) -> bool
++ get_state() -> GameState
 ```
 
 ---
 
-## Phase 4: Design Patterns Applied
+## Implementation
 
-### 1. State Pattern (Game States)
-**What**: `MinesweeperGame` maintains a `GameState` enum (`PLAYING`, `WON`, `LOST`). All input is ignored unless state is `PLAYING`.
-**Why**: Without this, you need `if (!gameOver)` checks scattered across every method. The State pattern centralizes transition logic — a click while `LOST` simply does nothing.
+### Core Method: `Game.reveal`
 
-### 2. Template Method Pattern (Cell Reveal)
-**What**: `revealCell()` defines the skeleton: check guards → reveal → branch on mine/zero/number. Subclasses (or overrides in variants) can change the mine behavior without touching flood-fill.
-**Why**: The three outcomes of a click (mine, zero, number) share the same guard logic. Template method keeps this DRY.
+**Core logic:**
+1. First click: ensure safe — if cell is mine, re-place mines excluding this cell
+2. Call `board.reveal(row, col)`
+3. If result is MINE → set state = LOST, reveal all mines
+4. If WIN → set state = WON
+5. Return current game state
 
-### 3. Strategy Pattern (Difficulty)
-**What**: A `DifficultyStrategy` interface provides `(rows, cols, mines)` for Beginner (9×9, 10), Intermediate (16×16, 40), Expert (30×16, 99).
-**Why**: Avoids hardcoding difficulty parameters in the game constructor.
+**Edge cases:**
+- Already revealed cell → no-op
+- Flagged cell → no-op (player must unflag first)
+- Out of bounds → raise error
 
----
+```python
+def reveal(self, row, col):
+    if self.state != GameState.IN_PROGRESS:
+        return self.state
 
-## Phase 5: Key Java Implementation
+    cell = self.board.get_cell(row, col)
+    if cell.is_revealed() or cell.is_flagged():
+        return self.state
 
-The interesting algorithm is the **BFS flood fill** — when a `0`-cell is revealed, expand to all reachable `0`-cells and their numeric borders, without revisiting. Recursive DFS risks stack overflow on large grids; BFS is safer.
+    # First-click safety
+    if self.first_move:
+        self.first_move = False
+        if cell.is_mine:
+            self.board.relocate_mine(row, col)
 
-```java
-import java.util.*;
+    result = self.board.reveal(row, col)
 
-// --- Cell ---
-class Cell {
-    boolean isMine;
-    int adjMines;
-    boolean isRevealed;
-    boolean isFlagged;
-}
+    if result == RevealResult.MINE:
+        self.state = GameState.LOST
+        self.board.reveal_all_mines()
+    elif self.board.is_all_revealed():
+        self.state = GameState.WON
 
-// --- Board ---
-class Board {
-    final Cell[][] grid;
-    final int rows, cols, numMines;
-    int revealedCount = 0;
+    return self.state
+```
 
-    Board(int rows, int cols, int numMines) {
-        this.rows = rows; this.cols = cols; this.numMines = numMines;
-        grid = new Cell[rows][cols];
-        for (int r = 0; r < rows; r++)
-            for (int c = 0; c < cols; c++)
-                grid[r][c] = new Cell();
-    }
+### Core Method: `Board.reveal` with BFS flood fill
 
-    // Called on first click — never places a mine on (safeR, safeC) or its 8 neighbors
-    void placeMines(int safeR, int safeC) {
-        Set<Integer> safeZone = new HashSet<>();
-        for (int[] n : getNeighbors(safeR, safeC))
-            safeZone.add(n[0] * cols + n[1]);
-        safeZone.add(safeR * cols + safeC);
+**Core logic:**
+- If mine: return MINE
+- If already revealed: return NUMBER (no-op)
+- Mark cell as REVEALED
+- If adjacent_mines > 0: return NUMBER (stop here)
+- If adjacent_mines == 0: BFS to reveal all connected blank cells
 
-        Random rng = new Random();
-        int placed = 0;
-        while (placed < numMines) {
-            int r = rng.nextInt(rows), c = rng.nextInt(cols);
-            if (!grid[r][c].isMine && !safeZone.contains(r * cols + c)) {
-                grid[r][c].isMine = true;
-                placed++;
-            }
-        }
-        calculateAdjacency();
-    }
+**Edge cases:**
+- Guard against revisiting cells in BFS (use visited set or check cell.is_revealed())
 
-    void calculateAdjacency() {
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                if (grid[r][c].isMine) continue;
-                int count = 0;
-                for (int[] n : getNeighbors(r, c))
-                    if (grid[n[0]][n[1]].isMine) count++;
-                grid[r][c].adjMines = count;
-            }
-        }
-    }
+```python
+def reveal(self, row, col):
+    cell = self.grid[row][col]
+    if cell.is_mine:
+        cell.state = CellState.REVEALED
+        return RevealResult.MINE
 
-    // Returns true if the cell was a mine (game over)
-    boolean revealCell(int r, int c) {
-        Cell cell = grid[r][c];
-        if (cell.isRevealed || cell.isFlagged) return false;
+    if cell.adjacent_mines > 0:
+        cell.state = CellState.REVEALED
+        return RevealResult.NUMBER
 
-        cell.isRevealed = true;
-        revealedCount++;
+    # BFS flood fill for blank cells
+    self._flood_fill(row, col)
+    return RevealResult.BLANK
 
-        if (cell.isMine) return true; // Caller handles game-over
+def _flood_fill(self, start_row, start_col):
+    queue = deque([(start_row, start_col)])
+    visited = set()
 
-        // BFS flood fill: expand through all connected zero-cells
-        if (cell.adjMines == 0) {
-            floodFill(r, c);
-        }
-        return false;
-    }
+    while queue:
+        r, c = queue.popleft()
+        if (r, c) in visited:
+            continue
+        visited.add((r, c))
 
-    // BFS flood fill — iterative to avoid stack overflow on large grids
-    void floodFill(int startR, int startC) {
-        Queue<int[]> queue = new LinkedList<>();
-        queue.add(new int[]{startR, startC});
+        if not (0 <= r < self.rows and 0 <= c < self.cols):
+            continue
 
-        while (!queue.isEmpty()) {
-            int[] pos = queue.poll();
-            int r = pos[0], c = pos[1];
+        cell = self.grid[r][c]
+        if cell.state == CellState.REVEALED or cell.is_mine:
+            continue
 
-            for (int[] n : getNeighbors(r, c)) {
-                Cell neighbor = grid[n[0]][n[1]];
-                if (neighbor.isRevealed || neighbor.isFlagged || neighbor.isMine) continue;
+        cell.state = CellState.REVEALED
 
-                neighbor.isRevealed = true;
-                revealedCount++;
+        if cell.adjacent_mines == 0:
+            for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+                queue.append((r + dr, c + dc))
+```
 
-                // Only continue expanding through zero-cells
-                // Numbered cells are revealed but act as a border — do not expand further
-                if (neighbor.adjMines == 0) {
-                    queue.add(new int[]{n[0], n[1]});
-                }
-            }
-        }
-    }
+### Mine placement and adjacent counts
 
-    void toggleFlag(int r, int c) {
-        if (!grid[r][c].isRevealed)
-            grid[r][c].isFlagged = !grid[r][c].isFlagged;
-    }
+```python
+def _place_mines(self, num_mines, exclude):
+    all_cells = [
+        (r, c)
+        for r in range(self.rows)
+        for c in range(self.cols)
+        if (r, c) not in exclude
+    ]
+    mine_positions = random.sample(all_cells, num_mines)
+    for r, c in mine_positions:
+        self.grid[r][c].is_mine = True
 
-    boolean isWon() {
-        return revealedCount == (rows * cols - numMines);
-    }
-
-    // All 8 directions, bounds-checked
-    List<int[]> getNeighbors(int r, int c) {
-        int[] dr = {-1,-1,-1, 0, 0, 1, 1, 1};
-        int[] dc = {-1, 0, 1,-1, 1,-1, 0, 1};
-        List<int[]> result = new ArrayList<>();
-        for (int i = 0; i < 8; i++) {
-            int nr = r + dr[i], nc = c + dc[i];
-            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols)
-                result.add(new int[]{nr, nc});
-        }
-        return result;
-    }
-
-    void printBoard(boolean revealAll) {
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                Cell cell = grid[r][c];
-                if (!revealAll && !cell.isRevealed) { System.out.print(cell.isFlagged ? "F " : ". "); }
-                else if (cell.isMine)                { System.out.print("* "); }
-                else if (cell.adjMines > 0)          { System.out.print(cell.adjMines + " "); }
-                else                                 { System.out.print("  "); }
-            }
-            System.out.println();
-        }
-    }
-}
-
-// --- Game Controller ---
-class MinesweeperGame {
-    enum GameState { PLAYING, WON, LOST }
-
-    private final Board board;
-    private GameState state = GameState.PLAYING;
-    private boolean firstClick = true;
-
-    MinesweeperGame(int rows, int cols, int numMines) {
-        board = new Board(rows, cols, numMines);
-    }
-
-    void click(int r, int c) {
-        if (state != GameState.PLAYING) return;
-
-        // Defer mine placement to first click for fairness
-        if (firstClick) {
-            board.placeMines(r, c);
-            firstClick = false;
-        }
-
-        boolean hitMine = board.revealCell(r, c);
-
-        if (hitMine) {
-            state = GameState.LOST;
-            System.out.println("BOOM! Game Over.");
-            board.printBoard(true);
-        } else if (board.isWon()) {
-            state = GameState.WON;
-            System.out.println("You Win!");
-            board.printBoard(true);
-        }
-    }
-
-    void flag(int r, int c) {
-        if (state == GameState.PLAYING) board.toggleFlag(r, c);
-    }
-
-    void printBoard() { board.printBoard(false); }
-
-    public static void main(String[] args) {
-        MinesweeperGame game = new MinesweeperGame(9, 9, 10);
-        game.click(4, 4); // First click — always safe
-        game.printBoard();
-
-        game.click(0, 0); // Might reveal a big flood-fill area or hit a mine
-        game.printBoard();
-    }
-}
+def _compute_adjacent_counts(self):
+    for r in range(self.rows):
+        for c in range(self.cols):
+            if not self.grid[r][c].is_mine:
+                count = sum(
+                    1
+                    for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
+                    if 0 <= r+dr < self.rows
+                    and 0 <= c+dc < self.cols
+                    and self.grid[r+dr][c+dc].is_mine
+                )
+                self.grid[r][c].adjacent_mines = count
 ```
 
 ---
 
-## Phase 6: Trade-offs and Extensions
+## Verification
 
-### Trade-off: DFS (recursive) vs. BFS (iterative) for Flood Fill
-| Approach | Pros | Cons |
-|---|---|---|
-| Recursive DFS | Simple, elegant code | Stack overflow on large grids (e.g., 1000×1000 open area) |
-| Iterative BFS | Safe for any grid size | Slightly more code (explicit queue) |
+```
+3×3 board, 1 mine at (0,0)
+Adjacent counts after setup:
+  (0,0)=mine  (0,1)=1     (0,2)=0
+  (1,0)=1     (1,1)=1     (1,2)=0
+  (2,0)=0     (2,1)=0     (2,2)=0
 
-Always use BFS for production. Java's default stack depth (~512 frames) limits recursive DFS to boards of roughly 500 open cells in the worst case.
-
-### Extension: First-Click Safety
-Implemented above — mine placement is deferred until after the first click, excluding the clicked cell and its 8 neighbors from mine placement. This guarantees the first reveal always produces a safe area.
-
-### Extension: Infinite Minesweeper
-If the board is unbounded, replace `Cell[][] grid` with `HashMap<String, Cell>` keyed by `"r,c"`. Generate cells on demand as the player explores. The flood-fill BFS works identically — it just reads from the map instead of the array.
-
-### Extension: Chord Click
-Standard Minesweeper feature: if a revealed numbered cell is surrounded by exactly N flags (where N equals its `adjMines` count), clicking it again reveals all unflagged neighbors. Implement as a `chordClick(r, c)` method that checks the flag count and bulk-reveals.
+Game.reveal(2, 2):
+  Not a mine, adjacent_mines=0 → flood fill
+  BFS queue: [(2,2)]
+    (2,2): adjacent=0 → reveal, enqueue neighbors
+    (2,1): adjacent=0 → reveal, enqueue neighbors
+    (2,0): adjacent=0 → reveal, enqueue neighbors
+    (1,2): adjacent=0 → reveal, enqueue neighbors
+    (1,1): adjacent=1 → reveal, stop (no further enqueue)
+    (1,0): adjacent=1 → reveal, stop
+    (0,2): adjacent=0 → reveal, enqueue neighbors
+    (0,1): adjacent=1 → reveal, stop
+    (0,0): is_mine → skip (never revealed)
+  
+  Revealed: all cells except (0,0)
+  is_all_revealed(): 8/9 non-mine cells revealed = True
+  state = GameState.WON
+```
 
 ---
 
-## SOLID Principles
-- **S**: `Board` owns grid logic; `MinesweeperGame` owns game flow and state transitions.
-- **O**: New cell behaviors (e.g., "Super Mine" that reveals a 5×5 area) extend `Cell` without touching `Board`.
-- **L**: A `BigBoard` backed by a HashMap could substitute for the array-backed `Board` transparently.
-- **D**: `MinesweeperGame` depends on `Board` abstraction — could be extracted to an interface for testing.
+## Deep Dive & Extensibility
+
+### 1. "BFS vs DFS for flood fill — which is better?"
+
+Both work. BFS (queue) is iterative and avoids Python's recursion stack limit. DFS (recursive) is simpler to write but risks `RecursionError` on large grids (e.g., 100×100 blank board = 10,000 recursive calls).
+
+**Recommendation**: BFS for production code.
+
+```python
+# DFS (recursive) — simpler but risky for large grids
+def _flood_fill_dfs(self, r, c, visited):
+    if (r, c) in visited or not self._in_bounds(r, c):
+        return
+    cell = self.grid[r][c]
+    if cell.state == CellState.REVEALED or cell.is_mine:
+        return
+    visited.add((r, c))
+    cell.state = CellState.REVEALED
+    if cell.adjacent_mines == 0:
+        for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
+            self._flood_fill_dfs(r+dr, c+dc, visited)
+```
+
+To make DFS safe on large grids: use `sys.setrecursionlimit()` or convert to iterative with an explicit stack.
+
+### 2. "How would you implement first-click safety?"
+
+Two approaches:
+
+**A — Lazy placement**: Don't place mines until after the first click. Place mines excluding the clicked cell and its neighbors.
+
+```python
+def reveal(self, row, col):
+    if self.first_move:
+        self.first_move = False
+        exclude = {(row, col)} | self._neighbors(row, col)
+        self.board.place_mines_excluding(exclude)
+        self.board._compute_adjacent_counts()
+    # ... rest of reveal ...
+```
+
+**B — Relocate**: Place mines upfront. If first click hits a mine, move that mine to a random non-mine cell.
+
+Approach A is cleaner — board setup is deferred, no re-computation needed.
+
+### 3. "How would you add a hint system?"
+
+Hint = reveal the cell with the highest probability of being safe. Use constraint propagation: for each numbered cell, if `adjacent_mines == count_of_flagged_adjacent`, all other adjacent hidden cells are safe.
+
+```python
+def get_hint(self):
+    for r in range(self.rows):
+        for c in range(self.cols):
+            cell = self.grid[r][c]
+            if cell.is_revealed() and cell.adjacent_mines > 0:
+                hidden = [n for n in self._neighbors(r,c) if self.grid[n[0]][n[1]].is_hidden()]
+                flagged = [n for n in self._neighbors(r,c) if self.grid[n[0]][n[1]].is_flagged()]
+                if len(flagged) == cell.adjacent_mines and hidden:
+                    return hidden[0]  # safe to reveal
+    return None  # no deterministic hint
+```
+
+### 4. "How would you validate the win condition efficiently?"
+
+Rather than scanning all cells after every reveal, track a counter:
+
+```python
+class Board:
+    def __init__(self):
+        self.unrevealed_non_mine_count = rows * cols - num_mines
+
+    def reveal_cell(self, cell):
+        cell.state = CellState.REVEALED
+        self.unrevealed_non_mine_count -= 1
+
+    def is_all_revealed(self):
+        return self.unrevealed_non_mine_count == 0
+```
+
+`is_all_revealed()` is O(1) instead of O(rows × cols).
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**: Board with Cell grid. Reveal a cell — return mine or number. Basic win check (all non-mines revealed).
+
+**Mid-level**: BFS flood fill for blank cells. Adjacent mine count computation. Flag/unflag. Win counter (O(1) check). First-click safety.
+
+**Senior**: BFS vs DFS trade-off justified (recursion depth). Lazy mine placement for first-click safety. Constraint-based hint system. Concurrent access (flag + reveal) thread-safety.
+
+---
+
+## Common Interview Questions
+
+- **Q**: Why is BFS preferred over recursive DFS for flood fill?
+  **A**: Python's default recursion limit is 1000. A 30×30 all-blank board could generate 900 recursive calls. BFS uses an explicit queue — no stack overflow risk.
+
+- **Q**: How do you compute adjacent mine counts?
+  **A**: After placing all mines, iterate every cell. For each non-mine cell, check its 8 neighbors and count how many are mines. Store the count in `cell.adjacent_mines`. O(rows × cols × 8) = O(n).
+
+- **Q**: How does flood fill know when to stop?
+  **A**: Stop conditions in BFS: (1) out of bounds, (2) cell is already revealed, (3) cell is a mine, (4) cell has adjacent_mines > 0 (reveal it but don't enqueue its neighbors).
+
+- **Q**: How do you detect a win?
+  **A**: Maintain a counter `unrevealed_non_mine_count = total_cells - num_mines`. Decrement on each non-mine cell reveal. Win when counter reaches 0. O(1) check.
+
+- **Q**: What happens if a player flags a mine — does it count toward win?
+  **A**: Standard rules: flagged cells are not revealed. Win requires all non-mine cells to be REVEALED (flagged cells don't count). The win check only counts REVEALED state.

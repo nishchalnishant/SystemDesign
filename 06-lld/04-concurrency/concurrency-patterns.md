@@ -25,34 +25,34 @@ Try each before reading the corresponding section below.
 ## Topic Mindmap
 
 ```
-[Concurrency Patterns — Java]
+[Concurrency Patterns — Python]
 ├── Core Concept
 │   ├── What → Patterns that coordinate multiple threads accessing shared resources safely
 │   └── Why → Race conditions, deadlocks, and visibility bugs are invisible until production load
 ├── Key Patterns
-│   ├── synchronized → mutual exclusion; only one thread executes the block at a time
-│   ├── volatile → guarantees visibility across CPUs; does NOT make compound ops atomic
-│   ├── ReadWriteLock → N concurrent readers OR 1 exclusive writer; boosts read-heavy caches
-│   ├── Semaphore → counting gate; limits concurrent access to K resources (DB connection pool)
-│   ├── CountDownLatch → fan-out sync; main thread awaits N worker completions
-│   └── CyclicBarrier → rendezvous; N threads wait for each other at a checkpoint
+│   ├── threading.Lock / with lock → mutual exclusion; only one thread executes the block at a time
+│   ├── threading.Event → thread-safe flag; set()/clear()/wait() for visibility across threads
+│   ├── ReadWriteLock (custom) → N concurrent readers OR 1 exclusive writer; boosts read-heavy caches
+│   ├── threading.Semaphore → counting gate; limits concurrent access to K resources (DB connection pool)
+│   ├── threading.Barrier → fan-out sync; all threads wait for each other at a checkpoint
+│   └── threading.Condition → rendezvous; wait()/notify()/notify_all() for producer-consumer
 ├── When to Use
 │   ├── ✓ ReadWriteLock: high read/low write ratio (config cache, in-memory store)
 │   ├── ✓ Semaphore: bounded resource (DB pool, API rate limit across threads)
-│   └── ✓ CountDownLatch: parallel init tasks before serving requests
+│   └── ✓ Barrier/Event: parallel init tasks before serving requests
 ├── When NOT to Use
-│   ├── ✗ synchronized on read-heavy paths — blocks all readers; use ReadWriteLock
-│   └── ✗ volatile for compound check-then-act — use AtomicReference or synchronized block
+│   ├── ✗ threading.Lock on read-heavy paths — blocks all readers; use a ReadWriteLock pattern
+│   └── ✗ plain bool flag for compound check-then-act — use threading.Lock + counter
 ├── Trade-offs
 │   ├── Pro: Correctness over unsafe concurrent mutations
 │   └── Con: Deadlock risk if lock ordering inconsistent; performance overhead vs lock-free
 ├── Real-World Examples
-│   ├── HikariCP connection pool → Semaphore gates thread access to connection list
-│   └── Spring app startup → CountDownLatch waits for all beans to initialize
+│   ├── Connection pool → Semaphore gates thread access to connection queue
+│   └── App startup → Barrier/Event waits for all init tasks to complete
 └── Interview Angles
     ├── Deadlock → four conditions: mutual exclusion, hold-and-wait, no preemption, circular wait
-    ├── volatile vs AtomicInteger → volatile for flags; Atomic for increment/compare-and-swap
-    └── Code challenge: implement a thread-safe bounded cache with ReadWriteLock
+    ├── threading.Event vs Lock+counter → Event for flags; Lock+counter for atomic increment
+    └── Code challenge: implement a thread-safe bounded cache with a ReadWriteLock pattern
 ```
 
 ---
@@ -77,31 +77,51 @@ Try each before reading the corresponding section below.
 
 **Problem**: Multiple readers can proceed concurrently, but writers need exclusive access.
 
-```java
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+```python
+import threading
 
-public class Cache<K, V> {
-    private final Map<K, V> map = new HashMap<>();
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+class ReadWriteLock:
+    """Allow concurrent readers; one exclusive writer."""
+    def __init__(self):
+        self._read_ready = threading.Condition(threading.Lock())
+        self._readers = 0
 
-    public V get(K key) {
-        lock.readLock().lock();
-        try {
-            return map.get(key);
-        } finally {
-            lock.readLock().unlock();
-        }
-    }
+    def acquire_read(self):
+        with self._read_ready:
+            self._readers += 1
 
-    public void put(K key, V value) {
-        lock.writeLock().lock();
-        try {
-            map.put(key, value);
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-}
+    def release_read(self):
+        with self._read_ready:
+            self._readers -= 1
+            if self._readers == 0:
+                self._read_ready.notify_all()
+
+    def acquire_write(self):
+        self._read_ready.acquire()
+        while self._readers > 0:
+            self._read_ready.wait()
+
+    def release_write(self):
+        self._read_ready.release()
+
+class Cache:
+    def __init__(self):
+        self._map = {}
+        self._lock = ReadWriteLock()
+
+    def get(self, key):
+        self._lock.acquire_read()
+        try:
+            return self._map.get(key)
+        finally:
+            self._lock.release_read()
+
+    def put(self, key, value):
+        self._lock.acquire_write()
+        try:
+            self._map[key] = value
+        finally:
+            self._lock.release_write()
 ```
 
 **When to use**: Read-heavy shared state (caches, config stores, leaderboards).  
@@ -113,28 +133,27 @@ public class Cache<K, V> {
 
 **Problem**: Limit concurrent access to a resource pool (DB connections, API rate limiting).
 
-```java
-import java.util.concurrent.Semaphore;
+```python
+import threading
+import queue
 
-public class ConnectionPool {
-    private final Semaphore semaphore;
-    private final Queue<Connection> connections;
+class ConnectionPool:
+    def __init__(self, size):
+        self._semaphore = threading.Semaphore(size)
+        self._connections = queue.Queue()
+        for conn in self._create_connections(size):
+            self._connections.put(conn)
 
-    public ConnectionPool(int size) {
-        this.semaphore = new Semaphore(size);
-        this.connections = new ArrayDeque<>(createConnections(size));
-    }
+    def _create_connections(self, size):
+        return [object() for _ in range(size)]  # placeholder connections
 
-    public Connection acquire() throws InterruptedException {
-        semaphore.acquire();             // blocks if pool is exhausted
-        return connections.poll();
-    }
+    def acquire(self):
+        self._semaphore.acquire()        # blocks if pool is exhausted
+        return self._connections.get_nowait()
 
-    public void release(Connection conn) {
-        connections.offer(conn);
-        semaphore.release();
-    }
-}
+    def release(self, conn):
+        self._connections.put(conn)
+        self._semaphore.release()
 ```
 
 **Binary semaphore** (permits=1) is equivalent to a mutex but doesn't have ownership — useful when one thread acquires and another releases.
@@ -145,17 +164,34 @@ public class ConnectionPool {
 
 **Problem**: Wait for N events to complete before proceeding (fan-out then join).
 
-```java
-CountDownLatch latch = new CountDownLatch(3);
+```python
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
-// In 3 worker threads:
-executor.submit(() -> {
-    doWork();
-    latch.countDown();   // signal completion
-});
+barrier = threading.Barrier(3 + 1)  # 3 workers + main thread
 
-latch.await();           // blocks until count reaches 0
-System.out.println("All workers done");
+def worker():
+    do_work()
+    barrier.wait()   # signal completion
+
+with ThreadPoolExecutor(max_workers=3) as executor:
+    for _ in range(3):
+        executor.submit(worker)
+
+# Alternative: use threading.Event for one-shot fan-out/join
+done_event = threading.Event()
+counter_lock = threading.Lock()
+count = [0]
+
+def worker_with_event():
+    do_work()
+    with counter_lock:
+        count[0] += 1
+        if count[0] == 3:
+            done_event.set()   # signal all done
+
+done_event.wait()              # blocks until count reaches 3
+print("All workers done")
 ```
 
 **One-shot**: cannot be reset. Use CyclicBarrier if you need reusable barriers.
@@ -166,16 +202,18 @@ System.out.println("All workers done");
 
 **Problem**: N threads must all reach a checkpoint before any proceeds (batch processing, parallel search).
 
-```java
-CyclicBarrier barrier = new CyclicBarrier(3, () -> {
-    System.out.println("All threads reached barrier — proceeding");
-});
+```python
+import threading
 
-Runnable task = () -> {
-    doPartialWork();
-    barrier.await();     // waits for the other 2; resets automatically after
-    doNextPhase();
-};
+def barrier_action():
+    print("All threads reached barrier — proceeding")
+
+barrier = threading.Barrier(3, action=barrier_action)
+
+def task():
+    do_partial_work()
+    barrier.wait()       # waits for the other 2; resets automatically after
+    do_next_phase()
 ```
 
 **vs CountDownLatch**: CyclicBarrier resets and can be reused; CountDownLatch is one-shot.
@@ -186,22 +224,36 @@ Runnable task = () -> {
 
 **Problem**: Unbounded thread creation kills performance. Pools reuse threads.
 
-```java
-// Fixed pool — predictable resource use
-ExecutorService pool = Executors.newFixedThreadPool(10);
+```python
+import concurrent.futures
+import threading
+import queue
+import time
 
-// Scheduled pool — for periodic tasks
-ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-scheduler.scheduleAtFixedRate(task, 0, 1, TimeUnit.SECONDS);
+# Fixed pool — predictable resource use
+pool = concurrent.futures.ThreadPoolExecutor(max_workers=10)
 
-// Custom pool — full control
-ExecutorService custom = new ThreadPoolExecutor(
-    4,                          // corePoolSize
-    16,                         // maxPoolSize
-    60L, TimeUnit.SECONDS,      // keepAlive for idle threads above core
-    new LinkedBlockingQueue<>(1000),  // bounded work queue
-    new ThreadPoolExecutor.CallerRunsPolicy()  // backpressure: caller executes
-);
+# Scheduled / periodic task — use a background thread with sleep
+def run_periodically(task, interval_seconds):
+    def loop():
+        while True:
+            task()
+            time.sleep(interval_seconds)
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+
+# Custom pool with bounded queue and backpressure
+# Python's ThreadPoolExecutor accepts max_workers; for bounded queue + rejection,
+# wrap submission with a Semaphore for backpressure:
+_backpressure = threading.Semaphore(1000)  # bounded work queue equivalent
+
+def submit_with_backpressure(executor, fn, *args):
+    _backpressure.acquire()          # blocks caller if 1000 tasks already queued
+    future = executor.submit(fn, *args)
+    future.add_done_callback(lambda f: _backpressure.release())
+    return future
+
+custom = concurrent.futures.ThreadPoolExecutor(max_workers=16)
 ```
 
 **Rejection policies**: AbortPolicy (throw), CallerRunsPolicy (backpressure), DiscardPolicy (drop silently).
@@ -212,20 +264,58 @@ ExecutorService custom = new ThreadPoolExecutor(
 
 **Problem**: Increment a counter from multiple threads without synchronized blocks.
 
-```java
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
+```python
+import threading
 
-AtomicInteger counter = new AtomicInteger(0);
-counter.incrementAndGet();          // atomic read-modify-write
-counter.compareAndSet(5, 10);       // CAS: set to 10 only if current value is 5
+# Atomic counter — use a Lock around a plain int
+class AtomicCounter:
+    def __init__(self, initial=0):
+        self._value = initial
+        self._lock = threading.Lock()
 
-// AtomicReference for objects
-AtomicReference<Node> head = new AtomicReference<>(null);
-Node newNode = new Node(value);
-do {
-    newNode.next = head.get();
-} while (!head.compareAndSet(newNode.next, newNode));  // lock-free push
+    def increment_and_get(self):
+        with self._lock:
+            self._value += 1
+            return self._value
+
+    def compare_and_set(self, expected, new_value):
+        with self._lock:
+            if self._value == expected:
+                self._value = new_value
+                return True
+            return False
+
+counter = AtomicCounter(0)
+counter.increment_and_get()         # atomic read-modify-write
+counter.compare_and_set(5, 10)      # CAS: set to 10 only if current value is 5
+
+# AtomicReference equivalent — use a Lock around a reference
+class AtomicRef:
+    def __init__(self, initial=None):
+        self._ref = initial
+        self._lock = threading.Lock()
+
+    def get(self):
+        with self._lock:
+            return self._ref
+
+    def compare_and_set(self, expected, new_value):
+        with self._lock:
+            if self._ref is expected:
+                self._ref = new_value
+                return True
+            return False
+
+# Lock-free push pattern (Python equivalent using AtomicRef)
+head = AtomicRef(None)
+
+def push(value):
+    new_node = Node(value)
+    while True:
+        current_head = head.get()
+        new_node.next = current_head
+        if head.compare_and_set(current_head, new_node):
+            break
 ```
 
 **When to use**: Simple counters, flags, node references in lock-free data structures.  
@@ -251,21 +341,20 @@ Prefer these over synchronized wrappers (`Collections.synchronizedMap`):
 
 **Problem**: Ensure visibility of a flag across threads without locking.
 
-```java
-public class Worker implements Runnable {
-    private volatile boolean running = true;
+```python
+import threading
 
-    public void stop() {
-        running = false;        // visible to worker thread immediately
-    }
+class Worker(threading.Thread):
+    def __init__(self):
+        super().__init__()
+        self._stop_event = threading.Event()
 
-    @Override
-    public void run() {
-        while (running) {
-            doWork();
-        }
-    }
-}
+    def stop(self):
+        self._stop_event.set()     # visible to worker thread immediately
+
+    def run(self):
+        while not self._stop_event.is_set():
+            do_work()
 ```
 
 **volatile guarantees**: visibility (no CPU cache stale reads), ordering (no reordering around the write/read).  
@@ -294,22 +383,19 @@ The Java Memory Model (JMM, JSR-133, Java 5+) defines a **happens-before** relat
 
 ### Why Double-Checked Locking Requires volatile
 
-```java
-// BROKEN without volatile (Java 1.4 and earlier / without volatile)
-public class Singleton {
-    private static Singleton instance;  // NOT volatile
+```python
+# BROKEN — no memory barrier; interpreter may reorder writes
+import threading
 
-    public static Singleton getInstance() {
-        if (instance == null) {                    // check 1 — no lock
-            synchronized (Singleton.class) {
-                if (instance == null) {            // check 2 — with lock
-                    instance = new Singleton();    // PROBLEM HERE
-                }
-            }
-        }
-        return instance;
-    }
-}
+class Singleton:
+    _instance = None  # not protected by any lock on first check
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:                    # check 1 — no lock
+            # another thread may also see None here before assignment completes
+            cls._instance = cls()                    # PROBLEM: not atomic
+        return cls._instance
 ```
 
 **Why it breaks**: `instance = new Singleton()` compiles to three steps:
@@ -319,24 +405,23 @@ public class Singleton {
 
 The JVM/CPU can reorder steps 2 and 3: assign the reference **before** the constructor runs. Thread B checks `instance != null` (step 3 happened), reads `instance`, and calls a method on a **partially constructed object** (step 2 not done yet). Crash or silent corruption.
 
-```java
-// CORRECT: volatile prevents reordering
-public class Singleton {
-    private static volatile Singleton instance;  // volatile guarantees ordering
+```python
+# CORRECT: double-checked locking with a module-level lock
+import threading
 
-    public static Singleton getInstance() {
-        if (instance == null) {
-            synchronized (Singleton.class) {
-                if (instance == null) {
-                    instance = new Singleton();
-                    // volatile write: happens-before any subsequent volatile read
-                    // Thread B's volatile read of instance sees fully constructed object
-                }
-            }
-        }
-        return instance;
-    }
-}
+class Singleton:
+    _instance = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:             # first check (no lock) — fast path
+            with cls._lock:                   # lock only during initialization
+                if cls._instance is None:     # second check (with lock)
+                    cls._instance = cls()
+                    # lock release creates happens-before edge;
+                    # subsequent readers see the fully constructed object
+        return cls._instance
 ```
 
 **What `volatile` gives you**:
@@ -348,13 +433,27 @@ public class Singleton {
 
 **CAS (Compare-And-Swap)**: atomic instruction `CMPXCHG` on x86. Reads current value, compares to expected, writes new value only if match — all atomically. Basis of all lock-free algorithms.
 
-```java
-AtomicInteger counter = new AtomicInteger(0);
-// CAS: only increments if current value is 5
-boolean swapped = counter.compareAndSet(5, 6);
+```python
+import threading
 
-// Under the hood: CMPXCHG instruction
-// No locking — CPU-level atomic operation
+class AtomicCounter:
+    def __init__(self, initial=0):
+        self._value = initial
+        self._lock = threading.Lock()
+
+    def compare_and_set(self, expected, new_value):
+        with self._lock:
+            if self._value == expected:
+                self._value = new_value
+                return True
+            return False
+
+counter = AtomicCounter(0)
+# CAS: only sets to 6 if current value is 5
+swapped = counter.compare_and_set(5, 6)
+
+# Under the hood (CPython): the GIL serializes bytecode ops,
+# but explicit locking is still needed for compound operations.
 ```
 
 **ABA Problem**: Thread 1 reads value A. Thread 2 changes A→B→A. Thread 1's CAS(A, C) succeeds but operates on a different "A" than it read.
@@ -367,28 +466,60 @@ Thread 1: CAS(head, NodeA, newNode) succeeds — but NodeB is now lost!
 
 **Fix**: `AtomicStampedReference<T>` — pairs the reference with a monotonically increasing stamp (version).
 
-```java
-AtomicStampedReference<Node> head = new AtomicStampedReference<>(sentinel, 0);
+```python
+import threading
 
-// On CAS: must match BOTH the reference AND the stamp
-int[] stampHolder = new int[1];
-Node current = head.get(stampHolder);
-int stamp = stampHolder[0];
+class AtomicStampedRef:
+    """Pairs a reference with a monotonically increasing stamp to prevent ABA."""
+    def __init__(self, initial, stamp=0):
+        self._ref = initial
+        self._stamp = stamp
+        self._lock = threading.Lock()
 
-// Only succeeds if both reference and stamp match — ABA impossible
-head.compareAndSet(current, newNode, stamp, stamp + 1);
+    def get(self):
+        with self._lock:
+            return self._ref, self._stamp
+
+    def compare_and_set(self, expected_ref, new_ref, expected_stamp, new_stamp):
+        with self._lock:
+            if self._ref is expected_ref and self._stamp == expected_stamp:
+                self._ref = new_ref
+                self._stamp = new_stamp
+                return True
+            return False
+
+head = AtomicStampedRef(sentinel, stamp=0)
+
+current, stamp = head.get()
+# Only succeeds if both reference AND stamp match — ABA impossible
+head.compare_and_set(current, new_node, stamp, stamp + 1)
 ```
 
 ### ThreadPoolExecutor Parameters
 
-```java
-ThreadPoolExecutor executor = new ThreadPoolExecutor(
-    4,                              // corePoolSize: always-alive threads
-    16,                             // maximumPoolSize: max threads under load
-    60, TimeUnit.SECONDS,           // keepAliveTime: idle non-core thread lifetime
-    new ArrayBlockingQueue<>(100),  // workQueue: bounded = backpressure
-    new ThreadPoolExecutor.CallerRunsPolicy()  // rejection policy
-);
+```python
+import concurrent.futures
+import threading
+import queue
+
+# Python's ThreadPoolExecutor: set max_workers (analogous to maximumPoolSize).
+# For bounded queue + caller-runs backpressure, wrap with a Semaphore:
+_semaphore = threading.Semaphore(100)  # bounded work queue of 100 tasks
+
+def submit_with_caller_runs(executor, fn, *args):
+    """CallerRunsPolicy: if semaphore is exhausted, caller runs the task itself."""
+    acquired = _semaphore.acquire(blocking=False)
+    if not acquired:
+        fn(*args)   # caller runs — natural backpressure
+        return
+    def wrapped():
+        try:
+            return fn(*args)
+        finally:
+            _semaphore.release()
+    return executor.submit(wrapped)
+
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
 ```
 
 **Parameter semantics**:
@@ -413,34 +544,25 @@ ThreadPoolExecutor executor = new ThreadPoolExecutor(
 
 **Work stealing**: each worker thread has a deque (double-ended queue) of tasks. Idle threads steal from the tail of other threads' deques. Stealers take from the tail (LIFO order avoids stealing freshly forked tasks), owners take from the head (FIFO for fairness to large tasks).
 
-```java
-ForkJoinPool pool = ForkJoinPool.commonPool();  // shared pool used by parallel streams
+```python
+import concurrent.futures
 
-// Custom pool to avoid starving common pool
-ForkJoinPool custom = new ForkJoinPool(8);
+# Python equivalent: recursive divide-and-conquer with ThreadPoolExecutor
+# (no direct ForkJoinPool, but futures compose the same way)
 
-// RecursiveTask: returns a result
-class SumTask extends RecursiveTask<Long> {
-    private final int[] arr;
-    private final int lo, hi;
+def sum_task(arr, lo, hi, executor):
+    if hi - lo <= 1000:
+        # base case: compute sequentially
+        return sum(arr[lo:hi])
+    mid = (lo + hi) // 2
+    left_future = executor.submit(sum_task, arr, lo, mid, executor)  # fork left
+    right_result = sum_task(arr, mid, hi, executor)                   # compute right in this thread
+    left_result = left_future.result()                                # join left
+    return left_result + right_result
 
-    @Override
-    protected Long compute() {
-        if (hi - lo <= 1000) {
-            // base case: compute sequentially
-            long sum = 0;
-            for (int i = lo; i < hi; i++) sum += arr[i];
-            return sum;
-        }
-        int mid = (lo + hi) / 2;
-        SumTask left = new SumTask(arr, lo, mid);
-        SumTask right = new SumTask(arr, mid, hi);
-        left.fork();              // submit left to pool asynchronously
-        long rightResult = right.compute();  // compute right in this thread
-        long leftResult = left.join();       // wait for left
-        return leftResult + rightResult;
-    }
-}
+# Usage
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+    total = sum_task(arr, 0, len(arr), executor)
 ```
 
 **When to use ForkJoinPool vs ThreadPoolExecutor**:

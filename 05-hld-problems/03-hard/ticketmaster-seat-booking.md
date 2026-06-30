@@ -1,386 +1,324 @@
 ---
 module: 05-hld-problems
 topic: Hard
-status: unread
-tags: [05-hld-problems, system-design, hard]
+status: complete
+tags: [05-hld-problems, system-design, hard, ticketmaster, seat-booking, concurrency, flash-sale, waitlist]
 ---
-# Design Ticketmaster / Seat Booking System
+# Design a Ticket Booking System (Ticketmaster)
+
+> **Difficulty**: Hard | **Asked at**: Amazon, Ticketmaster, StubHub, Airbnb, Google
+
+---
 
 ## Problem Statement
 
-Design a distributed seat booking system that can handle:
-- 1M concurrent users attempting to book 50,000 seats for a high-demand concert in a 5-minute on-sale window
-- Zero double-bookings (each seat sold to exactly one buyer)
-- Fair access (no user disadvantaged by server routing)
-- Sub-second response time under peak load
+Design a ticket booking system like Ticketmaster. Users browse events, select specific seats from a seating chart, and purchase tickets. The system must handle flash sales where millions of users compete for thousands of seats simultaneously, prevent double-booking under high concurrency, and support a waitlist for sold-out events.
 
 ---
 
 ## Functional Requirements
 
-- Browse events and view seat maps
-- Reserve a seat (hold it for 10 minutes while user completes payment)
-- Confirm booking after successful payment
-- Release expired reservations back to available inventory
-- View booking history
+1. **Event browsing**: Search events by city, date, category; view available seats on a seating chart
+2. **Seat selection**: Reserve a specific seat for a limited time window (hold) while the user completes checkout
+3. **Purchase**: Complete payment and confirm booking; seat becomes permanently booked
+4. **Flash sales**: Handle millions of concurrent users for high-demand events (Taylor Swift, Super Bowl)
+5. **Waitlist**: Join a waitlist for sold-out events; get notified if a seat becomes available
+6. **Cancellation**: Cancel a booking up to N hours before the event; seat returns to available pool
+
+---
 
 ## Non-Functional Requirements
 
-- **Availability**: 99.99% for browsing, 99.9% for booking
-- **Consistency**: Strong consistency for seat assignment — no double-booking ever
-- **Throughput**: 200,000 booking attempts/second at peak
-- **Latency**: Seat reservation response < 500ms at p99
-- **Scale**: 10M events, 100M users globally
+- **Scale**: 10M concurrent users during flash sales; 100K seat selections/sec at peak
+- **Latency**: Seat hold confirmation < 500ms; seating chart load < 1s
+- **Consistency**: Two users must never book the same seat — zero double-bookings
+- **Availability**: 99.99% — downtime during a Taylor Swift on-sale is catastrophic
+- **Fairness**: Users who arrived earlier in the queue should get priority seat selection
 
 ---
 
-## Capacity Estimation
+## Core Entities
 
-```
-Concert on-sale event: 50,000 seats
-1M users attempting to book simultaneously
-→ each user clicks "Buy" ~5 times (retries, different seats)
-→ 5M requests / 300 seconds = ~16,700 RPS average
-→ Peak burst (first 10 seconds): 500,000 RPS
+| Entity | Key Fields |
+|--------|-----------|
+| `Event` | event_id, venue_id, name, date, status (on_sale/sold_out/cancelled) |
+| `Seat` | seat_id, event_id, section, row, number, type (standard/VIP), price, status |
+| `SeatHold` | hold_id, seat_id, user_id, expires_at, status (active/converted/expired) |
+| `Booking` | booking_id, user_id, event_id, seat_ids[], total_price, status, created_at |
+| `WaitlistEntry` | entry_id, user_id, event_id, position, created_at, notified_at |
 
-Payment processing: max 50,000 payments total
-Seat reservation hold: 10 minutes per hold
+---
 
-Database seat rows: 50,000 per event
-A 10M event catalog: ~500M seat rows (hot: only current/upcoming events)
+## API Design
+
+```http
+GET /api/v1/events/{event_id}/seats
+Response 200: {
+  "event_id": "e123",
+  "seats": [
+    { "seat_id": "s456", "section": "A", "row": "3", "number": "12",
+      "status": "available", "price": 150.00 },
+    { "seat_id": "s457", "section": "A", "row": "3", "number": "13",
+      "status": "held", "price": 150.00 }
+  ]
+}
+
+POST /api/v1/seats/hold
+Body: { "seat_ids": ["s456", "s789"], "user_id": "u101" }
+Response 200: { "hold_id": "h202", "expires_at": "2026-06-29T14:35:00Z" }
+Response 409: { "error": "seat_unavailable", "seat_id": "s456" }
+
+POST /api/v1/bookings
+Body: { "hold_id": "h202", "payment_method_id": "pm303" }
+Response 201: { "booking_id": "b404", "status": "confirmed", "total": 300.00 }
+
+POST /api/v1/events/{event_id}/waitlist
+Body: { "user_id": "u101" }
+Response 201: { "entry_id": "w505", "position": 1243 }
+
+DELETE /api/v1/bookings/{booking_id}
+Response 200: { "refund_amount": 300.00, "status": "cancelled" }
 ```
 
 ---
 
-## Core Design Challenge: Preventing Double-Booking
+## High-Level Design
 
-The central problem: Seat A has inventory=1. Two users request it simultaneously. Both see "available", both proceed to payment, both pay. Now you've oversold.
+```
+User Browser
+  │ GET /events/{id}/seats → seating chart
+  │ POST /seats/hold → reserve seat(s) for 10 minutes
+  │ POST /bookings → complete purchase
+  ▼
+API Gateway → Load Balancer
+  │
+  ├── Seat Service
+  │     │ Check availability, create hold, convert hold to booking
+  │     │ Seat status: available → held → booked (or expired → available)
+  │     │ Concurrency control: DB row-level locks or Redis atomic ops
+  │     │
+  ├── Event Service
+  │     │ Event metadata, seating chart config
+  │     │ Seat availability cached in Redis (read-heavy)
+  │     │
+  ├── Payment Service
+  │     │ Charge payment method; on failure → release hold
+  │     │
+  └── Waitlist Service
+        │ Queue management; fan-out notifications when seats released
 
-This is a **distributed inventory reservation problem** — the hardest part of the design.
+Storage:
+  PostgreSQL: seats, bookings, holds (source of truth for availability)
+  Redis: seat availability cache, hold TTL management, flash-sale queue
+  Kafka: booking-events, waitlist-notifications
+  S3: seating chart SVGs
+```
 
-### Option 1: Database-Level Locking (pessimistic)
+---
 
+## Deep Dive 1: Seat Locking Under Concurrency
+
+**Problem**: User A and User B both see seat S456 as available and click "Hold" simultaneously. Without coordination, both succeed → double-booking.
+
+**Option 1: Pessimistic locking (SELECT FOR UPDATE)**:
 ```sql
 BEGIN;
-SELECT * FROM seats WHERE seat_id = :id AND event_id = :eid AND status = 'available' FOR UPDATE;
--- If row returned: update status to 'held', set holder_id, held_until
-UPDATE seats SET status = 'held', holder_id = :user, held_until = NOW() + INTERVAL '10 min'
-WHERE seat_id = :id AND event_id = :eid AND status = 'available';
+
+SELECT status FROM seats
+WHERE seat_id = 's456' AND event_id = 'e123'
+FOR UPDATE;  -- row-level lock; other transactions block here
+
+-- Check: if status != 'available', rollback
+UPDATE seats SET status = 'held' WHERE seat_id = 's456';
+
+INSERT INTO seat_holds (hold_id, seat_id, user_id, expires_at)
+VALUES ('h202', 's456', 'u101', NOW() + INTERVAL '10 minutes');
+
 COMMIT;
 ```
+One transaction wins the lock; the other blocks until commit, then sees `status = 'held'` and returns 409. Safe but blocking — creates contention at high throughput.
 
-`SELECT FOR UPDATE` acquires a row-level exclusive lock. Only one transaction can hold it.
-
-**Problem**: At 500K RPS, all threads contend on the same rows. Lock wait queues pile up. DB connection pool exhausts. Cascade failure.
-
-### Option 2: Optimistic Locking (CAS in DB)
-
+**Option 2: Optimistic locking (compare-and-swap)**:
 ```sql
+-- Attempt atomic status transition; only succeeds if current status = 'available'
 UPDATE seats
-SET status = 'held', holder_id = :user, held_until = NOW() + 600, version = version + 1
-WHERE seat_id = :id AND event_id = :eid AND status = 'available' AND version = :expected_version;
--- Check rows_affected: if 0, seat was taken by someone else (retry with different seat)
+SET status = 'held', version = version + 1
+WHERE seat_id = 's456' AND status = 'available' AND version = 7;
+
+-- rows_affected = 1 → success; rows_affected = 0 → someone else got there first → 409
 ```
+No blocking. Concurrent requests race; exactly one wins (the one whose UPDATE modifies the row). Losing requests retry or return 409 immediately. Better for flash sales where contention is high and blocking would cascade.
 
-No blocking locks. If two users attempt simultaneously:
-- User A's UPDATE succeeds: `rows_affected = 1`
-- User B's UPDATE fails: `rows_affected = 0` (version/status no longer matches)
-- User B must retry with a different seat
-
-**Better for throughput** — no lock contention. But DB is still the bottleneck at 500K RPS.
-
-### Option 3: Redis-Based Distributed Lock (recommended for peak load)
-
-Move the hot inventory check **out of the DB** and into Redis:
-
+**Option 3: Redis atomic hold**:
+```redis
+# NX = only set if not exists; EX = expire after 600 seconds (10 min)
+SET seat_hold:s456 "user:u101" NX EX 600
+# Returns OK → hold acquired; nil → seat already held
 ```
-Redis Key: seat:{event_id}:{seat_id}
-Value: {user_id, hold_expires_at}
-TTL: 600 seconds (10 minute hold)
-
-Command:
-SET seat:{event_id}:{seat_id} {user_id} NX EX 600
-→ NX = only set if key does NOT exist
-→ Returns OK if acquired, nil if already held
-```
-
-`SET NX EX` is atomic in Redis (single command, no MULTI/EXEC needed). Only one process acquires the lock per seat.
-
-**Hold flow**:
-1. Client sends `POST /reserve {event_id, seat_id}`
-2. Service calls `SET seat:{eid}:{sid} {user_id} NX EX 600`
-3. If OK: return hold confirmation, user proceeds to payment
-4. If nil: return 409 Conflict, user must pick another seat
-5. On payment success: write final booking to PostgreSQL, delete Redis key (or let TTL expire)
-6. On payment failure / timeout: TTL expires automatically, seat returns to available pool
-
-**Seat availability query**:
-```
-EXISTS seat:{event_id}:{seat_id}  →  true = held/booked, false = available
-```
-
-For seat map display: batch `EXISTS` calls with Redis pipeline, or maintain a Redis Set of held seats per event.
-
----
-
-## Architecture
-
-```
-                           ┌───────────────┐
-                           │   CDN + WAF   │  ← static event pages, seat maps
-                           └───────┬───────┘
-                                   │
-                           ┌───────▼───────┐
-Users ──────────────────►  │  API Gateway  │  ← auth, rate limiting, routing
-                           └──────┬────────┘
-              ┌───────────────────┼───────────────────┐
-              ▼                   ▼                   ▼
-     ┌────────────────┐  ┌─────────────────┐  ┌───────────────┐
-     │  Browse Service │  │ Booking Service  │  │ Payment Service│
-     │  (read-heavy)   │  │  (write-heavy)   │  │  (Stripe/PayPal)│
-     └────────┬────────┘  └────────┬────────┘  └───────┬───────┘
-              │                    │                    │
-    ┌─────────▼──────┐   ┌────────▼────────┐           │
-    │  PostgreSQL     │   │  Redis Cluster  │           │
-    │  (event catalog │   │  (seat holds,   │           │
-    │   event/user DB)│   │   rate limiting)│           │
-    └─────────────────┘   └────────┬────────┘           │
-                                   │                    │
-                          ┌────────▼────────────────────▼─┐
-                          │         PostgreSQL              │
-                          │   (confirmed bookings, payments)│
-                          └────────────────────────────────┘
-                                   │
-                          ┌────────▼──────┐
-                          │  Kafka         │  ← booking events for notifications,
-                          └───────┬────────┘    analytics, invoices
-                                  │
-                     ┌────────────▼────────────┐
-                     │  Notification Service    │
-                     │  (email, SMS, push)       │
-                     └─────────────────────────┘
-```
-
----
-
-## Seat Hold State Machine
-
-```
-AVAILABLE
-    │
-    │  POST /reserve (SET NX in Redis)
-    ▼
-  HELD  ──── TTL expires (600s, no payment) ────► AVAILABLE
-    │
-    │  POST /confirm (payment succeeded)
-    ▼
-CONFIRMED  ──── cannot return to available
-    │
-    │  edge case: payment refund + cancellation
-    ▼
- RELEASED (new row created, original booking marked cancelled)
-```
-
----
-
-## Handling the 1M Rush (Flash Sale Problem)
-
-When 1M users hit "Buy Now" simultaneously at 10:00 AM:
-
-### Problem 1: Database Connection Exhaustion
-
-1M requests → 1M DB connections → DB crashes (max connections ~1000).
-
-**Solution: Virtual Waiting Room**
-
-```
-1. Users enter a virtual queue before reaching the booking flow
-2. Queue manager (Redis Sorted Set, score = arrival time) admits users in batches
-3. Batch size = number of seats available (50,000)
-4. All other users get a "you're position X in queue" page (polls queue service)
-5. This decouples arrival rate from booking service throughput
-```
-
-```
-ZADD queue:{event_id} {timestamp} {user_id}
-ZRANK queue:{event_id} {user_id}  → user's position
-ZRANGE queue:{event_id} 0 49999    → next 50,000 users to admit
-```
-
-### Problem 2: Thundering Herd on Seat Status
-
-50,000 seats × 1M users querying seat status = 50B reads/minute. Impossible.
-
-**Solution: Aggressive Caching of Seat Map**
-
-- Cache the full seat availability bitmap per event in Redis (one key, ~6KB for 50K seats as a bitfield)
-- Serve seat map from cache with TTL = 5 seconds
-- Accept that seat map is stale by up to 5 seconds — user might try to book an "available" seat that was just taken (results in 409, user retries)
-- Update Redis bitfield on every hold/confirmation/release
-
-```
-SETBIT seats:available:{event_id} {seat_index} 0  ← mark as unavailable on hold
-SETBIT seats:available:{event_id} {seat_index} 1  ← mark as available on release
-BITCOUNT seats:available:{event_id}               ← total available seats
-```
-
-### Problem 3: Redis Single-Key Hotspot
-
-All 1M users hitting `seat:{event_id}:{seat_id}` for the same popular seats.
-
-**Solution: Redis Cluster with Hash Tags**
-
-Force all keys for one event to the same Redis shard using hash tags:
-```
-{event_12345}:seat:A1
-{event_12345}:seat:A2
-...
-```
-
-All keys with the same `{event_12345}` tag land on the same shard → local MULTI/EXEC possible if needed. But at 500K RPS, even a single Redis shard can handle ~1M simple SET/GET ops/second.
-
----
-
-## Payment and Hold Confirmation
-
-```
-1. POST /reserve → Redis NX success → return hold_token (JWT or UUID) + expiry time
-2. Client redirects to payment page
-3. User enters payment details → POST /payment with hold_token
-4. Payment Service calls Stripe/PayPal
-5. On payment success:
-   a. Begin DB transaction:
-      - INSERT INTO bookings (user_id, event_id, seat_id, hold_token, status='confirmed')
-      - No need to check Redis — the hold_token was issued by this system
-   b. Publish booking_confirmed event to Kafka
-   c. Return 200 to client
-6. On payment failure:
-   a. No DB write
-   b. Redis key TTL continues — seat released automatically at expiry
-   c. Optionally: DEL Redis key immediately to release seat faster
-```
-
-**Idempotency**: `hold_token` is the idempotency key. If the client retries payment, the payment service checks if `hold_token` already has a confirmed booking — prevents double-charging.
-
----
-
-## Overbooking Protection: Belt and Suspenders
-
-Even with Redis NX, edge cases exist:
-- Redis Cluster failover during a SET — is the key durable?
-- Network partition between booking service and Redis
-
-**Defense-in-depth**:
-
-1. **Redis NX** — primary guard (fast, ~0.1ms)
-2. **Database unique constraint** — secondary guard:
-   ```sql
-   CREATE UNIQUE INDEX ON bookings(event_id, seat_id)
-   WHERE status IN ('held', 'confirmed');
-   ```
-   Even if two Redis NX calls somehow both succeed, only one DB INSERT will win. The loser gets a unique constraint violation → return 409.
-3. **Booking service is idempotent** — same `hold_token` can be submitted multiple times, only one booking row created.
-
----
-
-## Seat Release / Expiry Jobs
-
-Held seats with expired TTLs in Redis are automatically released (key expires). But the DB also needs cleanup if any hold was written there:
-
-```
-Scheduled job (runs every 60 seconds):
-UPDATE seats SET status = 'available'
-WHERE status = 'held' AND held_until < NOW();
-
-OR: use Redis keyspace notifications to trigger release on TTL expiry
-```
-
-For high-volume events: use Kafka with a delayed-processing topic (set message TTL = hold duration) to trigger expiry events.
-
----
-
-## Scaling Read-Heavy Browse Traffic
-
-Browse (event catalog, seat maps) is 99% of traffic — reads should never compete with writes.
-
-- **Event catalog**: PostgreSQL read replicas + aggressive CDN caching (event info rarely changes)
-- **Seat map**: Redis bitfield (updated on holds/releases), served via a read-heavy microservice
-- **CQRS split**: Browse Service reads from read replicas + Redis; Booking Service writes to primary PostgreSQL + Redis
-
----
-
-## Database Schema (Simplified)
-
+Sub-millisecond, no DB load for the hold step. On checkout, confirm in PostgreSQL atomically:
 ```sql
-CREATE TABLE events (
-  event_id    UUID PRIMARY KEY,
-  name        TEXT,
-  venue_id    UUID,
-  event_time  TIMESTAMPTZ,
-  total_seats INT
-);
+UPDATE seats SET status = 'booked' WHERE seat_id = 's456' AND status = 'available';
+-- Then delete Redis key
+```
 
-CREATE TABLE seats (
-  seat_id     UUID PRIMARY KEY,
-  event_id    UUID REFERENCES events,
-  section     TEXT,
-  row         TEXT,
-  number      INT,
-  price_cents INT
-);
+**Recommended approach**: Redis atomic SET NX for hold acquisition (fast, no DB lock contention during peak). PostgreSQL UPDATE with `WHERE status = 'available'` for final booking (durable confirmation). If the DB UPDATE fails (race), release the Redis hold and return 409.
 
-CREATE TABLE bookings (
-  booking_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     UUID NOT NULL,
-  event_id    UUID NOT NULL,
-  seat_id     UUID NOT NULL,
-  hold_token  UUID UNIQUE NOT NULL,
-  status      TEXT CHECK (status IN ('held', 'confirmed', 'cancelled')),
-  held_until  TIMESTAMPTZ,
-  confirmed_at TIMESTAMPTZ,
-  payment_id  TEXT,
-  CONSTRAINT no_double_booking UNIQUE (event_id, seat_id) DEFERRABLE
-);
-
-CREATE INDEX ON bookings(event_id, status);
-CREATE INDEX ON bookings(hold_token);
+**Hold expiry**: A Lua script or TTL-based cleanup job scans expired holds and resets `seats.status = 'available'`:
+```lua
+-- Runs on hold expiry (triggered by Redis keyspace notification or cron)
+local seat_id = ARGV[1]
+-- Only release if the hold key is actually gone (TTL expired)
+if redis.call('EXISTS', 'seat_hold:' .. seat_id) == 0 then
+    -- Update DB: reset seat to available
+    return 1
+end
+return 0
 ```
 
 ---
 
-## Trade-off Discussion
+## Deep Dive 2: Flash Sale Handling
 
-| Decision | Alternative | Why This Choice |
-|---|---|---|
-| Redis NX for holds | DB pessimistic lock | 10x higher throughput, no DB connection exhaustion |
-| Redis NX for holds | DB optimistic lock | Faster (0.1ms vs 5ms), no retry storms under high contention |
-| Virtual waiting room | Reject excess traffic | Fairer experience, prevents thundering herd |
-| Bitfield for seat map | Query DB on each request | Reduces DB load by 99%; acceptable 5s staleness |
-| DB unique constraint as backup | Trust Redis entirely | Defense-in-depth; Redis cluster failover is possible |
-| Kafka for booking events | Synchronous notification | Decouples booking latency from email/SMS delivery |
+**Problem**: Taylor Swift tickets go on sale at 10:00 AM. 5M users hit "refresh" simultaneously. The seating chart endpoint, seat availability reads, and hold requests all spike 1,000x within seconds. How do you prevent the system from collapsing?
+
+**Problem anatomy**:
+1. **Read storm**: 5M users loading the seating chart simultaneously
+2. **Write storm**: Millions of hold requests for ~50K seats → 99.9% will fail
+3. **Thundering herd**: All failures retry immediately, creating cascading load
+
+**Virtual waiting room** (pre-queue):
+```
+10:00 AM: Sale opens
+Users who arrive before 10:00 AM enter a virtual queue
+Queue assigns each user a random position (to prevent advantage from clicking fast)
+Users are admitted in batches: release 1,000 users/minute from the queue
+Users outside the queue see "You are #123,456 in line — estimated wait: 2 hours"
+```
+This decouples the demand spike from the booking system. The backend only sees 1,000 users/min instead of 5M simultaneously.
+
+**Queue implementation**:
+```python
+# On sale start: all users who registered get a random queue token
+def assign_queue_position(user_id, event_id):
+    position = random.randint(1, 10_000_000)  # randomize to prevent gaming
+    redis.zadd(f"queue:{event_id}", {user_id: position})
+
+# Admission: every 60s, advance the cutoff and notify next batch
+def admit_next_batch(event_id, batch_size=1000):
+    current_cutoff = redis.get(f"queue_cutoff:{event_id}") or 0
+    new_cutoff = current_cutoff + batch_size
+    redis.set(f"queue_cutoff:{event_id}", new_cutoff)
+    # Users with position <= new_cutoff get a session token to enter the booking flow
+    admitted = redis.zrangebyscore(f"queue:{event_id}", 0, new_cutoff)
+    for user_id in admitted:
+        redis.setex(f"admitted:{event_id}:{user_id}", 900, "1")  # 15-min window to book
+```
+
+**Seating chart caching**: Pre-warm Redis with full seat availability before sale opens. Serve all GET /seats requests from Redis; bypass PostgreSQL entirely during peak. Update Redis on every hold/booking with `DEL seat_hold:{seat_id}` or `SET seat_hold:{seat_id}`.
+
+**Rate limiting per user**: Each admitted user can hold at most 4 seats. Enforce via Redis counter:
+```redis
+INCR holds:{event_id}:{user_id}
+EXPIRE holds:{event_id}:{user_id} 600
+# If value > 4, reject with 429
+```
+
+**Seat map read scalability**: The seating chart SVG and seat metadata are static per event. Serve via CDN (CloudFront). Only seat statuses are dynamic — served from Redis as a bitfield (1 bit per seat: 0=available, 1=held/booked). For 50K seats: 50K bits = 6.25 KB per event — trivially small, updated with SETBIT.
 
 ---
 
-## Interview Discussion Points
+## Deep Dive 3: Waitlist System
 
-**Q: What if Redis cluster fails during peak on-sale?**
-All new seat holds fail. Options: (1) fall back to DB pessimistic locking — throughput drops 10x, may cascade; (2) activate read-only mode, serve "system at capacity" until Redis recovers; (3) pre-provision Redis Sentinel with 3 replicas for this event.
+**Problem**: Taylor Swift is sold out. 2M users still want tickets. Some bookings will cancel in the days before the event. How do you fairly notify waitlisted users and give them a chance to book?
 
-**Q: How do you handle VIP presale vs general on-sale?**
-Pre-generate hold tokens for VIP users before on-sale starts. VIP hold tokens bypass the waiting room queue and go directly to payment. General sale opens after VIP window.
+**Waitlist data model**:
+```sql
+CREATE TABLE waitlist (
+    entry_id    UUID PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    event_id    UUID NOT NULL,
+    position    INT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    notified_at TIMESTAMPTZ,
+    status      TEXT NOT NULL DEFAULT 'waiting'  -- waiting/offered/booked/expired
+);
+CREATE UNIQUE INDEX ON waitlist(event_id, user_id);  -- one entry per user per event
+CREATE INDEX ON waitlist(event_id, position);         -- fast position lookup
+```
 
-**Q: Can you scale the booking service horizontally?**
-Yes — the booking service is stateless. All state is in Redis (holds) and PostgreSQL (confirmed bookings). Scale to 100+ instances behind a load balancer.
+**Position assignment**: Monotonically increasing counter per event stored in Redis:
+```redis
+INCR waitlist_counter:e123  → 1243  # user's waitlist position
+```
 
-**Q: How do you prevent users from hoarding seats by holding many at once?**
-Rate limit: each user can have at most 2-4 active holds at a time. Enforced with a Redis counter per user: `INCR holds:{user_id}` with TTL matching the hold duration.
+**Seat release flow**: When a booking is cancelled:
+1. Reset `seats.status = 'available'`; clear Redis hold key
+2. Publish `seat-released` event to Kafka with `event_id`, `seat_id`, `seat_type`
+
+**Waitlist notification service** (Kafka consumer):
+```python
+def on_seat_released(event):
+    event_id = event["event_id"]
+    seat_type = event["seat_type"]
+
+    # Find next eligible waitlisted user
+    entry = db.query("""
+        SELECT * FROM waitlist
+        WHERE event_id = %s AND status = 'waiting'
+        ORDER BY position ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED  -- skip if another worker is processing this entry
+    """, event_id)
+
+    if not entry:
+        return  # nobody waiting
+
+    # Mark as offered; give 15-minute window to book
+    db.execute("""
+        UPDATE waitlist SET status = 'offered', notified_at = NOW()
+        WHERE entry_id = %s
+    """, entry.entry_id)
+
+    # Issue a time-limited booking token
+    token = generate_token(entry.user_id, event_id, seat_id=event["seat_id"])
+    redis.setex(f"waitlist_token:{token}", 900, f"{entry.user_id}:{event['seat_id']}")
+
+    # Notify user
+    send_push_notification(entry.user_id, f"A seat is available! You have 15 minutes to book.")
+    send_email(entry.user_id, booking_url=f"/book?token={token}")
+```
+
+**Token expiry**: If the user doesn't book within 15 minutes, the token expires, `waitlist.status` resets to `'waiting'`, and the next user in line is offered the seat:
+```python
+def on_token_expired(token):
+    user_id, seat_id = redis.get(f"waitlist_token:{token}").split(":")
+    # Reset user's waitlist status
+    db.execute("UPDATE waitlist SET status = 'waiting' WHERE user_id = %s AND event_id = %s",
+               user_id, event_id)
+    # Re-release the seat to the next person
+    kafka.publish("seat-released", {"seat_id": seat_id, "event_id": event_id})
+```
+
+**SKIP LOCKED**: PostgreSQL's `FOR UPDATE SKIP LOCKED` prevents multiple Kafka consumer workers from selecting the same waitlist entry simultaneously — essential for correctness when running multiple notification service replicas.
+
+**Fairness guarantee**: Position is assigned at join time via monotonic counter. Notification always goes to the lowest-position `waiting` user. If they don't respond, the seat cascades to the next — no user can be skipped arbitrarily.
 
 ---
 
-## See Also
+## Interviewer Questions by Level
 
-- `02-building-blocks/distributed-locks.md` — Redis SET NX, Redlock, fencing tokens
-- `02-building-blocks/rate-limiting.md` — Rate limiting for booking attempts
-- `09-patterns/saga-pattern.md` — Saga for hold → payment → confirm flow
-- `09-patterns/two-phase-commit.md` — 2PC vs saga for payment finalization
-- `05-hld-problems/01-easy/booking-system.md` — Simpler hotel booking baseline
+**Junior**:
+- What is a seat hold? Why do we need a time limit on holds?
+- What happens if a user pays but we fail to mark the seat as booked in the database?
+- What is a waitlist? How do you decide who gets notified first?
+
+**Mid-level**:
+- How do you prevent two users from booking the same seat simultaneously? Compare optimistic vs pessimistic locking.
+- How do you expire a seat hold automatically? What are the trade-offs between a cron job and Redis TTL?
+- Design the waitlist notification flow — what triggers it, how do you avoid notifying multiple users for the same seat?
+
+**Senior**:
+- Design the flash sale architecture for 5M concurrent users hitting the on-sale moment. How does a virtual waiting room work, and how do you implement fair admission?
+- How do you serve the seating chart at scale during a flash sale? What is cached, what is dynamic, and how do you keep the two in sync?
+- Design the seat hold system using Redis atomic operations. What failure modes exist (Redis crash, network partition between Redis and PostgreSQL) and how do you handle them?
+- How do you handle partial payment failures — payment succeeds at the PSP but the DB write to create the booking fails. How do you recover without double-charging?

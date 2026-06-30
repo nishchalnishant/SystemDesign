@@ -78,27 +78,23 @@ Analogy:
 
 Every Java class follows a specific structure. Here is the skeleton syntax you need to memorize.
 
-Java
+```python
+# 1. Module-level imports (bringing in other tools)
+# import something
 
-```java
-// 1. Package Declaration (Optional but recommended)
-package com.myapp.basics; 
+# 2. Class Declaration (PascalCase)
+class Student:
 
-// 2. Imports (Bringing in other tools)
-import java.util.Scanner; 
+    # 3. Fields / Attributes (State) -> snake_case
+    # Defined in __init__
 
-// 3. Class Declaration (PascalCase)
-public class Student { 
+    # 4. Methods (Behavior) -> snake_case
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
 
-    // 4. Fields / Attributes (State) -> camelCase
-    String name;  
-    int age;      
-
-    // 5. Methods (Behavior) -> camelCase
-    public void study() {
-        System.out.println(name + " is studying.");
-    }
-}
+    def study(self):
+        print(f"{self.name} is studying.")
 ```
 
 ***
@@ -111,22 +107,11 @@ When you create an object, you often want to set it up immediately (e.g., giving
 * Rule 2: Must not have a return type (not even `void`).
 * Rule 3: It runs automatically when you use the `new` keyword.
 
-Java
-
-```java
-public class Student {
-    String name;
-
-    // Default Constructor (No arguments)
-    public Student() {
-        name = "Unknown";
-    }
-
-    // Parameterized Constructor (With arguments)
-    public Student(String inputName) {
-        name = inputName;
-    }
-}
+```python
+class Student:
+    # Default / parameterized constructor using optional argument
+    def __init__(self, input_name: str = "Unknown"):
+        self.name = input_name
 ```
 
 ***
@@ -135,21 +120,12 @@ public class Student {
 
 This is a reference variable that points to the current object. It is mostly used to resolve naming conflicts when your parameter name is the same as your field name.
 
-Java
-
-```java
-public class Car {
-    String model; // Field (belongs to object)
-
-    // Constructor
-    public Car(String model) { // Parameter (local variable)
-        // model = model; // AMBIGUITY! Computer is confused.
-        
-        this.model = model; 
-        // "this.model" refers to the Class Field.
-        // "model" refers to the Parameter passed in.
-    }
-}
+```python
+class Car:
+    def __init__(self, model: str):
+        # In Python, 'self.model' refers to the instance attribute
+        # 'model' refers to the parameter — no ambiguity issue
+        self.model = model
 ```
 
 ***
@@ -179,18 +155,13 @@ This is often the most confusing part for beginners.
 * Static: Belongs to the Class. All objects share one single copy.
   * _Example:_ `populationCount`. If a baby is born, the count goes up for _everyone_.
 
-Java
+```python
+class Human:
+    population = 0  # Class variable (Shared by all Humans)
 
-```java
-public class Human {
-    String name;            // Instance variable (Unique per person)
-    static int population;  // Static variable (Shared by all Humans)
-
-    public Human(String name) {
-        this.name = name;
-        population++; // Increasing the shared counter
-    }
-}
+    def __init__(self, name: str):
+        self.name = name        # Instance variable (Unique per person)
+        Human.population += 1  # Increasing the shared counter
 ```
 
 ***
@@ -199,54 +170,36 @@ public class Human {
 
 Here is a complete, runnable code block combining everything above.
 
-Java
+```python
+# 1. The Class Definition
+class SmartPhone:
+    os_type = "Android"  # Class variable (Shared by all phones of this class)
 
-```java
-// 1. The Class Definition
-class SmartPhone {
-    // Fields (State)
-    String brand;
-    int batteryLevel;
-    static String osType = "Android"; // Shared by all phones of this class
+    def __init__(self, brand: str, battery_level: int):
+        self.brand = brand
+        self.battery_level = battery_level
 
-    // Constructor
-    public SmartPhone(String brand, int batteryLevel) {
-        this.brand = brand;
-        this.batteryLevel = batteryLevel;
-    }
+    def call(self, number: str):
+        print(f"{self.brand} is calling {number}")
 
-    // Method (Behavior)
-    public void call(String number) {
-        System.out.println(this.brand + " is calling " + number);
-    }
-    
-    // Method to show static vs instance data
-    public void showStats() {
-        System.out.println("Phone: " + brand + " | OS: " + osType);
-    }
-}
+    def show_stats(self):
+        print(f"Phone: {self.brand} | OS: {SmartPhone.os_type}")
 
-// 2. The Main Execution Class
-public class Main {
-    public static void main(String[] args) {
-        // Creating Object 1
-        SmartPhone p1 = new SmartPhone("Samsung", 85);
-        
-        // Creating Object 2
-        SmartPhone p2 = new SmartPhone("Pixel", 90);
 
-        // Calling methods
-        p1.call("555-0199");
-        p2.showStats(); // Output: Phone: Pixel | OS: Android
+# 2. Main Execution
+if __name__ == "__main__":
+    p1 = SmartPhone("Samsung", 85)
+    p2 = SmartPhone("Pixel", 90)
 
-        // Changing a static variable affects EVERYONE
-        SmartPhone.osType = "Android 14";
-        
-        System.out.println("After Update:");
-        p1.showStats(); // Output: Phone: Samsung | OS: Android 14
-        p2.showStats(); // Output: Phone: Pixel   | OS: Android 14
-    }
-}
+    p1.call("555-0199")
+    p2.show_stats()  # Output: Phone: Pixel | OS: Android
+
+    # Changing a class variable affects EVERYONE
+    SmartPhone.os_type = "Android 14"
+
+    print("After Update:")
+    p1.show_stats()  # Output: Phone: Samsung | OS: Android 14
+    p2.show_stats()  # Output: Phone: Pixel   | OS: Android 14
 ```
 
 #### Quick Syntax Cheat Sheet
@@ -283,62 +236,51 @@ An Array is a container object that holds a fixed number of values of a single t
 
 There are two main ways to create an array.
 
-Method 1: Declaration + Memory Allocation (Empty)
+Method 1: Pre-allocated list (Empty)
 
 Use this when you know _how many_ items you need, but not _what_ they are yet.
 
-Java
+```python
+# Create 5 slots initialized to 0
+scores = [0] * 5  # [0, 0, 0, 0, 0]
 
-```java
-// Syntax: type[] name = new type[size];
-int[] scores = new int[5]; // Creates 5 slots: [0, 0, 0, 0, 0]
-
-// Setting values
-scores[0] = 95;
-scores[1] = 88;
+# Setting values
+scores[0] = 95
+scores[1] = 88
 ```
 
 Method 2: Initialization (Filled)
 
 Use this when you already know the values.
 
-Java
-
-```java
-// Syntax: type[] name = {values};
-String[] names = {"Alice", "Bob", "Charlie"};
+```python
+names = ["Alice", "Bob", "Charlie"]
 ```
 
 **B. Iterating (Looping)**
 
 You will almost always use a loop to go through an array.
 
-Java
+```python
+numbers = [10, 20, 30, 40, 50]
 
-```java
-int[] numbers = {10, 20, 30, 40, 50};
+# 1. Index-based loop (Good if you need the index)
+for i in range(len(numbers)):
+    print(f"Index {i}: {numbers[i]}")
 
-// 1. Classic For Loop (Good if you need the Index)
-for (int i = 0; i < numbers.length; i++) {
-    System.out.println("Index " + i + ": " + numbers[i]);
-}
-
-// 2. Enhanced For-Each Loop (Good for just reading values)
-// Read as: "For each 'num' in 'numbers'..."
-for (int num : numbers) {
-    System.out.println("Value: " + num);
-}
+# 2. For-each loop (Good for just reading values)
+# Read as: "For each 'num' in 'numbers'..."
+for num in numbers:
+    print(f"Value: {num}")
 ```
 
 **C. The "Gotcha": ArrayIndexOutOfBoundsException**
 
 This is the most common error. It happens if you try to access a slot that doesn't exist.
 
-Java
-
-```java
-int[] arr = new int[3]; // Indices are 0, 1, 2
-// System.out.println(arr[3]); // ERROR! Index 3 is the 4th slot.
+```python
+arr = [0] * 3  # Indices are 0, 1, 2
+# print(arr[3])  # IndexError! Index 3 is the 4th slot.
 ```
 
 ***
@@ -355,38 +297,33 @@ In Java, a `String` is an Object, not a primitive type (like `int` or `char`). T
 
 How you create a string matters for memory.
 
-1.  String Literal (Recommended): Uses the "String Constant Pool" to save memory. If you write "Hello" twice, Java reuses the same object.
+1.  String Literal (standard in Python — all strings are interned by default for small strings):
 
-    Java
-
-    ```java
-    String s1 = "Hello";
+    ```python
+    s1 = "Hello"
     ```
-2.  New Keyword: Forces a new object in Heap memory every time.
+2.  Explicit construction (rarely needed in Python):
 
-    Java
-
-    ```java
-    String s2 = new String("Hello");
+    ```python
+    s2 = str("Hello")
     ```
 
-**B. The Comparison Trap (`==` vs `.equals()`)**
+**B. The Comparison Trap (`is` vs `==`)**
 
-This is the #1 interview question for beginners.
+In Python strings are compared with `==` for value equality. `is` checks identity (same object).
 
-* `==`: Compares references (memory addresses). "Are these the exact same object?"
-* `.equals()`: Compares content (values). "Do these hold the same text?"
+* `is`: Checks identity (same object in memory). Do not use for string value comparison.
+* `==`: Compares content (values). Always use this for strings.
 
-Java
+```python
+s1 = "Java"
+s2 = "Java"
+s3 = "".join(["J", "a", "v", "a"])  # Constructed string, may be a different object
 
-```java
-String s1 = "Java";
-String s2 = "Java";           // Reuses s1 from Pool
-String s3 = new String("Java"); // Forces new object
-
-System.out.println(s1 == s2);       // true (Same memory address)
-System.out.println(s1 == s3);       // false (Different memory addresses)
-System.out.println(s1.equals(s3));  // true (Content is identical) -> USE THIS!
+print(s1 == s2)   # True  (same content)
+print(s1 == s3)   # True  (same content) — USE THIS
+print(s1 is s2)   # True  (interned literals, same object — do not rely on this)
+print(s1 is s3)   # False (different object)
 ```
 
 **C. Essential String Methods**
@@ -405,58 +342,44 @@ You don't need to memorize all of them, but these 5 are essential:
 
 Here is a single program combining Arrays and Strings to simulate a mini-database.
 
-Java
+```python
+if __name__ == "__main__":
+    # 1. List of strings
+    students = ["Alice", "Bob", "Charlie", "David"]
 
-```java
-public class StudentDatabase {
-    public static void main(String[] args) {
-        // 1. Array of Strings
-        String[] students = {"Alice", "Bob", "Charlie", "David"};
-        
-        // 2. Array of Integers (Parallel array for grades)
-        int[] grades = {85, 42, 90, 76};
+    # 2. List of integers (parallel list for grades)
+    grades = [85, 42, 90, 76]
 
-        System.out.println("--- Class Report ---");
+    print("--- Class Report ---")
 
-        // 3. Loop through the array
-        for (int i = 0; i < students.length; i++) {
-            String name = students[i];
-            int score = grades[i];
+    # 3. Loop through the lists
+    for name, score in zip(students, grades):
+        # String manipulation: convert to uppercase for display
+        display_name = name.upper()
 
-            // String Manipulation: Convert to uppercase for display
-            String displayName = name.toUpperCase();
+        # Conditional logic
+        result = "PASSED" if score >= 50 else "FAILED"
 
-            // Conditional Logic
-            String result;
-            if (score >= 50) {
-                result = "PASSED";
-            } else {
-                result = "FAILED";
-            }
+        print(f"{display_name} : {score} -> {result}")
 
-            System.out.println(displayName + " : " + score + " -> " + result);
-        }
+    # 4. Demonstrate immutability
+    original = "   Python   "
+    cleaned = original.strip()  # original is NOT changed
 
-        // 4. Demonstrate Immutability
-        String original = "   Java   ";
-        String cleaned = original.trim(); // original is NOT changed
-        
-        System.out.println("\nOriginal: '" + original + "'");
-        System.out.println("Cleaned:  '" + cleaned + "'");
-    }
-}
+    print(f"\nOriginal: '{original}'")
+    print(f"Cleaned:  '{cleaned}'")
 ```
 
 #### Quick Syntax Cheat Sheet
 
-| **Action**      | **Syntax/Method**         | **Note**                                 |
-| --------------- | ------------------------- | ---------------------------------------- |
-| Create Array    | `int[] arr = new int[5];` | Size is fixed at 5.                      |
-| Get Array Size  | `arr.length`              | It's a property (no parenthesis).        |
-| Get String Size | `str.length()`            | It's a method (needs parenthesis).       |
-| Compare Strings | `str1.equals(str2)`       | NEVER use `==` for text content.         |
-| Get Char        | `str.charAt(0)`           | Gets the first letter.                   |
-| Get Substring   | `str.substring(0, 3)`     | Gets index 0, 1, and 2 (3 is exclusive). |
+| **Action**      | **Syntax/Method**       | **Note**                                       |
+| --------------- | ----------------------- | ---------------------------------------------- |
+| Create List     | `arr = [0] * 5`         | Dynamic size; pre-fill with 0s.                |
+| Get List Size   | `len(arr)`              | Built-in function.                             |
+| Get String Size | `len(s)`                | Same built-in function for strings.            |
+| Compare Strings | `s1 == s2`              | `==` compares content; use `is` for identity.  |
+| Get Char        | `s[0]`                  | Gets the first character.                      |
+| Get Substring   | `s[0:3]`                | Slice: index 0, 1, 2 (3 is exclusive).         |
 
 ## Part 3
 
@@ -490,48 +413,32 @@ This is a common point of confusion.
 * `void`: Performs an action but returns no value. (e.g., Printing to console, saving to DB).
 * Data Type (`int`, `String`, etc.): Calculates and returns a value to the caller.
 
-Java
+```python
+class Calculator:
 
-```java
-public class Calculator {
-    
-    // 1. VOID Method (Action only)
-    public void printWelcome() {
-        System.out.println("--- Welcome to Calculator ---");
-        // No 'return' statement needed
-    }
+    # 1. None-returning method (Action only)
+    def print_welcome(self) -> None:
+        print("--- Welcome to Calculator ---")
+        # No return statement needed
 
-    // 2. INT Method (Must return an int)
-    public int add(int a, int b) {
-        int sum = a + b;
-        return sum; // MUST match the 'int' declared above
-    }
-}
+    # 2. int-returning method
+    def add(self, a: int, b: int) -> int:
+        total = a + b
+        return total
 ```
 
 **C. Method Overloading**
 
 This is a core OOP concept (Compile-time Polymorphism). You can have multiple methods with the same name as long as their parameters are different.
 
-Java
-
-```
-public class Printer {
-    // Prints a String
-    public void print(String text) {
-        System.out.println(text);
-    }
-
-    // Prints an Integer (Same name, different input type)
-    public void print(int number) {
-        System.out.println("Number: " + number);
-    }
-    
-    // Prints two Strings (Same name, different number of inputs)
-    public void print(String text1, String text2) {
-        System.out.println(text1 + " & " + text2);
-    }
-}
+```python
+# Python uses duck typing — no overloading by signature needed
+class Printer:
+    def print_value(self, *args):
+        if len(args) == 1:
+            print(args[0])
+        elif len(args) == 2:
+            print(f"{args[0]} & {args[1]}")
 ```
 
 ***
@@ -546,32 +453,26 @@ Control flow dictates the order in which statements are executed. Without this, 
 
 Use If/Else for ranges or complex conditions. Use Switch for specific fixed values.
 
-Java
+```python
+battery = 15
 
-```
-int battery = 15;
+# IF-ELIF-ELSE LADDER
+if battery > 50:
+    print("Green Light")
+elif battery > 20:
+    print("Yellow Light")
+else:
+    print("Red Light")
 
-// IF-ELSE LADDER
-if (battery > 50) {
-    System.out.println("Green Light");
-} else if (battery > 20) {
-    System.out.println("Yellow Light");
-} else {
-    System.out.println("Red Light");
-}
-
-// SWITCH STATEMENT (Clean for specific cases)
-int day = 3;
-switch (day) {
+# MATCH STATEMENT (Python 3.10+, equivalent to switch)
+day = 3
+match day:
     case 1:
-        System.out.println("Monday");
-        break; // Don't forget break, or it falls through!
+        print("Monday")
     case 2:
-        System.out.println("Tuesday");
-        break;
-    default:
-        System.out.println("Midweek");
-}
+        print("Tuesday")
+    case _:
+        print("Midweek")
 ```
 
 **B. Loops (For, While, Do-While)**
@@ -582,20 +483,17 @@ Loops allow you to repeat code.
 * `while` loop: Use when you don't know the number of iterations (e.g., "Run until user types 'exit'").
 * `do-while` loop: Guaranteed to run at least once (e.g., "Show menu, then ask to continue").
 
-Java
+```python
+# 1. FOR loop (fixed range)
+for i in range(1, 6):
+    print(i, end=" ")  # Output: 1 2 3 4 5
+print()
 
-```
-// 1. FOR Loop (Fixed)
-for (int i = 1; i <= 5; i++) {
-    System.out.print(i + " "); // Output: 1 2 3 4 5
-}
-
-// 2. WHILE Loop (Condition based)
-int count = 5;
-while (count > 0) {
-    System.out.print(count + " "); // Output: 5 4 3 2 1
-    count--;
-}
+# 2. WHILE loop (condition based)
+count = 5
+while count > 0:
+    print(count, end=" ")  # Output: 5 4 3 2 1
+    count -= 1
 ```
 
 ***
@@ -606,74 +504,57 @@ Here is how Methods and Control Flow work together in a real object.
 
 Java
 
-```java
-public class ATM {
-    // State (Data)
-    private double balance;
-    private int pin = 1234;
+```python
+class ATM:
+    def __init__(self, initial_balance: float):
+        self.__balance = initial_balance  # State (Data)
+        self.__pin = 1234
 
-    // Constructor
-    public ATM(double initialBalance) {
-        this.balance = initialBalance;
-    }
+    # Method 1: Boolean return type (Logic)
+    def verify_pin(self, input_pin: int) -> bool:
+        return input_pin == self.__pin
 
-    // Method 1: Boolean Return Type (Logic)
-    public boolean verifyPin(int inputPin) {
-        if (inputPin == this.pin) {
-            return true;
-        } else {
-            return false;
-        }
-    }
+    # Method 2: None-returning method with control flow
+    def withdraw(self, amount: int) -> None:
+        # Validation Logic
+        if amount <= 0:
+            print("Error: Amount must be positive.")
+        elif amount > self.__balance:
+            print("Error: Insufficient Funds.")
+        else:
+            # Success Logic
+            self.__balance -= amount
+            print(f"Success! Please take your ${amount}")
 
-    // Method 2: Void Method with Control Flow
-    public void withdraw(int amount) {
-        // Validation Logic
-        if (amount <= 0) {
-            System.out.println("Error: Amount must be positive.");
-        } else if (amount > balance) {
-            System.out.println("Error: Insufficient Funds.");
-        } else {
-            // Success Logic
-            balance = balance - amount;
-            System.out.println("Success! Please take your $" + amount);
-        }
-    }
-    
-    // Method 3: Getter
-    public double getBalance() {
-        return balance;
-    }
-}
+    # Method 3: Getter
+    def get_balance(self) -> float:
+        return self.__balance
 
-// Main Execution
-public class Main {
-    public static void main(String[] args) {
-        ATM myAtm = new ATM(1000.0);
-        
-        // Using Logic (If/Else) with Method Calls
-        if (myAtm.verifyPin(1234)) {
-            System.out.println("PIN Accepted.");
-            myAtm.withdraw(500); // Valid
-            myAtm.withdraw(5000); // Invalid (Insufficient funds)
-        } else {
-            System.out.println("Wrong PIN!");
-        }
-    }
-}
+
+# Main Execution
+if __name__ == "__main__":
+    my_atm = ATM(1000.0)
+
+    # Using Logic (if/else) with method calls
+    if my_atm.verify_pin(1234):
+        print("PIN Accepted.")
+        my_atm.withdraw(500)   # Valid
+        my_atm.withdraw(5000)  # Invalid (Insufficient funds)
+    else:
+        print("Wrong PIN!")
 ```
 
 #### Quick Syntax Cheat Sheet
 
-| **Keyword**   | **Purpose**                    | **Example**                 |
-| ------------- | ------------------------------ | --------------------------- |
-| `void`        | Method returns nothing         | `public void run() { ... }` |
-| `return`      | Exits method & sends data back | `return a + b;`             |
-| `break`       | Exits a loop or switch case    | `break;`                    |
-| `continue`    | Skips current loop iteration   | `continue;`                 |
-| `if (x == y)` | Checks equality                | `if (age == 18) { ... }`    |
-| `!=`          | Checks "Not Equal"             | `if (age != 0) { ... }`     |
-| `&&` / `\|\|` | Logical AND / OR               | `if (age > 18 && hasID)`    |
+| **Keyword**    | **Purpose**                    | **Example**                      |
+| -------------- | ------------------------------ | -------------------------------- |
+| `-> None`      | Method returns nothing         | `def run(self) -> None: ...`     |
+| `return`       | Exits method & sends data back | `return a + b`                   |
+| `break`        | Exits a loop                   | `break`                          |
+| `continue`     | Skips current loop iteration   | `continue`                       |
+| `if x == y:`   | Checks equality                | `if age == 18: ...`              |
+| `!=`           | Checks "Not Equal"             | `if age != 0: ...`               |
+| `and` / `or`   | Logical AND / OR               | `if age > 18 and has_id: ...`    |
 
 ***
 
@@ -694,33 +575,20 @@ A constructor is a special method that is called automatically when you create a
 * Default Constructor: Has no arguments. Java provides an invisible one if you don't write _any_ constructor.
 * Parameterized Constructor: Takes arguments to set specific values during creation.
 
-Java
-
-```java
-public class User {
-    String name;
-
-    // 1. No-Args Constructor (Default values)
-    public User() {
-        this.name = "Guest";
-    }
-
-    // 2. Parameterized Constructor (Custom values)
-    public User(String name) {
-        this.name = name;
-    }
-}
+```python
+class User:
+    # Use default parameter to handle both default and parameterized cases
+    def __init__(self, name: str = "Guest"):
+        self.name = name
 ```
 
 **B. Constructor Overloading**
 
-Just like methods, you can have multiple constructors as long as their parameters are different. This gives users flexibility in how they create objects.
+Python uses default parameter values to handle flexible construction.
 
-Java
-
-```java
-User u1 = new User();        // name = "Guest"
-User u2 = new User("Alice"); // name = "Alice"
+```python
+u1 = User()         # name = "Guest"
+u2 = User("Alice")  # name = "Alice"
 ```
 
 ***
@@ -740,29 +608,24 @@ This is the most critical memory concept in Java.
 
 Use `static` for properties that should be common to all objects (like a counter or a constant).
 
-Java
+```python
+class Employee:
+    company = "Google"  # Class variable: Shared by ALL employees
 
-```java
-public class Employee {
-    String name;          // Instance: Unique to each employee
-    static String company = "Google"; // Static: Shared by ALL employees
+    def __init__(self, name: str):
+        self.name = name  # Instance variable: Unique to each employee
 
-    public Employee(String name) {
-        this.name = name;
-    }
-}
+# Usage
+e1 = Employee("John")
+e2 = Employee("Jane")
 
-// Usage
-Employee e1 = new Employee("John");
-Employee e2 = new Employee("Jane");
+# e1.company is "Google"
+# e2.company is "Google"
 
-// e1.company is "Google"
-// e2.company is "Google"
+# Change it via the Class — affects all instances
+Employee.company = "Alphabet"
 
-// If we change it strictly using the Class Name:
-Employee.company = "Alphabet"; 
-
-// Now e1.company AND e2.company are both "Alphabet"!
+# Now e1.company AND e2.company are both "Alphabet"!
 ```
 
 **B. Static Methods**
@@ -790,20 +653,14 @@ Access modifiers determine which other classes can see and use your variables an
 
 Always make your fields `private` and your methods `public` (unless they are internal helper methods).
 
-Java
+```python
+class BankAccount:
+    def __init__(self):
+        self.__balance: float = 0.0  # Private: no one can touch the money directly
 
-```java
-public class BankAccount {
-    // 1. PRIVATE: No one can touch the money directly
-    private double balance; 
-
-    // 2. PUBLIC: Everyone can use the bank services
-    public void deposit(double amount) {
-        if (amount > 0) {
-            this.balance += amount; // Safe internal access
-        }
-    }
-}
+    def deposit(self, amount: float) -> None:  # Public: everyone can use the bank services
+        if amount > 0:
+            self.__balance += amount  # Safe internal access
 ```
 
 ***
@@ -812,64 +669,48 @@ public class BankAccount {
 
 Here is a `School` system combining Constructors, Static logic, and Modifiers.
 
-Java
+```python
+class Student:
+    # Class variable — shared counter (equivalent to private static)
+    _total_students: int = 0
 
-```java
-public class Student {
-    // 1. Private Fields (Encapsulation)
-    private String name;
-    private int id;
-    
-    // 2. Static Field (Shared Counter)
-    private static int totalStudents = 0;
-    
-    // 3. Constant (Final + Static)
-    public static final String SCHOOL_NAME = "Lincoln High";
+    # Class constant
+    SCHOOL_NAME: str = "Lincoln High"
 
-    // 4. Constructor
-    public Student(String name) {
-        this.name = name;
-        // Auto-increment the shared ID counter
-        totalStudents++; 
-        this.id = totalStudents;
-    }
+    def __init__(self, name: str):
+        self.__name: str = name                   # Private field
+        Student._total_students += 1
+        self.__id: int = Student._total_students  # Auto-assigned ID
 
-    // 5. Static Method (Accessing static data only)
-    public static int getTotalStudents() {
-        return totalStudents;
-    }
+    @staticmethod
+    def get_total_students() -> int:              # Static method: class-level data only
+        return Student._total_students
 
-    // 6. Instance Method (Accessing instance data)
-    public void introduce() {
-        System.out.println("Hi, I am " + name + " (ID: " + id + ")");
-        System.out.println("I go to " + SCHOOL_NAME);
-    }
-}
+    def introduce(self) -> None:                  # Instance method: uses instance data
+        print(f"Hi, I am {self.__name} (ID: {self.__id})")
+        print(f"I go to {Student.SCHOOL_NAME}")
 
-public class Main {
-    public static void main(String[] args) {
-        System.out.println("School: " + Student.SCHOOL_NAME);
-        
-        Student s1 = new Student("Alice");
-        Student s2 = new Student("Bob");
-        
-        s1.introduce(); // ID: 1
-        s2.introduce(); // ID: 2
-        
-        // Accessing static method directly from Class
-        System.out.println("Total Enrolled: " + Student.getTotalStudents()); // Output: 2
-    }
-}
+
+if __name__ == "__main__":
+    print(f"School: {Student.SCHOOL_NAME}")
+
+    s1 = Student("Alice")
+    s2 = Student("Bob")
+
+    s1.introduce()  # ID: 1
+    s2.introduce()  # ID: 2
+
+    print(f"Total Enrolled: {Student.get_total_students()}")  # 2
 ```
 
 #### Quick Syntax Cheat Sheet
 
-| **Feature**     | **Syntax**               | **When to use?**                           |
-| --------------- | ------------------------ | ------------------------------------------ |
-| Constructor     | `public ClassName() { }` | To setup default values.                   |
-| Static Variable | `static int count;`      | For shared data (counters, constants).     |
-| Static Method   | `static void run()`      | For utility tools (Math, Converters).      |
-| Private         | `private int age;`       | ALWAYS for class fields (attributes).      |
-| Public          | `public void getAge()`   | For methods meant for the outside world.   |
-| Access Static   | `ClassName.variable`     | Don't use object names (e.g., `s1.count`). |
+| **Feature**     | **Syntax**                        | **When to use?**                                |
+| --------------- | --------------------------------- | ----------------------------------------------- |
+| Constructor     | `def __init__(self): ...`         | To set up default values on object creation.    |
+| Class Variable  | `count = 0` (top of class body)   | For shared data (counters, constants).          |
+| Static Method   | `@staticmethod\ndef run(): ...`   | For utility tools (math helpers, converters).   |
+| Private Field   | `self.__age = 0`                  | ALWAYS for internal class fields (attributes).  |
+| Public Method   | `def get_age(self): ...`          | For methods meant for the outside world.        |
+| Access Static   | `ClassName.variable`              | Don't access via instance (e.g., `s1.count`).  |
 

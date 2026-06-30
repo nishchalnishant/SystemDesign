@@ -2,428 +2,216 @@
 module: 05-hld-problems
 topic: Hard
 status: unread
-tags: [05-hld-problems, system-design, hard]
+tags: [05-hld-problems, system-design, hard, hotel-booking, availability, double-booking, reservation]
 ---
-# Design a Hotel Booking System (Airbnb / Booking.com)
+# Design a Hotel Booking System (Booking.com)
+
+> **Difficulty**: Hard | **Asked at**: Booking.com, Expedia, Airbnb, Amazon
+
+---
 
 ## Problem Statement
 
-Design a hotel booking platform that supports:
-- Searching available hotels/rooms for a date range
-- Booking a room for specific dates (no double-booking)
-- Cancellation and refund flows
-- 500M users, 100K+ hotels, peak load around holidays
+Design a hotel booking platform like Booking.com. Users search for hotels by location, check-in/out dates, and guest count; view available rooms; and book rooms with payment. The system must prevent double-booking (the same room cannot be booked by two users for overlapping dates) and handle high concurrency during flash sales.
 
 ---
 
 ## Functional Requirements
 
-- Search hotels by location, dates, filters (price, amenities, rating)
-- View hotel details and room inventory for a date range
-- Book a room (reserve + pay atomically)
-- Cancel a booking (with policy-based refund)
-- View booking history (user + hotel sides)
+1. **Hotel search**: Search by city, date range, guest count; filter by price, rating, amenities
+2. **Room availability**: Show available rooms for a property and date range
+3. **Booking**: Reserve a room for a date range; process payment
+4. **Cancellation**: Cancel a booking and release the room
+5. **Price management**: Hotels set prices per room type per date (dynamic pricing)
+6. **Reviews**: Users leave ratings and reviews after checkout
+
+---
 
 ## Non-Functional Requirements
 
-- **Availability**: 99.99% for search, 99.9% for booking
-- **Consistency**: No double-booking — a room for a date range must be sold to exactly one guest
-- **Latency**: Search < 200ms p99, booking < 1s p99
-- **Scale**: 500M users, 2M room-nights booked per day, 100K QPS search
-- **Durability**: No lost bookings — payment + reservation must be atomic
+- **Scale**: 500K hotels, 2M rooms, 10M bookings/day, 100K concurrent searches
+- **Latency**: Search results < 1s; booking confirmation < 3s
+- **Consistency**: No double-booking under any concurrency scenario
+- **Availability**: 99.99% — booking cannot fail for valid requests
+- **Overbooking prevention**: At most 1 booking per room per overlapping date range
 
 ---
 
-## Capacity Estimation
-
-```
-Search:
-  500M users × 3 searches/day = 1.5B searches/day
-  = 17,000 QPS average; peak ~100,000 QPS
-
-Bookings:
-  2M bookings/day = 23 bookings/second average
-  Peak (Black Friday, New Year): 10× → 230 bookings/second
-
-Room inventory:
-  500K hotels × 100 rooms avg = 50M rooms
-  Each room has N date slots (1 year = 365 dates)
-  50M rooms × 365 = 18.25B room-date records
-  At 50 bytes each ≈ 900 GB (fits in partitioned DB, not in memory)
-
-Storage:
-  Booking record: ~500 bytes
-  2M bookings/day × 365 days × 500 bytes = ~365 GB/year
-```
-
----
-
-## Core Design Challenge: Room Availability & Double-Booking
-
-A room is available for a date range if no confirmed booking overlaps that range. Two users searching simultaneously both see "available". Both click "Book". Without coordination, both bookings are confirmed — a double-booking.
-
-This is a **date-range inventory reservation problem**: harder than a single-seat booking because a booking spans multiple date slots, and availability must be atomic across all dates in the range.
-
----
-
-## Data Model
-
-### Hotels and Rooms
-```sql
-hotels (
-  hotel_id      UUID PRIMARY KEY,
-  name          TEXT,
-  location_id   UUID,
-  star_rating   INT,
-  amenities     JSONB
-)
-
-rooms (
-  room_id       UUID PRIMARY KEY,
-  hotel_id      UUID REFERENCES hotels,
-  room_type     TEXT,        -- 'single', 'double', 'suite'
-  base_price    DECIMAL,
-  max_occupancy INT
-)
-```
-
-### Room Availability (two schema options — see deep dive)
-
-**Option A: date-slot table (one row per room per date)**
-```sql
-room_availability (
-  room_id   UUID,
-  date      DATE,
-  status    ENUM('available', 'held', 'booked'),
-  booking_id UUID,           -- NULL if available
-  version   BIGINT,          -- for optimistic locking
-  PRIMARY KEY (room_id, date)
-)
-```
-
-**Option B: booking overlap check (no pre-expanded slots)**
-```sql
-bookings (
-  booking_id    UUID PRIMARY KEY,
-  room_id       UUID,
-  user_id       UUID,
-  check_in      DATE,
-  check_out     DATE,         -- exclusive end date
-  status        ENUM('pending', 'confirmed', 'cancelled'),
-  payment_id    UUID,
-  created_at    TIMESTAMP,
-  expires_at    TIMESTAMP     -- for pending holds
-)
--- Index: (room_id, check_in, check_out) for overlap queries
-```
-
-### Users and Payments
-```sql
-users (user_id UUID, name, email, payment_methods JSONB)
-payments (payment_id UUID, booking_id, amount, status, gateway_ref)
-```
-
----
-
-## High-Level Architecture
-
-```
-                        ┌─────────────┐
-                        │   Clients   │
-                        │ (Web/Mobile)│
-                        └──────┬──────┘
-                               │
-                        ┌──────▼──────┐
-                        │   CDN       │ ← static assets, search results cache
-                        └──────┬──────┘
-                               │
-                        ┌──────▼──────┐
-                        │  API Gateway│ ← auth, rate limiting, routing
-                        └──┬──────┬───┘
-                           │      │
-              ┌────────────▼─┐  ┌─▼───────────────┐
-              │ Search Service│  │  Booking Service │
-              │  (read-heavy) │  │  (write-critical)│
-              └──────┬────────┘  └────────┬─────────┘
-                     │                    │
-          ┌──────────▼──┐      ┌──────────▼──────────┐
-          │Elasticsearch│      │   Booking DB         │
-          │(hotels/rooms│      │ (PostgreSQL, sharded │
-          │ searchable) │      │  by hotel_id)        │
-          └─────────────┘      └─────────┬────────────┘
-                                         │
-                               ┌─────────▼──────────┐
-                               │  Payment Service    │
-                               │  (Stripe/Adyen)     │
-                               └────────────────────┘
-
-Supporting:
-  Redis          ← availability cache, distributed locks, session holds
-  Kafka          ← booking events for notifications, analytics, CDC
-  Notification   ← email/SMS confirmations via Kafka consumer
-```
-
----
-
-## Deep Dive: Preventing Double-Booking
-
-### Option 1: Database Row Locking (`SELECT FOR UPDATE`)
-
-For the date-slot schema (Option A):
-
-```sql
-BEGIN TRANSACTION;
-
--- Lock all date rows for the room in the requested range
-SELECT * FROM room_availability
-WHERE room_id = $1
-  AND date >= $check_in AND date < $check_out
-FOR UPDATE;  -- row-level exclusive lock
-
--- Check all slots are available
--- (application code verifies all returned rows have status='available')
-
--- Reserve all slots
-UPDATE room_availability
-SET status = 'held', booking_id = $booking_id, expires_at = NOW() + interval '10 minutes'
-WHERE room_id = $1
-  AND date >= $check_in AND date < $check_out;
-
-COMMIT;
-```
-
-**How it prevents double-booking:** `FOR UPDATE` locks the rows. If User B requests the same room while User A holds the lock, User B's `SELECT FOR UPDATE` blocks until User A's transaction commits. User A confirms → rows become 'held' → User B sees 'held', booking fails.
-
-**Downside:** Lock held for duration of payment processing (up to 30s). Other bookings for unrelated rooms on same DB shard also wait if they hit the same rows. Deadlock risk if two transactions lock rooms in different order.
-
-**Mitigation:** Keep hold phase short. Lock only the date rows being booked, not the room row itself. Set `lock_timeout = 5s` to fail fast rather than long-wait.
-
----
-
-### Option 2: Optimistic Locking (version check)
-
-```sql
--- Read availability without locking
-SELECT version, status FROM room_availability
-WHERE room_id = $1 AND date >= $check_in AND date < $check_out;
-
--- All available → attempt CAS-style update
-UPDATE room_availability
-SET status = 'held', booking_id = $booking_id, version = version + 1
-WHERE room_id = $1
-  AND date >= $check_in AND date < $check_out
-  AND status = 'available'          -- only if still available
-  AND version = $read_version;      -- only if not modified since we read
-
--- rows_affected == expected_count → success
--- rows_affected < expected_count → conflict → retry or fail
-```
-
-**How it prevents double-booking:** The `WHERE version = $read_version` clause is a CAS — it only updates if no other transaction changed the row since we read it. If two users try simultaneously, one UPDATE wins (all rows match version), the other gets `rows_affected = 0`.
-
-**Advantage:** No locks held. Other transactions never block. Better throughput under moderate contention.
-
-**Disadvantage:** Under high contention (Black Friday), most transactions will fail and retry → retry storms. Need exponential backoff + jitter. Not suitable if contention rate > 50%.
-
----
-
-### Option 3: Distributed Lock + Availability Check (Redis)
-
-For extremely high contention on popular rooms:
-
-```
-1. Acquire Redis lock: SET room:{room_id}:lock {booking_id} NX PX 30000
-   → NX = only if not exists; PX = expires in 30 seconds
-2. If lock acquired:
-   a. Check availability in DB (read)
-   b. Create booking record (write)
-   c. Release lock: DEL room:{room_id}:lock (if still owner)
-3. If lock not acquired → room is being booked → return "try again"
-```
-
-**Advantage:** Single Redis roundtrip to serialize all booking attempts for a room. Availability check inside lock is safe — no concurrent modifier.
-
-**Disadvantage:** Redis lock is not durable. If Redis crashes after lock acquired but before DB write, the lock disappears → potential double-booking. Must combine with DB-level idempotency (unique constraint on booking_id).
-
-**Safety net — unique constraint:**
-```sql
--- Overlap exclusion constraint (PostgreSQL with exclusion constraint)
-ALTER TABLE bookings ADD CONSTRAINT no_double_booking
-  EXCLUDE USING gist (
-    room_id WITH =,
-    daterange(check_in, check_out, '[)') WITH &&
-  )
-  WHERE (status != 'cancelled');
-```
-This constraint makes it physically impossible to insert two overlapping confirmed bookings for the same room — the DB is the final arbiter regardless of which locking strategy you use.
-
----
-
-### Recommended Approach: Two-Phase Commit with DB Exclusion Constraint
-
-```
-Phase 1 — Hold (10 minute TTL):
-  1. INSERT booking (status='pending', expires_at=now+10min)
-     → if overlapping non-cancelled booking exists, INSERT fails (exclusion constraint)
-     → return hold_token to user
-  2. Decrement Redis availability cache for fast subsequent reads
-
-Phase 2 — Confirm (after payment):
-  1. Process payment via payment gateway
-  2. On payment success: UPDATE booking SET status='confirmed', payment_id=$id
-  3. On payment failure: UPDATE booking SET status='cancelled'
-  4. Publish booking.confirmed event to Kafka
-
-Background job:
-  Every 5 minutes: DELETE/UPDATE bookings WHERE status='pending' AND expires_at < NOW()
-  → releases held rooms back to available
-```
-
-The exclusion constraint on the `bookings` table is the atomic double-booking prevention. Holds are real bookings (status='pending') that expire — a second booking attempt during the hold period will fail the overlap constraint.
-
----
-
-## Deep Dive: Search — Date-Range Availability Query
-
-Naive query: join `rooms` with `room_availability` for all dates in range. For a 7-night stay across 50M rooms — impossibly slow.
-
-**Strategy: pre-computed availability index**
-
-```
-availability_index (
-  hotel_id     UUID,
-  room_type    TEXT,
-  available_from  DATE,    -- start of contiguous available block
-  available_until DATE,    -- end of contiguous available block
-  min_price    DECIMAL
-)
-```
-
-Updated by a background worker when bookings are created/cancelled. Search query:
-
-```sql
-SELECT h.*, ai.min_price
-FROM hotels h
-JOIN availability_index ai ON ai.hotel_id = h.hotel_id
-WHERE h.location_id = $location
-  AND ai.available_from <= $check_in
-  AND ai.available_until >= $check_out
-  AND ai.min_price <= $max_price
-ORDER BY ai.min_price ASC
-LIMIT 50;
-```
-
-**Elasticsearch for location search:** Hotels are indexed in Elasticsearch with geo-coordinates. Location search uses `geo_distance` query to find hotels within radius, then fetches availability from DB.
-
-```
-Flow:
-1. Elasticsearch: hotel_ids within 10km of NYC, matching filters → [h1, h2, ..., h500]
-2. PostgreSQL: which of these hotel_ids have availability for 2026-07-01 → 2026-07-05?
-3. Merge, sort by price/rating, return top 50
-```
-
----
-
-## Deep Dive: Cancellation and Refund Saga
-
-Cancellation must atomically update booking status and trigger refund. Use saga pattern:
-
-```
-CancelBooking Saga:
-  Step 1: UPDATE booking SET status='cancellation_pending'
-  Step 2: Call payment gateway refund API
-  Step 3a (success): UPDATE booking SET status='cancelled', refund_id=$id
-           Publish booking.cancelled event → availability_index rebuild
-  Step 3b (failure): UPDATE booking SET status='confirmed'  ← compensate
-           Alert ops for manual refund review
-
-Idempotency: store refund_id to prevent double-refund on retry
-```
-
-**Cancellation policy enforcement:**
-```java
-CancellationPolicy policy = hotel.getPolicy();
-long daysUntilCheckIn = ChronoUnit.DAYS.between(now, booking.checkIn);
-BigDecimal refundAmount = policy.calculateRefund(daysUntilCheckIn, booking.totalAmount);
-// Free cancellation >7 days, 50% refund 3-7 days, no refund <3 days
-```
-
----
-
-## Deep Dive: Handling Overbooking (Airline-Style)
-
-Some hotels intentionally overbook by 5–10% (based on historical no-show rates). System design implication:
-
-- `rooms` table has `virtual_capacity` (e.g., 10 rooms physically, 11 virtual)
-- Availability check uses virtual_capacity
-- If all 11 bookings confirm and all guests show up, hotel handles it operationally (room upgrade, partner hotel)
-- System exposes `overbooking_buffer` as a hotel-level config, not exposed to users
-
-**For our design:** default to no overbooking (virtual_capacity == physical_capacity). Hotels can configure a buffer in their admin panel.
-
----
-
-## Bottlenecks and Mitigations
-
-| Bottleneck | Mitigation |
-|---|---|
-| DB contention on popular rooms | Optimistic locking + exclusion constraint; Redis lock for extreme hot rooms |
-| Search latency for date-range availability | Pre-computed availability_index; Elasticsearch for location |
-| Payment gateway timeout during booking hold | Async payment with webhook callback; hold TTL gives 10 min window |
-| Expired hold cleanup lag | Background job + index on `(status, expires_at)` |
-| Holiday peak search QPS (100K+) | Cache search results in Redis with 60s TTL; CDN for static hotel pages |
-| Multi-region consistency | Bookings DB in single region per hotel (hotel_id shard); cross-region replication read-only |
+## Core Entities
+
+| Entity | Key Fields |
+|--------|-----------|
+| `Hotel` | hotel_id, name, city, lat, lng, star_rating, amenities[] |
+| `Room` | room_id, hotel_id, room_type, max_guests, description |
+| `RoomAvailability` | room_id, date, status (available/booked/blocked), price |
+| `Booking` | booking_id, user_id, room_id, check_in, check_out, status, total_price, payment_id |
+| `Review` | review_id, hotel_id, user_id, booking_id, rating, text, created_at |
 
 ---
 
 ## API Design
 
-```
-GET  /api/v1/hotels?location={lat,lon}&radius=10km&check_in=2026-07-01&check_out=2026-07-05&guests=2
-     → [ { hotel_id, name, rating, min_price, room_types_available } ]
+```http
+GET /api/v1/hotels/search?city=Paris&check_in=2026-07-01&check_out=2026-07-05&guests=2
+Response 200: {
+  "hotels": [{
+    "hotel_id": "h123",
+    "name": "Hotel Lumière",
+    "rating": 4.5,
+    "min_price": 150,
+    "available_rooms": 3
+  }]
+}
 
-GET  /api/v1/hotels/{hotel_id}/rooms?check_in=...&check_out=...
-     → [ { room_id, type, price, amenities, availability: true } ]
+GET /api/v1/hotels/{hotel_id}/rooms?check_in=2026-07-01&check_out=2026-07-05&guests=2
+Response 200: { "rooms": [{ "room_id": "r456", "type": "Deluxe", "price_per_night": 180, "available": true }] }
 
 POST /api/v1/bookings
-     Body: { room_id, check_in, check_out, user_id, payment_method_id }
-     → { booking_id, status: "pending", expires_at, total_amount }
-
-POST /api/v1/bookings/{booking_id}/confirm
-     → { booking_id, status: "confirmed", confirmation_number }
+Body: { "room_id": "r456", "check_in": "2026-07-01", "check_out": "2026-07-05", "guest_count": 2 }
+Response 201: { "booking_id": "b789", "status": "confirmed", "total_price": 720, "payment_id": "p012" }
 
 DELETE /api/v1/bookings/{booking_id}
-     → { booking_id, status: "cancelled", refund_amount }
+Response 200: { "status": "cancelled", "refund_amount": 720 }
 ```
 
 ---
 
-## Trade-offs Summary
+## High-Level Design
 
-| Decision | Choice | Reason |
-|---|---|---|
-| Double-booking prevention | Exclusion constraint + optimistic locking | DB is final arbiter; no distributed lock needed for correctness |
-| Search index | Elasticsearch + pre-computed availability_index | Geo-search + date range too slow on relational DB alone |
-| Hold mechanism | Pending booking with expires_at | Reuses booking table; no separate hold table; constraint prevents overlap |
-| Sharding | By hotel_id | All bookings for a hotel on same shard; avoids cross-shard joins |
-| Cancellation | Saga pattern | Payment refund is external; need compensation on failure |
+```
+User
+  │
+  ▼
+Search Service
+  │ Query Elasticsearch (geo + date + price filter)
+  │ Availability from Redis cache (pre-computed availability bitmap)
+  │
+  ▼
+Room Availability Service
+  │ Exact availability for a hotel: query RoomAvailability table
+  │ Cache: available rooms per hotel per date range (Redis, TTL 60s)
+  │
+  ▼
+Booking Service
+  │ 1. Lock room for dates (pessimistic or optimistic lock)
+  │ 2. Process payment (Stripe)
+  │ 3. Insert booking record
+  │ 4. Mark room as booked in RoomAvailability
+  │ 5. Confirm to user
+  │
+  ▼
+PostgreSQL: hotels, rooms, bookings, RoomAvailability
+Redis: availability cache, booking locks
+Elasticsearch: hotel search index
+Kafka: booking-events (→ email confirmation, review prompt)
+```
 
 ---
 
-## Quick Revision
+## Deep Dive 1: Preventing Double-Booking
 
-- **Core problem**: date-range availability reservation without double-booking
-- **Key insight**: DB exclusion constraint on `(room_id, daterange)` is the atomic safety net — no distributed lock can guarantee safety without a DB-level constraint
-- **Hold pattern**: INSERT as 'pending' (constraint prevents overlap), expire after 10 min, confirm on payment
-- **Search**: Elasticsearch for location, pre-computed availability_index for date-range
-- **Hard question always asked**: "What happens if payment succeeds but DB update fails?" → idempotency key + payment gateway webhook callback; booking reconciliation job
+**Problem**: Alice and Bob simultaneously book room R456 for July 1-5. Both see the room as available. If both bookings succeed, the same room is booked twice for the same dates.
+
+**Approach 1: Database-level constraint** — The `RoomAvailability` table has one row per (room_id, date). Status can be `available` or `booked`. Booking atomically updates all rows for the date range:
+
+```sql
+-- Check and lock availability rows
+SELECT * FROM room_availability
+WHERE room_id = 'r456'
+  AND date >= '2026-07-01' AND date < '2026-07-05'
+  AND status = 'available'
+FOR UPDATE;  -- pessimistic lock; blocks concurrent updates
+
+-- If all rows returned (all dates available), update them
+UPDATE room_availability
+SET status = 'booked', booking_id = 'b789'
+WHERE room_id = 'r456'
+  AND date >= '2026-07-01' AND date < '2026-07-05';
+
+-- Insert booking record
+INSERT INTO bookings (booking_id, room_id, check_in, check_out, ...) VALUES (...);
+```
+
+All three statements run in one transaction. `FOR UPDATE` locks the rows; the concurrent transaction for Bob must wait. When Bob's transaction runs, it finds status = 'booked' → fails → booking rejected.
+
+**Approach 2: Unique constraint** — Add a `UNIQUE(room_id, date)` constraint on `room_availability`. The concurrent insert for Bob fails with a unique violation → booking rejected.
+
+**Two-phase approach (better UX)**:
+1. **Pre-booking (soft lock)**: `SET room_availability status='reserved' WHERE status='available'` — hold for 10 minutes
+2. **Payment**: Process payment (2-5 seconds)
+3. **Confirm**: `UPDATE status='booked'` — permanent
+4. **Timeout**: Background job resets `reserved` rows where `reserved_at < now() - 10min` back to `available`
+
+This prevents the room from being shown as available during payment, reducing failed payments.
 
 ---
 
-## See Also
+## Deep Dive 2: Availability Search at Scale
 
-- `05-hld-problems/03-hard/ticketmaster-seat-booking.md` — single-seat high-contention booking
-- `09-patterns/saga-pattern.md` — payment + booking saga with compensation
-- `09-patterns/two-phase-commit.md` — why 2PC is avoided here
-- `09-patterns/outbox-pattern.md` — reliable event publishing on booking confirm
-- `02-building-blocks/distributed-locks.md` — Redlock for hot-room locking
+**Problem**: A user searches for hotels in Paris for July 1-5 with 2 guests. There are 50,000 hotels in Paris. For each hotel, checking availability requires querying the `RoomAvailability` table — 50,000 queries per search request is not feasible.
+
+**Pre-computed availability index**:
+- For each hotel, maintain an availability counter in Redis: `avail:{hotel_id}:{date}` = count of available rooms on that date
+- When a room is booked: `DECRBY avail:{hotel_id}:{date} 1` for each booked date
+- When cancelled: `INCRBY`
+- Search query: for each date in range, check `avail:{hotel_id}:{date} > 0`
+
+**Elasticsearch geo-search + availability filter**:
+- Elasticsearch document per hotel includes geo_point, star_rating, amenities, min_price
+- Availability from Redis is checked post-search (hotel candidates from ES, then filter by availability)
+- 50K hotels in Paris → ES returns top 1,000 by rating/price → check availability for those 1,000 hotels in Redis pipeline → return 20 results
+
+**Stale data tolerance**: Availability cache can be slightly stale (up to 60 seconds). Users see a room as available, click book, and only then might see "sold out." This is acceptable — the actual double-booking prevention happens at the DB lock level.
+
+---
+
+## Deep Dive 3: Dynamic Pricing
+
+**Problem**: A hotel wants to charge $300/night during peak season (July 4th weekend) and $120/night off-season. A rate plan may apply discounts for 7-night stays. Prices must be applied correctly in the booking total.
+
+**Price table** (`RoomPricing`):
+```sql
+CREATE TABLE room_pricing (
+  room_id text,
+  date date,
+  base_price decimal,
+  min_stay_nights int DEFAULT 1,
+  PRIMARY KEY (room_id, date)
+);
+```
+
+**Price calculation at booking**:
+```python
+nights = (check_out - check_in).days
+prices = db.query(
+    "SELECT date, base_price FROM room_pricing WHERE room_id = %s AND date >= %s AND date < %s",
+    room_id, check_in, check_out
+)
+subtotal = sum(p.base_price for p in prices)
+min_stay = max(p.min_stay_nights for p in prices)
+if nights < min_stay:
+    raise BookingError("Minimum stay requirement not met")
+total = subtotal * (0.9 if nights >= 7 else 1.0)  # 10% weekly discount
+```
+
+**Price update API** (for hotel managers): `PUT /api/v1/hotels/{hotel_id}/pricing` with a date range and price matrix. Updates the `room_pricing` table and invalidates availability/price caches.
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**:
+- What is double-booking? Why is it a critical problem for hotel systems?
+- What does "availability" mean for a hotel room? How is it tracked?
+- What happens to a booking when a user cancels?
+
+**Mid-level**:
+- How do you prevent two users from booking the same room for the same dates simultaneously?
+- How do you implement a two-phase booking (soft reserve → confirm) to prevent payment failures?
+- How do you search for available hotels in a city efficiently without querying every hotel's calendar?
+
+**Senior**:
+- Design the availability calendar system for 2M rooms × 365 days = 730M rows. How do you query and update this efficiently?
+- A hotel overbooks by mistake (more bookings than rooms). How does the system detect and handle this?
+- Design the dynamic pricing system — how do you support per-date, per-room-type pricing with last-minute discounts and minimum-stay requirements?
+- How do you handle a flash sale where a hotel drops prices at midnight and 100,000 users try to book the same 50 rooms?

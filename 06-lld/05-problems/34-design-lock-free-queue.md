@@ -2,266 +2,296 @@
 module: 06-lld
 topic: Problems
 status: unread
-tags: [06-lld, system-design, problems]
+tags: [06-lld, lld, lock-free-queue, cas, aba-problem, michael-scott-queue]
 ---
-# LLD: Design a Lock-Free Queue
+# Design Lock-Free Queue
 
-## Problem Statement
-
-Design a thread-safe, unbounded FIFO queue that supports concurrent enqueue and dequeue operations **without using any locks or synchronized blocks**. The implementation must be correct under all interleavings of concurrent threads.
-
-## Requirements
-
-- `void enqueue(T item)` — add item to tail, non-blocking
-- `T dequeue()` — remove and return item from head, return null if empty
-- Linearizable (each operation appears atomic at some point during its execution)
-- Progress guarantee: at least one thread makes progress at all times (lock-free)
+> **Difficulty**: Hard
+> **Asked at**: Amazon, Jane Street, Two Sigma
+> **Key Patterns**: Compare-and-Swap (CAS), ABA problem, Michael-Scott queue algorithm
 
 ---
 
-## Background: Why Lock-Free?
+## Understanding the Problem
 
-Traditional `synchronized` or `ReentrantLock` queues serialize all operations. Under high contention:
-- Threads block each other
-- Context switches are expensive (~1-10μs)
-- Priority inversion: a low-priority thread holding a lock blocks high-priority threads
-
-**Lock-free** means: if threads are suspended at any point, other threads can still make progress. No thread can be "stuck" waiting for another.
-
-Lock-free data structures use **Compare-And-Swap (CAS)** as the atomic primitive.
+Design a lock-free FIFO queue that supports concurrent enqueue and dequeue operations without using mutexes or locks. In Python (which lacks real CAS), we discuss the algorithm and simulate it, noting where a real implementation would use `AtomicReference` (Java) or `std::atomic` (C++).
 
 ---
 
-## Compare-And-Swap (CAS)
+## Clarifying Questions
 
-```java
-// Pseudo-semantics of CAS (executed atomically by CPU):
-boolean compareAndSwap(AtomicReference ref, T expected, T newValue) {
-    if (ref.get() == expected) {
-        ref.set(newValue);
-        return true;
-    }
-    return false;
-}
-```
+**You**: "What's the concurrency model — multiple producers, multiple consumers?"
+**Interviewer**: "MPMC — multiple producer, multiple consumer (the hardest case)."
 
-Real Java: `AtomicReference.compareAndSet(expected, update)` maps to a single CPU instruction (`CMPXCHG` on x86). The OS never suspends a thread mid-CAS.
+**You**: "Can we use Python's threading primitives for simulation?"
+**Interviewer**: "Yes — explain the lock-free algorithm in detail. Python simulation is acceptable."
 
-**Key property**: CAS either succeeds (atomically swaps) or fails (no change) — no partial state.
+**You**: "Should we handle bounded capacity?"
+**Interviewer**: "Start with unbounded. Discuss bounded as extension."
 
----
+**You**: "What's the ABA problem?"
+**Interviewer**: "Explain it — it's a key concern with CAS-based data structures."
 
-## The ABA Problem
-
-CAS checks if a value **equals** `expected`. But equality doesn't mean the value is unchanged:
-
-```
-Thread 1: reads head → Node A
-Thread 1: suspended
-
-Thread 2: dequeues A, enqueues new Node C, dequeues B, enqueues A back (same object, recycled)
-
-Thread 1: resumes
-Thread 1: CAS(head, A, A.next) → succeeds! (head is A again)
-But A.next is now stale — Thread 1 uses freed/wrong memory
-```
-
-**Node A was removed and re-added, but its value appears unchanged to CAS.** This is the ABA problem.
-
-### Solution: Stamped References
-
-Java's `AtomicStampedReference<T>` pairs a reference with a monotonically increasing integer stamp:
-
-```java
-// CAS checks both reference AND stamp
-atomicStampedRef.compareAndSet(expectedRef, newRef, expectedStamp, newStamp)
-```
-
-Every time a reference is updated, increment the stamp. ABA becomes impossible because stamp never repeats.
-
-Simpler alternative: `AtomicMarkableReference<T>` — uses a single boolean mark instead of a counter.
+**You**: "Do we need blocking behavior (wait for item if empty)?"
+**Interviewer**: "No — return None if empty. Pure non-blocking."
 
 ---
 
-## Michael-Scott Queue (the standard algorithm)
+## Final Requirements
 
-Published by Maged Michael and Michael Scott (1996). This is the lock-free queue used in:
-- `java.util.concurrent.ConcurrentLinkedQueue`
-- `java.util.concurrent.LinkedTransferQueue`
+**In scope:**
+1. Thread-safe enqueue (tail insert)
+2. Thread-safe dequeue (head remove)
+3. Non-blocking — return None if empty, no busy-wait beyond CAS retries
+4. Explain Michael-Scott queue algorithm
+5. Explain and handle the ABA problem
 
-### Structure
+**Out of scope:**
+- Bounded capacity (follow-up)
+- Python GIL considerations
+- Memory ordering (C++ memory_order) — mention at senior level
+
+---
+
+## Core Entities and Relationships
+
+| Entity | Responsibility |
+|--------|---------------|
+| `Node` | Singly linked list node; holds value and atomic `next` pointer |
+| `LockFreeQueue` | Head (sentinel) + tail pointers; CAS-based enqueue/dequeue |
+| `AtomicRef` | Simulated atomic reference (wraps a value + version for ABA) |
+
+The Michael-Scott queue uses a **sentinel node** (dummy head). Head always points to the sentinel; Tail always points to the last real node (or the sentinel when empty). Both are atomic pointers updated via CAS.
+
+---
+
+## Class Design
+
+### Node
 
 ```
-        head                              tail
-          │                                │
-          ▼                                ▼
-     ┌─────────┐   ┌─────────┐   ┌─────────┐
-     │ sentinel │──►│ Node A  │──►│ Node B  │──► null
-     │ (dummy)  │   │ data=1  │   │ data=2  │
-     └─────────┘   └─────────┘   └─────────┘
+class Node:
+- value: Any
+- next: AtomicRef   # AtomicRef[Optional[Node]]
 ```
 
-- `head` points to a **sentinel/dummy node** — its `next` is the actual first element
-- `tail` points to the last node (or second-to-last during a concurrent enqueue)
-- Both `head` and `tail` are `AtomicReference`
+### AtomicRef (simulation)
 
-### Why a Dummy Node?
+```python
+import threading
 
-Eliminates the special case where head == tail (empty queue). Also separates the head pointer (dequeue) from the tail pointer (enqueue) — they rarely contend.
+class AtomicRef:
+    def __init__(self, value=None):
+        self._value = value
+        self._version = 0
+        self._lock = threading.Lock()   # internal lock for simulation only
 
-### Implementation
+    def get(self):
+        with self._lock:
+            return self._value, self._version
 
-```java
-public class MichaelScottQueue<T> {
-
-    private static class Node<T> {
-        final T data;
-        final AtomicReference<Node<T>> next = new AtomicReference<>(null);
-
-        Node(T data) { this.data = data; }
-    }
-
-    private final AtomicReference<Node<T>> head;
-    private final AtomicReference<Node<T>> tail;
-
-    public MichaelScottQueue() {
-        Node<T> sentinel = new Node<>(null);
-        head = new AtomicReference<>(sentinel);
-        tail = new AtomicReference<>(sentinel);
-    }
-
-    public void enqueue(T item) {
-        Node<T> newNode = new Node<>(item);
-        while (true) {
-            Node<T> t = tail.get();
-            Node<T> next = t.next.get();
-
-            if (t == tail.get()) {               // tail still valid?
-                if (next == null) {
-                    // tail.next is null: try to link new node
-                    if (t.next.compareAndSet(null, newNode)) {
-                        // Success: try to advance tail (may fail — that's ok)
-                        tail.compareAndSet(t, newNode);
-                        return;
-                    }
-                } else {
-                    // Tail is lagging: help advance it
-                    tail.compareAndSet(t, next);
-                }
-            }
-        }
-    }
-
-    public T dequeue() {
-        while (true) {
-            Node<T> h = head.get();
-            Node<T> t = tail.get();
-            Node<T> next = h.next.get();
-
-            if (h == head.get()) {              // head still valid?
-                if (h == t) {
-                    if (next == null) return null;  // empty queue
-                    tail.compareAndSet(t, next);    // tail lagging, help advance
-                } else {
-                    T data = next.data;
-                    if (head.compareAndSet(h, next)) {
-                        return data;
-                    }
-                    // CAS failed: another thread dequeued concurrently, retry
-                }
-            }
-        }
-    }
-}
+    def compare_and_set(self, expected_val, expected_ver, new_val):
+        with self._lock:
+            if self._value is expected_val and self._version == expected_ver:
+                self._value = new_val
+                self._version += 1
+                return True
+            return False
 ```
 
-### Walkthrough: Concurrent Enqueue
+In a real implementation (Java): `AtomicReference<Node>`. In C++: `std::atomic<Node*>` with ABA-safe tagged pointers or hazard pointers.
 
-Two threads enqueue simultaneously:
+### LockFreeQueue (Michael-Scott Algorithm)
 
 ```
-Initial: head → [sentinel] → [A] → null,  tail → [A]
+class LockFreeQueue:
+- head: AtomicRef   # points to sentinel node
+- tail: AtomicRef   # points to last node
 
-Thread 1: t = [A], next = null → CAS(A.next, null, B) → SUCCESS
-Thread 1: CAS(tail, A, B) → may succeed or fail
-
-Thread 2: t = [A], next = null → CAS(A.next, null, C) → FAIL (A.next is now B)
-Thread 2: next = tail.get().next = B (not null) → tail is lagging
-Thread 2: CAS(tail, A, B) → advances tail, then loops
-Thread 2: t = [B], next = null → CAS(B.next, null, C) → SUCCESS
-
-Result: sentinel → A → B → C, tail → C
++ enqueue(value)
++ dequeue() -> Optional[Any]
++ is_empty() -> bool
 ```
 
-### Walkthrough: The "Helping" Mechanism
+---
 
-Notice the enqueue loop has two branches:
-1. `next == null`: try to attach new node
-2. `next != null`: tail is lagging — help the thread that attached the node move `tail` forward
+## Implementation
 
-This is the **helping** pattern: threads help each other complete their operations rather than waiting. This is what gives lock-free (not just obstruction-free) progress: even if Thread 1 crashes after linking B but before advancing tail, Thread 2 will advance tail on Thread 1's behalf.
+### Michael-Scott Queue Algorithm
 
-### Progress Guarantee
+The key insight: `tail` may lag behind the actual last node. Both enqueue and dequeue must tolerate (and help advance) a lagging tail.
 
-- **Lock-free** (not wait-free): a thread may spin indefinitely if there is constant contention, but at least one thread always makes progress in any interval.
-- To achieve **wait-free** (every thread completes in bounded steps), you need more complex "fetch and add" position-based queues (Kogan-Petrank, 2011) at higher implementation complexity.
+```python
+class LockFreeQueue:
+    def __init__(self):
+        sentinel = Node(value=None, next=AtomicRef(None))
+        self.head = AtomicRef(sentinel)
+        self.tail = AtomicRef(sentinel)
+
+    def enqueue(self, value):
+        new_node = Node(value=value, next=AtomicRef(None))
+        while True:
+            tail_node, tail_ver = self.tail.get()
+            tail_next, tail_next_ver = tail_node.next.get()
+
+            # Consistency check: tail hasn't moved since we read it
+            current_tail, current_tail_ver = self.tail.get()
+            if tail_node is not current_tail or tail_ver != current_tail_ver:
+                continue   # tail moved — retry
+
+            if tail_next is None:
+                # Tail is truly the last node — try to append
+                if tail_node.next.compare_and_set(None, tail_next_ver, new_node):
+                    # Advance tail — best effort (another thread may do it)
+                    self.tail.compare_and_set(tail_node, tail_ver, new_node)
+                    return
+            else:
+                # Tail is lagging — help advance it
+                self.tail.compare_and_set(tail_node, tail_ver, tail_next)
+
+    def dequeue(self):
+        while True:
+            head_node, head_ver = self.head.get()
+            tail_node, tail_ver = self.tail.get()
+            head_next, head_next_ver = head_node.next.get()
+
+            # Consistency check
+            current_head, current_head_ver = self.head.get()
+            if head_node is not current_head or head_ver != current_head_ver:
+                continue
+
+            if head_node is tail_node:
+                # Queue appears empty OR tail is lagging
+                if head_next is None:
+                    return None   # truly empty
+                # Tail is lagging behind — help advance it
+                self.tail.compare_and_set(tail_node, tail_ver, head_next)
+            else:
+                # Read value before CAS (node may be reclaimed after CAS)
+                value = head_next.value
+                if self.head.compare_and_set(head_node, head_ver, head_next):
+                    return value
+                # CAS failed → another thread dequeued — retry
+
+    def is_empty(self):
+        head_node, _ = self.head.get()
+        _, _ = head_node.next.get()
+        head_next, _ = head_node.next.get()
+        return head_next is None
+```
+
+### The ABA Problem Explained
+
+ABA occurs when:
+1. Thread T1 reads head → points to Node A (value=1)
+2. Thread T2 dequeues Node A, then enqueues Node A (same memory address), then dequeues something else — head now points to Node A again
+3. T1's CAS succeeds (head is still A!) but the queue state has changed
+
+**Fix**: Tag each atomic reference with a version counter. CAS checks both the pointer AND the version. Even if the same node is re-used, the version is different — CAS fails.
+
+```
+AtomicRef stores (value, version):
+  Before T2: head = (NodeA, version=5)
+  After T2:  head = (NodeA, version=6)   ← version changed
+  T1's CAS: expects (NodeA, version=5) → FAILS correctly
+```
+
+Our `AtomicRef` simulation already uses `_version` for this purpose. In Java: `AtomicStampedReference<Node>`. In C++: tagged pointer (store version in low bits of pointer).
 
 ---
 
-## ABA Prevention in Michael-Scott Queue
+## Verification
 
-The original M-S queue has a subtle ABA risk in the dequeue step if nodes are **reused** (memory pooled). 
+```
+Queue initialized: sentinel → null
+head = tail = sentinel
 
-**Solution in practice**: Java's GC prevents premature reuse. A dequeued node is not garbage-collected until all references to it are dropped. CAS will fail if it compares against a node that has been freed and reallocated at the same address (not possible in GC'd languages).
+Thread A: enqueue(10)
+  tail=sentinel, tail.next=None
+  CAS sentinel.next: None → Node(10) → succeeds
+  CAS tail: sentinel → Node(10) → succeeds
+  Queue: sentinel → Node(10), head=sentinel, tail=Node(10)
 
-In C/C++ (no GC), you must use hazard pointers or epoch-based reclamation to safely free nodes.
+Thread B: enqueue(20)
+  tail=Node(10), tail.next=None
+  CAS Node(10).next: None → Node(20) → succeeds
+  CAS tail: Node(10) → Node(20) → succeeds
+  Queue: sentinel → Node(10) → Node(20)
 
----
+Thread C: dequeue()
+  head=sentinel, tail=Node(20), head.next=Node(10)
+  head != tail (not empty)
+  value = Node(10).value = 10
+  CAS head: sentinel → Node(10) → succeeds
+  return 10
+  Queue: Node(10)[new sentinel] → Node(20)
 
-## Segment-Based Queue (for very high throughput)
+Thread D: dequeue()
+  head=Node(10), head.next=Node(20)
+  value = 20
+  CAS head: Node(10) → Node(20) → succeeds
+  return 20
+  Queue: Node(20)[sentinel] → null
 
-`ConcurrentLinkedQueue` has per-element CAS overhead. For extremely high throughput, use a **segmented/chunked queue**:
-
-- Each segment holds an array of N slots (e.g., N=64)
-- Enqueue: CAS on `tail.segment.slots[tail.index]` then increment index
-- When a segment is full, CAS a new segment onto the chain
-- Dequeue: similar logic on head segment
-
-Used in: Disruptor (LMAX), Agrona ManyToOne/OneToOne queues.
-
----
-
-## `java.util.concurrent.ConcurrentLinkedQueue` vs `LinkedBlockingQueue`
-
-| | `ConcurrentLinkedQueue` | `LinkedBlockingQueue` |
-|---|---|---|
-| **Algorithm** | Michael-Scott (lock-free) | ReentrantLock + 2 conditions |
-| **Blocking dequeue** | ❌ (returns null if empty) | ✅ (`take()` blocks) |
-| **Backpressure** | ❌ | ✅ (bounded variant) |
-| **Under low contention** | Slightly slower (CAS overhead) | Faster (no retry) |
-| **Under high contention** | Much faster (no blocking) | Degrades (lock contention) |
-| **Use case** | High-throughput producer/consumer | Task queues, thread pools |
-
-**When to use lock-free**: high throughput + low latency + contention is common + you don't need blocking semantics.
-
----
-
-## Interview Deep-Dive Questions
-
-1. **What makes the Michael-Scott queue lock-free rather than just thread-safe?**
-   Lock-free means at least one thread makes progress in any finite number of steps, regardless of other threads' states. The Michael-Scott queue achieves this via the "helping" mechanism in enqueue: if Thread A fails to advance `tail`, Thread B will advance it on A's behalf. There is no point where all threads can simultaneously be blocked — at worst, they spin, but the CAS that each thread attempts either succeeds for that thread or advances the queue for another thread.
-
-2. **Why is the sentinel/dummy node necessary? What would break without it?**
-   Without a dummy node, `head` and `tail` both point to the same node when the queue is empty. A concurrent dequeue reads `head.data` while an enqueue CASes `tail.next`. These two operations would need to be coordinated atomically — requiring a lock. The dummy node ensures `head` always points to a "wrapper" node whose data is never returned, so dequeue advances `head` to `head.next` (the real first element) without touching `tail`.
-
-3. **Describe the ABA problem with a concrete scenario on this queue. How does Java's GC help?**
-   Thread 1 reads `head` (pointing to Node X). Thread 2 dequeues X, dequeues Y, then enqueues a new node Z — but if memory is reused, Z might occupy the same address as X. Thread 1 CASes `head` from X to X.next — but X.next is now Z's next, which is wrong. Java's GC prevents this: Node X is not freed (and thus not reused) until Thread 1 drops its reference. The CAS will see the current object identity, not a recycled object. In C++, you need hazard pointers to protect against this.
+Thread E: dequeue()
+  head=Node(20), head.next=None, head==tail
+  head_next is None → return None (empty)
+```
 
 ---
 
-## See Also
+## Deep Dive & Extensibility
 
-- `06-lld/04-concurrency/concurrency-patterns.md` — Java Memory Model, happens-before, volatile
-- `06-lld/05-problems/25-design-concurrent-lru-cache.md` — Segment-based locking
-- `06-lld/05-problems/26-design-high-contention-counter.md` — CAS-based counters, LongAdder
-- `02-building-blocks/distributed-locks.md` — Distributed locking (Redis, ZooKeeper)
+### 1. "How would you make this bounded (max capacity)?"
+
+Add an `AtomicInteger` counter for the current size. Enqueue: increment size before adding node; if new size > capacity, decrement and return False. Dequeue: decrement size. The counter itself needs CAS to avoid races.
+
+### 2. "What's the memory reclamation problem in lock-free queues?"
+
+When Thread A dequeues Node X and frees it, Thread B might still hold a reference to X (read before the CAS). Freeing X while B holds it → use-after-free. Solutions:
+
+- **Hazard Pointers**: each thread registers nodes it's currently accessing; reclamation is deferred until no thread holds the hazard pointer
+- **Epoch-Based Reclamation**: threads announce their current epoch; memory freed in epoch E is only reclaimed when all threads have passed epoch E
+- **Reference Counting**: AtomicReference with shared_ptr (C++) — reclaim when count drops to 0
+
+In Java, GC handles this automatically (no manual reclamation).
+
+### 3. "How does this compare to a lock-based queue?"
+
+**Lock-based ConcurrentLinkedQueue**: Uses a lock (mutex). Simple to reason about correctness. One thread holds the lock — all others spin/block. Under high contention, throughput degrades.
+
+**Lock-free queue**: Threads never block each other — one thread's delay doesn't stall others. Progress is guaranteed (at least one thread always makes progress — "lock-freedom"). Higher throughput under contention. Complex to implement and reason about.
+
+### 4. "What is progress guarantee: lock-free vs wait-free?"
+
+- **Lock-free**: At least one thread makes progress at all times. A single thread might starve (keep failing CAS).
+- **Wait-free**: Every thread makes progress in a bounded number of steps — no starvation. Harder to implement (Michael-Scott is lock-free, not wait-free).
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**: Thread-safe queue using a mutex. Enqueue/dequeue with Lock. Explain why locks are needed.
+
+**Mid-level**: Explain CAS. Sketch the Michael-Scott algorithm. Sentinel node and why tail may lag. ABA problem and version counter fix.
+
+**Senior**: Full Michael-Scott implementation with AtomicRef + versioning. Memory reclamation (hazard pointers, epoch-based). Lock-free vs wait-free distinction. ABA problem and atomic tagged pointers.
+
+---
+
+## Common Interview Questions
+
+- **Q**: What is Compare-and-Swap (CAS)?
+  **A**: An atomic CPU instruction that reads a memory location, compares it to an expected value, and only updates it if they match — all as one uninterruptible operation. If the value changed (another thread modified it), CAS returns false and the caller retries. Enables lock-free synchronization.
+
+- **Q**: Why does the Michael-Scott queue use a sentinel node?
+  **A**: The sentinel (dummy head) simplifies edge cases. Head always points to the sentinel; the first real element is `head.next`. Empty queue: `head.next == null`. This avoids special-casing "enqueue to empty queue" vs "enqueue to non-empty queue."
+
+- **Q**: What is the ABA problem?
+  **A**: Thread T1 reads head=NodeA. Thread T2 dequeues NodeA, reuses its memory for a new node, re-enqueues it — head=NodeA again. T1's CAS(head, NodeA, newNode) succeeds, but the queue structure changed. Fix: version counter alongside the pointer — T2's reuse increments the version, so T1's CAS (expecting old version) fails.
+
+- **Q**: Why does the tail in Michael-Scott queue lag behind?
+  **A**: Enqueue is two-step: (1) CAS node.next to append, (2) CAS tail to advance. Between steps 1 and 2, tail is stale. Both enqueue and dequeue detect and help advance a lagging tail, ensuring eventual consistency.
+
+- **Q**: Is the Michael-Scott queue wait-free?
+  **A**: No — it's lock-free. A thread might repeatedly fail CAS (another thread always wins) and theoretically starve. In practice, random backoff prevents sustained starvation. True wait-free queues exist but are more complex.

@@ -2,446 +2,201 @@
 module: 05-hld-problems
 topic: Hard
 status: unread
-tags: [05-hld-problems, system-design, hard]
+tags: [05-hld-problems, system-design, hard, github, git, code-hosting, pull-requests, ci-cd]
 ---
-# Design a Code Repository Hosting Service (GitHub)
+# Design GitHub (Code Repository Hosting)
+
+> **Difficulty**: Hard | **Asked at**: Microsoft, GitLab, Atlassian, Amazon
+
+---
 
 ## Problem Statement
 
-Design a distributed code repository hosting platform that supports:
-- Git push/pull/clone for millions of repositories
-- Web-based code browsing, diff viewing, pull requests
-- CI/CD trigger pipeline on push events
-- 100M users, 400M repositories, peak load during business hours
+Design a code repository hosting platform like GitHub. Developers store Git repositories in the cloud, collaborate via pull requests, run code search, and trigger CI/CD pipelines. The system must handle millions of repositories, large binary files, and high-concurrency cloning during popular repository releases.
 
 ---
 
 ## Functional Requirements
 
-- Create/clone/push/pull Git repositories
-- Browse files and commit history via web UI
-- View diffs between commits and branches
-- Create, review, and merge pull requests
-- Webhook notifications on push/PR events
-- Trigger CI pipelines on push/merge
+1. **Repository hosting**: Create, clone, push, and pull Git repositories
+2. **Pull requests**: Create PRs, review code (comments, suggestions), merge
+3. **Code search**: Full-text search across all files in all repositories
+4. **Issues and discussions**: Bug tracker and conversation threads
+5. **Releases and tags**: Tag commits, create release archives (zip/tarball)
+6. **CI/CD**: Trigger webhooks on push/PR; integrate with Actions
+
+---
 
 ## Non-Functional Requirements
 
-- **Availability**: 99.95% (git push/pull must work even during incidents)
-- **Durability**: Zero data loss — a commit acked must be permanently stored
-- **Latency**: git push < 3s for repos < 100MB; web file browse < 100ms
-- **Scale**: 400M repos; 100M users; 10M git operations/day; 100K CI triggers/hour (peak)
-- **Storage**: ~50TB of repository data (compressed Git objects)
+- **Scale**: 100M repositories, 50M active developers, 10M git operations/day
+- **Latency**: `git clone` of a 100 MB repo < 10s; `git push` < 5s; code search < 1s
+- **Availability**: 99.99% — a git push must always succeed
+- **Storage**: 100M repos × 500 MB avg = 50 PB; with pack files and dedup: ~15 PB
+- **Concurrency**: 1,000 concurrent clones of `torvalds/linux` during Linus's release
 
 ---
 
-## Capacity Estimation
-
-```
-Repositories: 400M repos
-  Average repo size: 10MB (mostly small; long tail of large repos)
-  Total: 400M × 10MB = 4 PB of raw objects
-  With compression and deduplication: ~500 TB active, multi-PB archived
-
-Git operations:
-  100M users × 10 git operations/day = 1B operations/day = ~11,600 ops/sec
-  Peak (9 AM - 6 PM): 3× = ~35,000 ops/sec
-
-Web API requests:
-  File browse, PR views, commit history: 100M users × 50 API calls/day
-  = 5B calls/day = ~58,000 RPS average; peak ~200,000 RPS
-
-CI triggers:
-  Assume 20% of pushes trigger CI → 2M pushes/day → 23 triggers/sec avg
-  Peak: ~100,000 triggers/hour = ~28 triggers/sec
-
-Diffs served:
-  PR views: 10M PR views/day; avg diff = 500 lines
-  = 10M × 500 lines of diff HTML/JSON per day
-```
-
----
-
-## Git Internals (Foundation)
-
-Understanding Git storage is prerequisite to this design.
-
-### Object Types
-
-Git stores everything as content-addressable objects identified by SHA-1/SHA-256 hash:
-
-```
-Blob    → file contents (no filename, no path)
-Tree    → directory listing: list of (mode, name, SHA) for blobs and sub-trees
-Commit  → tree SHA + parent commit SHA(s) + author + message
-Tag     → named pointer to a commit
-```
-
-```
-Commit c1:
-  tree: t1
-  parent: c0
-  message: "Add login"
-
-Tree t1:
-  blob b1 "README.md" (SHA: abc123)
-  blob b2 "main.go"   (SHA: def456)
-  tree t2 "src/"      (SHA: ghi789)
-```
-
-**Content-addressable:** the same file content always has the same SHA. If two repos have identical files, they share the same blob SHA — this enables deduplication.
-
-### Packfiles
-
-Git initially stores each object as a loose file: `.git/objects/ab/cdef123...`. For large repos, this creates millions of small files (slow filesystem). Git `gc` packs them into **packfiles**:
-
-```
-packfile.pack:   binary; all objects delta-compressed against similar objects
-packfile.idx:    sorted index of (SHA → byte offset in pack)
-
-Delta compression: instead of storing full content of v2,
-  store: "v2 = v1 + these changes" (binary diff)
-  A 10KB file modified by 1 line: delta ≈ 100 bytes instead of 10KB
-```
-
-**Implication for the system:**
-- Pushing large repos: client sends a packfile (already delta-compressed), server unpacks to object store
-- Serving `git clone`: server assembles a packfile from requested objects and streams it
-
----
-
-## High-Level Architecture
-
-```
-                        ┌─────────────────────────────────┐
-                        │   Git Clients (git push/pull)    │
-                        │   Web Clients (browser, API)     │
-                        └──────────────────┬──────────────┘
-                                           │
-                    ┌──────────────────────┼──────────────────────┐
-                    │                      │                       │
-            ┌───────▼──────┐      ┌────────▼───────┐    ┌─────────▼──────┐
-            │  Git Smart   │      │   Web / REST   │    │    Webhook     │
-            │  HTTP / SSH  │      │   API Service  │    │    Fanout Svc  │
-            │  Gateway     │      │   (file browse,│    │  (CI triggers) │
-            └───────┬──────┘      │    PR, search) │    └─────────┬──────┘
-                    │             └────────┬───────┘              │
-                    │                      │                       │
-         ┌──────────▼──────────────────────▼──────────┐          │
-         │              Repository Service             │          │
-         │  (auth, routing to correct repo shard,      │          │
-         │   pack/unpack, ref updates)                 │          │
-         └──────────┬──────────────────────────────────┘          │
-                    │                                    ┌─────────▼──────┐
-         ┌──────────▼─────────┐                         │  Message Queue  │
-         │   Object Storage   │                         │  (Kafka/SQS)    │
-         │                    │                         └─────────┬───────┘
-         │ Git Object Store   │                                   │
-         │ (blobs, trees,     │                         ┌─────────▼───────┐
-         │  commits, tags)    │                         │  CI Orchestrator │
-         │ Sharded by repo_id │                         │  (job dispatch,  │
-         │ S3 / GCS / HDFS    │                         │  runner fleet)   │
-         └──────────┬─────────┘                         └─────────────────┘
-                    │
-         ┌──────────▼──────────┐
-         │   Metadata DB       │
-         │   (PostgreSQL)      │
-         │   - repos, users    │
-         │   - branches, refs  │
-         │   - PRs, comments   │
-         │   - permissions     │
-         └─────────────────────┘
-
-         ┌─────────────────────┐
-         │   Search Index      │
-         │   (Elasticsearch)   │
-         │   - code search     │
-         │   - commit messages │
-         └─────────────────────┘
-```
-
----
-
-## Deep Dive: Git Object Storage
-
-### Storage Strategy: Content-Addressable Object Store
-
-Each Git object is stored by its SHA hash. This maps perfectly to an object store (S3/GCS):
-
-```
-Key:   {repo_id}/{sha[0:2]}/{sha[2:]}    (mirrors Git's loose object layout)
-Value: zlib-compressed object bytes
-```
-
-For packfiles (large repos):
-```
-Key:   {repo_id}/packs/{pack_sha}.pack
-Key:   {repo_id}/packs/{pack_sha}.idx
-```
-
-**Deduplication at blob level:** Since blobs are addressed by content SHA, two repos with the same file share a single blob if using a global object store. GitHub implements this — a `node_modules` directory shared by 10M repos is stored once. This is why GitHub's storage efficiency is much better than 400M × avg_repo_size.
-
-**Sharding:** Repos are sharded by `repo_id` (consistent hash ring). All objects for a repo land on the same shard → pack/unpack operations are local to one node. Hot repos get dedicated shard instances.
-
-### Push Flow
-
-```
-1. Client: git push origin main
-   → client sends packfile over HTTPS (smart HTTP protocol)
-   → negotiation phase: client sends "have" list (commits it has), server sends "want" list
-
-2. Git Gateway:
-   → receives packfile stream
-   → authenticates: is user allowed to push to this repo?
-   → routes to correct shard (consistent hash on repo_id)
-
-3. Repository Service (on shard):
-   → unpack packfile → write loose objects to object store
-   → verify connectivity: walk object graph, ensure no dangling references
-   → update ref atomically: CAS on refs/heads/main → new commit SHA
-   → if ref update conflicts (non-fast-forward), reject push
-
-4. Post-receive hooks (async):
-   → publish push.event to Kafka: { repo_id, ref, old_sha, new_sha, pusher }
-   → Webhook fanout service consumes → delivers to registered webhook URLs
-   → CI trigger service consumes → creates CI job
-
-5. Return success to client
-```
-
-**Atomic ref update (preventing concurrent push conflicts):**
-```sql
-UPDATE refs
-SET sha = $new_sha
-WHERE repo_id = $repo_id AND ref_name = 'refs/heads/main' AND sha = $old_sha
--- rows_affected = 0 → conflict (another push landed first) → reject with "non-fast-forward"
-```
-
-### Clone Flow
-
-```
-1. Client: git clone https://github.com/org/repo.git
-2. Server: git upload-pack negotiates which objects client needs
-3. Server assembles packfile:
-   - Walk commit graph from requested refs
-   - Collect all reachable objects (commits + trees + blobs)
-   - Delta-compress against similar objects
-   - Stream packfile to client
-
-Performance: large repos (Linux kernel: 5GB packfile)
-  → Pre-computed shallow clones: cache packfiles for HEAD + recent N commits
-  → Partial clone: `git clone --filter=blob:none` (server sends tree+commits, not blobs)
-  → Client fetches blobs lazily on checkout
-```
-
----
-
-## Deep Dive: Diff Serving
-
-### On-Demand Diff
-
-For a PR with 50 changed files:
-```
-1. client requests diff: GET /repos/org/repo/compare/main...feature
-2. Repository Service:
-   a. Fetch base commit tree (main HEAD) and head commit tree (feature HEAD)
-   b. Walk both trees recursively, compare blob SHAs
-   c. For changed blobs: fetch both blob contents, compute unified diff
-   d. Return diff JSON with hunks
-```
-
-**Git's built-in diff algorithm:** Myers diff (default) or histogram diff (better for refactors). Both are O(N×M) where N and M are file sizes — fine for most files, slow for auto-generated large files.
-
-### Pre-Computed Diff Cache
-
-For popular PRs (many viewers), computing the diff on every request is wasteful.
-
-```
-On PR creation:
-  → compute diff asynchronously
-  → cache result: Redis key = "diff:{base_sha}:{head_sha}" TTL=24h
-  → if cache miss at serve time, compute on-demand and populate cache
-
-Cache strategy:
-  - SHA-addressed: same pair of SHAs always produces same diff → eternal cache validity
-  - Key: "diff:{repo_id}:{base_sha}:{head_sha}:{context_lines}"
-  - Store in Redis (< 1MB diffs) or S3 (> 1MB)
-  - Evict LRU; most diffs are viewed only a few times
-```
-
-**CDN caching:** Diff content is immutable (SHAs don't change) — can be cached at CDN with very long TTL (7 days). The URL `GET /compare/abc123...def456` always returns the same result.
-
----
-
-## Deep Dive: Webhook Fanout and CI Trigger Pipeline
-
-### Webhook Fanout
-
-On every push, GitHub delivers webhooks to potentially thousands of registered URLs (CI servers, Slack bots, deployment tools).
-
-```
-Push event → Kafka topic: "repo.push.events"
-  partition key: repo_id (order matters within a repo)
-
-Webhook Fanout Service (Kafka consumer):
-  1. Read push event
-  2. Fetch all registered webhooks for this repo + org (from DB, cached in Redis)
-  3. For each webhook:
-     a. Build payload: JSON with repo info, commits, pusher
-     b. Sign payload: HMAC-SHA256 with webhook secret → X-Hub-Signature-256 header
-     c. Enqueue HTTP delivery job to per-webhook queue
-
-HTTP Delivery Worker:
-  1. POST webhook URL with signed payload + 5-second timeout
-  2. On failure (5xx, timeout): retry with exponential backoff (1s, 5s, 30s, 2min, 10min)
-  3. After 5 retries: mark delivery as failed; alert repository admin
-  4. Log: delivery_id, timestamp, status_code, latency → visible in repo Settings > Webhooks
-```
-
-**Delivery ordering:** Webhook deliveries are best-effort, not guaranteed ordered. If a receiver needs ordering, they should use the `after` field (new commit SHA) to reconcile with git history.
-
-**Webhook security:** Receiver validates `X-Hub-Signature-256` header:
-```python
-expected = hmac.new(secret, payload, sha256).hexdigest()
-received = request.headers['X-Hub-Signature-256'].split('=')[1]
-if not hmac.compare_digest(expected, received):
-    return 403  # reject; may be replay or spoofed
-```
-
-### CI Trigger Pipeline
-
-```
-CI Trigger flow:
-  1. Webhook fanout publishes to "ci.trigger.requests" Kafka topic
-     Payload: { repo_id, sha, branch, trigger_type: "push|PR", config_ref }
-
-  2. CI Orchestrator:
-     a. Fetch .github/workflows/*.yml from the commit tree (blob lookup by path)
-     b. Parse workflow YAML: which events match this trigger?
-     c. For matching workflows: create job definitions
-     d. Assign jobs to runner fleet (weighted round-robin; priority queue for paid users)
-
-  3. Runner Selection:
-     GitHub-hosted runners: ephemeral VMs provisioned per job
-     Self-hosted runners: poll "ci.jobs.{runner_label}" Kafka topic
-     Job timeout: 6 hours (GitHub default); cancel on timeout
-
-  4. Job Execution:
-     a. Checkout code: git clone --depth=1 {repo} --branch {sha}
-     b. Set up environment (Docker image or VM)
-     c. Execute steps
-     d. Upload artifacts to S3 (artifact_id → S3 key)
-     e. Report status via REST API: PATCH /repos/{owner}/{repo}/statuses/{sha}
-
-  5. Status propagation:
-     Commit status updated → webhook to repo → PR merge gate can check status
-     Status API: GET /commits/{sha}/status → { state: "success|failure|pending" }
-```
-
-**Artifact storage:**
-```
-Artifacts: large test results, built binaries, coverage reports
-  Store in S3 with TTL (default 90 days)
-  Key: {org}/{repo}/{run_id}/{artifact_name}.zip
-  Download via signed S3 URL (no streaming through API servers)
-  Enforce quota per org to prevent abuse
-```
-
----
-
-## Deep Dive: Code Search
-
-Code search is distinct from commit history search:
-- **Code search**: find all files containing `func AuthMiddleware` across all repos
-- **Commit search**: find commits with "fix SQL injection" in message
-
-### Code Search Architecture
-
-```
-Indexing pipeline:
-  On push → extract changed files → parse into tokens (language-aware tokenizer)
-  Index: Elasticsearch or custom Codesearch engine (Zoekt — used by Sourcegraph/GitHub)
-
-Zoekt advantages over Elasticsearch for code:
-  - Trigram index: every 3-character sequence indexed → fast substring matching
-  - Language-aware: `func` in Go vs `function` in JS handled correctly
-  - N-gram sharding: indices shard by repo not by content (keeps repo data co-located)
-
-Query example:
-  Search: "func AuthMiddleware" language:go repo:myorg/*
-  → Trigram index: filter to files containing "Aut", "uth", "thM", "hMi", ...
-  → Rank by: exact match score, repo stars, recency
-  → Return: file path, line number, match context
-```
-
-**Scaling challenge:** Indexing 400M repos is expensive. GitHub prioritizes:
-1. Active repos (pushed to in last 30 days) — fully indexed
-2. Archived repos — index on demand, not pre-indexed
-3. Private repos — indexed in isolated tenant shards (security isolation)
-
----
-
-## Bottlenecks and Mitigations
-
-| Bottleneck | Mitigation |
-|---|---|
-| Large repo clones (monorepos, game assets) | Shallow clone, partial clone (blob:none), LFS for large binaries |
-| Hot repos (linux kernel: thousands of clones/hour) | Pre-computed packfile cache; dedicated CDN delivery for popular repos |
-| CI queue depth during mass push events | Priority queues (paid users first); backpressure to runners; autoscale runner fleet |
-| Diff computation for large PRs | Pre-compute on PR creation; cache SHA-addressed diffs indefinitely |
-| Ref update conflicts | Optimistic CAS on ref table; reject non-fast-forward pushes with clear error |
-| Webhook delivery reliability | Kafka for durability; retry with backoff; dead letter queue; per-endpoint circuit breaker |
+## Core Entities
+
+| Entity | Key Fields |
+|--------|-----------|
+| `Repository` | repo_id, owner_id, name, is_private, default_branch, disk_path, size_bytes |
+| `Commit` | sha (40-char hex), repo_id, tree_sha, parent_shas[], author, message, timestamp |
+| `Branch` | repo_id, name, head_commit_sha, is_protected |
+| `PullRequest` | pr_id, repo_id, title, author_id, head_branch, base_branch, status, created_at |
+| `PRReview` | review_id, pr_id, reviewer_id, body, state (approved/changes_requested) |
 
 ---
 
 ## API Design
 
+**Git protocol** (SSH/HTTPS Smart HTTP):
 ```
-Git Protocol:
-  git clone https://github.com/{owner}/{repo}.git       ← smart HTTP
-  git push  origin main                                  ← pack + ref update
-  git fetch origin                                       ← negotiated pack download
+git clone https://github.com/owner/repo.git
+  → HTTPS smart HTTP protocol:
+    GET /owner/repo.git/info/refs?service=git-upload-pack
+    POST /owner/repo.git/git-upload-pack (negotiation + pack data)
 
-REST API:
-  GET  /repos/{owner}/{repo}/contents/{path}?ref={sha}  → file content
-  GET  /repos/{owner}/{repo}/commits?sha={branch}       → commit list (paginated)
-  GET  /repos/{owner}/{repo}/compare/{base}...{head}    → diff
-  POST /repos/{owner}/{repo}/pulls                      → create PR
-  GET  /repos/{owner}/{repo}/pulls/{pr_number}          → PR details + reviews
-  POST /repos/{owner}/{repo}/merges                     → merge PR
-  GET  /repos/{owner}/{repo}/statuses/{sha}             → CI status for commit
-  POST /repos/{owner}/{repo}/hooks                      → register webhook
+git push origin main
+  → POST /owner/repo.git/git-receive-pack (refs + pack data)
 ```
 
----
+**REST API**:
+```http
+POST /api/v1/repos
+Body: { "name": "my-project", "private": true }
 
-## Trade-offs Summary
+POST /api/v1/repos/{owner}/{repo}/pulls
+Body: { "title": "Add feature X", "head": "feature-x", "base": "main" }
 
-| Decision | Choice | Reason |
-|---|---|---|
-| Object storage | Content-addressable (SHA) in S3/GCS | Immutable objects; natural deduplication; CDN-cacheable |
-| Sharding | By repo_id | All repo data co-located; pack/unpack is local |
-| Diff serving | On-demand + SHA-addressed cache | Immutable diffs; perfect cache hit rate after first view |
-| Webhook delivery | Kafka + async HTTP delivery workers | Decouples write path from delivery; durable; retryable |
-| CI triggers | Event-driven via Kafka | Decouples push from CI; CI scale independent of Git scale |
-| Code search | Trigram index (Zoekt) | Better substring matching than Elasticsearch for code |
+GET /api/v1/repos/{owner}/{repo}/contents/{path}?ref=main
+Response 200: { "type": "file", "content": "<base64>", "sha": "..." }
 
----
-
-## Quick Revision
-
-- **Core challenge**: storing billions of Git objects efficiently (content-addressable → SHA-keyed S3), serving clones without reading entire repo (negotiate + packfile), atomic ref updates (CAS)
-- **Diff serving**: SHA-addressed cache (SHAs are immutable → cache forever); pre-compute on PR creation
-- **CI triggers**: push → Kafka → CI orchestrator → runner pool; async, decoupled from git write path
-- **Webhooks**: Kafka for durability → HTTP delivery workers with retry; HMAC-signed payloads
-- **Code search**: trigram index for fast substring matching; sharded by repo for security isolation
+GET /api/v1/search/code?q=def+connect&repo=owner/repo&language=python
+Response 200: { "items": [{ "path": "db/connection.py", "line": 42, "text": "..." }] }
+```
 
 ---
 
-## See Also
+## High-Level Design
 
-- `05-hld-problems/03-hard/distributed-job-scheduler.md` — CI job scheduling patterns
-- `05-hld-problems/03-hard/search-system.md` — search index architecture
-- `02-building-blocks/message-brokers.md` — Kafka for webhook/CI event fanout
-- `01-foundations/change-data-capture.md` — CDC for ref update events
-- `04-advanced-topics/event-driven-architecture.md` — event-driven CI pipeline
+```
+Developer
+  │ git push / git clone (SSH or HTTPS)
+  ▼
+Git Frontend (nginx + git-http-backend or SSH server)
+  │ Auth → Route to correct repository server
+  ▼
+Repository Server
+  │ Git data: stored on local NFS or distributed object store
+  │ git-upload-pack (clone/fetch): read from bare repo
+  │ git-receive-pack (push): write to bare repo → run hooks
+  │
+  ├── Post-receive hook:
+  │     publish event to Kafka (push-events)
+  │     → trigger CI/CD webhooks
+  │     → update search index
+  │     → update PR status
+  │
+  └── Repository metadata: PostgreSQL
+
+Storage:
+  Git object store: S3 (pack files, loose objects)
+  NFS: local fast cache for hot repos
+  PostgreSQL: repositories, commits index, PRs, issues
+  Elasticsearch: code search index
+```
+
+---
+
+## Deep Dive 1: Git Storage at Scale
+
+**Problem**: 100M repositories × 500 MB = 50 PB of Git data. Git stores data as objects (blobs for file content, trees for directory structure, commits). How do you store this efficiently at scale?
+
+**Git's native deduplication**: Git content-addresses all objects by SHA-1 of their content. If two repositories have the same file, they share the same blob object. Popular open-source code (Linux headers, standard libraries) appears in millions of forks → stored once.
+
+**Pack files**: Git groups objects into pack files (`.pack`), compressed with zlib. A pack file contains delta-compressed objects — each object is stored as a delta against a similar object. A 500 MB repo may fit in a 50 MB pack file.
+
+**Storage backend**:
+- Actively cloned repos (hot): stored on NFS on the repository server. Direct filesystem access for fast read.
+- Inactive repos (cold): stored as pack files in S3. On first clone after cold tier, warm to NFS.
+- Very large repos (monorepos, Linux kernel): stored on dedicated high-capacity servers with SSD.
+
+**Forking**: When a repo is forked, GitHub does not copy the objects. The fork shares a "storage network" with the parent — both repos point to the same object store. `git push` to the fork writes only the new objects; shared objects are never duplicated. This is why GitHub forks are nearly instant regardless of repo size.
+
+---
+
+## Deep Dive 2: Code Search
+
+**Problem**: GitHub Code Search must find every file containing `def connect` across 100M repositories (~500B files, ~50 TB of source code). Return results in < 1 second.
+
+**Elasticsearch for code search**:
+- Index: one document per file, with fields: `repo_id, path, language, content`
+- Analyzer: code-specific tokenizer (splits on non-alphanumeric, preserves identifiers like `camelCase`, `snake_case`)
+- Search query: `{ "match": { "content": "def connect" } }` filtered by `repo_id` or `language`
+
+**Incremental indexing**: On every push, only re-index changed files. Kafka push-events → indexer consumer → Elasticsearch upsert.
+
+**Index size**: 50 TB of source code, compressed with Elasticsearch: ~10 TB. Sharded across 500 ES nodes (20 GB per node), searchable across all shards in parallel.
+
+**Trigram index** (GitHub's actual approach for regex search):
+- For regex-capable search (`/def\s+connect.*/`), Elasticsearch's inverted index is insufficient
+- Precompute all trigrams (3-char substrings) of all files
+- Store: trigram → list of (file_id, position)
+- Query `/def\s+connect/`: extract trigrams `def`, `ef `, `f c`, `con`, `onn`, `nne`, `nec`, `ect` → intersect file lists → verify regex on candidate files
+- Result: regex search on 50 TB code in < 2 seconds
+
+---
+
+## Deep Dive 3: Pull Request Merge and Branch Protection
+
+**Problem**: A PR has passed review and CI. Two developers simultaneously click "Merge" — only one merge should succeed.
+
+**Merge atomicity** (PostgreSQL):
+```sql
+UPDATE pull_requests
+SET status = 'merging',
+    merge_started_at = now()
+WHERE pr_id = :pr_id
+  AND status = 'open'  -- optimistic lock
+RETURNING pr_id;
+-- 0 rows: another request already started the merge
+```
+
+**Merge types**:
+- **Merge commit**: Preserves branch history; creates a merge commit. `git merge --no-ff`
+- **Squash and merge**: Squashes all PR commits into one. Clean linear history.
+- **Rebase and merge**: Replays PR commits on top of base branch. Linear history, no merge commit.
+
+**Branch protection rules** (enforced server-side in git-receive-pack hook):
+- Require status checks (CI must pass)
+- Require PR reviews (minimum N approved reviews)
+- Require signed commits
+- Prevent force push (reject non-fast-forward pushes to protected branches)
+
+**Post-merge actions** (Kafka push-event → downstream services):
+- Deploy: trigger deployment pipeline
+- Notification: notify PR author + reviewers of merge
+- Issue close: if PR body contains "Fixes #456", close issue 456
+- Code search: reindex changed files
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**:
+- What is a Git repository? What is the difference between `git clone` and `git pull`?
+- What is a pull request? What is the typical PR review flow?
+- What happens when two people push to the same branch at the same time?
+
+**Mid-level**:
+- How does GitHub store 100M repositories efficiently? What is Git's native deduplication?
+- How does fork work at the storage level? Why is forking a large repo nearly instant?
+- How do you prevent two people from merging the same PR simultaneously?
+
+**Senior**:
+- Design GitHub Code Search — how do you index 50 TB of source code for sub-second full-text and regex search?
+- How do you handle 1,000 concurrent clones of a hot repository (like the Linux kernel at release time)?
+- Design GitHub Actions — how do you trigger and orchestrate CI/CD pipelines on git push events?
+- How do you implement pull request code review with inline comments that survive rebases and force pushes?

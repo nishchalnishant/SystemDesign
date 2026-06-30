@@ -2,419 +2,346 @@
 module: 06-lld
 topic: Problems
 status: unread
-tags: [06-lld, system-design, problems]
+tags: [06-lld, lld, unlock-pattern, dfs, backtracking, constraint-validation]
 ---
-# Design Android Unlock Pattern
+# Design Unlock Pattern
 
 > **Difficulty**: Medium
-> **Topics**: Graph Theory, DFS/Backtracking, Constraint Validation
-> **Key Concepts**: Midpoint formula for skip detection, DFS for counting valid patterns, no-revisit constraint.
+> **Asked at**: Amazon, Google, LeetCode (Android Unlock Pattern)
+> **Key Patterns**: DFS / Backtracking, Adjacency constraint validation, Graph traversal
 
 ---
 
-## Real-Life Analogy
+## Understanding the Problem
 
-Imagine a **3×3 grid of 9 light switches** on your wall, numbered 1–9 in reading order. You draw a path by flipping switches in sequence. The rules: each switch can only be flipped once (no revisit), you need to flip at least 4 in a row, and — the tricky rule — if two switches are directly across from each other with another switch exactly in between, you must have flipped the middle one first.
-
-For example, switches 1 and 3 are in the same row with switch 2 between them. You cannot jump from 1 directly to 3 unless you've already flipped switch 2. Same for switches 1, 5, 9 along the diagonal — going from 1 to 9 requires that 5 has already been visited. But going from 1 to 6 (a knight's-move-style jump) has nothing in between on the grid, so it's always valid.
-
-The engineering insight: you don't need a hardcoded adjacency table. The **midpoint formula** detects whether an integer grid node lies exactly between two nodes. If `(r1+r2)` is even AND `(c1+c2)` is even, then the midpoint `((r1+r2)/2, (c1+c2)/2)` is an integer grid coordinate — it must already be visited. Otherwise the path between the two nodes passes through no grid point, so the move is unconditionally valid.
+Design the Android unlock pattern system. A 3×3 grid of dots (numbered 1–9). The user draws a pattern by connecting dots. Count (or validate) all valid patterns of a given length, subject to skip constraints.
 
 ---
 
-## Phase 1: Requirements
+## Clarifying Questions
 
-### Functional Requirements
-- **Validate a pattern**: Accept a sequence of grid points; return true if it satisfies all constraints.
-  - Minimum 4 dots.
-  - No dot visited more than once.
-  - Skip rule: if a grid node lies exactly on the line segment between two consecutive dots, that node must already have been visited.
-- **Set a saved pattern**: Hash and store a valid pattern as the device's lock.
-- **Unlock**: Accept an input pattern; compare its hash against the saved pattern.
-- **Count valid patterns**: DFS to enumerate all valid patterns of length k (for security analysis).
+**You**: "What makes a pattern invalid?"
+**Interviewer**: "If drawing a line between two dots passes through a third dot, that third dot must have already been visited."
 
-### Non-Functional Requirements
-- **Correctness**: The midpoint formula must correctly identify all skip-requiring nodes.
-- **Latency**: Validation of a 9-dot pattern must complete in <1ms (trivially, since N=9).
-- **Security**: Store hashed pattern (not the raw sequence); apply exponential backoff after failed attempts.
+**You**: "Do we count all valid patterns of a given length, or validate a specific pattern?"
+**Interviewer**: "Both — count all valid patterns of length m to n, and validate a given sequence."
 
-### Concurrency Constraints
-- Single-user, single-thread validation. No concurrency needed.
-- Attempt throttling (for security) uses a timestamp stored alongside the hash; the check is atomic if protected by a file lock or DB transaction.
+**You**: "Is the grid always 3×3?"
+**Interviewer**: "Yes."
+
+**You**: "Does order matter — is 1→2→3 different from 3→2→1?"
+**Interviewer**: "Yes, order matters. Different patterns."
+
+**You**: "Minimum pattern length?"
+**Interviewer**: "Minimum 4 dots, maximum 9."
 
 ---
 
-## Phase 2: Use Cases
+## Final Requirements
 
-### Actors
-- **User**: Draws a pattern on the touchscreen.
-- **PatternLockSystem**: Validates the pattern; stores or compares the hash.
+**In scope:**
+1. Count all valid unlock patterns of length m to n (1 ≤ m ≤ n ≤ 9)
+2. Validate whether a given sequence of dot indices is a valid unlock pattern
+3. Precompute the "skip" map: if going from A to B skips through C, C must be visited
 
-### UC1: Set a Lock Pattern
-**Actor**: User
-**Flow**:
-1. User draws a sequence of dots: `[0,0] → [1,0] → [2,0] → [2,1]`.
-2. System calls `validator.isValid(pattern)`.
-3. Validator checks: length ≥ 4, no duplicates, skip rule for each consecutive pair.
-4. If valid: hash the sequence, store as `savedHash`.
-5. Confirm: "Pattern set."
-
-### UC2: Unlock
-**Actor**: User
-**Flow**:
-1. User draws pattern.
-2. System hashes the input sequence.
-3. Compares with `savedHash`. If equal, unlock. If not, increment attempt counter; apply backoff after 5 failures.
-
-### UC3: Invalid Skip
-**Actor**: User
-**Flow**:
-1. User draws `[0,0] → [0,2]` (row 0, col 0 to row 0, col 2).
-2. Midpoint: row=(0+0)/2=0, col=(0+2)/2=1 → grid node `[0,1]`.
-3. `[0,1]` not in visited set → move is invalid → pattern rejected.
+**Out of scope:**
+- UI / rendering
+- Actual Android touch gesture recognition
+- Storing or authenticating patterns against a saved password
 
 ---
 
-## Phase 3: Class Diagram
+## Core Entities and Relationships
 
-### Core Entities
-- **PatternLockSystem**: Facade. Stores the hashed pattern; delegates validation; tracks attempt count.
-- **PatternValidator**: Strategy interface for validation rules. `DefaultValidator` implements the 3×3 rules.
-- **Point**: Value object — `(row, col)` on the 3×3 grid; index = `row*3 + col`.
-- **PatternCounter**: Utility that uses DFS to count all valid patterns of a given minimum length (useful for security audits).
+| Entity | Responsibility |
+|--------|---------------|
+| `UnlockPatternGrid` | 3×3 grid; precomputes skip constraints |
+| `PatternValidator` | Validates a given dot sequence |
+| `PatternCounter` | Counts valid patterns via DFS with backtracking |
+| `SkipMap` | `skip[a][b] = c` means going a→b crosses dot c |
 
-### Key Design Decisions
-- **Midpoint formula, not a hardcoded skip table**: `if ((r1+r2)%2==0 && (c1+c2)%2==0)` → there is a grid node at `((r1+r2)/2, (c1+c2)/2)` that must be visited. This correctly handles all 8 "skippable" pairs (horizontal, vertical, and two diagonals) without any magic arrays.
-- **`PatternValidator` as a Strategy interface**: The lock system accepts any validator — a 4×4 grid variant or a "repeats allowed" variant can be injected without changing `PatternLockSystem`.
-- **Hash the sequence, not the path**: The stored value is a string hash of the index sequence. The raw sequence is discarded — smudge attacks can see which nodes were touched, but not the order.
+The core logic is DFS backtracking constrained by the skip map. The skip map is precomputed once at initialization.
 
-```mermaid
-classDiagram
-    class PatternLockSystem {
-        -String savedHash
-        -PatternValidator validator
-        -int failedAttempts
-        -Instant lockoutUntil
-        +setPattern(List~Point~ pattern) boolean
-        +unlock(List~Point~ pattern) boolean
-        -hash(List~Point~ pattern) String
-    }
+---
 
-    class PatternValidator {
-        <<interface>>
-        +isValid(List~Point~ pattern) boolean
-    }
+## Class Design
 
-    class DefaultPatternValidator {
-        -static int MIN_LENGTH = 4
-        +isValid(List~Point~ pattern) boolean
-        -getMidpoint(Point a, Point b) Optional~Point~
-    }
+### UnlockPatternGrid
 
-    class Point {
-        +int row
-        +int col
-        +int index()
-        +equals(Object)
-        +hashCode()
-    }
+```
+class UnlockPatternGrid:
+- skip: dict[tuple, int]   # (a, b) → c, or empty if no skip
 
-    class PatternCounter {
-        +countValid(int minLength, int maxLength) int
-        -dfs(int node, Set~Integer~ visited, int length, int minLength) int
-    }
++ __init__()   # precompute skip map
++ get_skip(a, b) -> Optional[int]   # 0-indexed dot numbers
+```
 
-    PatternLockSystem --> PatternValidator
-    PatternValidator <|.. DefaultPatternValidator
-    DefaultPatternValidator --> Point
-    PatternCounter --> Point
+### PatternValidator
+
+```
+class PatternValidator:
+- grid: UnlockPatternGrid
+
++ is_valid(pattern: list[int]) -> bool
+```
+
+### PatternCounter
+
+```
+class PatternCounter:
+- grid: UnlockPatternGrid
+
++ count_patterns(min_len: int, max_len: int) -> int
++ _dfs(current: int, visited: set[int], remaining: int) -> int
 ```
 
 ---
 
-## Phase 4: Design Patterns Applied
+## Implementation
 
-### 1. Strategy Pattern (PatternValidator)
-**What**: `PatternValidator` is an interface injected into `PatternLockSystem`. `DefaultPatternValidator` implements 3×3 rules; a `LenientValidator` could allow revisits or shorter patterns.
-**Why**: Android devices ship with different security policies (some enterprise builds allow 3-dot patterns; some grids are 4×4). Making the validator pluggable isolates the rule logic from the system's storage and hashing concerns — changing the rules means swapping the strategy, not editing the lock system.
+### Precomputing the Skip Map
 
-### 2. DFS / Backtracking (Pattern Counting)
-**What**: `PatternCounter` uses DFS from each starting node, tracking the visited set, and recursively extending the path while the skip rule is satisfied. It accumulates a count of all paths of length ≥ `minLength`.
-**Why**: The total number of valid patterns (389,112 for 3×3 with min length 4) cannot be computed analytically without exhaustive enumeration. DFS with backtracking is the canonical way to explore this combinatorial space — it's correct, and O(9!) is only ~362,880 total paths, completing in microseconds.
+Dots are numbered 1–9, arranged in a 3×3 grid:
+```
+1 2 3
+4 5 6
+7 8 9
+```
 
-### 3. Facade Pattern (PatternLockSystem)
-**What**: `PatternLockSystem` provides three simple methods (`setPattern`, `unlock`, `isLockedOut`) that hide the validator, hashing, and attempt-throttling internals.
-**Why**: The caller (the Android UI layer) should not know about skip rules, SHA-256 hashing, or backoff timers. The facade makes the contract simple: draw a pattern, get a boolean.
+For each pair (a, b), check if the segment passes through a midpoint. A midpoint c exists when a and b are symmetric around c (i.e., `c = (a + b) / 2` is an integer) AND a, b, c share the same row, column, or diagonal.
 
----
-
-## Phase 5: Key Java Implementation
-
-The interesting parts: (a) the **midpoint formula** for skip detection, (b) the **`isValid` loop** that uses it, and (c) the **DFS counter** for computing total valid pattern count.
-
-```java
-import java.util.*;
-import java.security.*;
-
-// --- Point: grid position on a 3x3 board ---
-class Point {
-    final int row, col;
-
-    Point(int row, int col) {
-        this.row = row;
-        this.col = col;
-    }
-
-    // Unique integer index: 0..8
-    int index() { return row * 3 + col; }
-
-    @Override
-    public boolean equals(Object o) {
-        if (!(o instanceof Point)) return false;
-        Point p = (Point) o;
-        return row == p.row && col == p.col;
-    }
-
-    @Override
-    public int hashCode() { return Objects.hash(row, col); }
-
-    @Override
-    public String toString() { return "(" + row + "," + col + ")"; }
-}
-
-// --- PatternValidator interface (Strategy) ---
-interface PatternValidator {
-    boolean isValid(List<Point> pattern);
-}
-
-// --- DefaultPatternValidator: implements 3x3 Android rules ---
-class DefaultPatternValidator implements PatternValidator {
-    private static final int MIN_LENGTH = 4;
-    private static final int GRID_SIZE  = 3;
-
-    @Override
-    public boolean isValid(List<Point> pattern) {
-        if (pattern == null || pattern.size() < MIN_LENGTH) return false;
-
-        Set<Point> visited = new HashSet<>();
-        visited.add(pattern.get(0));
-
-        for (int i = 0; i < pattern.size() - 1; i++) {
-            Point curr = pattern.get(i);
-            Point next = pattern.get(i + 1);
-
-            // Constraint 1: no dot visited twice
-            if (visited.contains(next)) return false;
-
-            // Constraint 2: bounds check
-            if (next.row < 0 || next.row >= GRID_SIZE ||
-                next.col < 0 || next.col >= GRID_SIZE) return false;
-
-            // Constraint 3: skip rule — check if an integer grid node lies exactly
-            // on the straight line between curr and next.
-            Optional<Point> mid = getMidpoint(curr, next);
-            if (mid.isPresent() && !visited.contains(mid.get())) {
-                // There IS a grid node between them, and it hasn't been visited yet
-                return false;
-            }
-
-            visited.add(next);
+```python
+class UnlockPatternGrid:
+    def __init__(self):
+        # Dots 1-9, row/col as (row, col) 0-indexed
+        self.pos = {
+            1: (0,0), 2: (0,1), 3: (0,2),
+            4: (1,0), 5: (1,1), 6: (1,2),
+            7: (2,0), 8: (2,1), 9: (2,2)
         }
-        return true;
-    }
+        self.skip = {}
+        self._precompute_skips()
 
-    // Returns the integer grid node exactly between a and b, if one exists.
-    //
-    // Key insight: if (a.row + b.row) is EVEN and (a.col + b.col) is EVEN,
-    // the midpoint ((a.row+b.row)/2, (a.col+b.col)/2) is an integer coordinate.
-    // On a 3x3 grid, any integer coordinate in [0,2]x[0,2] is a real dot.
-    //
-    // Examples:
-    //   (0,0)→(0,2): rowSum=0 (even), colSum=2 (even) → mid=(0,1)  [must be visited]
-    //   (0,0)→(2,2): rowSum=2 (even), colSum=2 (even) → mid=(1,1)  [must be visited]
-    //   (0,0)→(1,2): rowSum=1 (odd)                   → no mid     [always valid]
-    //   (0,0)→(2,1): rowSum=2 (even), colSum=1 (odd)  → no mid     [always valid]
-    private Optional<Point> getMidpoint(Point a, Point b) {
-        int rowSum = a.row + b.row;
-        int colSum = a.col + b.col;
+    def _precompute_skips(self):
+        dots = list(self.pos.keys())
+        for a in dots:
+            for b in dots:
+                if a == b:
+                    continue
+                ra, ca = self.pos[a]
+                rb, cb = self.pos[b]
+                # midpoint is an integer only when a+b is even and they are collinear
+                mid_r = (ra + rb)
+                mid_c = (ca + cb)
+                if mid_r % 2 == 0 and mid_c % 2 == 0:
+                    mid = (mid_r // 2, mid_c // 2)
+                    # find dot at mid position
+                    for c, pos in self.pos.items():
+                        if pos == mid and c != a and c != b:
+                            self.skip[(a, b)] = c
+                            break
 
-        if (rowSum % 2 != 0 || colSum % 2 != 0) {
-            return Optional.empty(); // Fractional midpoint — no grid node between them
-        }
+    def get_skip(self, a, b):
+        return self.skip.get((a, b))
+```
 
-        return Optional.of(new Point(rowSum / 2, colSum / 2));
-    }
-}
+**Skip examples:**
+- 1 → 3: passes through 2 (same row, midpoint)
+- 1 → 7: passes through 4 (same column)
+- 1 → 9: passes through 5 (main diagonal)
+- 3 → 7: passes through 5 (anti-diagonal)
+- 1 → 6: NO skip (knight move — no dot on the path)
 
-// --- PatternLockSystem: facade ---
-class PatternLockSystem {
-    private String savedHash;
-    private final PatternValidator validator;
-    private int failedAttempts = 0;
-    private static final int MAX_ATTEMPTS = 5;
+### Core Method: `PatternCounter._dfs`
 
-    PatternLockSystem(PatternValidator validator) {
-        this.validator = validator;
-    }
+**Core logic:**
+1. If remaining == 0: found a valid pattern of the target length → return 1
+2. For each unvisited dot next_dot:
+   a. Check if going from current → next_dot requires a skip dot
+   b. If skip dot exists and is NOT visited → invalid move, skip
+   c. Otherwise: mark next_dot visited, recurse, unmark (backtrack)
 
-    boolean setPattern(List<Point> pattern) {
-        if (!validator.isValid(pattern)) {
-            System.out.println("Invalid pattern — not saved.");
-            return false;
-        }
-        savedHash = hash(pattern);
-        System.out.println("Pattern saved (hash=" + savedHash.substring(0, 8) + "...)");
-        return true;
-    }
+```python
+class PatternCounter:
+    def __init__(self, grid):
+        self.grid = grid
 
-    boolean unlock(List<Point> pattern) {
-        if (failedAttempts >= MAX_ATTEMPTS) {
-            System.out.println("Account locked. Too many failed attempts.");
-            return false;
-        }
-        if (!validator.isValid(pattern) || savedHash == null) {
-            failedAttempts++;
-            System.out.println("Unlock failed (" + failedAttempts + "/" + MAX_ATTEMPTS + " attempts).");
-            return false;
-        }
-        if (hash(pattern).equals(savedHash)) {
-            failedAttempts = 0;
-            System.out.println("Unlocked!");
-            return true;
-        }
-        failedAttempts++;
-        System.out.println("Wrong pattern (" + failedAttempts + "/" + MAX_ATTEMPTS + " attempts).");
-        return false;
-    }
+    def count_patterns(self, min_len, max_len):
+        total = 0
+        for start in range(1, 10):
+            visited = {start}
+            for length in range(min_len - 1, max_len):
+                total += self._dfs(start, visited, length)
+            # Note: _dfs counts patterns where remaining more dots are needed
+        return total
 
-    private String hash(List<Point> pattern) {
-        try {
-            StringBuilder sb = new StringBuilder();
-            for (Point p : pattern) sb.append(p.index()).append(",");
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(sb.toString().getBytes());
-            StringBuilder hex = new StringBuilder();
-            for (byte b : digest) hex.append(String.format("%02x", b));
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) { throw new RuntimeException(e); }
-    }
-}
+    def _dfs(self, current, visited, remaining):
+        if remaining == 0:
+            return 1
+        count = 0
+        for next_dot in range(1, 10):
+            if next_dot in visited:
+                continue
+            skip = self.grid.get_skip(current, next_dot)
+            if skip and skip not in visited:
+                continue   # skip dot not yet visited — invalid move
+            visited.add(next_dot)
+            count += self._dfs(next_dot, visited, remaining - 1)
+            visited.remove(next_dot)
+        return count
 
-// --- PatternCounter: DFS to count all valid patterns ---
-// Uses indices 0-8 (index = row*3+col) and the same skip rule.
-class PatternCounter {
-    // skip[i][j] = the index of the node that must be visited before moving i→j,
-    // or -1 if no skip constraint exists.
-    // Computed once from the midpoint formula.
-    private final int[][] skip = new int[9][9];
+    def count_patterns_range(self, min_len, max_len):
+        total = 0
+        for start in range(1, 10):
+            for target_len in range(min_len, max_len + 1):
+                visited = {start}
+                total += self._dfs(start, visited, target_len - 1)
+        return total
+```
 
-    PatternCounter() {
-        Arrays.stream(skip).forEach(row -> Arrays.fill(row, -1)); // Default: no skip
+### Core Method: `PatternValidator.is_valid`
 
-        for (int i = 0; i < 9; i++) {
-            for (int j = 0; j < 9; j++) {
-                int r1 = i / 3, c1 = i % 3;
-                int r2 = j / 3, c2 = j % 3;
-                int rowSum = r1 + r2, colSum = c1 + c2;
-                if (rowSum % 2 == 0 && colSum % 2 == 0) {
-                    // Integer midpoint exists at (rowSum/2, colSum/2)
-                    skip[i][j] = (rowSum / 2) * 3 + (colSum / 2);
-                }
-            }
-        }
-    }
+```python
+class PatternValidator:
+    def __init__(self, grid):
+        self.grid = grid
 
-    // Count all valid patterns with length in [minLen, maxLen]
-    int countValid(int minLen, int maxLen) {
-        int total = 0;
-        boolean[] visited = new boolean[9];
-        for (int start = 0; start < 9; start++) {
-            visited[start] = true;
-            total += dfs(start, visited, 1, minLen, maxLen);
-            visited[start] = false;
-        }
-        return total;
-    }
+    def is_valid(self, pattern):
+        if len(pattern) < 4 or len(pattern) > 9:
+            return False
+        if len(set(pattern)) != len(pattern):
+            return False  # duplicate dots
+        if any(d < 1 or d > 9 for d in pattern):
+            return False
 
-    private int dfs(int curr, boolean[] visited, int pathLen, int minLen, int maxLen) {
-        int count = (pathLen >= minLen) ? 1 : 0; // Count this path if long enough
+        visited = set()
+        for i, dot in enumerate(pattern):
+            if i > 0:
+                prev = pattern[i - 1]
+                skip = self.grid.get_skip(prev, dot)
+                if skip and skip not in visited:
+                    return False
+            visited.add(dot)
 
-        if (pathLen == maxLen) return count; // Reached max depth
-
-        for (int next = 0; next < 9; next++) {
-            if (visited[next]) continue; // Already in path
-
-            // Skip rule: if there's a required intermediate node, it must be visited
-            int mid = skip[curr][next];
-            if (mid != -1 && !visited[mid]) continue; // Skip node not yet visited
-
-            visited[next] = true;
-            count += dfs(next, visited, pathLen + 1, minLen, maxLen);
-            visited[next] = false;
-        }
-
-        return count;
-    }
-
-    // --- Demo ---
-    public static void main(String[] args) {
-        // Validate patterns
-        PatternLockSystem system = new PatternLockSystem(new DefaultPatternValidator());
-
-        // Valid L-shape: (0,0)→(1,0)→(2,0)→(2,1) — all adjacent, no skips
-        List<Point> valid = Arrays.asList(
-            new Point(0,0), new Point(1,0), new Point(2,0), new Point(2,1)
-        );
-        system.setPattern(valid);
-        system.unlock(valid);   // Should unlock
-
-        // Invalid skip: (0,0)→(0,2) skips (0,1) which hasn't been visited
-        List<Point> invalidSkip = Arrays.asList(
-            new Point(0,0), new Point(0,2), new Point(1,1), new Point(2,0)
-        );
-        system.setPattern(invalidSkip); // Should print "Invalid pattern"
-
-        // Valid: (0,0)→(0,1)→(0,2) — visited (0,1) first, so (0,0)→(0,2) would be ok later
-        List<Point> validSkip = Arrays.asList(
-            new Point(0,0), new Point(0,1), new Point(0,2), new Point(1,1)
-        );
-        system.setPattern(validSkip);
-
-        // Count all valid patterns
-        PatternCounter counter = new PatternCounter();
-        int total = counter.countValid(4, 9);
-        System.out.println("\nTotal valid patterns (length 4-9): " + total);
-        // Expected: 389,112
-    }
-}
+        return True
 ```
 
 ---
 
-## Phase 6: Trade-offs and Extensions
+## Verification
 
-### Trade-off: Midpoint formula vs. hardcoded skip table
-| Approach | Pros | Cons |
-|---|---|---|
-| Midpoint formula | Generalizes to any NxN grid; no magic arrays | Requires understanding of the math |
-| Hardcoded skip table | Explicit, easy to read for 3×3 | Breaks on 4×4 or non-square grids; error-prone to write |
+```
+Grid dot positions:
+  1(0,0) 2(0,1) 3(0,2)
+  4(1,0) 5(1,1) 6(1,2)
+  7(2,0) 8(2,1) 9(2,2)
 
-The midpoint formula is strictly superior for any production implementation. The 3×3 skip table has exactly 8 pairs that require a midpoint: (0,2), (2,0), (6,8), (8,6) — horizontal/vertical — and (0,8), (8,0), (2,6), (6,2) — diagonal. The formula derives all 8 without enumeration.
+Skip precomputation:
+  (1,3): mid=(0,1)=dot2 → skip[1,3]=2
+  (1,9): mid=(1,1)=dot5 → skip[1,9]=5
+  (3,7): mid=(1,1)=dot5 → skip[3,7]=5
+  (2,8): mid=(1,1)=dot5 → skip[2,8]=5
+  (4,6): mid=(1,1)=dot5 → skip[4,6]=5
+  (1,7): mid=(1,0)=dot4 → skip[1,7]=4
 
-### Extension: 4×4 Grid
-Replace `GRID_SIZE = 3` with `GRID_SIZE = 4` and adjust `index() = row * 4 + col`. The midpoint formula works identically — no other code changes needed. On a 4×4 grid, many more pairs have a skip requirement (e.g., (0,0)→(0,2) has midpoint (0,1); (0,0)→(0,3) has midpoint (0,1.5) — not an integer, so no skip needed).
+Validate pattern [1, 2, 3, 6]:
+  1→2: skip? (1,2)→mid=(0,0.5) not integer → no skip. visited={1}. add 2
+  2→3: skip? (2,3)→mid=(0,1.5) not integer → no skip. visited={1,2}. add 3
+  3→6: skip? (3,6)→mid=(0.5,2) not integer → no skip. visited={1,2,3}. add 6
+  → valid ✓
 
-### Extension: Security Throttling
-After `MAX_ATTEMPTS` failures, set `lockoutUntil = Instant.now().plus(duration)` with exponential backoff: first lockout = 30s, second = 60s, third = 5 min, fourth = 30 min, fifth = wipe. Check `Instant.now().isAfter(lockoutUntil)` on each unlock attempt.
+Validate pattern [1, 3, 9, 7]:
+  1→3: skip dot=2, visited={}? 2 not visited → INVALID ✗
 
-### Extension: Pattern Strength Meter
-Use `PatternCounter.dfs` logic inversely — count how many other patterns share the same starting node, same length, and same first segment direction. A pattern that starts with a common move (e.g., horizontal) is statistically weaker. Assign a "strength score" based on directional uniqueness and path length.
+Validate pattern [2, 1, 3, 9]:
+  2→1: no skip. visited={2}. add 1
+  1→3: skip dot=2, visited={2}? 2 IS visited → allowed. add 3
+  3→9: no skip (3,9)→mid=(1,2.5) not integer. add 9
+  → valid ✓
+```
 
 ---
 
-## SOLID Principles
-- **S**: `DefaultPatternValidator` owns the skip logic; `PatternLockSystem` owns auth state and throttling; `PatternCounter` owns the DFS enumeration.
-- **O**: New validation rules (allow revisits, 4×4 grid) extend `PatternValidator` without changing `PatternLockSystem`.
-- **L**: `DefaultPatternValidator` and any future `LenientValidator` are interchangeable anywhere `PatternValidator` is expected.
-- **I**: `PatternValidator` has a single method (`isValid`) — no fat interface.
-- **D**: `PatternLockSystem` depends on the `PatternValidator` abstraction injected at construction, not on `DefaultPatternValidator` directly.
+## Deep Dive & Extensibility
+
+### 1. "Can you use symmetry to speed up the count?"
+
+Yes. The 3×3 grid has 8 symmetries (4 rotations × 2 reflections). Corners (1,3,7,9) are symmetric, edge midpoints (2,4,6,8) are symmetric, and center (5) is unique. Count patterns starting from one corner, multiply by 4; one edge midpoint, multiply by 4; center, multiply by 1:
+
+```python
+def count_patterns_optimized(self, min_len, max_len):
+    total = 0
+    for target_len in range(min_len, max_len + 1):
+        # Corner: 4 symmetric corners (1, 3, 7, 9)
+        visited = {1}
+        total += 4 * self._dfs(1, visited, target_len - 1)
+        # Edge midpoint: 4 symmetric midpoints (2, 4, 6, 8)
+        visited = {2}
+        total += 4 * self._dfs(2, visited, target_len - 1)
+        # Center: unique
+        visited = {5}
+        total += self._dfs(5, visited, target_len - 1)
+    return total
+```
+
+This reduces DFS calls from 9 starting points to 3.
+
+### 2. "How do you count patterns of length 4 to 9?"
+
+Call the DFS for each starting dot, for each target length in [4, 9]:
+
+```python
+def count_range(self, min_len, max_len):
+    return sum(
+        self._dfs(start, {start}, length - 1)
+        for start in range(1, 10)
+        for length in range(min_len, max_len + 1)
+    )
+```
+
+### 3. "What if the grid is n × n instead of 3 × 3?"
+
+Generalize: dots are numbered 1 to n², positions computed from `(i // n, i % n)`. Skip detection still uses midpoint arithmetic. DFS structure is unchanged — only the dot count and position map change.
+
+### 4. "How would you store and verify a user's unlock pattern?"
+
+Store the hashed pattern (SHA256 of the dot sequence as a string) — never the raw sequence:
+
+```python
+def store_pattern(self, pattern):
+    self.pattern_hash = hashlib.sha256(str(pattern).encode()).hexdigest()
+
+def verify_pattern(self, input_pattern):
+    if not PatternValidator(self.grid).is_valid(input_pattern):
+        return False
+    return hashlib.sha256(str(input_pattern).encode()).hexdigest() == self.pattern_hash
+```
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**: Build the 3×3 grid. Validate a given pattern (no duplicate dots, length 4–9). Skip constraint check for same-row/column/diagonal pairs.
+
+**Mid-level**: Precompute skip map. DFS backtracking with visited set. Count all valid patterns of a given length. Symmetry optimization (3 starting types instead of 9).
+
+**Senior**: Generalize to n×n grid. Hashing for secure pattern storage. DFS time complexity analysis: O(9! / (9-k)!) patterns = O(9!) worst case. Pruning via skip constraints.
+
+---
+
+## Common Interview Questions
+
+- **Q**: What is the skip constraint in the unlock pattern problem?
+  **A**: If drawing a line from dot A to dot B passes through dot C (A, B, C are collinear with C at the midpoint), then C must have been visited before this move. Otherwise the move is invalid.
+
+- **Q**: How do you detect if going from A to B skips through C?
+  **A**: C is the midpoint of A and B if `(row_A + row_B) / 2 == row_C` and `(col_A + col_B) / 2 == col_C`. Since dot positions are integers, the midpoint is only a dot when both sums are even. Precompute all such (A, B) → C mappings once.
+
+- **Q**: Why backtracking and not BFS for counting?
+  **A**: BFS enumerates level by level — hard to track the visited set per path. DFS with backtracking naturally maintains a per-path visited set: add a dot, recurse, then remove it. Counting all paths of length k is inherently a DFS problem.
+
+- **Q**: What is the time complexity of counting valid patterns?
+  **A**: O(9!) in the worst case (9 starting dots, each exploring all permutations of remaining 8). In practice, skip constraints prune many branches. With symmetry optimization: 3 DFS calls × O(8!) each ≈ 3 × 40320.
+
+- **Q**: Does 1→5→9 skip anything?
+  **A**: No skip beyond 5, but going 1→9 would skip 5. If the pattern is [1, 5, 9], going 1→5 is fine (no skip), then 5→9 is fine (no dot at midpoint between 5 and 9 since (1+2)/2=1.5, not integer). But skipping 1→9 directly without having visited 5 would be invalid.

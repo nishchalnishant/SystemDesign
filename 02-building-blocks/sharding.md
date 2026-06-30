@@ -154,6 +154,17 @@ With `shard = hash(key) % 3` → `% 4`, nearly all keys change shards. Consisten
 - **Throughput**: Total write throughput scales with number of shards (if balanced).
 - **Resharding**: Expensive; plan for growth so resharding is rare (e.g. consistent hashing with many virtual nodes).
 
+### Querying by a Non-Shard-Key — Global vs Local Secondary Indexes
+
+The classic trap: you shard users by `user_id`, then product asks "find the user by email." Email isn't the shard key, so the query is a **scatter-gather** across every shard — O(N) and slow. Two indexing strategies an interviewer expects you to name:
+
+- **Local secondary index (LSI)**: the index lives on each shard, covering only that shard's rows. Cheap to maintain (same-shard write), but a lookup by the indexed field still has to hit every shard — it only helps once you've already narrowed to a shard. DynamoDB LSIs share the partition key for exactly this reason.
+- **Global secondary index (GSI)**: a separate table/structure sharded by the *index* key (e.g. `email → user_id`). A lookup by email goes to exactly one shard, then a second hop fetches the row by `user_id`. Turns scatter-gather into two point queries. The cost: the GSI is maintained asynchronously, so it's eventually consistent with the base table, and a write now updates two sharded structures (watch for the cross-shard consistency gap). This is how you actually support multiple access patterns on sharded data — pick the shard key for your dominant query and add a GSI for the secondary one.
+
+### Resharding Without Downtime
+
+When an interviewer pushes on "how do you actually add a shard in production," the expected answer is the **double-write / backfill / cutover** pattern: (1) start dual-writing to old and new topology; (2) backfill historical data in the background; (3) verify consistency; (4) flip reads to the new topology; (5) stop the old writes. Consistent hashing minimizes how much data moves (~1/N), but the migration choreography above is what keeps the service online throughout. Vitess (YouTube/Slack) automates this as "resharding workflows."
+
 ---
 
 ## 7. Implementation Patterns

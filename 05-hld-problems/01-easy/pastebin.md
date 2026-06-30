@@ -2,572 +2,184 @@
 module: 05-hld-problems
 topic: Easy
 status: unread
-tags: [05-hld-problems, system-design, easy]
+tags: [05-hld-problems, system-design, easy, blob-storage, cdn, object-storage]
 ---
 # Design Pastebin
 
-> **Difficulty**: Easy
-> **Topics**: Object Storage, Key Generation, TTL, Caching
-> **Time**: 45-60 minutes
-> **Companies**: Google, Amazon, GitHub (Gist)
+> **Difficulty**: Easy | **Asked at**: Amazon, Google, Dropbox
 
 ---
 
-## Problem Mindmap
+## Problem Statement
 
-```
-Pastebin
-├── Problem Constraints
-│   ├── Scale → 1M pastes/day = 12 writes/sec; 100M reads/day = 1160 reads/sec; 3.65TB/5yr
-│   ├── Latency target → paste read < 50ms (cached); write < 200ms
-│   └── Core hardness → key generation uniqueness at scale + preventing hot-paste thundering herd
-├── Architecture Derivation
-│   ├── Step 1 → Hash(content)[0:7] → collisions for identical content; can't distinguish two users' same code
-│   ├── Step 2 → DB auto-increment + Base62 → sequential (guessable); privacy pastes discoverable by enumeration
-│   ├── Step 3 → Pre-generated random key pool → keys generated offline, stored in Redis list; LPOP on paste create
-│   └── Step 4 → CDN → LB → App → Redis (hot pastes) → PostgreSQL (metadata) → S3 (content); 7-char public / 16-char private keys
-├── Core Components
-│   ├── Key generator → offline job pre-generates 7-char Base62 keys (62^7 = 3.5T); pushes to Redis list as LPOP pool
-│   ├── S3 → stores paste content (keyed by paste_id); immutable objects; CDN origin
-│   ├── PostgreSQL → metadata: paste_id, title, user_id, created_at, expires_at, visibility, content_url
-│   ├── Redis → hot paste content cache (TTL 1h); key pool (Redis list for LPOP)
-│   └── CDN → public pastes served at edge; Cache-Control: max-age=3600; private pastes bypass CDN
-├── Data Model
-│   ├── pastes table → (paste_id PK, user_id, title, s3_key, visibility ENUM, expires_at, view_count, created_at)
-│   └── S3 object → key: pastes/{paste_id}; body: raw content text; metadata: content-type, owner
-├── APIs
-│   ├── POST /paste → {content, title?, visibility?, ttl?, syntax?} → {paste_id, url, expires_at}
-│   ├── GET /paste/{paste_id} → content (text/html with syntax highlighting or raw)
-│   └── DELETE /paste/{paste_id} → soft delete (mark expired); physical delete from S3 async
-├── Critical Trade-offs
-│   ├── Random key vs sequential → Random (Base62 7-char) chosen for public; 16-char for private (unguessable)
-│   ├── Pre-generated pool vs on-demand → Pre-generated avoids uniqueness check at write time; pool in Redis LPOP
-│   └── S3 vs DB for content → S3 chosen; content can be MB-sized; DB not suited for large BLOBs
-├── Failure Scenarios
-│   ├── Key pool exhausted → fallback: generate key on-demand with uniqueness retry; alert ops to refill pool
-│   ├── S3 unavailable → read from DB backup content column (for small pastes < 64KB stored in DB); large pastes 503
-│   └── Hot paste stampede → CDN absorbs 99% of reads; Redis serves remainder; S3 rarely hit directly
-└── Interview Angles
-    ├── GitHub Gist → "Design Gist" → same architecture + version history (Git diff stored in S3 per revision)
-    ├── Deep-dive → "How do you handle expiry?" → expires_at column + background sweeper (cron every 5 min) + CDN TTL
-    └── Follow-up → "How do you support syntax highlighting?" → stored in metadata; rendered client-side via highlight.js
-```
+Design a service like Pastebin where users can paste text content (code, logs, notes) and share it via a short unique URL. The paste is accessible publicly or privately. Users can optionally set an expiration time.
 
 ---
 
-## What Breaks Without This System?
+## Functional Requirements
 
-A developer needs to share 50KB of a stack trace with a colleague on Slack. Slack's message size limit is 4,000 characters — the trace is truncated. They try emailing it — the security gateway blocks plaintext attachments. They paste it into a Google Doc, share the link — their colleague doesn't have a Google account and gets an access request dialog. The simple act of sharing text across systems is broken by access controls, size limits, and platform coupling.
-
-At a larger scale: a CI/CD system generates 2MB build logs for every failed job. Without a paste service, logs are either truncated in the notification message, stored in a proprietary format that requires the CI login to view, or lost after 24 hours with no way to reference them in post-mortems.
-
-The core gap: no neutral, universally accessible, size-agnostic, linkable text storage.
-
----
-
-## Derive the Architecture
-
-**Step 1 — Single server**
-A Flask app with PostgreSQL: `POST /pastes` stores text in a `text` column, returns a short key. `GET /pastes/:key` reads it back. Works for low volume.
-
-**Step 2 — What breaks at 1M pastes/day?**
-- Storage: 1M pastes/day × 10KB avg = 10GB/day → 3.65TB/year. PostgreSQL `text` columns can hold this but storage cost and backup cost are high. Text is unstructured blob data — a relational DB is the wrong tool.
-- Read/write ratio: 10:1 reads to writes. The same DB handling both creates read pressure on the write path.
-- Large pastes: a 5MB paste in PostgreSQL blocks I/O for every concurrent query while it's being read.
-
-**Step 3 — Split the concerns**
-
-Store the paste **content** in S3 (object storage): unlimited size, cheap per-GB, CDN-compatible, lifecycle policies for TTL.
-Store the **metadata** (key, created_at, TTL, user_id, access_count) in PostgreSQL: fast key lookups, rich queries.
-
-```
-POST /pastes:
-  1. Generate a 6-character key (key generation service)
-  2. PUT content to S3 at key "pastes/{key}"
-  3. INSERT metadata row into PostgreSQL
-  4. Return short URL
-
-GET /pastes/:key:
-  1. Read metadata from Redis cache (cache hit → skip PostgreSQL)
-  2. If miss: read from PostgreSQL, populate cache
-  3. Redirect to S3 presigned URL (or stream from CDN)
-```
-
-**Step 4 — Key generation**
-Hash-based: SHA-256(content) → take first 6 base62 chars. Deterministic — identical content returns the same key (deduplication free). Collision probability negligible at 62^6 = 56B possible keys for 1M active pastes.
-Pool-based (alternative): pre-generate 1M keys, store in a Redis list, pop on demand. Avoids hashing latency and guarantees uniqueness without collision checking.
-
-**Step 5 — Expiry**
-- Lazy: check `expires_at` on read, return 404 if expired. Simple but leaves orphaned data in S3/DB.
-- Active: a daily cron queries `WHERE expires_at < NOW()`, deletes metadata rows, and calls `S3.deleteObjects()`.
-- S3 lifecycle rules: set an S3 object expiry tag at upload time — AWS deletes the object automatically. No cron needed for storage reclaim.
-
-**Step 6 — Scaling reads**
-- Cache hot pastes in Redis (top 10% of pastes get 90% of reads).
-- Serve content via CDN (CloudFront/Fastly) — S3 URLs route through CDN edge nodes, eliminating origin load for popular pastes entirely.
+1. **Create paste**: Submit text content, receive a unique short URL
+2. **Read paste**: Access paste content via its URL
+3. **Expiration**: Pastes can have an optional TTL (1 hour, 1 day, 1 week, forever)
+4. **Syntax highlighting**: Display code with language-specific highlighting
+5. **Private pastes**: Optionally password-protected or unlisted (URL is the only access control)
 
 ---
 
-## Real-Life Analogy
+## Non-Functional Requirements
 
-Think of a whiteboard in a shared office. Someone writes a block of text on whiteboard #47. They walk up to a colleague and say "check whiteboard 47." The colleague goes, reads it, and walks away. The whiteboard gets erased at end of day unless someone specifically marks it "permanent."
-
-Pastebin is that whiteboard system. You write content (value), you get a numbered URL (key), anyone with the URL can read it, and it expires unless you explicitly set it to persist. The challenge is managing millions of whiteboards, each potentially needing different expiry times, while keeping reads fast even for whiteboards that haven't been visited in weeks.
-
----
-
-## Why This Is Hard
-
-1. **Content vs. metadata separation**: Storing large blobs (10KB text) in a relational database alongside metadata causes row bloat and degrades index performance. Content belongs in object storage; metadata belongs in a database. Keeping these in sync atomically is non-trivial.
-2. **Key generation at scale**: Generating unique 7-character keys without a central coordinator while preventing collisions requires either pre-generation pools or careful use of distributed IDs.
-3. **Expiration is deceptively complex**: "Delete this paste after 24 hours" sounds easy. At 1M pastes/day, that's 1M deletions/day — a background job scanning millions of rows, competing with read traffic, causing DB spikes. Lazy deletion is simpler but wastes storage.
-4. **Thundering herd on popular pastes**: A paste linked from Hacker News gets 50,000 simultaneous reads. Without caching, your S3 origin and metadata DB see 50,000 concurrent requests for the same object.
-5. **Private pastes**: The security model is "security through obscurity" — a long, unguessable URL is the only access control. This means 16-character keys (not 7) for private pastes, no listing endpoints, and no search indexing.
+- **Scale**: 1M new pastes/day → 12 writes/sec; 10M reads/day → 115 reads/sec
+- **Size**: Text content up to 10 MB per paste; most pastes < 10 KB
+- **Latency**: Read P99 < 50ms (hot pastes cached at CDN edge)
+- **Durability**: Paste content must never be lost (durable object storage)
+- **Availability**: 99.9% uptime; brief degradation acceptable during maintenance
 
 ---
 
-## Requirements
+## Core Entities
 
-### Functional Requirements
-1. Users can paste text and get a unique shareable URL
-2. Users can retrieve paste content via URL
-3. Pastes can have expiration time (1 hour, 1 day, 1 month, never)
-4. Support for custom short URLs (optional)
-5. Basic analytics (view count)
-
-### Non-Functional Requirements
-1. **High availability**: 99.9% uptime
-2. **Low latency**: < 100ms for read operations
-3. **Scalability**: Handle millions of pastes per day
-4. **Durability**: Pastes must not be lost before expiry
-5. **Security**: Private pastes accessible only via URL (no listing/search)
-
----
-
-## Capacity Estimation
-
-### Traffic Estimates
-- **Writes**: 1M new pastes/day = ~12 pastes/sec
-- **Reads**: 10:1 read-to-write ratio = 120 reads/sec
-- **Peak traffic**: 5× average = 60 writes/sec, 600 reads/sec
-
-### Storage Estimates
-- **Average paste size**: 10 KB (text)
-- **Daily storage**: 1M × 10 KB = 10 GB/day
-- **5-year storage** (assuming 80% pastes expire):
-  - Total generated: 1M × 365 × 5 = 1.825 billion pastes
-  - Retained (20%): 365 million pastes
-  - Storage needed: 365M × 10 KB = **3.65 TB**
-
-### Bandwidth Estimates
-- **Write bandwidth**: 12 pastes/sec × 10 KB = 120 KB/sec
-- **Read bandwidth**: 120 reads/sec × 10 KB = 1.2 MB/sec
-
-### URL Key Size
-- **Unique URLs needed**: ~2 billion (with buffer)
-- **Character set**: [a-z, A-Z, 0-9] = 62 characters
-- **Key length**: 62^7 = 3.5 trillion unique URLs (7 characters is sufficient for public pastes)
-- **Private pastes**: 62^16 = astronomical (16 characters for unguessability)
+| Entity | Key Fields |
+|--------|-----------|
+| `Paste` | paste_id (short code), user_id, title, language, created_at, expires_at, visibility, content_url |
+| `User` | user_id, username, email, tier |
+| `PasteContent` | stored in S3 (key: paste_id), not in the database |
 
 ---
 
 ## API Design
 
-### 1. Create Paste
 ```http
 POST /api/v1/pastes
-Content-Type: application/json
-
-{
-  "content": "Hello, World!",
-  "expiration": "1d",     // 1h, 1d, 1m, never
-  "customUrl": "my-paste", // optional
-  "isPrivate": false
+Body: {
+  "content": "def hello(): ...",
+  "language": "python",
+  "title": "My code",
+  "expires_in": "86400",   // seconds; null = no expiry
+  "visibility": "public"   // public | private | unlisted
+}
+Response 201: {
+  "paste_id": "abc1234",
+  "url": "https://paste.ly/abc1234",
+  "expires_at": "2026-07-01T00:00:00Z"
 }
 
-Response: 201 Created
-{
-  "shortUrl": "https://paste.in/aB3dE5f",
-  "expiresAt": "2024-02-10T12:00:00Z"
-}
-```
-
-### 2. Retrieve Paste
-```http
-GET /api/v1/pastes/{shortKey}
-
-Response: 200 OK
-{
-  "content": "Hello, World!",
-  "createdAt": "2024-02-09T12:00:00Z",
-  "expiresAt": "2024-02-10T12:00:00Z",
-  "viewCount": 42
+GET /api/v1/pastes/{paste_id}
+Response 200: {
+  "paste_id": "abc1234",
+  "content": "def hello(): ...",
+  "language": "python",
+  "created_at": "...",
+  "view_count": 42
 }
 
-Response (expired): 404 Not Found
-{
-  "error": "paste_expired",
-  "message": "This paste has expired"
-}
-```
-
-### 3. Delete Paste (Owner Only)
-```http
-DELETE /api/v1/pastes/{shortKey}
-Authorization: Bearer <token>
-
-Response: 204 No Content
+DELETE /api/v1/pastes/{paste_id}
+Response 204
 ```
 
 ---
 
 ## High-Level Design
 
-### Architecture
-
 ```
-┌─────────┐
-│  Client │
-└────┬────┘
-     │ HTTPS
-     ▼
-┌──────────────────┐
-│  CDN (CloudFront)│  (Caches popular paste content at edge)
-└─────────┬────────┘
-          │ Cache miss
-          ▼
-┌──────────────────┐
-│  Load Balancer   │
-└─────────┬────────┘
-          │
-     ┌────┴────────┐
-     ▼             ▼
-┌─────────┐   ┌─────────┐
-│  API    │   │  API    │  (Stateless, horizontally scaled)
-│ Server  │   │ Server  │
-└────┬────┘   └────┬────┘
-     │             │
-     ├─────────────┤
-     │             │
-     ▼             ▼
-┌──────────────────────┐
-│   Redis Cache        │  (Hot pastes, LRU eviction)
-└──────────┬───────────┘
-           │ Cache miss
-           ▼
-     ┌─────┴──────────┐
-     ▼                ▼
-┌──────────┐   ┌─────────────┐
-│PostgreSQL│   │  S3 / Blob  │
-│(Metadata)│   │  Storage    │
-│short_key │   │  (Content)  │
-│expires_at│   │             │
-└──────────┘   └─────────────┘
-
-┌──────────────────────────┐
-│   Key Generation Service │  (Pre-generated key pool)
-└──────────────────────────┘
-
-┌──────────────────────────┐
-│   Cleanup Service        │  (Cron: deletes expired pastes)
-└──────────────────────────┘
+Client
+  │
+  ▼
+CDN (CloudFront)
+  │  ← caches rendered paste pages for public URLs
+  ▼
+Load Balancer
+  │
+  ▼
+App Servers (stateless)
+  │          │
+  ▼          ▼
+PostgreSQL   S3 (or equivalent blob store)
+(metadata)   (paste content)
+  │
+  ▼
+Redis
+(hot paste cache + paste_id counter)
 ```
 
-**Why split content and metadata?**
-- S3 costs ~$0.023/GB vs ~$0.10+/GB for database storage — an order of magnitude cheaper for blobs
-- DB row size bloat degrades index performance (scanning metadata to find expired pastes becomes slow if each row is 10KB)
-- S3 integrates directly with CloudFront CDN for content delivery
-- DB is optimized for metadata operations (filtering, sorting by expiry, counting)
+**Separation of metadata and content**: The paste metadata (paste_id, user_id, language, timestamps, visibility) lives in PostgreSQL. The actual text content is stored in S3 as a blob (key = paste_id). This separation is critical:
+- Metadata table stays small and indexable
+- Content can be arbitrarily large (up to 10 MB) without bloating the database
+- S3 handles durability (11 nines) and geo-replication automatically
+
+**Paste ID generation**: Same approach as URL shortener. A distributed counter → Base62 encode → 7-character unique ID. 62^7 = 3.5 trillion possible paste IDs.
+
+**Read path**: CDN serves cached HTML for popular public pastes. Cache miss → App server fetches metadata from PostgreSQL, content from S3 (or Redis hot cache), renders response.
+
+**Write path**: App server generates paste_id → stores metadata in PostgreSQL → uploads content blob to S3. Both writes must succeed (use a transaction and a compensating delete if S3 upload fails).
 
 ---
 
-## Detailed Component Design
+## Deep Dive 1: Storing Large Content Efficiently
 
-### 1. Key Generation Service
+**Problem**: Paste content can be up to 10 MB. Storing it in a PostgreSQL TEXT column works for small pastes but creates issues at scale:
+- Bloats the database, increasing backup size and vacuum time
+- Makes row-level replication transfer the full content on every update
+- Can't be served directly from a CDN without going through the app server
 
-#### Option A: Pre-generate Keys (Recommended)
+**Solution: Object storage (S3)**. Store content as a blob keyed by paste_id. PostgreSQL stores only a `content_url` column pointing to the S3 object.
 
-```
-Key Generator runs offline:
-  → Generate batch of 1M unique 7-char Base62 keys
-  → Store in key_pool table with used=false
+**Reading content**:
+1. App server fetches metadata from PostgreSQL (paste_id, language, visibility, content_url)
+2. App server fetches content from S3 using the content_url
+3. Renders the full paste page
 
-API Server on paste creation:
-  → SELECT short_key FROM key_pool WHERE used=false LIMIT 1 FOR UPDATE
-  → Mark as used=true
-  → Use key for new paste
-```
+**Optimization: Presigned URLs for large pastes**: For pastes > 100 KB, instead of proxying the content through the app server, return a presigned S3 URL to the client. The client downloads directly from S3 (bypassing app server bandwidth). Reduces app server load for large pastes.
 
-**Pros:** Fast (no hashing), zero collision risk, operation is atomic
-**Cons:** Requires extra storage for key pool (~7 MB for 1M keys); key generation service is a dependency
-
-**Optimization:** Each API server pre-fetches 1,000 keys into local memory on startup. This eliminates the key pool DB from the hot path entirely.
-
-#### Option B: Hash-based Generation
-
-```
-MD5(content + timestamp + random_salt) → Base62 encode → Take first 7 chars
-```
-
-**Handle collision:** Query DB. If collision, append salt and retry (rare in practice but must be handled).
-
-**Pros:** No central key service
-**Cons:** Collision handling adds latency; same content at same time could generate same key
-
-### 2. Database Schema
-
-#### Metadata Table (PostgreSQL)
-```sql
-CREATE TABLE pastes (
-    id BIGSERIAL PRIMARY KEY,
-    short_key VARCHAR(10) UNIQUE NOT NULL,
-    s3_object_key VARCHAR(255) NOT NULL,  -- Pointer to content in S3
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP,                 -- NULL = never expires
-    view_count BIGINT DEFAULT 0,
-    is_private BOOLEAN DEFAULT false,
-    owner_id BIGINT,
-    INDEX idx_short_key (short_key),
-    INDEX idx_expires_at (expires_at)     -- For cleanup job
-);
-
--- Key pool for pre-generated keys
-CREATE TABLE key_pool (
-    short_key VARCHAR(10) PRIMARY KEY,
-    used BOOLEAN DEFAULT false,
-    created_at TIMESTAMP DEFAULT NOW(),
-    INDEX idx_used (used)
-);
-```
-
-### 3. Caching Strategy
-
-```java
-public String getPasteContent(String shortKey, Timestamp expiresAt) {
-    String cacheKey = "paste:" + shortKey;
-
-    // Check expiry first (avoid returning stale cached content after expiry)
-    if (expiresAt != null && expiresAt.before(new Timestamp(System.currentTimeMillis()))) {
-        throw new NotFoundException("Paste expired");
-    }
-
-    // Cache TTL = min(remaining TTL, 1 hour max)
-    // Don't cache "never expires" pastes longer than 1 hour (LRU will handle eviction)
-    long ttl = expiresAt == null ? 3600 :
-        Math.min(
-            Duration.between(Instant.now(), expiresAt.toInstant()).toSeconds(),
-            3600
-        );
-
-    if (cache.exists(cacheKey)) {
-        return cache.get(cacheKey);
-    } else {
-        String content = s3Client.getObject(s3Key);
-        cache.setex(cacheKey, ttl, content);
-        return content;
-    }
-}
-```
-
-**Cache Eviction:** LRU (Least Recently Used)
-
-**SDE-3 Optimization: Consistent Hashing for Redis Cluster**
-
-As traffic grows, a single Redis instance isn't enough. When adding nodes to a Redis cluster:
-- Naive approach: `hash(key) % N`. Adding a node changes N, remapping almost all keys → massive cache miss spike (thundering herd hits the DB and S3).
-- **Consistent hashing**: Only `1/N` of keys are remapped when a node is added/removed. Add virtual nodes to ensure even load distribution across nodes of different capacities.
-
-### 4. Expiration & Cleanup
-
-#### Lazy Deletion (On Every Read)
-```java
-// Check expiry before returning content
-if (paste.getExpiresAt() != null &&
-    paste.getExpiresAt().before(new Timestamp(System.currentTimeMillis()))) {
-    throw new NotFoundException("Paste expired");
-}
-```
-Simple but leaves expired rows in DB consuming space.
-
-#### Active Cleanup (Background Job)
-```java
-// Cron job runs hourly
-String query = """
-    SELECT short_key, s3_object_key
-    FROM pastes
-    WHERE expires_at < NOW()
-    LIMIT 10000
-    """;
-
-List<Paste> expiredPastes = db.executeQuery(query);
-
-for (Paste paste : expiredPastes) {
-    s3Client.deleteObject(paste.getS3ObjectKey());
-    db.delete(paste.getId());
-}
-```
-
-**SDE-3 Optimization: Avoid DB Scans for Cleanup**
-
-Running `WHERE expires_at < NOW()` on a large table is slow even with an index, and the cleanup job competes with read traffic.
-
-Better approaches:
-- **S3 Lifecycle Policies**: Since content is in S3, configure lifecycle rules to delete objects after N days. Objects tagged `expires:1d` go into the `1d/` prefix; S3 auto-deletes. Avoids cleanup worker entirely for content.
-- **DynamoDB TTL**: If you use DynamoDB for metadata, the TTL attribute handles deletion natively at no extra cost — no cleanup worker needed.
-- **Postgres Table Partitioning**: Partition `pastes` by day. Instead of `DELETE FROM pastes WHERE expires_at < X` (slow row-level deletes), just `DROP TABLE pastes_2024_01` — instant and doesn't hold locks.
+**Content deduplication**: Hash the content (SHA256). If two users submit identical content, store only one S3 object. Track hash → s3_key in PostgreSQL. Saves storage for common snippets (standard boilerplate, license headers).
 
 ---
 
-## Read/Write Flow
+## Deep Dive 2: Expiration and Cleanup
 
-### Write Flow
-```
-1. Client → POST /pastes {content, expiration}
-2. Load Balancer → API Server
-3. API Server:
-   a. Validate content (size < 1MB, no prohibited content)
-   b. Fetch unique key from local pre-fetched key pool
-   c. Generate S3 object key: "pastes/{short_key}"
-   d. Upload content to S3 (atomic — if S3 fails, don't write metadata)
-   e. INSERT into PostgreSQL: (short_key, s3_object_key, expires_at, ...)
-   f. Return {shortUrl: "https://paste.in/{short_key}"}
-```
+**Problem**: Expired pastes must be deleted to reclaim storage. S3 charges per GB-month — unbounded paste accumulation is expensive.
 
-**Idempotency note**: If the S3 upload succeeds but the DB write fails, the S3 object becomes an orphan. Periodic orphan cleanup: compare S3 keys against DB; delete any not in DB older than 1 hour.
+**Approach 1: Lazy deletion** (simple): On read, check `expires_at`. If past expiry, return 404 and delete the paste asynchronously. Never runs proactively — storage cost accumulates.
 
-### Read Flow
-```
-1. Client → GET /pastes/{short_key}
-2. CDN: Check if cached → If hit, return directly (0 origin load)
-3. Load Balancer → API Server
-4. API Server:
-   a. Check Redis cache for paste:{short_key}
-   b. If HIT: Check expiry, return content
-   c. If MISS:
-      - Query PostgreSQL for metadata (s3_object_key, expires_at)
-      - If expired → return 404
-      - Fetch content from S3
-      - Cache in Redis with appropriate TTL
-      - Return content
-5. (Async) Increment view_count via background job
-```
+**Approach 2: Scheduled sweeper** (recommended): A background job runs every hour. Query: `SELECT paste_id FROM pastes WHERE expires_at < NOW() AND deleted_at IS NULL`. For each expired paste: delete from S3, soft-delete in PostgreSQL (`deleted_at = NOW()`). A nightly job hard-deletes soft-deleted rows older than 7 days.
+
+**Index on expires_at**: `CREATE INDEX idx_pastes_expires_at ON pastes(expires_at) WHERE expires_at IS NOT NULL;` — partial index covering only expiring pastes. Sweeper query is O(expired pastes) not O(all pastes).
+
+**S3 Lifecycle rules**: Configure S3 object lifecycle rule to delete objects with `expires-at` tag after the TTL. Belt-and-suspenders: even if the sweeper misses a paste, S3 eventually cleans it up.
 
 ---
 
-## Scalability & Optimization
+## Deep Dive 3: Abuse Prevention
 
-### 1. Database Sharding
-- **Shard key**: `hash(short_key) % num_shards`
-- Distributes load evenly across shards
-- Challenge: Cross-shard queries (e.g., "all pastes by user") require scatter-gather; keep user lookups on a separate index
+**Problem**: Pastebin is trivially abused for storing malware, stolen credentials, scraped data, or phishing pages. Without controls, the service becomes a content distribution network for attackers.
 
-### 2. Read Replicas
-- Primary handles writes (low QPS — 12 pastes/sec)
-- Read replicas handle GET requests
-- View count can be eventually consistent (batch-update from Redis periodically)
+**Rate limiting**: 5 pastes/minute per IP for anonymous users. 60 pastes/minute per authenticated user. Implemented via Redis token bucket (see Rate Limiter design).
 
-### 3. CDN for Popular Pastes
-- Serve popular pastes from edge PoPs worldwide
-- `Cache-Control: max-age=3600` for public pastes
-- For expiring pastes: set `Cache-Control: max-age` to remaining TTL
+**Content scanning**:
+1. **Size limit**: Hard cap at 10 MB. Reject immediately.
+2. **Known malware hashes**: Hash new paste content with SHA256. Check against a local bloom filter seeded from VirusTotal/ClamAV signatures. Flag matches for manual review.
+3. **URL scanning**: Extract URLs from content. Check against Google Safe Browsing API. Reject pastes containing known malicious URLs.
+4. **CSAM detection**: Integrate PhotoDNA or equivalent hash-matching for image data in pastes.
 
-### 4. Rate Limiting
-- Prevent abuse: 10 pastes/hour per IP (free), 100/hour per authenticated user
-- Use Redis counters (sliding window)
+**Takedown API**: Legal compliance — provide a `POST /admin/takedown/{paste_id}` endpoint. Immediately soft-deletes the paste and logs the reason. DMCA and government requests handled here.
+
+**Spam detection**: ML classifier (logistic regression on content features) flags spammy pastes (gibberish, template credential dumps). Flagged pastes go to a review queue rather than being published immediately.
 
 ---
 
-## Security Considerations
+## Interviewer Questions by Level
 
-### 1. Private Pastes
-- Generate cryptographically strong 16-character keys (using `SecureRandom`)
-- No indexing or listing endpoints for private pastes
-- No analytics that could leak existence of private pastes
-- Consider password-protected pastes: store `bcrypt(password)` hash, require on read
+**Junior**:
+- Why do you store paste content in S3 instead of the database?
+- How do you generate unique paste IDs?
+- What happens when a paste expires — how is it deleted?
 
-### 2. Input Validation
-- Limit paste size: Max 1 MB (reject at API layer before S3 upload)
-- Strip or encode HTML to prevent XSS when rendering
-- Content moderation for public pastes (CSAM detection via hash matching)
+**Mid-level**:
+- How does the CDN work for serving paste content? What cache headers do you set?
+- How do you handle concurrent writes where two users submit the same content?
+- Design the expiration cleanup system. What's the index strategy?
 
-### 3. DDoS Protection
-- CloudFlare or AWS Shield at edge
-- Rate limiting at load balancer level
-- IP-based blocking for repeat offenders
-
----
-
-## Trade-offs
-
-| Aspect | Choice | Alternative | Trade-off |
-|--------|--------|-------------|-----------|
-| **Content Storage** | S3 | Database (BLOB) | Cost + CDN integration vs. simpler single-store architecture |
-| **Key Generation** | Pre-generated pool | Hash-based | No runtime collision risk vs. no key service dependency |
-| **Expiration cleanup** | S3 Lifecycle + Lazy delete | Active DB cron | Zero DB load vs. storage accumulation without cleanup |
-| **Caching** | Redis LRU | No cache | 95% hit rate reduces S3 egress cost vs. operational overhead |
-| **Metadata DB** | PostgreSQL | DynamoDB | SQL flexibility vs. native TTL support |
-
----
-
-## Extensions
-
-### 1. Syntax Highlighting
-- Detect language from content (or user hint), store in metadata
-- Client-side rendering with libraries (Prism.js, highlight.js)
-- No backend cost
-
-### 2. Paste History (User Accounts)
-```sql
-ALTER TABLE pastes ADD COLUMN owner_id BIGINT;
-CREATE INDEX idx_owner_id ON pastes(owner_id);
-```
-
-### 3. Analytics Dashboard
-- Track views over time (TimescaleDB or InfluxDB)
-- Geographic distribution (from CDN access logs)
-
----
-
-## Interview Discussion Points
-
-**Q: Why not store everything in the database?**
-- S3 is 4× cheaper for blob storage ($0.023/GB vs $0.10+/GB for DB)
-- DB performance degrades with large rows — index scans become slower as row size grows
-- S3 integrates natively with CloudFront CDN
-- DB should store only structured, queryable data; blobs are neither
-
-**Q: How to handle 1M pastes/sec?**
-- Horizontal scaling of stateless API servers
-- Pre-fetched key pools eliminate key generation bottleneck
-- Database sharding by `hash(short_key)`
-- Aggressive caching (Redis cluster with consistent hashing)
-- CDN absorbs read traffic at edge
-
-**Q: What if the Key Generation Service goes down?**
-- API servers have 1,000 keys pre-fetched in local memory — survives minutes of KGS downtime
-- Fallback: Hash-based generation with collision check
-- Multiple KGS instances (active-passive standby)
-
-**Q: How do you handle the "HN effect" — a paste suddenly getting 50,000 hits?**
-- First request warms CDN and Redis cache
-- Subsequent requests served from CDN edge — zero origin load
-- If CDN miss (first hit per PoP), Redis absorbs the load
-- S3 handles concurrent reads well (it's infinitely scalable)
-
----
-
-## Interview Questions Asked
-
-### Amazon
-1. **"Design Pastebin with a 30-day expiry on all pastes — walk me through the deletion pipeline."** → Tests background job design: a scheduled job (cron or SQS delayed message) scans for expired pastes, deletes from S3 and the metadata DB, and removes the short key from Redis. The interviewer wants to hear about soft-delete first (mark expired, hard-delete async) to avoid race conditions with in-flight reads.
-2. **"How do you generate short keys that don't collide at 10M pastes/day?"** → Pre-generation via Key Generation Service (KGS) that produces a pool of random base62 keys and marks them used atomically. Alternatively, hash the content and take the first 7 characters — but then you must handle the collision case. KGS is cleaner because collision handling is done offline.
-
-### Google
-1. **"How would you deduplicate content — if two users paste identical text, should you store it once?"** → Content-addressable storage: hash the raw content (SHA-256), use the hash as the S3 object key. Multiple paste records can point to the same S3 object. Dedup is free at write time; the complication is deletion — use reference counting or tombstoning so the S3 object isn't deleted while other pastes reference it.
-2. **"How would you add syntax highlighting for 50 programming languages without slowing down reads?"** → Client-side rendering with a JS library (Prism.js, highlight.js) — zero backend cost, language detection from the stored `language` field, no additional latency. Only consider server-side rendering if SEO is required (bots don't execute JS).
-
-### Common Follow-ups
-1. **"How do you handle pastes larger than 1 MB?"** → Stream directly to S3 using multipart upload — bypass the API server's memory entirely. Set a hard cap (e.g., 10 MB) enforced at the load balancer. Store only metadata in the DB; never buffer the full payload in the application tier.
-2. **"How do you implement private pastes (accessible only via secret link)?"** → Generate a high-entropy random token (32 bytes, base62-encoded) as the paste URL instead of a short key. No authentication required — the unguessable URL is the access control. Optionally add an optional password layer (bcrypt hash stored in the DB) for extra protection.
-3. **"How do you count views without hammering the database on every read?"** → Write view events to a Kafka topic; a batch consumer aggregates counts and flushes to the DB every 30 seconds. Alternatively, use Redis INCR on a `views:{paste_id}` key and periodically sync to the DB. Never do a synchronous DB write on each page view.
-4. **"How do you prevent abuse — someone pasting malware or CSAM?"** → Hash-based blocklist (PhotoDNA for CSAM, MD5/SHA-1 of known malware). Content scanning pipeline triggered asynchronously after upload — paste is visible immediately but flagged/removed within seconds if matched. Rate limiting per IP/account prevents mass upload of new variants.
+**Senior**:
+- How would you support real-time collaborative editing of pastes (like Google Docs)?
+- How do you balance privacy (private pastes) with abuse prevention (scanning content)?
+- A viral paste gets 1M views in 5 minutes. Walk me through what happens at each layer and where you'd see failures.
+- How would you implement paste versioning (edit history)?

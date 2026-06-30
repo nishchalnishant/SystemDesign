@@ -25,33 +25,33 @@ Try each before reading the corresponding section below.
 ## Topic Mindmap
 
 ```
-[Futures & Async Patterns — Java CompletableFuture]
+[Futures & Async Patterns — Python concurrent.futures / asyncio]
 ├── Core Concept
 │   ├── What → Non-blocking async computation pipelines that free threads during I/O waits
-│   └── Why → Blocking .get() wastes threads; CompletableFuture chains work without thread pinning
+│   └── Why → Blocking result() wastes threads; asyncio/gather chains work without thread pinning
 ├── Key Operations
-│   ├── supplyAsync() → run supplier in ForkJoinPool; returns CompletableFuture<T>
-│   ├── thenApply() → sync transform on result (map); stays on same thread
-│   ├── thenApplyAsync() → transform on a different thread pool
-│   ├── thenCompose() → chain dependent async calls (flatMap); avoids CompletableFuture<CF<T>>
-│   ├── allOf() → wait for all independent futures (fan-out); result is CF<Void>
-│   └── exceptionally() / handle() → error recovery without breaking the chain
+│   ├── executor.submit() → run callable in thread pool; returns Future
+│   ├── asyncio.gather() → run coroutines concurrently; returns list of results (fan-out)
+│   ├── await coro → suspend caller until coroutine completes (sequential chaining)
+│   ├── asyncio.wait(FIRST_COMPLETED) → race coroutines; first wins (hedged requests)
+│   ├── asyncio.wait_for(coro, timeout) → enforce deadline; raises TimeoutError on breach
+│   └── try/except around await → error recovery at each stage
 ├── When to Use
 │   ├── ✓ Multiple independent I/O calls (fetch user + fetch orders + fetch recommendations)
-│   ├── ✓ Dependent async steps that must sequence (get userId → get profile → format)
+│   ├── ✓ Dependent async steps that must sequence (get user_id → get profile → format)
 │   └── ✓ Timeout enforcement on external service calls
 ├── When NOT to Use
-│   ├── ✗ CPU-bound work — async doesn't help; use parallel streams or ForkJoinPool directly
+│   ├── ✗ CPU-bound work — use multiprocessing or ProcessPoolExecutor instead
 │   └── ✗ Simple sequential single-threaded logic — adds complexity for no gain
 ├── Trade-offs
 │   ├── Pro: Fan-out reduces latency from sum-of-latencies to max-of-latencies
-│   └── Con: Callback chains are hard to debug; exceptions must be explicitly handled per stage
+│   └── Con: async/await requires consistent async throughout the call chain
 ├── Real-World Examples
-│   ├── Product page → user, inventory, reviews fetched in parallel with allOf()
-│   └── Payment flow → auth → charge → notify chained with thenCompose()
+│   ├── Product page → user, inventory, reviews fetched in parallel with asyncio.gather()
+│   └── Payment flow → auth → charge → notify chained with sequential awaits
 └── Interview Angles
     ├── Fan-out math → 3×200ms sequential = 600ms; concurrent = 200ms
-    ├── Timeout → completeOnTimeout(fallback, 500, MILLISECONDS) or orTimeout(500, MILLISECONDS)
+    ├── Timeout → asyncio.wait_for(coro, timeout=0.5) raises TimeoutError
     └── Code challenge: implement a parallel search across 3 databases returning fastest result
 ```
 
@@ -59,17 +59,17 @@ Try each before reading the corresponding section below.
 
 **Race conditions and failure modes derived per pattern:**
 
-- **Future blocking**: Blocking `.get()` pins a thread for the entire I/O duration. 10,000 concurrent requests × 200ms each = threads pile up waiting. With a 500-thread pool, Thread 501 cannot start until Thread 1 finishes its 200ms wait. Fix: don't block between I/O steps — use callbacks or `CompletableFuture` chaining.
+- **Future blocking**: Blocking `future.result()` pins a thread for the entire I/O duration. 10,000 concurrent requests × 200ms each = threads pile up waiting. With a 500-thread pool, Thread 501 cannot start until Thread 1 finishes its 200ms wait. Fix: don't block between I/O steps — use `asyncio` with `await` to free the thread between steps.
 
-- **Sequential chaining**: 100ms + 150ms + 10ms = 260ms minimum if you call `.get()` between steps (each step blocks before the next starts). With `CompletableFuture.thenApplyAsync`, the steps chain without intermediate blocking — still 260ms of actual I/O, but the thread is freed between steps.
+- **Sequential chaining**: 100ms + 150ms + 10ms = 260ms minimum if you block between steps. With `asyncio` and sequential `await`, the coroutine suspends between steps without pinning a thread — still 260ms of actual I/O, but the event loop handles other work in between.
 
-- **Fan-out sequential vs concurrent**: Sequential = 200ms + 200ms + 200ms = 600ms. Concurrent with `CompletableFuture.allOf()` = 200ms (all three in parallel). The constraint: independent operations must not be sequenced.
+- **Fan-out sequential vs concurrent**: Sequential = 200ms + 200ms + 200ms = 600ms. Concurrent with `asyncio.gather()` = 200ms (all three in parallel). The constraint: independent operations must not be sequenced.
 
-- **Timeout**: Without timeout, one slow external call holds a thread for 30 seconds. Under load, the thread pool drains and the entire service stops accepting requests — cascade failure. Fix: `.orTimeout(500, MILLISECONDS)` releases the thread and throws, allowing caller to use a fallback.
+- **Timeout**: Without timeout, one slow external call blocks the coroutine indefinitely. Under load, all event loop slots drain and the service stops responding — cascade failure. Fix: `asyncio.wait_for(coro, timeout=0.5)` cancels the task and raises `TimeoutError`, allowing the caller to use a fallback.
 
 ---
 
-> Java async execution patterns for LLD interviews. Know these for any system involving parallel I/O, async pipelines, or non-blocking computation.
+> Python async execution patterns for LLD interviews. Know these for any system involving parallel I/O, async pipelines, or non-blocking computation.
 
 ---
 
@@ -77,80 +77,93 @@ Try each before reading the corresponding section below.
 
 **Problem**: Run a task on another thread and retrieve the result later.
 
-```java
-ExecutorService executor = Executors.newFixedThreadPool(4);
+```python
+import concurrent.futures
+import time
 
-Future<Integer> future = executor.submit(() -> {
-    Thread.sleep(1000);
-    return 42;
-});
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
-// Do other work here...
+def task():
+    time.sleep(1)
+    return 42
 
-Integer result = future.get();           // blocks until done
-Integer result = future.get(2, SECONDS); // blocks with timeout; throws TimeoutException
-future.cancel(true);                     // interrupt if running
+future = executor.submit(task)
+
+# Do other work here...
+
+result = future.result()              # blocks until done
+result = future.result(timeout=2)     # blocks with timeout; raises TimeoutError
+future.cancel()                       # cancel if not yet running
 ```
 
-**Limitations of Future**: No chaining, no callbacks, no composition — use `CompletableFuture` for anything non-trivial.
+**Limitations of `concurrent.futures.Future`**: No chaining, no callbacks, no composition — use `asyncio` for anything non-trivial.
 
 ---
 
-## 2. CompletableFuture — Async Pipeline
+## 2. asyncio — Async Pipeline
 
 **Problem**: Chain async operations without blocking between steps.
 
-```java
-CompletableFuture<String> pipeline = CompletableFuture
-    .supplyAsync(() -> fetchUserId(), executor)           // start async
-    .thenApplyAsync(id -> fetchUserProfile(id), executor) // transform result
-    .thenApplyAsync(profile -> formatResponse(profile))   // another transform
-    .exceptionally(ex -> "fallback response");            // handle any error in chain
+```python
+import asyncio
 
-String result = pipeline.get(); // block at the end only
+async def pipeline():
+    try:
+        user_id = await fetch_user_id()           # start async
+        profile  = await fetch_user_profile(user_id)  # transform result
+        response = await format_response(profile)     # another transform
+        return response
+    except Exception:
+        return "fallback response"                # handle any error in chain
+
+result = asyncio.run(pipeline())                  # block at the end only
 ```
 
-**Key methods:**
+**Key operations:**
 
-| Method | Input | Output | Notes |
-|--------|-------|--------|-------|
-| `supplyAsync` | none | T | Start async computation |
-| `thenApply` | T → U | U | Sync transform of result |
-| `thenApplyAsync` | T → U | U | Async transform (new thread) |
-| `thenAccept` | T → void | void | Consume result, no return |
-| `thenRun` | void → void | void | Run action after completion |
-| `thenCompose` | T → CF<U> | CF<U> | FlatMap — avoid nested CFs |
-| `exceptionally` | Throwable → T | T | Recover from any error |
-| `handle` | (T, Throwable) → U | U | Handle both success and error |
+| Operation | Input | Output | Notes |
+|-----------|-------|--------|-------|
+| `executor.submit(fn)` | callable | Future | Start computation in thread pool |
+| `await coro` | coroutine | T | Await result; suspends caller |
+| `asyncio.gather(*coros)` | coroutines | list[T] | Fan-out; all run concurrently |
+| `asyncio.wait_for(coro, timeout)` | coroutine | T | Enforce deadline; raises TimeoutError |
+| `asyncio.wait(FIRST_COMPLETED)` | coroutines | (done, pending) | Race; first wins |
+| `try/except` around `await` | — | — | Recover from any error in the chain |
+| `loop.create_future()` | — | Future | Bridge callback APIs into asyncio |
 
 ---
 
-## 3. Combining Multiple Futures
+## 3. Combining Multiple Coroutines (Fan-Out)
 
 **Problem**: Fan out N async calls, then aggregate results.
 
-```java
-CompletableFuture<UserProfile> profileFuture = fetchProfileAsync(userId);
-CompletableFuture<List<Order>> ordersFuture  = fetchOrdersAsync(userId);
-CompletableFuture<Balance>     balanceFuture = fetchBalanceAsync(userId);
+```python
+import asyncio
 
-// Wait for ALL — returns CF<Void>; access via .join() on each
-CompletableFuture.allOf(profileFuture, ordersFuture, balanceFuture)
-    .thenRun(() -> {
-        UserProfile profile = profileFuture.join();  // never blocks here — already done
-        List<Order>  orders  = ordersFuture.join();
-        Balance      balance = balanceFuture.join();
-        buildDashboard(profile, orders, balance);
-    });
+async def fan_out(user_id):
+    # Wait for ALL — gather runs coroutines concurrently
+    profile, orders, balance = await asyncio.gather(
+        fetch_profile_async(user_id),
+        fetch_orders_async(user_id),
+        fetch_balance_async(user_id),
+    )
+    build_dashboard(profile, orders, balance)
 
-// Wait for FIRST — useful for hedged requests / race
-CompletableFuture<String> first = CompletableFuture.anyOf(replica1, replica2, replica3)
-    .thenApply(result -> (String) result);
+# Wait for FIRST — useful for hedged requests / race
+async def hedged_read():
+    done, pending = await asyncio.wait(
+        [replica1(), replica2(), replica3()],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()                 # cancel remaining replicas
+    first_result = next(iter(done)).result()
+    return first_result
 ```
 
-**`allOf` vs `anyOf`**:
-- `allOf`: all must complete; aggregate results; throws if any fails
-- `anyOf`: first to complete wins; hedged reads, failover
+**`asyncio.gather` vs `asyncio.wait(FIRST_COMPLETED)`**:
+- `gather`: all must complete; aggregate results; raises if any fails
+- `wait(FIRST_COMPLETED)`: first to complete wins; hedged reads, failover
 
 ---
 
@@ -158,71 +171,91 @@ CompletableFuture<String> first = CompletableFuture.anyOf(replica1, replica2, re
 
 **Problem**: Enforce deadline on async call; return default on timeout or failure.
 
-```java
-// Java 9+: orTimeout and completeOnTimeout
-CompletableFuture<String> result = fetchRemoteData()
-    .orTimeout(500, TimeUnit.MILLISECONDS)        // throws TimeoutException on breach
-    .exceptionally(ex -> "default value");         // catches both timeout and other errors
+```python
+import asyncio
 
-// completeOnTimeout: complete with value instead of exception
-CompletableFuture<String> result = fetchRemoteData()
-    .completeOnTimeout("cached fallback", 500, MILLISECONDS);
+async def with_timeout():
+    try:
+        result = await asyncio.wait_for(
+            fetch_remote_data(), timeout=0.5   # raises asyncio.TimeoutError on breach
+        )
+    except asyncio.TimeoutError:
+        result = "default value"               # fallback on timeout
+    return result
+
+# completeOnTimeout equivalent — return default instead of raising
+async def with_timeout_fallback():
+    try:
+        return await asyncio.wait_for(fetch_remote_data(), timeout=0.5)
+    except asyncio.TimeoutError:
+        return "cached fallback"
 ```
 
 ---
 
-## 5. Async Exception Handling
+## 5. Async Exception Handling (asyncio)
 
 **Problem**: Handle errors at different stages of the pipeline without breaking the chain.
 
-```java
-CompletableFuture<String> result = CompletableFuture
-    .supplyAsync(() -> callExternalService())
-    .handle((value, ex) -> {                       // handle() always runs
-        if (ex != null) {
-            log.error("External service failed", ex);
-            return "fallback";
-        }
-        return value;
-    })
-    .thenApply(v -> transform(v));                  // only runs if no unhandled exception
+```python
+import asyncio
+import logging
+
+async def pipeline_with_error_handling():
+    try:
+        value = await call_external_service()
+    except Exception as ex:
+        logging.error("External service failed", exc_info=ex)
+        value = "fallback"
+    # transform runs whether we got real value or fallback
+    return transform(value)
 ```
 
-**`exceptionally` vs `handle`**:
-- `exceptionally`: runs only on failure; recovery only
-- `handle`: runs always; can inspect both value and exception; more flexible
+**Error handling patterns**:
+- `except ExceptionType`: runs only on failure; recovery only
+- `try/except/else`: `else` runs on success; `except` on failure; most flexible
 
 ---
 
-## 6. Completable Future as a Promise
+## 6. asyncio Future as a Promise
 
-**Problem**: Bridge callback-based API (e.g., async HTTP client) into `CompletableFuture`.
+**Problem**: Bridge callback-based API (e.g., async HTTP client) into an `asyncio.Future`.
 
-```java
-public CompletableFuture<Response> fetchAsync(String url) {
-    CompletableFuture<Response> promise = new CompletableFuture<>();
+```python
+import asyncio
 
-    httpClient.get(url, new Callback() {
-        @Override public void onSuccess(Response r) { promise.complete(r); }
-        @Override public void onFailure(Throwable t) { promise.completeExceptionally(t); }
-    });
+async def fetch_async(url: str):
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
 
-    return promise; // caller chains .thenApply() etc. on this
-}
+    def on_success(response):
+        loop.call_soon_threadsafe(future.set_result, response)
+
+    def on_failure(exc):
+        loop.call_soon_threadsafe(future.set_exception, exc)
+
+    http_client.get(url, on_success=on_success, on_failure=on_failure)
+
+    return await future  # caller uses: response = await fetch_async(url)
 ```
 
 ---
 
 ## 7. Blocking vs Non-Blocking Retrieval
 
-```java
-cf.get()            // blocks; throws checked InterruptedException + ExecutionException
-cf.join()           // blocks; throws unchecked CompletionException — prefer in lambda chains
-cf.getNow(default)  // returns immediately: result if done, else default (no block)
-cf.isDone()         // poll without blocking
+```python
+# concurrent.futures.Future (thread-based)
+future.result()                    # blocks; raises exception if task failed
+future.result(timeout=2)           # blocks with timeout; raises TimeoutError
+future.done()                      # poll without blocking — True if finished or cancelled
+
+# asyncio (event-loop-based)
+result = await coro                # non-blocking await inside async def
+task.done()                        # poll without blocking
+task.result()                      # get result if done; raises if not yet done or failed
 ```
 
-**Rule**: Use `.join()` inside `.thenRun()` / `.thenAccept()` (already inside a completion callback, guaranteed done). Use `.get(timeout)` at the boundary where you must block.
+**Rule**: Use `await` inside `async def` functions (non-blocking). Use `future.result(timeout)` only at the sync boundary where you must block (e.g., top-level or in a non-async context). Never block inside a running event loop.
 
 ---
 
@@ -230,23 +263,23 @@ cf.isDone()         // poll without blocking
 
 | Need | Use |
 |------|-----|
-| Single async task, block for result | `ExecutorService.submit()` + `Future.get()` |
-| Chain transformations without blocking | `CompletableFuture.thenApply / thenCompose` |
-| Fan-out N calls, aggregate | `CompletableFuture.allOf()` + `.join()` on each |
-| First of N wins (hedged request) | `CompletableFuture.anyOf()` |
-| Enforce deadline on async call | `.orTimeout()` or `.completeOnTimeout()` |
-| Recover from failure in chain | `.exceptionally()` for simple, `.handle()` for both |
-| Bridge callback API to CF | `new CompletableFuture<>()` + `.complete()` / `.completeExceptionally()` |
-| Async inside lambda safely | `.join()` (unchecked) over `.get()` (checked) |
+| Single async task, block for result | `executor.submit()` + `future.result()` |
+| Chain transformations without blocking | `async def` + sequential `await` |
+| Fan-out N calls, aggregate | `asyncio.gather()` |
+| First of N wins (hedged request) | `asyncio.wait(return_when=FIRST_COMPLETED)` |
+| Enforce deadline on async call | `asyncio.wait_for(coro, timeout=N)` |
+| Recover from failure in chain | `try/except` around `await`; use fallback in `except` |
+| Bridge callback API to asyncio | `loop.create_future()` + `future.set_result()` / `set_exception()` |
+| Async inside thread pool safely | `asyncio.run_coroutine_threadsafe()` |
 
 ---
 
 ## Quick Revision
 
-- **Future**: basic async result; blocking `.get()`; no chaining — use only for simple cases
-- **CompletableFuture**: composable; `thenApply` (sync), `thenApplyAsync` (async); `thenCompose` = flatMap
-- **allOf**: fan-out then join; `anyOf`: race / hedged read
-- **orTimeout**: throws on deadline breach; `completeOnTimeout`: returns default instead
-- **handle()** runs on both success and failure; `exceptionally()` only on failure
-- **Promise bridge**: `new CompletableFuture<>()` + `.complete()` in callback
-- Never call `.get()` on the event/IO thread — always use `.thenApplyAsync(executor)` to shift work
+- **concurrent.futures.Future**: basic async result from thread pool; blocking `.result()`; no chaining — use only for simple cases
+- **asyncio**: composable; `async def` + `await` for sequential steps; `asyncio.gather()` for fan-out
+- **asyncio.gather()**: fan-out then aggregate all results; `asyncio.wait(FIRST_COMPLETED)`: race / hedged read
+- **asyncio.wait_for(timeout)**: raises `TimeoutError` on deadline breach; catch to return default
+- **try/except** around `await` handles both success path and failure recovery
+- **Promise bridge**: `loop.create_future()` + `.set_result()` / `.set_exception()` in callback
+- Never block (`future.result()`) inside a running event loop — always `await` or offload to a thread pool

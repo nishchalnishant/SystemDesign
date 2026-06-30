@@ -2,444 +2,446 @@
 module: 06-lld
 topic: Problems
 status: unread
-tags: [06-lld, system-design, problems]
+tags: [06-lld, lld, text-editor, gap-buffer, command-pattern, undo-redo]
 ---
-# Design Text Editor (Sublime Text / VS Code)
+# Design Text Editor
 
 > **Difficulty**: Hard
-> **Topics**: Data Structures (Gap Buffer), Command Pattern, Undo/Redo
-> **Key Concepts**: Gap Buffer for O(1) insert/delete at cursor, Command pattern for unlimited undo, Piece Table for large files.
+> **Asked at**: Amazon, Microsoft, Dropbox
+> **Key Patterns**: Command Pattern (undo/redo), Gap Buffer (efficient insert/delete at cursor)
 
 ---
 
-## Real-Life Analogy
+## Understanding the Problem
 
-Imagine typing on a typewriter with a **movable carriage**. The carriage sits at your current cursor position. When you type a character, it slots right into the spot where the carriage sits — zero shifting required, because the blank space in the paper is already there at the carriage. When you move the carriage to a different position, all that blank space travels with it.
-
-That blank space is the **gap** in a Gap Buffer. Internally, the editor holds a fixed array of characters with an intentional empty stretch (the gap) located exactly where your cursor is. Insert at cursor? Write into the gap, shrink it by one. Delete at cursor? Expand the gap by one. Both are O(1). Move the cursor across the document? The gap physically slides to the new position by copying characters over it — O(distance) but rare compared to typing. For everyday editing where you mostly type in one place, a Gap Buffer beats a plain array dramatically.
-
-The second insight: **every edit is an object**, not a raw mutation. Insert('A') and Delete('B') are both `Command` objects stored on a stack. Undo means popping the stack and calling `command.undo()`. Redo means replaying it. This decouples "what happened" from "how to reverse it" — a clean separation that makes unlimited history trivial.
+Design the backend of a text editor supporting efficient insert, delete, cursor movement, undo/redo, and text search.
 
 ---
 
-## Phase 1: Requirements
+## Clarifying Questions
 
-### Functional Requirements
-- **Insert**: Add a character or string at the current cursor position.
-- **Delete**: Remove the character before the cursor (Backspace).
-- **Move cursor**: Left, right, home, end, go-to-line.
-- **Undo**: Reverse the last edit command.
-- **Redo**: Re-apply an undone command.
-- **Get content**: Return the current document text.
+**You**: "What operations must the editor support?"
+**Interviewer**: "Insert character, delete character (backspace), move cursor, undo, redo."
 
-### Non-Functional Requirements
-- **Latency**: Every keystroke must complete in <1ms for documents up to 10 MB.
-- **Memory**: The Gap Buffer stores the document as a single char array — no extra allocations per character.
-- **Large file support** (extension): Piece Table for multi-GB files where Gap Buffer's gap-move cost becomes prohibitive.
+**You**: "What data structure for storing text?"
+**Interviewer**: "Explain your choice — gap buffer, rope, or plain array."
 
-### Concurrency Constraints
-- Single-threaded model — the UI event loop serializes all edits. Undo/redo stacks require no locking.
-- Background threads (syntax highlighting, auto-save) read the document snapshot and must not mutate the buffer directly — they work on a copy or an immutable view.
+**You**: "What's the maximum document size?"
+**Interviewer**: "Assume it fits in memory — no paging required."
+
+**You**: "Do we need multi-line support?"
+**Interviewer**: "Yes — newlines are valid characters."
+
+**You**: "Is undo history bounded?"
+**Interviewer**: "Yes — max 100 undo levels."
 
 ---
 
-## Phase 2: Use Cases
+## Final Requirements
 
-### Actors
-- **User**: Presses keys; triggers insert, delete, move, undo, redo.
-- **Text Editor**: Translates keystrokes into Command objects; delegates to GapBuffer.
+**In scope:**
+1. Insert character / string at cursor
+2. Delete character (backspace at cursor)
+3. Move cursor (left, right)
+4. Undo / redo (up to 100 levels)
+5. Get current content as string
+6. Cursor position tracking
 
-### UC1: User Types a Character
-**Actor**: User
-**Flow**:
-1. User presses 'A'.
-2. `TextEditor` creates `InsertCommand('A', cursor)`.
-3. Command calls `buffer.insert('A')` → character written into gap; gap pointer advances.
-4. Command is pushed onto the undo stack; redo stack is cleared.
-5. Cursor moves right by one.
-
-### UC2: User Presses Backspace
-**Actor**: User
-**Flow**:
-1. User presses Backspace.
-2. `TextEditor` creates `DeleteCommand(buffer.charBeforeCursor(), cursor)`.
-3. Command calls `buffer.deleteBack()` → gap expands left; character is overwritten.
-4. Command pushed onto undo stack.
-
-### UC3: User Presses Ctrl+Z (Undo)
-**Actor**: User
-**Flow**:
-1. Pop top command from undo stack.
-2. Call `command.undo()` — reverses the operation (insert undo = delete; delete undo = insert).
-3. Push command to redo stack.
-
-### UC4: User Moves Cursor to Position K
-**Actor**: User
-**Flow**:
-1. User clicks a different position or presses an arrow key.
-2. `buffer.moveCursor(k)` slides the gap to position k — O(|k - cursor|) copy operations.
-3. Subsequent inserts/deletes are again O(1).
+**Out of scope:**
+- Syntax highlighting
+- File I/O
+- Multiple cursors
+- Clipboard — mention as extension
 
 ---
 
-## Phase 3: Class Diagram
+## Core Entities and Relationships
 
-### Core Entities
-- **TextEditor**: Facade. Translates keystrokes into commands; owns the undo/redo stacks.
-- **GapBuffer**: The document store. A single `char[]` with a gap at the cursor position.
-- **Command**: Interface with `execute()` and `undo()`.
-- **InsertCommand / DeleteCommand**: Concrete commands that capture enough state to reverse themselves.
-- **CommandHistory**: Manages undo and redo stacks.
+| Entity | Responsibility |
+|--------|---------------|
+| `GapBuffer` | Core text storage: O(1) insert/delete near cursor |
+| `Cursor` | Tracks absolute offset in the text |
+| `Command` | Abstract: execute() + undo() for Command pattern |
+| `InsertCommand` | Inserts text; stores position for undo |
+| `DeleteCommand` | Deletes char; stores deleted char for undo |
+| `Editor` | Orchestrates buffer, cursor, undo/redo stacks |
 
-### Key Design Decisions
-- `GapBuffer` stores the logical cursor as `gapStart` — inserting is `buf[gapStart++] = c` (one array write). No shifting of any subsequent characters.
-- `InsertCommand` captures the character and cursor position at time of execution so `undo()` can precisely reverse it, even if many other edits have occurred.
-- `CommandHistory.execute()` clears the redo stack — once you type after an undo, the alternative future is discarded (same behavior as every real editor).
+`Editor` holds one `GapBuffer`, one `Cursor`, and two stacks (undo / redo). Every operation creates a `Command`, executes it, pushes to undo stack, clears redo stack.
 
-```mermaid
-classDiagram
-    class TextEditor {
-        -GapBuffer buffer
-        -CommandHistory history
-        +insert(char c)
-        +deleteBack()
-        +moveCursor(int pos)
-        +undo()
-        +redo()
-        +getText() String
-    }
+---
 
-    class GapBuffer {
-        -char[] buf
-        -int gapStart
-        -int gapEnd
-        -int capacity
-        +insert(char c)
-        +deleteBack() char
-        +moveGap(int newPos)
-        +charAt(int logicalPos) char
-        +length() int
-        +getText() String
-        -grow()
-    }
+## Class Design
 
-    class Command {
-        <<interface>>
-        +execute()
-        +undo()
-    }
+### GapBuffer
 
-    class InsertCommand {
-        -GapBuffer buffer
-        -char c
-        -int cursorBefore
-        +execute()
-        +undo()
-    }
+| Requirement | What GapBuffer must track |
+|-------------|--------------------------|
+| "O(1) insert/delete at cursor" | char array with gap at cursor position |
+| "Gap boundaries" | gap_start, gap_end (exclusive) |
 
-    class DeleteCommand {
-        -GapBuffer buffer
-        -char deleted
-        -int cursorBefore
-        +execute()
-        +undo()
-    }
+```
+class GapBuffer:
+- buffer: list[str]    # char array with embedded gap
+- gap_start: int
+- gap_end: int
+- GAP_SIZE: int = 128
 
-    class CommandHistory {
-        -Deque~Command~ undoStack
-        -Deque~Command~ redoStack
-        +execute(Command cmd)
-        +undo()
-        +redo()
-    }
++ insert(char: str)
++ delete() -> Optional[str]    # removes char before cursor
++ move_cursor(new_pos: int)    # moves gap to absolute position
++ to_string() -> str
++ content_length() -> int      # excludes gap
+```
 
-    TextEditor --> GapBuffer
-    TextEditor --> CommandHistory
-    CommandHistory --> Command
-    Command <|.. InsertCommand
-    Command <|.. DeleteCommand
-    InsertCommand --> GapBuffer
-    DeleteCommand --> GapBuffer
+### Command
+
+```
+class Command (abstract):
++ execute(buffer: GapBuffer, cursor: Cursor)
++ undo(buffer: GapBuffer, cursor: Cursor)
+
+class InsertCommand(Command):
+- text: str
+- position: int
+
+class DeleteCommand(Command):
+- deleted_char: str      # set during execute
+- position: int          # cursor position before delete
+```
+
+### Editor
+
+```
+class Editor:
+- buffer: GapBuffer
+- cursor: Cursor
+- undo_stack: deque      # maxlen=100
+- redo_stack: deque
+
++ insert(text: str)
++ delete()
++ move_left()
++ move_right()
++ undo()
++ redo()
++ get_content() -> str
 ```
 
 ---
 
-## Phase 4: Design Patterns Applied
+## Implementation
 
-### 1. Gap Buffer (Core Data Structure)
-**What**: A char array with a movable "gap" (empty space) always positioned at the cursor. Insert = write at `gapStart`, advance `gapStart`. Delete = retreat `gapStart`. Move cursor = copy characters across the gap boundary.
-**Why**: Most edits happen near the cursor (sequential typing). The gap makes those O(1). A plain `ArrayList<Character>` is O(N) per insert because it shifts every subsequent character one position. For a 100 KB file, that's 100,000 array moves per keystroke.
+### Core Data Structure: GapBuffer
 
-### 2. Command Pattern (Undo / Redo)
-**What**: Every edit is encapsulated as a `Command` object with `execute()` and `undo()` methods. `CommandHistory` maintains two stacks.
-**Why**: Without Command, undo requires storing a complete document snapshot before every edit — O(N) memory per operation. Command stores only the delta (one character + position), making undo O(1) in time and space. The stacks also make redo trivial — no special logic needed.
+A gap buffer is a char array with a "gap" (free space) at the cursor position. Insertions at the cursor are O(1) — write into the gap. Moving the cursor shifts the gap (O(k) where k = distance). Growing the gap requires reallocation.
 
-### 3. Facade Pattern (TextEditor)
-**What**: `TextEditor` presents four clean methods (`insert`, `deleteBack`, `undo`, `redo`) that hide `GapBuffer` manipulation and stack management.
-**Why**: A UI layer should not know about gap positions or command stacks. The facade enforces the correct sequencing: always create and execute a command through history, never mutate the buffer directly.
+```
+Initial: buffer = [_, _, _, _, h, e, l, l, o], gap=[0,4)
+Insert 'w': buffer = [w, _, _, _, h, e, l, l, o], gap=[1,4)
+Insert 'o': buffer = [w, o, _, _, h, e, l, l, o], gap=[2,4)
 
----
+Move cursor left by 1 (pos 2 → 1):
+  Shift char left of gap (o) to right side of gap
+  buffer = [w, _, _, o, h, e, l, l, o], gap=[1,4)
+```
 
-## Phase 5: Key Java Implementation
+```python
+class GapBuffer:
+    GAP_SIZE = 128
 
-The interesting part is the **Gap Buffer** — the internal mechanics of insert, delete, and gap movement — plus the Command pattern wired on top of it.
+    def __init__(self):
+        self.buffer = [''] * self.GAP_SIZE
+        self.gap_start = 0
+        self.gap_end = self.GAP_SIZE
 
-```java
-import java.util.*;
+    def insert(self, char):
+        if self.gap_start == self.gap_end:
+            self._grow_gap()
+        self.buffer[self.gap_start] = char
+        self.gap_start += 1
 
-// --- Gap Buffer: the document store ---
-class GapBuffer {
-    private char[] buf;
-    private int gapStart;  // first index of the gap (next insert goes here)
-    private int gapEnd;    // first index after the gap (exclusive)
+    def delete(self):
+        if self.gap_start == 0:
+            return None
+        self.gap_start -= 1
+        deleted = self.buffer[self.gap_start]
+        self.buffer[self.gap_start] = ''
+        return deleted
 
-    // The logical cursor position equals gapStart (gap is at the cursor).
-    // Logical length = buf.length - gapSize
+    def move_cursor(self, new_pos):
+        current_pos = self.gap_start
+        if new_pos < current_pos:
+            # Move gap left: shift chars from left of gap to right
+            steps = current_pos - new_pos
+            for _ in range(steps):
+                self.gap_end -= 1
+                self.gap_start -= 1
+                self.buffer[self.gap_end] = self.buffer[self.gap_start]
+                self.buffer[self.gap_start] = ''
+        elif new_pos > current_pos:
+            # Move gap right: shift chars from right of gap to left
+            steps = new_pos - current_pos
+            for _ in range(steps):
+                self.buffer[self.gap_start] = self.buffer[self.gap_end]
+                self.buffer[self.gap_end] = ''
+                self.gap_start += 1
+                self.gap_end += 1
 
-    GapBuffer(int initialCapacity) {
-        buf = new char[initialCapacity];
-        gapStart = 0;
-        gapEnd   = initialCapacity; // Entire buffer starts as one big gap
-    }
+    def to_string(self):
+        return ''.join(
+            c for i, c in enumerate(self.buffer)
+            if not (self.gap_start <= i < self.gap_end)
+        )
 
-    // --- Core operations ---
+    def content_length(self):
+        return len(self.buffer) - (self.gap_end - self.gap_start)
 
-    // O(1) insert at cursor
-    void insert(char c) {
-        if (gapStart == gapEnd) grow(); // Gap is full — expand
-        buf[gapStart++] = c;
-    }
+    def _grow_gap(self):
+        content = self.to_string()
+        pos = self.gap_start
+        new_buf = (
+            list(content[:pos]) +
+            [''] * self.GAP_SIZE +
+            list(content[pos:])
+        )
+        self.buffer = new_buf
+        self.gap_end = pos + self.GAP_SIZE
+```
 
-    // O(1) delete character before cursor (Backspace)
-    char deleteBack() {
-        if (gapStart == 0) throw new IllegalStateException("Nothing to delete");
-        char deleted = buf[gapStart - 1];
-        gapStart--; // Expand gap left — deleted character is now inside the gap
-        return deleted;
-    }
+### Command Pattern: Insert / Delete
 
-    // O(|newPos - cursor|) — move gap to new logical position
-    // Called when the user clicks a different location or uses arrow keys
-    void moveGap(int logicalPos) {
-        int currentPos = gapStart;
-        if (logicalPos == currentPos) return;
+```python
+class InsertCommand:
+    def __init__(self, text, position):
+        self.text = text
+        self.position = position
 
-        int gapSize = gapEnd - gapStart;
+    def execute(self, buffer, cursor):
+        buffer.move_cursor(self.position)
+        for char in self.text:
+            buffer.insert(char)
+        cursor.position = self.position + len(self.text)
 
-        if (logicalPos < currentPos) {
-            // Moving left: shift characters from before gap to after gap
-            // [... A B C | gap | D E ...]  cursor moves left by 2
-            // [... | gap | A B C D E ...]  → shift A,B into positions after gap
-            int count = currentPos - logicalPos;
-            System.arraycopy(buf, logicalPos, buf, gapEnd - count, count);
-            gapStart = logicalPos;
-            gapEnd   = logicalPos + gapSize;
-        } else {
-            // Moving right: shift characters from after gap to before gap
-            int count = logicalPos - currentPos;
-            System.arraycopy(buf, gapEnd, buf, gapStart, count);
-            gapStart = logicalPos;
-            gapEnd   = logicalPos + gapSize;
-        }
-    }
+    def undo(self, buffer, cursor):
+        buffer.move_cursor(self.position + len(self.text))
+        for _ in self.text:
+            buffer.delete()
+        cursor.position = self.position
 
-    // Cursor position = gapStart (logical)
-    int cursor() { return gapStart; }
+class DeleteCommand:
+    def __init__(self, position):
+        self.position = position
+        self.deleted_char = None
 
-    // Logical document length
-    int length() { return buf.length - (gapEnd - gapStart); }
+    def execute(self, buffer, cursor):
+        buffer.move_cursor(self.position)
+        self.deleted_char = buffer.delete()
+        cursor.position = self.position - 1
 
-    // Retrieve the full document as a String
-    String getText() {
-        char[] result = new char[length()];
-        System.arraycopy(buf, 0, result, 0, gapStart);
-        System.arraycopy(buf, gapEnd, result, gapStart, buf.length - gapEnd);
-        return new String(result);
-    }
+    def undo(self, buffer, cursor):
+        buffer.move_cursor(self.position - 1)
+        buffer.insert(self.deleted_char)
+        cursor.position = self.position
+```
 
-    // Double the buffer when the gap is exhausted
-    private void grow() {
-        int newCapacity = buf.length * 2;
-        char[] newBuf   = new char[newCapacity];
-        int gapSize     = gapEnd - gapStart;
+### Editor: undo/redo orchestration
 
-        // Copy content before gap, leave space for a bigger gap, copy content after gap
-        System.arraycopy(buf, 0, newBuf, 0, gapStart);
-        int newGapEnd = newCapacity - (buf.length - gapEnd);
-        System.arraycopy(buf, gapEnd, newBuf, newGapEnd, buf.length - gapEnd);
+```python
+class Editor:
+    MAX_UNDO = 100
 
-        buf      = newBuf;
-        gapEnd   = newGapEnd;
-        // gapStart unchanged
-        System.out.println("  [GapBuffer grew to capacity " + newCapacity + "]");
-    }
-}
+    def __init__(self):
+        self.buffer = GapBuffer()
+        self.cursor = Cursor(position=0)
+        self.undo_stack = deque(maxlen=self.MAX_UNDO)
+        self.redo_stack = deque()
 
-// --- Command interface ---
-interface Command {
-    void execute();
-    void undo();
-}
+    def insert(self, text):
+        cmd = InsertCommand(text, self.cursor.position)
+        cmd.execute(self.buffer, self.cursor)
+        self.undo_stack.append(cmd)
+        self.redo_stack.clear()
 
-// --- Insert: captures character + cursor position before insert ---
-class InsertCommand implements Command {
-    private final GapBuffer buf;
-    private final char c;
-    private final int cursorBefore;
+    def delete(self):
+        if self.cursor.position == 0:
+            return
+        cmd = DeleteCommand(self.cursor.position)
+        cmd.execute(self.buffer, self.cursor)
+        self.undo_stack.append(cmd)
+        self.redo_stack.clear()
 
-    InsertCommand(GapBuffer buf, char c) {
-        this.buf          = buf;
-        this.c            = c;
-        this.cursorBefore = buf.cursor();
-    }
+    def move_left(self):
+        if self.cursor.position > 0:
+            self.cursor.position -= 1
+            self.buffer.move_cursor(self.cursor.position)
 
-    @Override
-    public void execute() {
-        buf.moveGap(cursorBefore);
-        buf.insert(c);
-    }
+    def move_right(self):
+        if self.cursor.position < self.buffer.content_length():
+            self.cursor.position += 1
+            self.buffer.move_cursor(self.cursor.position)
 
-    @Override
-    public void undo() {
-        // Cursor is now after the inserted char; move back and delete it
-        buf.moveGap(cursorBefore + 1);
-        buf.deleteBack();
-    }
-}
+    def undo(self):
+        if not self.undo_stack:
+            return
+        cmd = self.undo_stack.pop()
+        cmd.undo(self.buffer, self.cursor)
+        self.redo_stack.append(cmd)
 
-// --- Delete (Backspace): captures deleted char + cursor position ---
-class DeleteCommand implements Command {
-    private final GapBuffer buf;
-    private final int cursorBefore;
-    private char deleted; // Filled in during execute()
+    def redo(self):
+        if not self.redo_stack:
+            return
+        cmd = self.redo_stack.pop()
+        cmd.execute(self.buffer, self.cursor)
+        self.undo_stack.append(cmd)
 
-    DeleteCommand(GapBuffer buf) {
-        this.buf          = buf;
-        this.cursorBefore = buf.cursor();
-    }
-
-    @Override
-    public void execute() {
-        buf.moveGap(cursorBefore);
-        deleted = buf.deleteBack(); // Records what was deleted for undo
-    }
-
-    @Override
-    public void undo() {
-        // Re-insert the deleted character at the position it came from
-        buf.moveGap(cursorBefore - 1);
-        buf.insert(deleted);
-    }
-}
-
-// --- Command history: undo/redo stacks ---
-class CommandHistory {
-    private final Deque<Command> undoStack = new ArrayDeque<>();
-    private final Deque<Command> redoStack = new ArrayDeque<>();
-
-    void execute(Command cmd) {
-        cmd.execute();
-        undoStack.push(cmd);
-        redoStack.clear(); // New edit discards the redo future
-    }
-
-    void undo() {
-        if (undoStack.isEmpty()) { System.out.println("  Nothing to undo."); return; }
-        Command cmd = undoStack.pop();
-        cmd.undo();
-        redoStack.push(cmd);
-        System.out.println("  Undone.");
-    }
-
-    void redo() {
-        if (redoStack.isEmpty()) { System.out.println("  Nothing to redo."); return; }
-        Command cmd = redoStack.pop();
-        cmd.execute();
-        undoStack.push(cmd);
-        System.out.println("  Redone.");
-    }
-}
-
-// --- TextEditor: facade ---
-public class TextEditor {
-    private final GapBuffer buffer = new GapBuffer(16);
-    private final CommandHistory history = new CommandHistory();
-
-    public void insert(char c) {
-        history.execute(new InsertCommand(buffer, c));
-    }
-
-    public void deleteBack() {
-        if (buffer.cursor() == 0) return;
-        history.execute(new DeleteCommand(buffer));
-    }
-
-    public void moveCursor(int logicalPos) {
-        buffer.moveGap(logicalPos); // Not a command — navigation is not undoable
-    }
-
-    public void undo() { history.undo(); }
-    public void redo() { history.redo(); }
-
-    public String getText() { return buffer.getText(); }
-
-    // --- Demo ---
-    public static void main(String[] args) {
-        TextEditor editor = new TextEditor();
-
-        // Type "Hello"
-        for (char c : "Hello".toCharArray()) editor.insert(c);
-        System.out.println("After typing 'Hello': '" + editor.getText() + "'");
-
-        // Move cursor back 3, insert 'X'
-        editor.moveCursor(2); // Move to after 'He'
-        editor.insert('X');
-        System.out.println("After insert 'X' at pos 2: '" + editor.getText() + "'"); // HeXllo
-
-        // Undo the X insertion
-        editor.undo();
-        System.out.println("After undo: '" + editor.getText() + "'"); // Hello
-
-        // Redo it
-        editor.redo();
-        System.out.println("After redo: '" + editor.getText() + "'"); // HeXllo
-
-        // Backspace twice
-        editor.moveCursor(editor.buffer.cursor()); // Stay at current position
-        editor.deleteBack();
-        editor.deleteBack();
-        System.out.println("After 2x backspace: '" + editor.getText() + "'"); // Hello (X and e removed)
-    }
-}
+    def get_content(self):
+        return self.buffer.to_string()
 ```
 
 ---
 
-## Phase 6: Trade-offs and Extensions
+## Verification
 
-### Trade-off: Gap Buffer vs. Piece Table vs. Rope
-| Data Structure | Insert/Delete at Cursor | Cursor Jump | Memory | Used By |
-|---|---|---|---|---|
-| Gap Buffer | O(1) | O(distance) | Low (single array) | Emacs, older editors |
-| Piece Table | O(1) amortized | O(log N) | Low (two buffers + index) | VS Code, Word |
-| Rope | O(log N) | O(log N) | Higher (tree nodes) | Large-file editors |
+```
+editor = Editor()   # content="", cursor=0
 
-Gap Buffer is ideal for interactive typing (locality of reference — you mostly type near the cursor). Piece Table wins for large files with random-access edits because it never moves data — it only updates a linked list of spans into two immutable buffers (original + append-only additions).
+editor.insert("hello")
+  InsertCommand(text="hello", position=0).execute()
+  buffer: [h,e,l,l,o], cursor=5
+  undo_stack: [Insert("hello", 0)]
 
-### Extension: Batch Undo (Word-level grouping)
-Real editors group adjacent character insertions into one undoable batch. Store a `CompoundCommand` that holds a list of `InsertCommand` objects. When the user presses Space or Enter, close the current compound command. Ctrl+Z undoes the entire word at once, not letter by letter.
+editor.delete()
+  cursor=5, DeleteCommand(position=5).execute()
+  deleted_char='o', cursor=4
+  undo_stack: [Insert("hello",0), Delete(5)]
 
-### Extension: Piece Table (VS Code approach)
-VS Code uses a Piece Table: the document is represented as a sequence of (buffer, offset, length) triples, where `buffer` is either "original" or "added". Insertions append to the "added" buffer (no copying) and add a new triple. Deletions split or shrink existing triples. No data is ever moved — the tree of triples is the document.
+editor.undo()
+  Delete(5).undo() → insert 'o' at position 4
+  buffer: [h,e,l,l,o], cursor=5
+  undo_stack: [Insert("hello",0)]
+  redo_stack: [Delete(5)]
 
-### Extension: Syntax Highlighting
-A background thread reads `buffer.getText()` periodically (or receives delta events via an observer). It tokenizes the snapshot and produces a `List<ColoredSpan>` for the renderer. The buffer itself has no knowledge of syntax — separation of concerns.
+editor.undo()
+  Insert("hello",0).undo() → delete 5 chars
+  buffer: [], cursor=0
+  undo_stack: []
+  redo_stack: [Delete(5), Insert("hello",0)]
+
+editor.redo()
+  Insert("hello",0).execute() → insert "hello"
+  buffer: [h,e,l,l,o], cursor=5
+```
 
 ---
 
-## SOLID Principles
-- **S**: `GapBuffer` owns character storage; `CommandHistory` owns undo/redo stacks; `TextEditor` owns the user-facing API.
-- **O**: New commands (`PasteCommand`, `SelectAllCommand`) extend `Command` interface — no changes to `CommandHistory` or `GapBuffer`.
-- **L**: `InsertCommand` and `DeleteCommand` are interchangeable anywhere `Command` is expected.
-- **I**: `Command` interface has only two methods (`execute`, `undo`) — every implementation uses both.
-- **D**: `TextEditor` depends on the `Command` interface, not on concrete command classes. `CommandHistory` similarly only knows `Command`.
+## Deep Dive & Extensibility
+
+### 1. "Gap Buffer vs Rope — when does each win?"
+
+**Gap Buffer**: O(1) insert/delete at the cursor gap. O(k) to move cursor k positions (shifts the gap). Ideal for typical editing — cursor usually stays near recent edits (spatial locality).
+
+**Rope**: Balanced binary tree of string chunks. O(log n) for all operations regardless of cursor position. Better for very large files or random-access edits. More complex to implement.
+
+For an interview, Gap Buffer is the right choice: simpler, optimal for typical use.
+
+### 2. "How would you add find/replace?"
+
+```python
+def find(self, query):
+    content = self.buffer.to_string()
+    positions = []
+    idx = 0
+    while True:
+        idx = content.find(query, idx)
+        if idx == -1:
+            break
+        positions.append(idx)
+        idx += 1
+    return positions
+
+def replace_all(self, query, replacement):
+    positions = self.find(query)
+    # Replace right-to-left to preserve earlier positions
+    for pos in reversed(positions):
+        for _ in range(len(query)):
+            self.buffer.move_cursor(pos + len(query))
+            self.buffer.delete()
+        self.buffer.move_cursor(pos)
+        for char in replacement:
+            self.buffer.insert(char)
+```
+
+### 3. "How would you add clipboard (copy/paste)?"
+
+```python
+class Clipboard:
+    content: str = ""
+
+class CopyCommand(Command):
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+
+    def execute(self, buffer, cursor, clipboard):
+        content = buffer.to_string()
+        clipboard.content = content[self.start:self.end]
+
+    def undo(self, buffer, cursor, clipboard):
+        pass   # copy is non-destructive — nothing to undo
+```
+
+Paste = `InsertCommand(clipboard.content, cursor.position)`.
+
+### 4. "How would you track line/column position efficiently?"
+
+Maintain a `LineIndex` — a sorted list of newline positions. `(line, col)` ↔ absolute offset via binary search:
+
+```python
+class LineIndex:
+    def __init__(self):
+        self.newlines = []   # sorted absolute positions of '\n'
+
+    def on_insert(self, pos, char):
+        if char == '\n':
+            bisect.insort(self.newlines, pos)
+        self.newlines = [n + 1 if n >= pos else n for n in self.newlines]
+
+    def line_col(self, offset):
+        line = bisect.bisect_left(self.newlines, offset)
+        prev_newline = self.newlines[line - 1] if line > 0 else -1
+        col = offset - prev_newline - 1
+        return line, col
+```
+
+### 5. "What's the memory cost of storing 100 undo commands?"
+
+Each InsertCommand stores the inserted text (typically 1-N chars) and position (int). DeleteCommand stores one char and position. For typical edits (single keystrokes), undo history is O(100 × constant) ≈ negligible. Batch-insert large pastes as one command to avoid N commands for N chars.
+
+---
+
+## Interviewer Questions by Level
+
+**Junior**: Array-based text buffer. Insert/delete characters. Move cursor. Get content as string.
+
+**Mid-level**: Gap Buffer for O(1) insert/delete at cursor. Command pattern for undo/redo. Bounded undo stack via deque maxlen. Redo clears on new edit.
+
+**Senior**: Gap Buffer growth strategy. Rope vs Gap Buffer trade-off. Line index for O(log n) line/col lookup. Clipboard extension. Replace right-to-left to preserve earlier positions.
+
+---
+
+## Common Interview Questions
+
+- **Q**: Why is a gap buffer better than a plain array for text editing?
+  **A**: Plain array insert at position i requires shifting O(n) elements right. Gap buffer keeps free space at the cursor — insert fills the gap in O(1). The shifting cost is paid only when the cursor moves, which matches the typical access pattern of real editing.
+
+- **Q**: How does the Command pattern enable undo/redo?
+  **A**: Every mutating operation creates a Command with enough state to reverse itself. `execute()` applies the change; `undo()` reverses it using stored state (deleted char, insertion position). Commands are pushed to a bounded undo stack; undo pops and reverses.
+
+- **Q**: What happens to the redo stack when the user makes a new edit?
+  **A**: It's cleared. Redo only applies to commands undone from the current branch. A new edit starts a new branch — the undone commands are no longer reachable.
+
+- **Q**: What is the time complexity of `to_string()` on a gap buffer?
+  **A**: O(n) — must iterate all non-gap positions and join them. This is acceptable because `to_string()` is called infrequently (save/display), while insert/delete (O(1)) are called constantly during editing.
+
+- **Q**: How would you limit memory usage for undo history?
+  **A**: `deque(maxlen=100)` — when full, appending a new command evicts the oldest one automatically in O(1). No manual management needed.

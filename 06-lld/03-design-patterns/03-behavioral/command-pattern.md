@@ -51,37 +51,37 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```java
-class RemoteControl {
-    private Light light;
-    private Fan fan;
-    private String lastAction;  // for undo
+```python
+class RemoteControl:
+    def __init__(self, light, fan):
+        self._light = light
+        self._fan = fan
+        self._last_action = ""  # for undo
 
-    public void pressButton(String device, String action) {
-        if (device.equals("LIGHT") && action.equals("ON")) {
-            light.turnOn();
-            lastAction = "LIGHT_ON";
-        } else if (device.equals("LIGHT") && action.equals("OFF")) {
-            light.turnOff();
-            lastAction = "LIGHT_OFF";
-        } else if (device.equals("FAN") && action.equals("ON")) {
-            fan.start();
-            lastAction = "FAN_ON";
-        }
-        // adding AC requires editing this method
-    }
+    def press_button(self, device, action):
+        if device == "LIGHT" and action == "ON":
+            self._light.turn_on()
+            self._last_action = "LIGHT_ON"
+        elif device == "LIGHT" and action == "OFF":
+            self._light.turn_off()
+            self._last_action = "LIGHT_OFF"
+        elif device == "FAN" and action == "ON":
+            self._fan.start()
+            self._last_action = "FAN_ON"
+        # adding AC requires editing this method
 
-    public void undo() {
-        if (lastAction.equals("LIGHT_ON"))  light.turnOff();
-        else if (lastAction.equals("LIGHT_OFF")) light.turnOn();
-        else if (lastAction.equals("FAN_ON"))    fan.stop();
-        // undo logic must mirror every branch above
-    }
-}
+    def undo(self):
+        if self._last_action == "LIGHT_ON":
+            self._light.turn_off()
+        elif self._last_action == "LIGHT_OFF":
+            self._light.turn_on()
+        elif self._last_action == "FAN_ON":
+            self._fan.stop()
+        # undo logic must mirror every branch above
 ```
 
 **What breaks**:
-1. **OCP violation**: Adding a new device (`AirConditioner`) requires editing both `pressButton` and `undo`.
+1. **OCP violation**: Adding a new device (`AirConditioner`) requires editing both `press_button` and `undo`.
 2. **Undo is a parallel copy**: The undo logic is a mirror of the execute logic — every addition doubles the maintenance cost.
 3. **No macro support**: Executing a sequence requires a new list-of-strings parameter and yet more branches.
 4. **Tight coupling**: `RemoteControl` must import `Light`, `Fan`, and every future device.
@@ -93,40 +93,48 @@ class RemoteControl {
 The constraint: **encapsulate each action as an object so it can be stored, undone, and composed into sequences**.
 
 Step 1 — extract an interface with `execute()` and `undo()`:
-```java
-interface Command {
-    void execute();
-    void undo();
-}
+```python
+from abc import ABC, abstractmethod
+
+class Command(ABC):
+    @abstractmethod
+    def execute(self):
+        pass
+
+    @abstractmethod
+    def undo(self):
+        pass
 ```
 
 Step 2 — each action is its own class:
-```java
-class LightOnCommand implements Command {
-    private Light light;
-    public LightOnCommand(Light l) { this.light = l; }
-    public void execute() { light.turnOn(); }
-    public void undo()    { light.turnOff(); }
-}
+```python
+class LightOnCommand(Command):
+    def __init__(self, light):
+        self._light = light
+
+    def execute(self):
+        self._light.turn_on()
+
+    def undo(self):
+        self._light.turn_off()
 ```
 
 Step 3 — `RemoteControl` holds a `Command` (and a stack for undo), never a concrete device:
-```java
-class RemoteControl {
-    private Deque<Command> history = new ArrayDeque<>();
+```python
+class RemoteControl:
+    def __init__(self):
+        self._history = []
 
-    public void pressButton(Command cmd) {
-        cmd.execute();
-        history.push(cmd);
-    }
+    def press_button(self, cmd):
+        cmd.execute()
+        self._history.append(cmd)
 
-    public void undo() {
-        if (!history.isEmpty()) history.pop().undo();
-    }
-}
+    def undo(self):
+        if self._history:
+            self._history.pop().undo()
 ```
 
-Macro is now trivial: create a `MacroCommand(List<Command>)` that calls `execute()` on each. Adding `AirConditioner` is one new `Command` class — `RemoteControl` is untouched.
+Macro is now trivial: create a `MacroCommand(list[Command])` that calls `execute()` on each. Adding `AirConditioner` is one new `Command` class — `RemoteControl` is untouched.
 
 ---
 
@@ -170,94 +178,76 @@ It turns the request into a standalone object that contains all the context need
 
 A naive remote control implementation:
 
-```java
-// Receiver classes - Light and AC with basic on/off methods
-class Light {
-    public void on() {
-        System.out.println("Light turned ON");
-    }
-    
-    public void off() {
-        System.out.println("Light turned OFF");
-    }
-}
+```python
+# Receiver classes - Light and AC with basic on/off methods
+class Light:
+    def on(self):
+        print("Light turned ON")
 
-class AC {
-    public void on() {
-        System.out.println("AC turned ON");
-    }
-    
-    public void off() {
-        System.out.println("AC turned OFF");
-    }
-}
+    def off(self):
+        print("Light turned OFF")
 
-// Invoker - NaiveRemoteControl class to control devices
-class NaiveRemoteControl {
-    private Light light;
-    private AC ac;
-    private String lastAction;
-    
-    public NaiveRemoteControl(Light light, AC ac) {
-        this.light = light;
-        this.ac = ac;
-        this.lastAction = "";
-    }
-    
-    public void pressLightOn() {
-        this.light.on();
-        this.lastAction = "LIGHT_ON";
-    }
-    
-    public void pressLightOff() {
-        this.light.off();
-        this.lastAction = "LIGHT_OFF";
-    }
-    
-    public void pressACOn() {
-        this.ac.on();
-        this.lastAction = "AC_ON";
-    }
-    
-    public void pressACOff() {
-        this.ac.off();
-        this.lastAction = "AC_OFF";
-    }
-    
-    // Undo last action — tightly coupled, grows with every new device
-    public void pressUndo() {
-        if (this.lastAction.equals("LIGHT_ON")) {
-            this.light.off();
-            this.lastAction = "LIGHT_OFF";
-        } else if (this.lastAction.equals("LIGHT_OFF")) {
-            this.light.on();
-            this.lastAction = "LIGHT_ON";
-        } else if (this.lastAction.equals("AC_ON")) {
-            this.ac.off();
-            this.lastAction = "AC_OFF";
-        } else if (this.lastAction.equals("AC_OFF")) {
-            this.ac.on();
-            this.lastAction = "AC_ON";
-        } else {
-            System.out.println("No action to undo.");
-        }
-    }
-}
 
-// Client Code
-public class Main {
-    public static void main(String[] args) {
-        Light light = new Light();
-        AC ac = new AC();
-        NaiveRemoteControl remote = new NaiveRemoteControl(light, ac);
-        
-        remote.pressLightOn();
-        remote.pressACOn();
-        remote.pressLightOff();
-        remote.pressUndo();  // Should undo LIGHT_OFF -> Light ON
-        remote.pressUndo();  // Should undo AC_ON -> AC OFF
-    }
-}
+class AC:
+    def on(self):
+        print("AC turned ON")
+
+    def off(self):
+        print("AC turned OFF")
+
+
+# Invoker - NaiveRemoteControl class to control devices
+class NaiveRemoteControl:
+    def __init__(self, light, ac):
+        self._light = light
+        self._ac = ac
+        self._last_action = ""
+
+    def press_light_on(self):
+        self._light.on()
+        self._last_action = "LIGHT_ON"
+
+    def press_light_off(self):
+        self._light.off()
+        self._last_action = "LIGHT_OFF"
+
+    def press_ac_on(self):
+        self._ac.on()
+        self._last_action = "AC_ON"
+
+    def press_ac_off(self):
+        self._ac.off()
+        self._last_action = "AC_OFF"
+
+    # Undo last action — tightly coupled, grows with every new device
+    def press_undo(self):
+        if self._last_action == "LIGHT_ON":
+            self._light.off()
+            self._last_action = "LIGHT_OFF"
+        elif self._last_action == "LIGHT_OFF":
+            self._light.on()
+            self._last_action = "LIGHT_ON"
+        elif self._last_action == "AC_ON":
+            self._ac.off()
+            self._last_action = "AC_OFF"
+        elif self._last_action == "AC_OFF":
+            self._ac.on()
+            self._last_action = "AC_ON"
+        else:
+            print("No action to undo.")
+
+
+# Client Code
+if __name__ == "__main__":
+    light = Light()
+    ac = AC()
+    remote = NaiveRemoteControl(light, ac)
+
+    remote.press_light_on()
+    remote.press_ac_on()
+    remote.press_light_off()
+    remote.press_undo()  # Should undo LIGHT_OFF -> Light ON
+    remote.press_undo()  # Should undo AC_ON -> AC OFF
 ```
 
 **Issues with this code:**
@@ -265,7 +255,7 @@ public class Main {
 | Issue | Description |
 |---|---|
 | **Tight Coupling** | `NaiveRemoteControl` directly calls `Light.on()`, `AC.on()`. Adding a new device requires modifying the remote class. |
-| **Undo logic is fragile** | `pressUndo()` uses string comparisons and only tracks the last action. Multi-level undo is impossible. |
+| **Undo logic is fragile** | `press_undo()` uses string comparisons and only tracks the last action. Multi-level undo is impossible. |
 | **Hardcoded commands** | Each button is a method. Adding a new button = new method. Adding a new device = new if-else in undo. |
 | **No history** | Only the last action is tracked. No way to replay or queue commands. |
 | **Violates OCP** | Every change requires modifying the invoker class. |
@@ -274,166 +264,130 @@ public class Main {
 
 ## Solution: Command Pattern
 
-```java
-// ========= Receiver classes ===========
-class Light {
-    public void on() {
-        System.out.println("Light turned ON");
-    }
-    
-    public void off() {
-        System.out.println("Light turned OFF");
-    }
-}
+```python
+from abc import ABC, abstractmethod
 
-class AC {
-    public void on() {
-        System.out.println("AC turned ON");
-    }
-    
-    public void off() {
-        System.out.println("AC turned OFF");
-    }
-}
 
-// ========= Command interface ===========
-interface Command {
-    void execute();
-    void undo();
-}
+# ========= Receiver classes ===========
+class Light:
+    def on(self):
+        print("Light turned ON")
 
-// Concrete commands — each knows its receiver and encapsulates one action
-class LightOnCommand implements Command {
-    private Light light;
-    
-    public LightOnCommand(Light light) {
-        this.light = light;
-    }
-    
-    @Override
-    public void execute() {
-        this.light.on();
-    }
-    
-    @Override
-    public void undo() {
-        this.light.off();
-    }
-}
+    def off(self):
+        print("Light turned OFF")
 
-class LightOffCommand implements Command {
-    private Light light;
-    
-    public LightOffCommand(Light light) {
-        this.light = light;
-    }
-    
-    @Override
-    public void execute() {
-        this.light.off();
-    }
-    
-    @Override
-    public void undo() {
-        this.light.on();
-    }
-}
 
-class AConCommand implements Command {
-    private AC ac;
-    
-    public AConCommand(AC ac) {
-        this.ac = ac;
-    }
-    
-    @Override
-    public void execute() {
-        this.ac.on();
-    }
-    
-    @Override
-    public void undo() {
-        this.ac.off();
-    }
-}
+class AC:
+    def on(self):
+        print("AC turned ON")
 
-class ACOffCommand implements Command {
-    private AC ac;
-    
-    public ACOffCommand(AC ac) {
-        this.ac = ac;
-    }
-    
-    @Override
-    public void execute() {
-        this.ac.off();
-    }
-    
-    @Override
-    public void undo() {
-        this.ac.on();
-    }
-}
+    def off(self):
+        print("AC turned OFF")
 
-// ========== Remote control class (Invoker) ==========
-// Knows nothing about Light or AC — only knows the Command interface
-class RemoteControl {
-    private Command[] buttons;
-    private List<Command> commandHistory;
-    
-    public RemoteControl() {
-        this.buttons = new Command[4];
-        this.commandHistory = new ArrayList<>();
-    }
-    
-    public void setCommand(int slot, Command command) {
-        this.buttons[slot] = command;
-    }
-    
-    public void pressButton(int slot) {
-        if (this.buttons[slot] != null) {
-            this.buttons[slot].execute();
-            this.commandHistory.add(this.buttons[slot]);
-        } else {
-            System.out.println("No command assigned to slot " + slot);
-        }
-    }
-    
-    // Full history-based undo — works for any command, any device
-    public void pressUndo() {
-        if (!this.commandHistory.isEmpty()) {
-            Command lastCommand = this.commandHistory.remove(this.commandHistory.size() - 1);
-            lastCommand.undo();
-        } else {
-            System.out.println("No commands to undo.");
-        }
-    }
-}
 
-// ========= Client code ===========
-public class Main {
-    public static void main(String[] args) {
-        Light light = new Light();
-        AC ac = new AC();
-        
-        Command lightOn = new LightOnCommand(light);
-        Command lightOff = new LightOffCommand(light);
-        Command acOn = new AConCommand(ac);
-        Command acOff = new ACOffCommand(ac);
-        
-        RemoteControl remote = new RemoteControl();
-        remote.setCommand(0, lightOn);
-        remote.setCommand(1, lightOff);
-        remote.setCommand(2, acOn);
-        remote.setCommand(3, acOff);
-        
-        remote.pressButton(0);  // Light ON
-        remote.pressButton(2);  // AC ON
-        remote.pressButton(1);  // Light OFF
-        remote.pressUndo();     // Undo Light OFF -> Light ON
-        remote.pressUndo();     // Undo AC ON -> AC OFF
-    }
-}
+# ========= Command interface ===========
+class Command(ABC):
+    @abstractmethod
+    def execute(self):
+        pass
+
+    @abstractmethod
+    def undo(self):
+        pass
+
+
+# Concrete commands — each knows its receiver and encapsulates one action
+class LightOnCommand(Command):
+    def __init__(self, light):
+        self._light = light
+
+    def execute(self):
+        self._light.on()
+
+    def undo(self):
+        self._light.off()
+
+
+class LightOffCommand(Command):
+    def __init__(self, light):
+        self._light = light
+
+    def execute(self):
+        self._light.off()
+
+    def undo(self):
+        self._light.on()
+
+
+class AConCommand(Command):
+    def __init__(self, ac):
+        self._ac = ac
+
+    def execute(self):
+        self._ac.on()
+
+    def undo(self):
+        self._ac.off()
+
+
+class ACOffCommand(Command):
+    def __init__(self, ac):
+        self._ac = ac
+
+    def execute(self):
+        self._ac.off()
+
+    def undo(self):
+        self._ac.on()
+
+
+# ========== Remote control class (Invoker) ==========
+# Knows nothing about Light or AC — only knows the Command interface
+class RemoteControl:
+    def __init__(self):
+        self._buttons = [None] * 4
+        self._command_history = []
+
+    def set_command(self, slot, command):
+        self._buttons[slot] = command
+
+    def press_button(self, slot):
+        if self._buttons[slot] is not None:
+            self._buttons[slot].execute()
+            self._command_history.append(self._buttons[slot])
+        else:
+            print(f"No command assigned to slot {slot}")
+
+    # Full history-based undo — works for any command, any device
+    def press_undo(self):
+        if self._command_history:
+            last_command = self._command_history.pop()
+            last_command.undo()
+        else:
+            print("No commands to undo.")
+
+
+# ========= Client code ===========
+if __name__ == "__main__":
+    light = Light()
+    ac = AC()
+
+    light_on = LightOnCommand(light)
+    light_off = LightOffCommand(light)
+    ac_on = AConCommand(ac)
+    ac_off = ACOffCommand(ac)
+
+    remote = RemoteControl()
+    remote.set_command(0, light_on)
+    remote.set_command(1, light_off)
+    remote.set_command(2, ac_on)
+    remote.set_command(3, ac_off)
+
+    remote.press_button(0)  # Light ON
+    remote.press_button(2)  # AC ON
+    remote.press_button(1)  # Light OFF
+    remote.press_undo()     # Undo Light OFF -> Light ON
+    remote.press_undo()     # Undo AC ON -> AC OFF
 ```
 
 ### Class Diagram
@@ -515,9 +469,9 @@ classDiagram
 | Issue | How Command Pattern Resolves It |
 |---|---|
 | **Tight Coupling** | `RemoteControl` only holds `Command[]`. It never imports or mentions `Light` or `AC`. Adding a new device requires creating one new Command class — no changes to the remote. |
-| **Undo Functionality** | Each `Command` knows its own undo. The remote's `commandHistory` stack supports unlimited multi-level undo. |
+| **Undo Functionality** | Each `Command` knows its own undo. The remote's `command_history` stack supports unlimited multi-level undo. |
 | **Hardcoded Commands** | Commands are assigned to slots dynamically at runtime. Swap commands without recompiling the invoker. |
-| **No Command History** | `commandHistory` list tracks all executed commands. Supports replay, undo, logging, and auditing. |
+| **No Command History** | `command_history` list tracks all executed commands. Supports replay, undo, logging, and auditing. |
 | **Violates OCP** | New device → new Command class. RemoteControl, Light, AC never change. |
 
 ---

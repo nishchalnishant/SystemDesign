@@ -134,6 +134,19 @@ The receptionist keeps a drawer of common brochures, forms, and FAQs. When a vis
 
 When the marketing team publishes a new brochure, they send a memo to update the drawer (cache invalidation / TTL expiry). Until then, visitors get the old one.
 
+### Forward Proxy vs Reverse Proxy — Don't Confuse Them
+
+A frequent interview disambiguation. A **forward proxy** sits in front of *clients* and represents them to the outside world (corporate egress proxy, VPN gateway) — the server doesn't know the real client. A **reverse proxy** sits in front of *servers* and represents them to clients (Nginx, ALB) — the client doesn't know the real backend. Same machine-in-the-middle pattern, opposite side: forward proxy hides who's asking; reverse proxy hides who's answering.
+
+### Sidecar Proxy and Service Mesh (mTLS)
+
+At scale the reverse proxy moves *next to* each service as a **sidecar** (Envoy in Istio/Linkerd). Instead of one central proxy, every pod gets its own proxy that intercepts all inbound/outbound traffic. This is the **service mesh**, and it solves three things a central proxy can't do cleanly for east-west (service-to-service) traffic:
+- **mTLS everywhere**: each sidecar presents a workload identity certificate, so service A and service B mutually authenticate and encrypt — zero-trust inside the cluster, with cert rotation handled by the mesh control plane, not the app.
+- **Uniform traffic policy**: retries, timeouts, circuit breaking, and canary/traffic-splitting are configured in the mesh (the data plane = sidecars, control plane = Istiod) without touching application code.
+- **Observability**: every hop emits consistent metrics/traces because all traffic flows through a sidecar.
+
+The trade-off an interviewer will probe: a sidecar adds a hop and per-pod resource overhead (Envoy memory/CPU) and operational complexity — justified at hundreds of services, overkill for a handful.
+
 ---
 
 ## 3. Real-World Usage
