@@ -1,10 +1,10 @@
 > [!NOTE]
-> **📋 5-Minute Summary**
+> ** 5-Minute Summary**
 >
 > **What this covers:** The database that Apple uses to store 10 Petabytes of data across 100,000 servers without a single point of failure.
 >
 > **Key topics:**
-> - **The Problem:** Standard databases have a "Leader". If the Leader dies, the database freezes while it holds an election. 
+> - **The Problem:** Standard databases have a "Leader". If the Leader dies, the database freezes while it holds an election.
 > - **Masterless Architecture:** Cassandra has no Leaders. Every single server is completely equal. You can unplug 50 servers and it won't even flinch.
 > - **The Ring (Consistent Hashing):** Cassandra places all its servers on a giant mathematical clock to distribute data perfectly evenly.
 > - **Gossip Protocol:** How do 1,000 equal servers communicate without a Leader? They gossip. Server A whispers a secret to Server B. Server B whispers it to Server C. Within 1 second, all 1,000 servers know the secret.
@@ -23,52 +23,52 @@ tags: [04-advanced-topics, system-design, internals, databases, nosql]
 
 ---
 
-## 🤷‍♂️ Why Should I Care?
+## Why Should I Care?
 
-Imagine a normal business with a CEO (Leader) and 100 employees (Followers). 
-All decisions must go through the CEO. If the CEO goes on vacation, the business stops until they elect an interim CEO. This is how PostgreSQL, MongoDB, and most databases work. 
+Imagine a normal business with a CEO (Leader) and 100 employees (Followers).
+All decisions must go through the CEO. If the CEO goes on vacation, the business stops until they elect an interim CEO. This is how PostgreSQL, MongoDB, and most databases work.
 
 Now imagine a hippie commune with 100 people. There is no CEO. Everyone is completely equal. Anyone can make a decision. If 10 people get sick, the other 90 people just keep working perfectly fine.
 
-In System Design, this is called a **Masterless Architecture**, and **Apache Cassandra** is the most famous example. 
+In System Design, this is called a **Masterless Architecture**, and **Apache Cassandra** is the most famous example.
 Because there is no CEO bottleneck, Cassandra can handle a truly absurd amount of traffic. Apple uses it to handle over *100 million operations per second*. Netflix uses it to keep their website running even if Amazon AWS deletes an entire data center by accident.
 
 ---
 
-## 🕒 The Ring (How data is stored)
+## The Ring (How data is stored)
 
 If all 100 servers are equal, how does Cassandra know where to save your profile?
 
-It uses **Consistent Hashing**. 
-> **💡 Analogy:** Cassandra draws a giant clock on the floor. It places the 100 servers randomly around the clock. When you try to save a user named "Alice", Cassandra runs "Alice" through a math formula. The formula spits out "4:15 PM". Cassandra walks clockwise from 4:15 until it bumps into a server. That server gets the data!
+It uses **Consistent Hashing**.
+> ** Analogy:** Cassandra draws a giant clock on the floor. It places the 100 servers randomly around the clock. When you try to save a user named "Alice", Cassandra runs "Alice" through a math formula. The formula spits out "4:15 PM". Cassandra walks clockwise from 4:15 until it bumps into a server. That server gets the data!
 
 **Replication:** Because servers crash, saving data on just one server is dangerous. Cassandra doesn't just hand the data to the first server it bumps into. It keeps walking clockwise and hands a copy of the data to the *next two servers* as well. (A Replication Factor of 3).
 
 ---
 
-## 🗣️ The Gossip Protocol (How they talk)
+## The Gossip Protocol (How they talk)
 
 If there is no central Leader, how do the 100 servers know if one of them is broken?
 
-> **💡 Analogy:** High school gossip. 
-> Server A notices that Server B isn't answering the phone. 
+> ** Analogy:** High school gossip.
+> Server A notices that Server B isn't answering the phone.
 > Server A randomly whispers to Server C: *"Hey, I think B is dead."*
 > Next millisecond, Server C randomly whispers to Server D: *"Hey, A told me that B is dead."*
-> Next millisecond, both C and D whisper the rumor to two other servers. 
+> Next millisecond, both C and D whisper the rumor to two other servers.
 
 This is called the **Gossip Protocol**. It spreads exponentially. Within 1 second, all 100 servers have heard the rumor, and they all mathematically agree that Server B is dead, without anyone having to be the "Boss."
 
 ---
 
-## 🎛️ Tunable Consistency (The Magic Dial)
+## Tunable Consistency (The Magic Dial)
 
-In a Masterless system, you have 3 copies of "Alice's Profile" sitting on 3 different servers. 
+In a Masterless system, you have 3 copies of "Alice's Profile" sitting on 3 different servers.
 When a user wants to read Alice's profile, how many of those 3 servers do you need to check?
 
 Cassandra lets you turn a dial (Tunable Consistency) on *every single query*.
 
 1. **Consistency Level: ONE (Lightning Fast)**
-   - *How it works:* The user asks Server 1 for the profile. Server 1 instantly hands it over. 
+   - *How it works:* The user asks Server 1 for the profile. Server 1 instantly hands it over.
    - *The Danger:* What if Server 2 actually has a newer, updated version of the profile? You just gave the user stale data! (You chose Speed over Accuracy).
 2. **Consistency Level: ALL (Perfectly Accurate)**
    - *How it works:* The user asks for the profile. Cassandra asks all 3 servers, compares the answers, and returns the absolute newest one.
@@ -78,7 +78,7 @@ Cassandra lets you turn a dial (Tunable Consistency) on *every single query*.
 
 ---
 
-## 🎤 Interview Questions to Practice
+## Interview Questions to Practice
 
 1. **"What is the main architectural difference between Cassandra and MongoDB?"**
    *Answer:* MongoDB uses a Leader-Follower (Master-Slave) architecture, meaning writes must go through a single primary node, making it vulnerable to leader-election downtime. Cassandra uses a Masterless (Peer-to-Peer) architecture based on a Consistent Hashing ring, meaning any node can accept any read or write, providing 100% availability and massive write scalability with no single point of failure.

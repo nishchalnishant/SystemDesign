@@ -232,3 +232,43 @@ No tuning of relative weights needed; ranks are combined directly.
 - Design the ingestion pipeline for real-time document updates — a document is edited; how do you re-index only the changed chunks without re-embedding the entire document?
 - Design multi-tenant RAG — how do you ensure tenant A can never retrieve documents from tenant B's corpus?
 - How do you evaluate RAG system quality? What metrics (MRR, NDCG, faithfulness, groundedness) do you use?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 10M documents in the corpus; 1M queries/day; embedding dimensions 1,536 (OpenAI ada-002); < 500ms end-to-end
+
+**Embedding storage:**
+- 10M documents × 1,536 dimensions × 4 bytes/float = **~61 GB** for all document embeddings
+- Fits comfortably in RAM on a single high-memory server (256 GB) for brute-force similarity search
+- With quantization (int8 instead of float32): 61 GB → **~15 GB** — fits in L3 cache of a cluster
+
+**Vector index sizing (HNSW):**
+- HNSW index overhead: ~10× the raw embedding size for graph connections
+- 61 GB raw × 10 = **~610 GB** for a full HNSW index
+- Distributed across 10 nodes with 64 GB RAM each: 64 GB × 10 = 640 GB — just fits
+- Alternatively: use IVF-PQ (inverted file + product quantization): 61 GB raw → **~6 GB** compressed index, fits on one node, trades recall accuracy (~95% vs 99% for HNSW)
+
+**Query throughput:**
+- 1M queries/day ÷ 86,400 sec = **~11.6 queries/sec** average
+- Peak: 5× = **~58 queries/sec**
+- Per query: embed the query (~10ms via API) + ANN search (~5ms on HNSW) + fetch top-K docs (~20ms) + LLM generation (~500ms) = **~535ms** P50 — slightly over budget
+- Optimization: embed query locally (self-hosted model, ~2ms), use IVF-PQ for faster ANN search (~2ms) → **~525ms** → still tight; pre-warm LLM KV cache for common query patterns
+
+**Document ingestion pipeline:**
+- New documents need to be chunked, embedded, and indexed before queries can find them
+- Chunking: split 10M documents into ~2-4 chunks each = **~25M chunks** total
+- Embedding 25M chunks at 10M tokens/min (OpenAI Batch API): 25M chunks × 100 tokens/chunk = 2.5B tokens ÷ 10M tokens/min = **~250 minutes** for initial indexing
+- Incremental updates: new documents arrive at ~1,000/day; 4,000 new chunks/day × 100ms embedding each = **6.7 minutes/day** of embedding compute
+
+**Top-K retrieval precision:**
+- K=5 retrieved chunks × average 200 tokens per chunk = 1,000 tokens added to LLM context
+- LLM context window budget: 1,000 (retrieved) + 500 (system prompt) + 200 (user query) + 500 (response) = **2,200 tokens** total — well within any modern LLM context window
+- Retrieval recall@5: HNSW with ef=200 achieves ~99% recall at K=5 for 10M vectors — acceptable
+
+**Architecture decisions driven by these numbers:**
+- **HNSW for high recall, IVF-PQ for memory-constrained deployments**: HNSW at 99% recall requires 610 GB — needs a 10-node cluster. IVF-PQ achieves 95% recall with 6 GB — fits on one node. At 58 queries/sec peak, the latency difference is small (5ms vs 2ms for ANN search). The real constraint is memory budget: if the full 10M-doc corpus must fit in RAM for < 500ms latency, HNSW on a 10-node cluster is correct; if memory budget is tight, IVF-PQ with a slight recall trade-off is the right call.
+- **Chunking strategy directly impacts retrieval quality**: A 10M-document corpus with 4,000-token documents in single chunks makes retrieval imprecise — a query about one paragraph retrieves the entire document. Chunking at 200-400 tokens with 50-token overlap ensures retrieved context is tightly relevant. 25M chunks vs 10M documents increases index size 2.5× but improves retrieval precision significantly.
+- **Self-hosted embedding model to hit 500ms SLA**: OpenAI API embedding call: 10–50ms (network round trip to API). Self-hosted `text-embedding-3-small` on GPU: ~2ms. At 58 queries/sec, API calls add 58 × 50ms = 2.9 seconds of aggregate latency per second of throughput — creating a bottleneck. Self-hosted embedding eliminates this bottleneck and also eliminates per-query API cost ($0.00002/1K tokens × 11.6 queries/sec × 100 tokens = **$0.0023/sec = $200/day** saved).

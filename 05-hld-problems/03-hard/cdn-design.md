@@ -197,3 +197,48 @@ Purge request → Purge Coordinator
 - How would you handle HTTPS certificate management for thousands of customer domains?
 - Design the CDN's private backbone network — how do you route miss traffic from edge to origin faster than the public internet?
 - How would you implement DDoS mitigation at the CDN layer?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1B users globally; 10 PB content; 10M requests/sec peak; 99.9% cache hit rate
+
+**Request distribution:**
+- 10M requests/sec globally, spread across 200 PoPs (Points of Presence)
+- Average: 10M ÷ 200 = **50K requests/sec per PoP**
+- Peak PoP (North America, EU): 3× average = **~150K requests/sec per PoP**
+- Each request: HTTP/2, avg response size 100 KB (mix of images, JS, CSS, video segments)
+- Peak bandwidth per PoP: 150K × 100 KB = **~15 GB/sec per top PoP**
+- Need 10× 100 GbE NICs per PoP (each handles 12.5 GB/sec max) = 120 GbE total ingress/egress
+
+**Cache storage per PoP:**
+- 10 PB total content; 99.9% hit rate → 0.1% misses → origin fetch for 0.1% of 10M = 10K origin requests/sec
+- Zipf distribution: top 1% of content serves 50% of requests; top 10% serves 80%
+- Store top 10% of 10 PB = **1 PB per PoP** — impossible (1 PB SSD per PoP)
+- Reality: store enough to achieve 99.9% hit rate for traffic reaching that PoP
+- Each PoP serves regional traffic: 10 PB ÷ 200 PoPs × regional popularity = **~50 TB per PoP** of cached content achieves 99.9% hit rate for local traffic
+- 50 TB at $100/TB (NVMe SSD): **~$5K hardware per PoP** for cache storage
+
+**Origin shield:**
+- Without origin shield: 10K origin requests/sec × 200 PoPs = **2M origin requests/sec** — would overwhelm origin
+- With origin shield (one PoP per region designated as shield): 10K misses/sec across 200 PoPs → consolidated at ~20 shield PoPs → **500 origin requests/sec per shield** → origin sees **~10K aggregate requests/sec** — manageable
+
+**Cache hit rate arithmetic:**
+- 99.9% hit rate at 10M requests/sec → 10K misses/sec hit origin
+- Average origin fetch: 50 ms (round trip + server processing)
+- 10K requests × 50ms = 500 core-seconds/sec of origin capacity needed → **~500 origin server cores** to handle misses at <100ms
+- For a 1 GB video file: split into 2-second segments (~4 MB each); cache segments independently → popular video = popular segments; first segment (bytes 0-4MB) cached more than later segments
+
+**BGP anycast routing:**
+- 200 PoPs all announce the same IP prefix (anycast)
+- User's DNS resolver returns the same IP for all users
+- BGP routing naturally sends each user to the geographically nearest PoP
+- Latency: user → nearest PoP = ~5–30ms (within region); user → origin = ~100–300ms (cross-continent)
+- 99.9% of requests served at PoP latency; only 0.1% incur origin latency
+
+**Architecture decisions driven by these numbers:**
+- **Origin shield tier between edge PoPs and origin**: Without it, 10K misses/sec × 200 PoPs = 2M origin requests/sec. Origin would need thousands of servers purely for CDN misses. Origin shield consolidates misses at 20 regional hubs: the shield checks its own cache first; only a true global miss (not in any shield) reaches origin. This reduces origin load by **200× (2M → 10K/sec)** for a cold cache, and higher as shields warm up.
+- **50 TB SSD cache per PoP**: The Zipf distribution means a small fraction of content drives most traffic. 50 TB of local cache (the popular "long tail" for that region) achieves 99.9% hit rate. Going to 500 TB per PoP would improve hit rate from 99.9% to 99.99% but at 10× the hardware cost. The 0.09% improvement (900 fewer origin requests/sec globally) doesn't justify 10× more SSDs. The marginal value of cache storage follows diminishing returns sharply after the 99.9% threshold.
+- **BGP anycast for automatic failover**: If a PoP goes down, BGP withdraws its route announcements. Within ~30 seconds (BGP convergence), traffic reroutes to the next nearest PoP. No DNS change needed, no client-side failover logic. The 50K requests/sec from the failed PoP redistribute to neighboring PoPs — each absorbs ~5K additional requests/sec (spreading to 10 neighboring PoPs), staying within their capacity headroom.

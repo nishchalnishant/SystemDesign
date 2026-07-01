@@ -1,5 +1,5 @@
 > [!NOTE]
-> **📋 5-Minute Summary**
+> ** 5-Minute Summary**
 >
 > **What this covers:** How engineers debug failures in distributed microservices — the Three Pillars of Observability (Logs, Metrics, Traces) and how to wire them together with OpenTelemetry.
 >
@@ -41,7 +41,7 @@ A system is **observable** if you can answer any question about its internal sta
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    OBSERVABILITY                                     │
 │                                                                     │
-│  📋 LOGS         📊 METRICS         🔍 TRACES                       │
+│   LOGS          METRICS          TRACES                       │
 │  "What happened" "How much/fast"    "How did it flow"               │
 │  at this moment  over time          across services                 │
 └─────────────────────────────────────────────────────────────────────┘
@@ -148,7 +148,7 @@ Availability SLI = (successful requests / total requests) × 100
 
 If out of 1,000,000 requests, 999,100 succeeded:
 SLI = (999,100 / 1,000,000) × 100 = 99.91%
-This meets a 99.9% SLO ✅
+This meets a 99.9% SLO
 ```
 
 ### Production Metrics Stack
@@ -186,7 +186,7 @@ TRACE: trace_id = "abc123"
 │
 ├── SPAN: Order Service (12ms → 450ms)
 │   ├── SPAN: DB query — read product (15ms → 25ms)
-│   └── SPAN: Payment Service (30ms → 440ms) ← 🔴 BOTTLENECK
+│   └── SPAN: Payment Service (30ms → 440ms) ←  BOTTLENECK
 │       ├── SPAN: Stripe API call (35ms → 430ms) ← ROOT CAUSE
 │       └── SPAN: DB write — save payment (430ms → 438ms)
 │

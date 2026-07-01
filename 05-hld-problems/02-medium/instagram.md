@@ -196,3 +196,39 @@ Fan-out on read: for celebrity accounts (>1M followers), skip fan-out; pull on r
 - Design the media processing pipeline — resize, transcode, serve globally — for 100M uploads/day.
 - How would you implement the Instagram Stories feature (24-hour expiry, view tracking)?
 - How would you detect and prevent coordinated inauthentic behavior (bot followers, fake engagement)?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 500M DAU; 100M posts/day; 10B feed views/day; 100 TB/day media storage
+
+**Write throughput:**
+- 100M posts/day ÷ 86,400 sec = **~1,150 writes/sec** (photo/video uploads)
+- Each post record: `{post_id, user_id, media_urls[], caption, created_at}` ≈ 500 bytes
+- Media: 100M posts × 1 MB compressed = **100 TB/day** → 1.16 GB/sec inbound to storage
+
+**Read throughput:**
+- 10B feed views/day ÷ 86,400 sec = **~115,700 reads/sec** (feed loads)
+- Read:write ratio = 115,700 ÷ 1,150 = **~100:1** — read-heavy; justify a dedicated cache layer
+
+**Fan-out on write (pre-computed feeds):**
+- When a user with 1M followers posts: send 1M feed update events
+- Average follower count: 200 followers/user
+- 1,150 posts/sec × 200 = **230,000 feed write events/sec** to pre-compute
+- Storage: 500M users × 20 feed items × 8 bytes (post_id pointer) = **80 GB** for all user feed caches in Redis
+
+**Celebrity fan-out problem:**
+- User with 100M followers posts: naively generates 100M feed writes → takes 100M ÷ 230K events/sec = **~7 minutes** to fan-out
+- Solution: hybrid — pre-compute feeds for ordinary users (< 1M followers); pull-on-read for celebrity posts (merge celebrity posts at read time from a separate celebrity timeline store)
+
+**Media storage:**
+- 100 TB/day new uploads; 3× replication = **300 TB/day** written to S3
+- 7-year retention (user content): 100 TB × 365 × 7 = **~255 PB** total over 7 years
+- At $23/TB/month S3 Standard for hot + S3 Glacier at $4/TB/month for old content: archive after 90 days → cost ~$5M/month
+
+**Architecture decisions driven by these numbers:**
+- **Pre-computed feed cache in Redis (fan-out on write)**: At 115,700 feed reads/sec with < 200ms P99, querying a DB for each read would require joining posts + follows for each user — 500M users × 20 feed items = 10B DB reads/day. Redis feed cache (80 GB total) serves all reads in < 1ms. The 230K pre-write events/sec to maintain the cache is acceptable given the 100:1 read:write ratio.
+- **Hybrid fan-out for celebrities**: Pure fan-out on write for a 100M-follower post takes 7 minutes of background work — users see the post 7 minutes late. Pure pull-on-read for all users means every feed load queries all following relationships (expensive DB joins). Hybrid: pre-compute for ≤ 1M followers (covers 99.9% of users); pull-and-merge celebrity posts at read time (affects < 0.1% of accounts but they have 99% of followers).
+- **CDN for all media**: 100 TB/day uploads means 100 TB × (avg 10 views each) = 1 PB/day served. Serving from origin: 1 PB ÷ 86,400 sec = **~11.6 GB/sec** aggregate bandwidth — requires a massive CDN. CDN cache hit rate >95% for popular photos. Media is immutable (never updated) so cache TTL can be years. Origin only serves cache misses (< 5%) = 580 MB/sec origin bandwidth.

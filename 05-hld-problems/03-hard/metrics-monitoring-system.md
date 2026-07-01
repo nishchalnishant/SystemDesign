@@ -241,3 +241,44 @@ routes:
 - How do you scale Prometheus beyond a single machine? (Thanos, Cortex, VictoriaMetrics)
 - Design an anomaly detection system that flags unusual metric values without manually configured thresholds.
 - A monitoring outage occurs. How do you design the monitoring system to be self-monitoring — alert if Prometheus itself stops scraping?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1M services; 100 metrics each; 10B data points/day; 1-second granularity; < 30s alert latency
+
+**Metric ingest rate:**
+- 1M services × 100 metrics × 1 data point/sec = **100M data points/sec** at 1-second granularity
+- Each data point: `{metric_name, tags, timestamp, value}` ≈ 100 bytes
+- Raw ingest: 100M × 100 bytes = **~10 GB/sec** — massive; must aggregate before storage
+
+**Aggregation is the key design lever:**
+- Storing raw 1-second data: 100M points/sec × 86,400 sec/day × 100 bytes = **~864 PB/day** — impossible
+- Aggregate at ingest to 10-second buckets: 100M/sec → 10M points/10-sec bucket (10× reduction in write rate)
+- Aggregate further to 1-minute buckets for long-term storage: 100M/sec → 1.67M points/min (60× reduction)
+- After 24 hours: roll up to 1-hour buckets; after 7 days: roll up to 1-day buckets
+
+**Storage after aggregation:**
+- 1-minute resolution, 30-day retention: 1.67M points/min × 525,600 min/year = **~880B points/year**
+- At 16 bytes per point (timestamp 8B + value 8B, tag stored separately): **~14 TB/year**
+- With compression (time-series data compresses 10× with Gorilla/delta-delta encoding): **~1.4 TB/year** — fits on a single Prometheus-scale time-series DB or small VictoriaMetrics cluster
+
+**Alert evaluation:**
+- < 30 seconds alert latency: alert rules evaluated against latest data every 10 seconds
+- 10,000 alert rules (1M services × 0.01 rules/service avg) evaluated every 10 sec
+- Each rule: check the last 2 minutes of data for a metric → 12 data points to evaluate
+- 10,000 rules × 12 points = **120,000 data reads** per 10-second evaluation cycle = **12,000 reads/sec**
+- In-memory time-series (Prometheus): sub-millisecond per read → 10-second evaluation cycle takes **~0.12 seconds** — well within budget
+
+**Ingest pipeline:**
+- 100M data points/sec arrives; must reduce before hitting storage
+- Kafka: topic `metrics-raw` with 100 partitions at 1M points/sec per partition = 1 GB/sec per partition — too high
+- Better: 1000 partitions, 100M/sec ÷ 1000 = 100K points/sec/partition = 10 MB/sec per partition — workable
+- Stream processing (Flink): 10-second tumbling windows → compute min/max/avg/p99 per metric → write 10M aggregated points per 10-sec window (10× reduction)
+
+**Architecture decisions driven by these numbers:**
+- **Multi-resolution storage with automatic rollup**: Storing raw 1-second data is 864 PB/day — impossible. The key insight: no one queries 1-second granularity for data older than 1 hour. Prometheus/Thanos/VictoriaMetrics use multi-resolution compaction: keep 1-second for 1 hour, 10-second for 24 hours, 1-minute for 30 days, 1-hour for 1 year. This reduces storage from 864 PB/day to **~1.4 TB/year compressed** — a 224,000× reduction.
+- **Push-based collection with Kafka buffering, not pull-based**: Pull-based (Prometheus scraping 1M endpoints/sec) requires the monitoring system to maintain 1M TCP connections and poll each every second. At 1M services, that's 1M concurrent scrape operations — connection overhead alone is prohibitive. Push-based (services emit to Kafka) decouples the collection rate from scraper capacity. Kafka absorbs bursts; Flink aggregators process at their own rate.
+- **In-memory recent data for alert evaluation**: The < 30s alert latency requirement means alert queries must be answered in ~1ms (10K rules in 10 seconds = 1ms/rule budget). Hitting a disk-backed time-series DB for each rule evaluation adds 5–50ms I/O per read. Keeping the last 30 minutes of data in RAM (100M points × 30 min × 100 bytes uncompressed ≈ 300 GB — feasible with a dedicated in-memory store) enables sub-millisecond alert evaluation.

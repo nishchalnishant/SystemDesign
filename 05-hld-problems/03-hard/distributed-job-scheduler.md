@@ -210,3 +210,44 @@ Insert a new row in `job_executions` with `next_retry_at` as the `next_run_at`. 
 - How do you handle a 100× spike in jobs due at the same second (e.g., all monthly billing jobs due at midnight)?
 - How do you implement distributed locking for the leader election without a single point of failure?
 - Design the job history and execution audit log for compliance — what must be stored, how long, and how do you query it efficiently?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 100M jobs/day; 1M concurrent jobs; < 1 second scheduling latency
+
+**Job ingestion rate:**
+- 100M jobs/day ÷ 86,400 sec = **~1,157 job submissions/sec** average
+- Peak (morning batch launches): 10× = **~11,570 jobs/sec**
+- Each job record: `{job_id, type, payload, priority, schedule, status, created_at}` ≈ 500 bytes
+- Peak write throughput: 11,570 × 500 bytes = **~5.8 MB/sec** — trivial for a DB
+
+**Job queue depth:**
+- 1M concurrent jobs × average 5 min execution = **5M job-minutes** in flight at any given time
+- Jobs in "pending" state (scheduled but not yet picked up): assume 60-second window → 1,157 × 60 = **~70K pending jobs** in the queue at any moment
+- Redis sorted set (`ZADD jobs:pending {run_at_epoch} {job_id}`): 70K entries × 100 bytes/entry = **~7 MB** — trivial
+
+**Scheduler poll and dispatch:**
+- `< 1 second` scheduling latency: scheduler must poll the pending queue at least once per second
+- Polling query: `ZRANGEBYSCORE jobs:pending -inf {now} LIMIT 0 1000` — pop up to 1,000 due jobs
+- At 1,157 submissions/sec, 1,000 jobs/poll at 1 Hz keeps pace; at burst: increase to 10 Hz polling = 10,000 jobs/poll cycle
+- Polling at 10 Hz with 10 scheduler instances = 100 poll cycles/sec → Redis handles 100 ZRANGEBYSCORE ops/sec comfortably
+
+**Worker fleet sizing:**
+- 1M concurrent jobs; assume average job duration: 5 minutes
+- Workers needed = 1M jobs ÷ (1 worker handles 1 job at a time) ... but jobs are parallel across workers
+- If each job uses one worker thread for 5 min: need 1M worker slots simultaneously
+- At 8 threads per worker machine: **125,000 worker machines** — clearly impractical
+- Reframe: 1M "concurrent" includes jobs that are just queued, not actively running. Actually executing at any moment: assume 10% = **100K actively executing**, needing **12,500 8-core machines**
+- Typical reality: heterogeneous — short jobs (1s) dominate numerically; long jobs (1h) dominate machine-hours
+
+**State storage:**
+- Job states (pending → running → completed/failed) + history: 100M jobs/day × 500 bytes × 30-day retention = **~1.5 TB/month**
+- Partition by date: each day's jobs in one table partition → easy purge, efficient queries by `scheduled_date`
+
+**Architecture decisions driven by these numbers:**
+- **Redis sorted set for ready-queue, not polling DB**: At 10 Hz polling × 10 scheduler instances, a `SELECT ... WHERE run_at <= now() LIMIT 1000` on a DB with 70K pending rows requires an index scan under concurrent writes (new job submissions). Under peak burst, this causes index lock contention. Redis `ZRANGEBYSCORE` is O(log N + M) on an in-memory sorted set with no locking — it's ~0.01ms at 70K entries vs ~5ms for a DB query under load.
+- **At-least-once execution with idempotency, not exactly-once**: Exactly-once requires distributed transactions (scheduler + worker + DB). At the 1,157 jobs/sec rate, two-phase commit adds ~10ms of overhead per job — 11.57 seconds of overhead per second of throughput. Instead: detect duplicate execution (job_id uniqueness in the result table) and make jobs idempotent. Worker claims a job with `UPDATE ... SET status='running', worker_id=? WHERE job_id=? AND status='pending'` — a single atomic DB update.
+- **< 1 second scheduling latency drives in-memory queue**: If the pending queue lives only in PostgreSQL, the scheduler must execute a DB query round trip (5–10ms), parse results, then dispatch. At 11,570 jobs/sec burst, 10ms × 11,570 = 115 seconds of queue backlog accumulates per second — unacceptable. Redis sorted set enables 0.1ms dispatch, processing the full burst in under 1 second.

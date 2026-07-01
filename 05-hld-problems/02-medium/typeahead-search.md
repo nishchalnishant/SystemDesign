@@ -211,3 +211,42 @@ Flink job: 5-minute sliding window
 - How do you handle typos in the prefix — showing "system design" even when the user types "sytem"?
 - How would you shard typeahead servers by prefix region when the trie outgrows single-server memory?
 - How do you measure ranking quality for typeahead — what metrics do you use and how do you A/B test ranking changes?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 5B searches/day; 290K typeahead requests/sec; < 50ms P99 end-to-end; top 5M queries in memory
+
+**Request throughput:**
+- 5B searches/day → 58K search requests/sec; each generates ~5 keystrokes = **290K typeahead requests/sec**
+- Each request: `{prefix, user_id, language, region}` ≈ 50 bytes
+- Peak: 2× = **~580K requests/sec**
+
+**Trie storage for top suggestions:**
+- Top 5M queries × ~50 bytes each = **~250 MB** — fits in the RAM of a single server
+- Each trie node stores: character, frequency, top-10 suggestions (list of strings)
+- With top-10 suggestions cached at each prefix node: retrieval = one trie traversal, O(L) where L = prefix length (~5 chars) → sub-millisecond
+- At 580K requests/sec: 580K trie lookups × 5 levels = 2.9M trie node reads/sec → easily served from one in-memory trie per replica
+
+**Replica sizing for 580K requests/sec:**
+- Each trie server handles 50K requests/sec (conservative, based on a Node.js/Go event loop)
+- Servers needed: 580K ÷ 50K = **~12 trie servers**
+- Each server holds a full copy of the 250 MB trie — total memory: 12 × 250 MB = **3 GB** replicated trie storage
+
+**Trie update frequency:**
+- Top 5M queries change as new trending queries emerge
+- Rebuild trie from fresh query logs: Spark batch job, runs every 1 hour
+- New trie: 250 MB, takes ~2 minutes to build; deploy to servers with blue-green swap (serve old trie during rebuild)
+- 5-minute trending freshness: trie rebuild every 5 minutes is too expensive (2 min rebuild every 5 min = 40% compute time on builds)
+- Solution: maintain a "trending delta" in Redis (`ZINCRBY trending {query}` per search); merge into trie at each hourly rebuild; for 5-minute trending, pre-bake top-50 trending queries separately and serve them with a boost at read time
+
+**Query log volume:**
+- 5B searches/day; each log entry: `{query, ts, user_id}` = 100 bytes
+- 5B × 100 bytes = **~500 GB/day** of query logs → aggregated daily in S3 for Spark batch processing
+
+**Architecture decisions driven by these numbers:**
+- **In-memory trie with full replication across 12 servers**: 250 MB per trie × 12 servers = 3 GB total. This is cheap enough to replicate fully (no sharding needed). Sharding a trie by prefix (A–G on server 1, H–N on server 2) would require knowing which server to query based on the first character — adds routing complexity for 0 benefit at 250 MB trie size. Full replication gives each server complete independence: any request can go to any server (no routing logic, no cross-shard fan-out).
+- **Hourly batch rebuild from query logs + Redis for trending delta**: Rebuilding the trie in real-time on every search (increment frequency, re-rank top-10 at every node) requires locking the trie during writes — blocks 580K reads/sec. Batch rebuild from yesterday's query logs (clean, stable frequencies) keeps the trie read-only. The Redis trending set (`ZINCRBY`) handles real-time frequency increments lock-free at 290K writes/sec → used to detect emerging trends and inject them at read time.
+- **CDN caching for top-1000 prefixes**: The top 1,000 prefixes (e.g., "th", "wh", "ho", "how to") account for ~30% of all requests. Their suggestions are static for hours. CDN caches these responses with a 5-minute TTL → 30% of 580K = **174K requests/sec** served from CDN edge without hitting trie servers. This reduces trie server load from 580K to **~406K requests/sec** — need only 9 servers instead of 12.

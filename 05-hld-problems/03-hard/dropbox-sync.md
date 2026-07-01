@@ -223,3 +223,46 @@ RETURNING version;
 - Design the global deduplication system for 10 PB of blocks across 500M users.
 - How would you implement real-time collaborative editing (like Google Docs) on top of the block-sync model?
 - A user accidentally deletes their entire Dropbox folder. Design the recovery path.
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 500M users; 1B files; average file size 1 MB; 10M file uploads/day
+
+**Storage sizing:**
+- 1B files × 1 MB average = **~1 PB** raw file storage
+- With 3× replication (data durability): **~3 PB** physical
+- Storage growth: 10M uploads/day × 1 MB = **~10 TB/day** new data
+- Annual growth: **~3.65 PB/year** — must provision capacity ahead of this curve
+
+**Upload throughput:**
+- 10M uploads/day ÷ 86,400 sec = **~115 uploads/sec** average
+- Peak (workday 9 AM): 10× = **~1,150 uploads/sec**
+- Each 1 MB upload in ~1s on a 10 Mbps connection → 1,150 concurrent upload streams = **~1.15 GB/sec** inbound bandwidth at peak
+
+**Chunk-based deduplication:**
+- Files split into 4 MB chunks (Dropbox uses content-defined chunking at ~4 MB average)
+- 1B files at 1 MB average = 1B chunks (1 file ≈ 1 chunk on average for small files)
+- Larger files (10 MB) = ~2.5 chunks each
+- Dedup ratio: studies show 30–50% of chunks are duplicates (office documents, node_modules)
+- Effective storage: 1 PB × 60% unique = **~600 TB** unique chunk data (vs 1 PB before dedup)
+- Chunk hash index: 600M unique chunks × 32 bytes (SHA-256) = **~20 GB** — fits in memory for fast dedup lookup
+
+**Metadata DB sizing:**
+- Per file: `{file_id, user_id, name, path, size, chunks[], version, modified_at}` ≈ 500 bytes
+- 1B files × 500 bytes = **~500 GB** metadata — fits in a sharded PostgreSQL cluster (e.g., 10 shards × 50 GB each)
+- Per chunk reference: `{file_id, chunk_hash, sequence_number}` ≈ 60 bytes
+- Avg 2 chunks per file: 2B chunk refs × 60 bytes = **~120 GB**
+
+**Sync event throughput:**
+- 500M users; assume 10% daily active = 50M DAU; each DAU makes 5 file changes/day
+- Sync events: 50M × 5 ÷ 86,400 = **~2,900 events/sec** to propagate to connected clients
+- Each user has ~2 connected devices; sync must fan-out events to 2 devices/user
+- Fan-out: 2,900 × 2 = **~5,800 push notifications/sec** to devices via long-poll or SSE
+
+**Architecture decisions driven by these numbers:**
+- **Content-addressed chunk storage (S3 + SHA-256 hash as key)**: Deduplication eliminates 40% of storage (600 TB vs 1 PB). Chunk identity is the hash — two identical chunks (same SHA-256) are stored once. This is only possible with content-addressing; path-based storage can't deduplicate across users. At $23/TB/month S3 standard, dedup saves $9.2K/month.
+- **Delta sync, not full-file upload on every change**: A 10 MB Word document that had one sentence changed: without delta sync, upload 10 MB. With delta sync (rsync-style or Dropbox's ZXDB chunking), re-upload only the changed chunks (maybe 1 × 4 MB chunk). At 1,150 uploads/sec peak, delta sync reduces upload bandwidth from 1.15 GB/sec to **~460 MB/sec** (60% reduction).
+- **Block server separate from metadata server**: The 1.15 GB/sec upload stream and the 500 GB metadata DB have completely different access patterns. Block storage is write-once, read-many, gigabytes per item. Metadata is small random reads/writes, byte-sized items. Merging them means the block I/O saturates the metadata server's I/O subsystem. Separating allows S3 to handle block bytes (optimized for throughput) while PostgreSQL handles metadata (optimized for ACID and complex queries).

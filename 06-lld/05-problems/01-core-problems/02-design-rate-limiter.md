@@ -377,3 +377,179 @@ Configure three limiters: one keyed by IP (1000/min), one by user_id (100/min), 
 - Q: How does lazy refill work and what's its downside? A: On each `allow()` call, compute elapsed time since last refill and add proportional tokens. The downside: if the system is idle for hours, the first request will see a full bucket regardless — which is usually the desired behavior (burst for returning users).
 - Q: What happens if you don't cap tokens at capacity? A: Tokens accumulate unboundedly. A user inactive for a week could make millions of requests in a burst. Always cap at `capacity`.
 - Q: How do you handle user eviction from the store if there are millions of users? A: Use an LRU cache or TTL-based eviction for the user_store. If a user hasn't made a request in 1 hour, evict their entry — next request creates a fresh bucket.
+
+---
+
+## Concurrency Test Harness
+
+Runnable tests verifying thread-safety invariants of the Token Bucket implementation. No external deps — stdlib only.
+
+```python
+import threading
+import time
+
+# ── Minimal Token Bucket implementation (self-contained) ──
+
+class TokenBucket:
+    def __init__(self, capacity, refill_rate):
+        self.capacity = capacity
+        self.refill_rate = refill_rate   # tokens per second
+        self.tokens = float(capacity)
+        self._last_refill = time.monotonic()
+        self._lock = threading.Lock()
+
+    def _refill(self):
+        now = time.monotonic()
+        elapsed = now - self._last_refill
+        self._last_refill = now
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
+
+    def allow(self):
+        with self._lock:
+            self._refill()
+            if self.tokens >= 1:
+                self.tokens -= 1
+                return True
+            return False
+
+
+class RateLimiter:
+    def __init__(self, capacity, refill_rate):
+        self.capacity = capacity
+        self.refill_rate = refill_rate
+        self._store = {}
+        self._store_lock = threading.Lock()
+
+    def _get_or_create(self, user_id):
+        if user_id not in self._store:
+            with self._store_lock:
+                if user_id not in self._store:   # double-checked
+                    self._store[user_id] = TokenBucket(self.capacity, self.refill_rate)
+        return self._store[user_id]
+
+    def allow(self, user_id):
+        bucket = self._get_or_create(user_id)
+        return bucket.allow()
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 1: Exact capacity enforcement under concurrency
+# 200 threads simultaneously call allow() for the same user
+# whose bucket has capacity=100. Exactly 100 must be allowed.
+# ─────────────────────────────────────────────────────────────
+def test_exact_capacity_enforcement():
+    limiter = RateLimiter(capacity=100, refill_rate=0)  # no refill during test
+    allowed = []
+    denied = []
+    lock = threading.Lock()
+
+    def send_request():
+        result = limiter.allow("user-A")
+        with lock:
+            (allowed if result else denied).append(1)
+
+    threads = [threading.Thread(target=send_request) for _ in range(200)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert len(allowed) == 100, f"Expected 100 allowed, got {len(allowed)}"
+    assert len(denied)  == 100, f"Expected 100 denied, got {len(denied)}"
+    # No race: tokens never go negative
+    assert limiter._store["user-A"].tokens >= 0
+    print("PASS: test_exact_capacity_enforcement")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 2: Per-user isolation
+# 10 users each fire 200 concurrent requests against a bucket
+# with capacity=100. Each user must see exactly 100 allowed,
+# and no user's count bleeds into another's.
+# ─────────────────────────────────────────────────────────────
+def test_per_user_isolation():
+    limiter = RateLimiter(capacity=100, refill_rate=0)
+    per_user_allowed = {f"user-{i}": [] for i in range(10)}
+    lock = threading.Lock()
+
+    def send_request(uid):
+        result = limiter.allow(uid)
+        with lock:
+            if result:
+                per_user_allowed[uid].append(1)
+
+    threads = []
+    for uid in per_user_allowed:
+        for _ in range(200):
+            threads.append(threading.Thread(target=send_request, args=(uid,)))
+
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    for uid, counts in per_user_allowed.items():
+        assert len(counts) == 100, f"{uid}: expected 100 allowed, got {len(counts)}"
+
+    print("PASS: test_per_user_isolation")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 3: Refill replenishes tokens correctly
+# Start with capacity=10. Drain fully. Wait for refill.
+# After refill, exactly 10 more requests must succeed.
+# ─────────────────────────────────────────────────────────────
+def test_refill_replenishes():
+    limiter = RateLimiter(capacity=10, refill_rate=10)  # 10 tokens/sec
+
+    # Drain all tokens
+    drained = [limiter.allow("user-B") for _ in range(10)]
+    assert all(drained), "Could not drain full capacity"
+
+    # Immediately after drain, next request must fail
+    assert not limiter.allow("user-B"), "Expected denial after drain"
+
+    # Wait 1 second for full refill
+    time.sleep(1.1)
+
+    # Now should allow up to 10 again
+    refilled = [limiter.allow("user-B") for _ in range(10)]
+    assert all(refilled), f"Expected 10 allowed after refill, got {sum(refilled)}"
+
+    # 11th must fail (bucket refilled to capacity, not beyond)
+    assert not limiter.allow("user-B"), "Expected denial after second drain"
+    print("PASS: test_refill_replenishes")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 4: No data race on bucket creation (_get_or_create)
+# 500 threads simultaneously ask for the same new user_id.
+# Only one TokenBucket object must be created (not 500 copies).
+# ─────────────────────────────────────────────────────────────
+def test_single_bucket_per_user():
+    limiter = RateLimiter(capacity=50, refill_rate=0)
+    bucket_ids = set()
+    lock = threading.Lock()
+
+    def touch():
+        bucket = limiter._get_or_create("new-user")
+        with lock:
+            bucket_ids.add(id(bucket))
+
+    threads = [threading.Thread(target=touch) for _ in range(500)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert len(bucket_ids) == 1, f"Expected 1 bucket, got {len(bucket_ids)} (race in _get_or_create)"
+    print("PASS: test_single_bucket_per_user")
+
+
+if __name__ == "__main__":
+    test_exact_capacity_enforcement()
+    test_per_user_isolation()
+    test_refill_replenishes()
+    test_single_bucket_per_user()
+    print("All concurrency tests passed.")
+```
+
+**What each test verifies:**
+- `test_exact_capacity_enforcement`: The per-bucket lock prevents two threads from both reading `tokens >= 1` and both decrementing. Without the lock, more than 100 requests can be admitted.
+- `test_per_user_isolation`: Each user's bucket is independent; a burst by one user must not consume tokens from another's bucket.
+- `test_refill_replenishes`: Lazy refill correctly adds tokens proportional to elapsed time; capacity cap prevents overflow.
+- `test_single_bucket_per_user`: Double-checked locking in `_get_or_create` prevents creating duplicate `TokenBucket` instances when hundreds of threads race to create the first bucket for a new user.

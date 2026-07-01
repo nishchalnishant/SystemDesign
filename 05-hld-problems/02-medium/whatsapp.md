@@ -180,6 +180,49 @@ user:{user_id}:online = 1                  # TTL = 30s, refreshed via heartbeat
 
 ---
 
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 2B users; 100B messages/day → ~1.16M messages/sec
+
+**Message size:**
+- Average text message: ~200 bytes (text + metadata)
+- With encrypted payload overhead (E2E): ~300 bytes
+- Media (photos/videos): excluded from message row; stored in object storage separately
+
+**Message write throughput:**
+- 1.16M msg/sec × 300 bytes = **~350 MB/sec** inbound to message store
+- Cassandra handles this with 10–20 nodes at ~30–50K writes/sec per node
+
+**Storage:**
+- Message retention: users keep history indefinitely on device; server stores for 30 days for offline delivery
+- 30 days × 100B msgs/day × 300 bytes = **~900 TB/month** raw
+- With Cassandra replication factor 3: **~2.7 PB** total. In practice, compress with Snappy (3–5× ratio) → ~600 TB–900 TB physical storage across the cluster
+
+**WebSocket connections:**
+- WhatsApp has ~2B registered users; assume 500M online concurrently (25% daily active, mostly mobile)
+- Each connection requires a file descriptor + ~10 KB memory on the chat server
+- 500M connections / 50K connections/server = **10,000 chat servers** for connection routing
+- This is the primary driver for the Redis pub/sub routing layer — each server only holds a fraction of connections and must route via Redis
+
+**Delivery status writes:**
+- Each message generates 3 status transitions (sent → delivered → read) × 1.16M msg/sec = **~3.5M status writes/sec**
+- Status stored in Redis (hot, sub-second TTL) and Cassandra (durable history)
+
+**Media storage:**
+- Assume 5% of messages contain media (photos/videos)
+- 100B × 5% = 5B media messages/day
+- Average compressed photo: 500 KB; average video (30s): 10 MB; blended average: ~2 MB
+- 5B × 2 MB = **~10 PB/day** object storage — this is why WhatsApp compresses aggressively and stores media separately from messages
+
+**Architecture decisions driven by these numbers:**
+- **Cassandra over PostgreSQL**: 350 MB/sec writes to a single PostgreSQL instance would saturate disk I/O. Cassandra's append-only LSM storage and horizontal scale across 10–20 nodes handle this trivially. Partition key = `conversation_id` distributes load across nodes.
+- **Redis for routing, not PostgreSQL**: 500M concurrent WebSocket connections require sub-millisecond lookup of "which server holds user X's connection." A Redis hash (`user_id → server_id`) with in-memory lookup is the only option at this latency.
+- **Push notifications for offline delivery**: Rather than polling, FCM/APNs push to offline users. The message is durably stored in Cassandra; the push notification only carries the message_id. This avoids storing messages in Apple/Google's push infrastructure.
+- **10,000 chat servers**: This scale means stateless routing is impossible without a coordination layer. Redis pub/sub is the cheapest option — each chat server subscribes to channels for its connected users.
+
+---
+
 ## Interviewer Questions by Level
 
 **Junior**:

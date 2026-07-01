@@ -212,3 +212,41 @@ for channel in requested_channels:
 - How do you handle a scenario where the user preference service is down — do you send notifications or drop them?
 - How would you implement notification batching/digest mode to avoid over-notifying users?
 - Design the analytics pipeline to track delivery rate, open rate, and click-through rate for 10M notifications/day.
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1B users; 10M notifications/day average; peak 10,000/sec (flash sales); < 1s high-priority delivery
+
+**Throughput:**
+- Average: 10M/day ÷ 86,400 = **~115 notifications/sec**
+- Peak: **10,000/sec** (flash sale launch, breaking news, sports score alerts)
+- Each notification payload: `{notif_id, user_id, type, title, body, channel, priority, ts}` ≈ 500 bytes
+- Peak write to Kafka: 10,000 × 500 bytes = **5 MB/sec** — trivial
+
+**Fan-out by channel:**
+- Push notifications (mobile): 60% of users have push enabled = 600M users; 10,000 peak × 60% = **6,000 FCM/APNs calls/sec**
+- Email: 30% opt-in = 300M users; email rate: average 1M emails/day = **~11.6 emails/sec** average; peak 3,000/sec
+- SMS: 10% opt-in = 100M users; SMS peak: 1,000/sec during alerts
+
+**Push notification delivery latency:**
+- FCM/APNs processing time: ~500ms average (queue + device wakeup)
+- App server → Kafka → push worker → FCM/APNs → device = ~800ms total
+- < 1 second budget means the internal queue wait must be < 200ms
+
+**User preference lookup:**
+- Every notification must check user's channel preferences before delivery
+- 10,000 notifications/sec × 1 DB lookup/notification = 10,000 reads/sec for preferences
+- User preference record: 1KB per user × 1B users = **~1 TB** stored in DB; hot preferences in Redis (DAU × 1 KB = 100M × 1 KB = **~100 GB** Redis)
+
+**Deduplication:**
+- At-least-once delivery means a retry may duplicate
+- Redis dedup key: `notif:{notif_id}:{channel}` with 24h TTL
+- 10,000/sec × 86,400 sec × 50 bytes/key = **~43 GB** in Redis for 24h dedup window — fits in one Redis node
+
+**Architecture decisions driven by these numbers:**
+- **Kafka priority queues (separate topics per priority tier)**: High-priority notifications (flash sale starts NOW, OTP code) must be delivered in < 1 second. Low-priority (weekly digest) can wait minutes. A single Kafka topic processes FIFO — a burst of 10K low-priority emails could block 6K urgent push notifications. Separate topics `notifications-high`, `notifications-low` with dedicated consumer groups ensure high-priority consumers are never blocked by low-priority volume.
+- **Separate workers per channel (push, email, SMS)**: FCM calls, SMTP relay calls, and SMS gateway calls have different rate limits, retry semantics, and SLAs. A single multi-channel worker would have FCM's 6,000 calls/sec competing with email's 11.6 calls/sec for the same thread pool. Dedicated workers per channel can be scaled independently: scale push workers for flash sales, scale email workers for newsletter sends.
+- **Redis for user preference caching**: 10,000 preference lookups/sec at < 1ms each = Redis (0.1ms per GET). DB query for preferences: 5–10ms × 10,000/sec = 100 core-seconds/sec of DB capacity just for preference reads. Redis cache (100 GB for DAU's preferences) eliminates the DB bottleneck entirely. Preferences change rarely (user settings changes are < 1/day per user) so cache TTL of 1 hour is safe.

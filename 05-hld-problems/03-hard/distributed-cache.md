@@ -205,3 +205,43 @@ class ConsistentHashRing:
 - A cache node fails. How does the system detect the failure, promote a replica, and reroute client requests — with zero data loss?
 - How does Redis implement approximate LRU efficiently? Why not track exact LRU?
 - Design a cache warming strategy for a 64 GB cache after a cold restart — how do you prevent a thundering herd on the database?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 10 TB total cached data; 1M reads/sec; 100K writes/sec; < 1ms P99 read latency
+
+**Memory sizing:**
+- 10 TB data / average cache entry size (~1 KB) = **~10B entries** (theoretical max)
+- Real-world: eviction keeps working set ~20% of key universe; so ~2B hot keys
+- Per node with 128 GB RAM: 128 GB / 1 KB per entry = **128M entries per node**
+- Nodes needed: 10 TB ÷ 128 GB = **~80 nodes** (for full dataset, no replication)
+- With replication factor 2: **160 nodes** — typical production cluster size for a 10 TB cache
+
+**Read throughput:**
+- 1M reads/sec across 80 nodes = **12,500 reads/sec per node**
+- Each Redis GET: ~5µs CPU + ~100µs network = ~105µs per request
+- Single Redis thread handles ~100K ops/sec (single-threaded event loop)
+- 12,500 reads/sec per node is **12.5% of one thread's capacity** — abundant headroom
+
+**Write throughput:**
+- 100K writes/sec across 80 nodes = **1,250 writes/sec per node**
+- Redis SET: same ~5µs CPU, but also replication to replica node
+- 1,250 writes/sec is trivial; replication lag < 1ms on same-DC links
+
+**Network bandwidth per node:**
+- 12,500 reads/sec × 1 KB avg response = **12.5 MB/sec per node**
+- 80 nodes × 12.5 MB/sec = **1 GB/sec aggregate** — one 10GbE NIC per node handles this (max ~1.25 GB/sec)
+- At peak with 5× surge: 80 × 62.5 MB/sec = 5 GB/sec aggregate → need 40 GbE or more nodes
+
+**Consistent hashing ring:**
+- 80 nodes × 150 virtual nodes each (to smooth out distribution) = 12,000 slots on the ring
+- Adding 1 node: only 1/80 = **1.25% of keys** need to migrate — hot-cache-fill problem is bounded
+- Without virtual nodes (simple ring): one node holds multiple consecutive tokens → uneven distribution; adding one node could move 100% of one hot partition's keys
+
+**Architecture decisions driven by these numbers:**
+- **80-node cluster with 128 GB RAM nodes, not fewer larger nodes**: NUMA effects degrade Redis on very large machines (>256 GB). Single-threaded Redis doesn't saturate multi-core machines. Spreading across 80 smaller nodes also means any single node failure impacts only 1/80 = 1.25% of keys (mitigated by replica), not 1/8 = 12.5% with 8 large nodes.
+- **Consistent hashing for key distribution**: With 80 nodes and modulo hashing (`key % 80`), adding node 81 invalidates ~99% of all key→node mappings (new modulo changes most results). Consistent hashing changes only ~1.25% of mappings. At 10B entries, 1.25% = 125M keys to rehash vs 9.9B — critical for zero-downtime scaling.
+- **< 1ms P99 target drives co-location requirement**: Redis RTT within a data center = ~0.1–0.3ms. Redis processing = ~0.05ms. Total ~0.3–0.5ms P50. P99 headroom allows for occasional GC pauses and tail latency. Cross-DC Redis would add ~5–50ms per hop — incompatible with the SLA. The cache tier must be in the same DC as the application servers.

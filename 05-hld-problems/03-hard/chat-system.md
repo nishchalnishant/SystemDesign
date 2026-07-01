@@ -213,3 +213,45 @@ Partition key: `channel_id` — all messages in a channel go to the same partiti
 - How do you handle a workspace with 500,000 members (Enterprise Grid) where a message posted in #general must reach all members?
 - How do you implement message retention policies — automatically delete messages older than 90 days across petabytes of Cassandra data?
 - Design the Slack status/presence system — how do you track and broadcast online/offline/DND status for millions of users?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 500M users; 100M DAU; 100B messages/day; < 500ms message delivery; 1-year message history
+
+**Message throughput:**
+- 100B messages/day ÷ 86,400 sec = **~1.16M messages/sec** average
+- Peak (evenings, events): 5× = **~5.8M messages/sec**
+- Each message: `{msg_id, sender_id, receiver_id/group_id, content, ts, status}` ≈ 500 bytes (text avg ~50 chars, with metadata)
+- Peak write throughput: 5.8M × 500 bytes = **~2.9 GB/sec** inbound
+
+**Message fan-out:**
+- Group messages: assume 10% of messages go to groups averaging 50 members
+- Fan-out for group messages: 5.8M/sec × 10% × 50 = **29M delivery events/sec** peak
+- Individual messages: 5.8M/sec × 90% = **5.22M deliveries/sec**
+- Total delivery events: **~34.2M delivery events/sec** peak
+
+**WebSocket connections:**
+- 100M DAU; peak simultaneous online: 20% = **20M concurrent WebSocket connections**
+- Each connection: ~50 KB RAM (kernel socket buffer + app state) = 20M × 50 KB = **~1 TB RAM** for connection state
+- At 64 GB RAM per server: **~16 WebSocket servers** needed just for connection state
+- Each server handles 20M ÷ 16 = **1.25M connections** — achievable with async I/O (Node.js/Netty)
+- For message fan-out: 34.2M events/sec ÷ 16 servers = **~2.1M events/sec per server** to push to connected clients
+
+**Message storage:**
+- 100B messages/day × 500 bytes × 365 days = **~18.25 PB/year** raw
+- With compression (text compresses ~4×): **~4.5 PB/year** physical
+- Cassandra: partitioned by `(sender_id, receiver_id)` for 1:1 chats; `(group_id)` for groups
+- Replication factor 3: **~13.5 PB/year** physical storage with redundancy
+- Hot data (last 7 days): kept in SSD tier; cold data (7 days–1 year): moved to HDD tier
+
+**Delivery receipt throughput:**
+- Every message delivery generates 2 receipts (delivered + read): 1.16M messages/sec × 2 = **2.32M receipt events/sec**
+- Receipt: `{msg_id, status, ts}` = 30 bytes → 2.32M × 30 bytes = **~70 MB/sec** of receipt writes
+
+**Architecture decisions driven by these numbers:**
+- **Dedicated WebSocket gateway tier, not HTTP request/response**: 20M concurrent connections need persistent sockets for < 500ms delivery. HTTP request/response for each message delivery would require 20M concurrent open HTTP connections + polling overhead. Dedicated WebSocket servers use async I/O (event loop, not one thread per connection) — 1.25M connections per server is achievable. HTTP polling at 20M users × every 500ms = 40M HTTP requests/sec — far exceeds the WebSocket model.
+- **Message queue (Kafka) between ingest and delivery for fan-out**: At 34.2M delivery events/sec, synchronously pushing to all 50 group members in the HTTP handler would tie up the request thread for 50 × delivery time. Kafka decouples: ingest writes one message to Kafka; a fan-out service reads and distributes to 50 member delivery queues. This also handles offline users (messages queued in Kafka until the user comes online).
+- **Cassandra for message history at PB scale**: Message writes are append-only (never UPDATE, just INSERT). Reads are: "give me messages in conversation X from time T1 to T2" — a time-range scan within a partition. Cassandra's partition-key model (`sender_id + receiver_id` → partition) with clustering key (`ts`) is exactly this access pattern. At 4.5 PB/year after compression, Cassandra's horizontal scaling (add nodes, data redistributes automatically) and tunable consistency (ONE for reads to reduce latency) matches requirements better than PostgreSQL (hard to shard this schema) or DynamoDB (expensive at this data volume).

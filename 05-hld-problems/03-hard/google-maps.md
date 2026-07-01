@@ -203,3 +203,48 @@ predicted_speed = α × current_speed + β × historical_speed_at_ETA_time + γ 
 - Design the traffic ingestion pipeline for 2M GPS pings/sec — from ingest to updating segment speeds globally.
 - How do you predict ETA for a segment the user won't reach for 30 minutes? What data do you use?
 - Design the map tile generation pipeline — how do you render and cache tiles at 20 zoom levels for the entire world?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1B users; 100M active navigation sessions/day; 10M GPS pings/sec; 10 PB map tiles; 1B road graph nodes
+
+**GPS ping ingest:**
+- 10M GPS pings/sec from active navigating users
+- Each ping: `{user_id, lat, lng, heading, speed, accuracy, ts}` ≈ 80 bytes
+- Ingest rate: 10M × 80 bytes = **~800 MB/sec** to the location processing pipeline
+- Kafka topic `gps-pings` with 100 partitions at 8 MB/sec each — comfortable
+
+**Traffic speed aggregation:**
+- 10M GPS pings/sec; each ping carries speed + road segment (map-matched)
+- Aggregate: median speed per road segment per 5-minute window
+- Road segments globally: ~1B (2B edges / 2 directions); active segments (driven in last 5 min): ~5M
+- Redis: `ZADD traffic:{segment_id} {speed} {ts}` per active segment
+- 5M active segments × 100 bytes = **~500 MB** traffic data in Redis — fits in one Redis node
+- Flink job: reads GPS pings → map matches to segment → updates segment speed → emits ETA adjustments
+
+**Map tile storage:**
+- 10 PB total map tile data (raster + vector, all zoom levels, global)
+- Global CDN: 200 PoPs × average 50 TB cache each = **10 PB** edge cache capacity — full world map cacheable at the edge
+- Cache hit rate: >99.9% for tiles (maps change infrequently; user requests concentrate on populated areas)
+- Origin (S3/GCS): cold storage for tiles; CDN handles virtually all reads
+
+**Map tile request rate:**
+- 100M active navigation sessions/day; each session loads ~50 tiles on initial view + 10 tiles/min during navigation
+- Peak: 100M sessions × 10 tiles/min ÷ 60 sec = **~16.7M tile requests/sec** globally
+- CDN edge handles this; each PoP serves ~83K requests/sec (200 PoPs) — trivial for CDN infrastructure
+
+**Route computation:**
+- 100M navigation sessions/day; each session computes 1 initial route + re-routes every ~5 min = ~5 route computations/session
+- Total: 100M × 5 ÷ 86,400 sec = **~5,800 route computations/sec**
+- Road graph: 1B nodes, 2B edges; Dijkstra on full graph is O((V+E) log V) ≈ 3B log 1B ≈ 90B operations — too slow (~90s on 1 GHz single core)
+- Bidirectional Dijkstra + Contraction Hierarchies (CH): precompute shortcut edges; query time O(√V log V) ≈ ~30K operations → **~30µs per route** on modern hardware
+- At 5,800 routes/sec: 5,800 × 30µs = **174ms of CPU/sec** → 1 server handles ~5,700 routes/sec. Need ~2 route servers for the global load.
+
+**Architecture decisions driven by these numbers:**
+- **Contraction Hierarchies for routing, not vanilla Dijkstra**: Full-graph Dijkstra takes ~90s per query — unusable. CH precomputes a hierarchy of shortcut edges during an offline preprocessing step (runs once when map data updates). Query time drops to ~30µs. This is what enables sub-2s route computation with real-time traffic overlaid.
+- **Flink for traffic aggregation, not polling**: 10M GPS pings/sec must be aggregated into per-segment speeds continuously. A batch job every 5 minutes would make traffic data stale and inaccurate. Flink tumbling 1-minute windows per segment provide near-real-time traffic that feeds into ETA adjustments.
+- **CDN edge for map tiles**: 16.7M tile requests/sec globally cannot hit an origin — even a large S3 cluster would saturate. Tiles are immutable per zoom/coordinate (change only on map updates, ~weekly). CDN cache hit rate >99.9% means origin sees <17K requests/sec — entirely manageable.
+- **Road graph fits in RAM**: 1B nodes × 32 bytes + 2B edges × 64 bytes = **~160 GB** for the full road graph. A route server with 256 GB RAM holds the entire global graph in memory. No disk I/O during query — pure in-memory graph traversal at 30µs per route.

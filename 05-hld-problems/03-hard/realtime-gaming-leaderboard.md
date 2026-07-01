@@ -209,3 +209,47 @@ Flink job: read from Kafka score-updates (filter tournament events)
 - How do you shard the global leaderboard across multiple Redis instances when 2M players exceed single-instance memory?
 - Design the tournament leaderboard lifecycle — creation, live updates, finalization, historical queries.
 - How do you handle rank accuracy during Redis node failure? What is the recovery path?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 10M concurrent players; 1B score updates/day; leaderboard read < 10ms; top-10 globally
+
+**Score update throughput:**
+- 1B score updates/day ÷ 86,400 sec = **~11,574 updates/sec** average
+- Peak (weekend prime time): 5× = **~57,870 updates/sec**
+- Each update: `{player_id, game_id, score_delta, ts}` ≈ 50 bytes
+- Peak write throughput: 57,870 × 50 bytes = **~2.9 MB/sec** — trivial for Kafka ingest
+
+**Redis sorted set for global leaderboard:**
+- 10M concurrent players in the sorted set: `ZADD leaderboard {score} {player_id}`
+- Memory per player: player_id (8 bytes) + score (8 bytes) + hash table overhead = ~50 bytes
+- Total: 10M × 50 bytes = **~500 MB** for the full global leaderboard in Redis
+- `ZADD` is O(log N): log₂(10M) ≈ 23 operations per update → at 57,870/sec = **~1.3M comparisons/sec** — Redis single thread handles ~10M comparisons/sec, so this is fine
+
+**Leaderboard read performance:**
+- `ZREVRANGE leaderboard 0 9 WITHSCORES` (top 10): O(log N + K) = O(23 + 10) ≈ O(33) operations
+- At 10M reads/day = **~115 reads/sec** average, peak 5× = 575 reads/sec
+- Redis handles 1M ops/sec; 575 ZREVRANGE ops/sec = **0.06% of Redis capacity**
+- < 10ms easily achieved: Redis ZREVRANGE latency is typically 0.1–0.5ms
+
+**Player rank lookup:**
+- `ZREVRANK leaderboard {player_id}`: O(log N) = ~23 operations
+- Each of 10M concurrent players checks their rank every 60 seconds = 10M/60 = **~167K rank lookups/sec**
+- Redis handles this comfortably at 1M ops/sec
+
+**Score update pipeline (high-frequency writes):**
+- 57,870 updates/sec directly to Redis: Redis ZADD is synchronous; at this rate, a single Redis instance is 5.8% saturated (57,870 ÷ 1M) — fine
+- But with 10M concurrent players all potentially sending updates simultaneously: burst to 10M/sec would require Kafka buffering → batch update Redis every 100ms
+
+**Sharding for regional leaderboards:**
+- Global leaderboard: one Redis sorted set (500 MB fits in one instance)
+- Regional leaderboards (top 100 per country): 200 countries × 500 MB = **~100 GB** → Redis cluster with 2 nodes (50 GB each)
+- Game-specific leaderboards: if 1M active games each have a leaderboard → would need 1M Redis sorted sets → impractical to keep all in RAM; use DB-backed leaderboards for low-volume games, Redis only for top-1000 most active games
+
+**Architecture decisions driven by these numbers:**
+- **Redis sorted set as the core data structure**: The leaderboard requires rank queries (`ZREVRANK`), range queries (`ZREVRANGE top-10`), and point updates (`ZADD`) all in O(log N). At 10M players, a DB `SELECT ... ORDER BY score DESC LIMIT 10` with a full table sort is O(N log N) = unacceptable. A DB with an index can do O(log N) for rank, but the index write overhead at 57,870 updates/sec causes lock contention. Redis sorted set is a native, lock-free skip list implementation optimized exactly for this pattern.
+- **Kafka buffer for burst absorption, not direct Redis writes**: At peak, 57,870 updates/sec to Redis is fine (5.8% utilization). But at flash game events with 10M simultaneous score submissions, direct Redis writes would spike to 10M/sec (100% Redis utilization, queueing). Kafka absorbs the spike; a consumer batch-processes updates every 100ms using Redis `ZADD` pipeline calls (pipeline 1,000 ZADDs in one roundtrip) — 57 pipeline calls vs 57,870 individual calls.
+- **500 MB in-memory global leaderboard enables < 10ms reads**: Storing the leaderboard in PostgreSQL and querying `SELECT ... ORDER BY score DESC LIMIT 10` at 575 reads/sec requires an index on `score DESC`. At 10M rows × 57,870 updates/sec, index maintenance would cause significant write amplification. Redis sorted set's 500 MB footprint fits in L3 cache on modern servers, giving sub-millisecond reads without any disk I/O.

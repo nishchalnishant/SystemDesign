@@ -1,91 +1,316 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** How to handle millions of users by spreading them across multiple servers.
+> **What this covers:** Load balancers in depth — from Layer 4/7 basics through consistent hashing, global server load balancing (GSLB), and high-availability LB setups.
 >
 > **Key topics:**
-> - **The Problem:** One server can only handle so much traffic before it crashes.
-> - **The Solution:** A Load Balancer (LB). It acts like a traffic cop, directing incoming requests to different servers so no single server gets overwhelmed.
-> - **Layer 4 vs Layer 7:** Layer 4 LBs are dumb and fast (they just look at IP addresses). Layer 7 LBs are smart and slightly slower (they look at the actual HTTP request, like the URL or cookies).
-> - **Algorithms:** How does the LB decide which server gets the next user? Round Robin (take turns), Least Connections (give to the least busy server), or IP Hash (same user always goes to the same server).
-> - **Health Checks:** The LB constantly checks if a server is alive. If a server dies, the LB stops sending traffic to it.
+> - **L4 vs L7** — what each can and can't route on
+> - **Routing algorithms** — round robin, least connections, IP hash, consistent hashing
+> - **Consistent hashing** — how to minimize cache invalidation when servers are added/removed
+> - **Health checks** — active vs passive, how failover works
+> - **Session affinity** — when you need it and why Redis is better
+> - **GSLB** — routing users to the geographically closest data center
+> - **LB high availability** — active-passive via VRRP/floating IP, active-active
 >
-> **Key takeaway:** You cannot build a scalable system without a Load Balancer. It is the absolute first step in moving from a single server to a distributed system.
+> **Key takeaway:** For most systems: L7 LB (Nginx/ALB/Envoy) in front, consistent hashing when you need sticky-without-coupling, GSLB at the edge. The LB itself is never a SPOF in a real production deployment.
 
 ---
 module: 02-building-blocks
 status: unread
 tags: [02-building-blocks, system-design, networking]
 ---
-# Load Balancers - System Design Guide
-
-> This guide explains how to distribute traffic across multiple servers using simple analogies.
+# Load Balancers
 
 ---
 
-## 🤷‍♂️ Why Should I Care?
+## Why Load Balancers Exist
 
-Imagine you own a tiny coffee shop with one barista. It works great for 10 customers a day. But suddenly, your shop goes viral on TikTok, and 10,000 people show up at once. Your single barista has a mental breakdown, the espresso machine explodes, and your shop closes.
+A single server has a ceiling: bounded CPU, bounded RAM, bounded network bandwidth. When traffic exceeds what one machine can handle, you add more machines. A load balancer (LB) distributes incoming requests across a fleet of backend servers, ensuring no single server is the bottleneck.
 
-This is what happens when you build an app on a single server. A single computer only has so much CPU and RAM. When too many users arrive, the server crashes.
-
-To fix this, you hire 10 baristas. But if 10,000 people rush the counter at once, it's still chaos. 
-You need to hire a **Manager (The Load Balancer)** to stand at the front door. The Manager forms a single line, looks at the 10 baristas, and says: "You go to Barista 1. You go to Barista 2. You go to Barista 3."
-
-A Load Balancer is the piece of software (or hardware) that sits in front of your servers and distributes the incoming traffic, ensuring no single server gets overwhelmed. 
+Secondary benefits:
+- **High availability:** If one server dies, the LB routes around it.
+- **Rolling deploys:** Take servers out of rotation one-at-a-time to deploy without downtime.
+- **SSL termination:** Decrypt TLS at the LB edge; backends communicate over plain HTTP internally.
 
 ---
 
-## 🚦 Types of Load Balancers (Layer 4 vs Layer 7)
+## Layer 4 vs Layer 7
 
-Load balancers operate at different "Layers" of the OSI model. 
+Load balancers operate at different layers of the network stack. The layer determines what information they can inspect to make routing decisions.
 
-### Layer 4 Load Balancer (The Fast Traffic Cop)
-> **💡 Analogy:** A traffic cop waving cars into different lanes. The cop doesn't care who is driving, what they are wearing, or where they are going. They just look at the license plate and wave them through instantly.
+### Layer 4 (Transport Layer)
 
-- **How it works:** It only looks at the **IP Address and TCP Port**. It knows nothing about the actual HTTP request (like the URL or cookies). 
-- **Pros:** Lightning fast. It uses almost zero CPU.
-- **Cons:** It is "dumb." It can't route traffic based on the URL.
+Routing decision is based only on **IP address + TCP/UDP port**. The LB never opens the packet to read the HTTP payload.
 
-### Layer 7 Load Balancer (The Smart Concierge)
-> **💡 Analogy:** A hotel concierge. You walk in and say, "I am here for a wedding." The concierge understands your request and points you to the ballroom. If you say, "I am here for a massage," they point you to the spa.
+```
+Client IP: 1.2.3.4, Port: 443
+→ LB reads: destination IP + port only
+→ Routes to Backend A (no knowledge of URL, headers, cookies)
+```
 
-- **How it works:** It opens the data packet and looks at the **HTTP Request**. It can see the URL (e.g., `/images` vs `/video`). 
-- **Pros:** Extremely smart. If the user asks for `/images`, the LB can send them to a server specifically optimized for photos! It can also read cookies to ensure a user stays logged in.
-- **Cons:** Slightly slower than Layer 4, because it takes CPU power to open and read every request.
+- **Speed:** Very fast. The LB acts as a transparent TCP proxy.
+- **Limitation:** Can't route `/images` to one server farm and `/api` to another. Can't inspect cookies for session affinity.
+- **Use cases:** Raw TCP throughput, database proxies (PgBouncer), UDP (DNS).
+
+### Layer 7 (Application Layer)
+
+Routing decision is based on **HTTP content** — URL path, Host header, query parameters, cookies, request body.
+
+```
+GET /videos/abc123
+→ LB reads HTTP headers
+→ Routes to Video Service (not User Service)
+
+GET /api/users/me (Cookie: session=xyz)
+→ LB routes to the server that owns session xyz
+```
+
+- **Speed:** Slightly slower — the LB must parse HTTP. In practice the difference is microseconds.
+- **Capabilities:** Content-based routing, SSL termination, WebSocket upgrades, header manipulation, canary routing (send 1% of `/checkout` traffic to v2).
+- **Use cases:** Every modern web application. AWS ALB, Nginx, HAProxy, Envoy are all L7.
+
+| | L4 | L7 |
+|---|---|---|
+| Routing basis | IP + port | URL, headers, cookies, body |
+| SSL termination | No (pass-through) | Yes |
+| Content-based routing | No | Yes |
+| Speed | Faster | Slightly slower |
+| Use case | TCP/UDP, DB proxies | HTTP microservices, APIs |
 
 ---
 
-## 🧠 Routing Algorithms (How does it choose?)
+## Routing Algorithms
 
-When a new user arrives, how does the Load Balancer decide which server to send them to?
+### Round Robin
 
-1. **Round Robin (Taking Turns):**
-   - *How it works:* Server 1, then Server 2, then Server 3, then back to Server 1. 
-   - *Best for:* When all your servers are exactly the same size. 
-2. **Least Connections (The Smart Choice):**
-   - *How it works:* The LB looks at which server currently has the fewest active users, and sends the next person there.
-   - *Best for:* When some users take a long time (like uploading a massive video) and other users are fast. This prevents one server from getting stuck with all the slow users.
-3. **IP Hash (The Sticky Choice):**
-   - *How it works:* It runs math on the user's IP address to assign them to a server. This guarantees that User A will *always* be sent to Server 1, every single time.
-   - *Best for:* Storing session data in a server's local RAM (though you really shouldn't do this — use Redis instead!).
+Requests are distributed sequentially: server 1, 2, 3, 1, 2, 3...
+
+- Simple, uniform when all servers are identical.
+- Problem: doesn't account for varying request weight. A server handling a 10s video upload gets the next request at the same time as one that finished in 5ms.
+
+### Weighted Round Robin
+
+Each server gets a weight. A server with weight 3 receives 3× more traffic than a weight-1 server.
+
+Use case: mixed-capacity fleet (some servers have more CPU).
+
+### Least Connections
+
+New request goes to the server with the fewest active connections currently.
+
+- Better than round robin for variable-duration requests.
+- Requires the LB to track connection count per backend — small overhead.
+
+### Least Response Time
+
+Combines least connections with response time — routes to the server that is both least loaded and fastest.
+
+### IP Hash
+
+`shard = hash(client_ip) % num_backends`
+
+Same IP always maps to the same backend. Provides basic session affinity without a cookie.
+
+- Problem: if you add/remove a server, `num_backends` changes and every client remaps. Causes cache misses and session loss.
+- **Consistent hashing** solves this.
 
 ---
 
-## 🩺 Health Checks
+## Consistent Hashing
 
-What happens if Server 2 catches on fire? If the Load Balancer doesn't know it's dead, it will keep sending 33% of your users into a burning building, resulting in errors.
+Standard hash-based routing maps `hash(key) % N` — changing N remaps ~all keys. Consistent hashing minimizes remapping: adding/removing one node moves only ~1/N of the keys.
 
-To prevent this, the Load Balancer constantly sends a **Health Check** (a tiny ping message) to every server every 5 seconds. 
-If a server fails to respond to 3 pings in a row, the LB marks it as "Dead" and instantly stops sending traffic to it. When the server is fixed and starts replying again, the LB slowly adds it back into the rotation.
+### How It Works
+
+Place both servers and keys on a virtual ring (0 to 2³²-1). A key is served by the first server clockwise from its hash position.
+
+```
+Ring (0 → 2³²):
+       0
+      /|\
+Server A  Server C
+    |         |
+Server B  (new key K lands here → routes to C)
+```
+
+**Adding a server D between B and C:** Only keys between B and D migrate from C to D. All other keys are unaffected.
+
+**Real production use:** Memcached client libraries, DynamoDB partitioning, Cassandra token ring, CDN edge node selection.
+
+**Virtual nodes:** To avoid hot spots when servers have different capacities or hash poorly, each physical server is represented by multiple virtual nodes on the ring. A server with 2× capacity gets 2× virtual nodes → receives ~2× the keys.
+
+```python
+import hashlib
+
+class ConsistentHashRing:
+    def __init__(self, nodes, vnodes_per_node=150):
+        self.ring = {}
+        self.sorted_keys = []
+        for node in nodes:
+            for i in range(vnodes_per_node):
+                key = self._hash(f"{node}:{i}")
+                self.ring[key] = node
+        self.sorted_keys = sorted(self.ring.keys())
+
+    def _hash(self, key):
+        return int(hashlib.md5(key.encode()).hexdigest(), 16)
+
+    def get_node(self, key):
+        h = self._hash(key)
+        for ring_key in self.sorted_keys:
+            if h <= ring_key:
+                return self.ring[ring_key]
+        return self.ring[self.sorted_keys[0]]  # wrap around
+```
 
 ---
 
-## 🎤 Interview Questions to Practice
+## Session Affinity (Sticky Sessions)
 
-1. **"What is the difference between a Layer 4 and Layer 7 Load Balancer?"**
-   *Answer:* A Layer 4 LB is fast and "dumb"—it routes purely based on IP addresses and ports without reading the content. A Layer 7 LB is "smart"—it reads the actual HTTP request (URLs, headers, cookies) and can make advanced routing decisions, like sending `/video` requests to specialized video servers.
-2. **"How does a Load Balancer handle a server crash?"**
-   *Answer:* By using active Health Checks. It continuously pings the backend servers. If a server stops responding, the LB removes it from the pool until it becomes healthy again, ensuring users never see an error.
-3. **"When would you use the 'Least Connections' algorithm instead of 'Round Robin'?"**
-   *Answer:* Round Robin works perfectly if every request takes the exact same amount of time. But if some requests take 1 millisecond and others take 10 seconds, Round Robin might accidentally send all the 10-second requests to the same server, crashing it. Least Connections prevents this by dynamically sending traffic to whichever server is currently doing the least work.
+Some stateful applications store session state in server local memory. If a subsequent request hits a different server, the session is gone.
+
+**Option 1 — Cookie-based affinity:** LB sets a cookie (`AWSALB`, `SERVERID`) on first response. All subsequent requests from the client route to the same backend.
+
+- Breaks if the target server dies: client session lost.
+- Couples client state to a specific physical server.
+
+**Option 2 — Externalize session state (preferred):** Store sessions in Redis. Any server in the pool can serve any request. LB doesn't need to be sticky.
+
+```
+Client → LB → Any Server → Redis (session lookup) → response
+```
+
+This is almost always the right answer. Sticky sessions are a band-aid for stateful servers; external session state makes the fleet horizontally scalable.
+
+---
+
+## Health Checks
+
+The LB must know which backends are alive before routing to them.
+
+### Active Health Checks
+
+LB proactively sends periodic requests to every backend:
+- **L4 check:** TCP connect to port 80. If it accepts the connection, the server is up.
+- **L7 check:** HTTP GET `/health`. If response is 200, server is healthy.
+
+```
+LB → GET /health → Backend (every 5s)
+If 3 consecutive failures → mark unhealthy → stop routing
+If 2 consecutive successes → mark healthy → resume routing
+```
+
+**Configurable thresholds:** `unhealthy_threshold=3, healthy_threshold=2, interval=5s, timeout=3s`
+
+### Passive Health Checks
+
+LB monitors actual traffic responses. If a backend returns 5xx errors at >N% rate, it's removed. No extra probe traffic.
+
+Used together with active checks for defense in depth.
+
+---
+
+## Global Server Load Balancing (GSLB)
+
+GSLB distributes traffic across **data centers in different geographic regions**, routing users to the closest or most available DC.
+
+### DNS-based GSLB
+
+The most common approach: return different IP addresses based on the client's geographic location (via anycast or latency-based DNS).
+
+```
+User in Tokyo → DNS query for api.example.com
+→ GSLB returns IP of Tokyo DC
+
+User in London → DNS query for api.example.com
+→ GSLB returns IP of Frankfurt DC
+```
+
+**Tools:** AWS Route 53 (latency-based / geolocation routing), Cloudflare, Akamai.
+
+**Limitation:** DNS TTL means failover takes minutes (TTL is usually 30–300s). Not suitable for instant failover.
+
+### Anycast
+
+Multiple DCs announce the same IP range. BGP routing directs clients to the topologically nearest DC.
+
+```
+IP 1.2.3.4 is announced from:
+  → AWS us-east-1
+  → AWS eu-west-1
+  → AWS ap-northeast-1
+
+User in Tokyo sends packet to 1.2.3.4 → BGP routes to ap-northeast-1
+```
+
+**Pros:** Sub-second failover (BGP re-converges in <30s). No DNS TTL issues.
+**Used by:** Cloudflare, Google (8.8.8.8), Fastly for CDN edge.
+
+### GSLB Failover Logic
+
+GSLB continuously health-checks each DC. If a DC becomes unhealthy, it stops returning that IP (DNS) or withdraws the BGP route (anycast), rerouting all traffic to healthy DCs.
+
+---
+
+## Load Balancer High Availability
+
+The LB itself cannot be a single point of failure. If it goes down, everything goes down.
+
+### Active-Passive (VRRP / Floating IP)
+
+Two LB instances share a virtual IP (VIP). The active LB owns the VIP and handles all traffic. The passive LB monitors the active via heartbeat. If the active fails, the passive claims the VIP (via VRRP or keepalived) within ~1–2 seconds.
+
+```
+                       VIP: 10.0.0.1
+                            |
+              +-------------+
+              |             |
+    Active LB (owns VIP)   Passive LB (standby)
+              |
+         Backend Pool
+```
+
+**Tools:** keepalived + VRRP (HAProxy HA), AWS NLB (multiple AZs).
+
+### Active-Active
+
+Both LB instances are active behind a shared anycast or DNS round-robin entry. Traffic is split across both.
+
+- Requires both LBs to share state (connection tables, rate-limit counters) — typically via a shared backend (Redis) or by making the LBs stateless (L7 only).
+- More complex but higher throughput.
+
+### Cloud Managed LBs
+
+AWS ALB, GCP Load Balancing, Azure Load Balancer are natively HA — they run as a distributed service across multiple AZs. No VRRP needed; the cloud provider handles it.
+
+---
+
+## Choosing an LB Algorithm: Quick Reference
+
+| Situation | Algorithm |
+|---|---|
+| Homogeneous fleet, stateless requests | Round robin |
+| Mixed server capacities | Weighted round robin |
+| Long-lived or heavy requests | Least connections |
+| Session affinity required, immutable fleet | IP hash or cookie affinity |
+| Elastic fleet (servers added/removed often) | Consistent hashing |
+| Cache pool (Memcached/Redis sharding) | Consistent hashing |
+
+---
+
+## Interview Questions to Practice
+
+1. **"What is the difference between L4 and L7 load balancers? When would you use each?"**
+   *L4 routes based on IP/port, no packet inspection — fastest, used for raw TCP like DB proxies or non-HTTP. L7 routes on URL, headers, cookies — enables content-based routing (send /videos to video servers), SSL termination, canary deploys. In practice, use L7 (ALB/Nginx) for all web traffic; L4 for non-HTTP or when you need minimal latency overhead.*
+
+2. **"Why is consistent hashing better than modulo hashing for a cache pool?"**
+   *With modulo hashing (`hash(key) % N`), adding one cache node changes N, remapping ~(N-1)/N of all keys — a cache miss storm. With consistent hashing, adding one node only moves ~1/N of keys — all other keys still route to their original node. This is critical for cache warmth: remapping 100% of keys means 100% cache miss rate until the new nodes warm up.*
+
+3. **"How would you design a highly available load balancer?"**
+   *Two approaches: (1) Active-passive with VRRP — two LB instances share a floating IP; passive takes over in ~1s if active dies. (2) Cloud-managed LB (ALB, GCP LB) — natively distributed across AZs by the provider, no VRRP needed. In AWS, always use ALB/NLB over self-managed HAProxy; the managed service handles HA, scaling, and certificate renewal.*
+
+4. **"How does GSLB route a user to the right data center?"**
+   *Two mechanisms: (1) DNS-based — the GSLB DNS server returns a different A record based on the client's IP geolocation or latency. TTL is usually 30–60s, so failover takes a minute. (2) Anycast — multiple DCs advertise the same IP via BGP; the internet's routing layer sends packets to the nearest one. Anycast failover is nearly instant (BGP re-convergence ~30s). Cloudflare and most CDNs use anycast for edge PoPs.*
+
+5. **"A backend server is responding slowly but not returning errors. How does the LB handle it?"**
+   *Standard health checks only detect down servers (no response or 5xx). A slow server that returns 200 stays in rotation. Fix: (1) Set connection/request timeouts — if a backend doesn't respond within Xms, fail the request and retry on another backend. (2) Use least-connections algorithm — slow servers accumulate connections faster and stop receiving new ones naturally. (3) Passive health checks with error-rate thresholds — if p99 latency from a backend exceeds threshold, reduce its weight or remove it.*

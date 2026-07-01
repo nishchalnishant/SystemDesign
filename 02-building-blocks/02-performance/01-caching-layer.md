@@ -83,11 +83,94 @@ When the Cache gets 100% full, and you try to add a new sticky note, you have to
 
 ---
 
-## 🎤 Interview Questions to Practice
+## Cache Stampede (Thundering Herd)
+
+A cache stampede happens when a popular cached entry expires and thousands of concurrent requests simultaneously miss the cache. All of them hit the database at the same time, causing a traffic spike that can crash it.
+
+**The failure mode:**
+```
+10,000 req/sec for key "trending_feed"
+TTL expires at T=0
+→ All 10,000 requests see cache miss simultaneously
+→ All 10,000 query the DB
+→ DB falls over
+→ Cache never gets repopulated (responses time out)
+```
+
+**Fix 1 — Mutex lock (request coalescing):**
+Only the first thread to detect a miss acquires a lock and queries the DB. All other threads wait or return a stale value. When the first thread finishes, it writes to the cache and releases the lock.
+
+```python
+import redis, time
+
+def get_with_lock(r: redis.Redis, key: str, fetch_fn, ttl=300):
+    value = r.get(key)
+    if value:
+        return value
+
+    lock_key = f"lock:{key}"
+    # SET NX EX = atomic acquire if not exists
+    acquired = r.set(lock_key, "1", nx=True, ex=5)
+    if acquired:
+        try:
+            value = fetch_fn()
+            r.setex(key, ttl, value)
+            return value
+        finally:
+            r.delete(lock_key)
+    else:
+        # Another thread is fetching — wait briefly and retry
+        time.sleep(0.05)
+        return r.get(key)
+```
+
+**Fix 2 — Probabilistic Early Expiry (PER):**
+Before the TTL actually expires, threads stochastically decide to re-fetch based on how close the entry is to expiration. No lock needed; the cache re-populates before it ever goes cold.
+
+```python
+import math, random, time
+
+def get_with_per(r: redis.Redis, key: str, fetch_fn, ttl=300, beta=1.0):
+    result = r.get(key)
+    remaining_ttl = r.ttl(key)
+
+    # Trigger early recompute if: -beta * log(random) > remaining_ttl
+    if result is None or (-beta * math.log(random.random())) > remaining_ttl:
+        value = fetch_fn()
+        r.setex(key, ttl, value)
+        return value
+
+    return result
+```
+
+**Fix 3 — TTL jitter:**
+When populating the cache after a miss, add random jitter to TTLs so a batch of entries written simultaneously don't all expire at the same instant.
+
+```python
+import random
+
+base_ttl = 300
+jittered_ttl = base_ttl + random.randint(-30, 30)  # ±10% jitter
+r.setex(key, jittered_ttl, value)
+```
+
+**Comparison:**
+
+| Approach | Complexity | Stale reads during miss? | Best for |
+|---|---|---|---|
+| Mutex lock | Medium | No (waits) | Critical data (prices, inventory) |
+| Probabilistic early expiry | Low | No (proactive refresh) | Read-heavy, high-traffic keys |
+| TTL jitter | Very low | Yes (brief) | Large batch cache warming |
+
+---
+
+## Interview Questions to Practice
 
 1. **"What is a Cache Miss?"**
-   *Answer:* A Cache Miss happens when the application asks the caching layer for data, but the data isn't there. The application is then forced to query the much slower main database to get the data, increasing latency for that specific request.
+   *A Cache Miss happens when the application asks the caching layer for data, but the data isn't there. The application is then forced to query the much slower main database to get the data, increasing latency for that specific request.*
 2. **"What is the difference between Cache-Aside and Write-Through?"**
-   *Answer:* In Cache-Aside, the cache is only updated *after* a Cache Miss occurs (data is loaded lazily). In Write-Through, the cache is updated proactively at the exact same time the database is updated, ensuring the cache is never stale.
+   *In Cache-Aside, the cache is only updated after a Cache Miss occurs (data is loaded lazily). In Write-Through, the cache is updated proactively at the exact same time the database is updated, ensuring the cache is never stale.*
 3. **"If RAM is expensive, how do we prevent the Cache from running out of memory?"**
-   *Answer:* We use an Eviction Policy, most commonly LRU (Least Recently Used). When the cache reaches its memory limit, it automatically deletes the data that hasn't been accessed in the longest amount of time to make room for new data.
+   *We use an Eviction Policy, most commonly LRU (Least Recently Used). When the cache reaches its memory limit, it automatically deletes the data that hasn't been accessed in the longest amount of time to make room for new data.*
+4. **"What is a cache stampede, and how do you prevent it?"**
+   *A cache stampede occurs when a popular key expires and a flood of concurrent requests all miss the cache simultaneously, overwhelming the database. Fix it with: (1) mutex lock — only one thread fetches while others wait; (2) probabilistic early expiry — threads randomly recompute before TTL expires; (3) TTL jitter — spread expiration times so entries don't all expire at once.*

@@ -216,3 +216,47 @@ RETURNING pr_id;
 - How do you handle 1,000 concurrent clones of a hot repository (like the Linux kernel at release time)?
 - Design GitHub Actions — how do you trigger and orchestrate CI/CD pipelines on git push events?
 - How do you implement pull request code review with inline comments that survive rebases and force pushes?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 100M repos; 50M active users; 1B git operations/day; 10M CI pipeline runs/day
+
+**Git operation throughput:**
+- 1B git ops/day ÷ 86,400 sec = **~11,574 ops/sec** average
+- Mix: ~60% reads (clone, fetch, ls-remote), ~30% writes (push), ~10% API (REST/GraphQL)
+- Write (push) rate: 11,574 × 30% = **~3,472 pushes/sec**
+- Each push triggers webhooks + CI: 3,472 × 1.5 avg webhooks = **~5,208 webhook events/sec**
+
+**Repository storage:**
+- 100M repos × average 50 MB per repo (git objects, packfiles) = **~5 PB** raw
+- With 3× replication: **~15 PB** physical across the distributed object store
+- Large repos (monorepos like chromium, android): up to 50 GB each; ~10K large repos × 50 GB = **500 TB** — top 0.01% of repos use 10% of storage
+
+**Clone/fetch bandwidth:**
+- 50M DAU; 10% clone per day (5M clones); average clone 50 MB = **~250 TB/day** outbound for clones
+- 250 TB ÷ 86,400 sec = **~2.9 GB/sec** sustained clone bandwidth → served from CDN/edge
+
+**Git pack file generation:**
+- On `git clone`, server runs `git pack-objects` to compute a packfile: CPU-bound
+- Shallow clone (depth=1, for CI): fetch only the latest commit tree — reduces clone from 50 MB to ~5 MB average
+- Full clone CPU: 50 MB packfile generation takes ~200ms server CPU
+- 3,472 pushes/sec trigger GC/pack operations: async, queued, not on the critical path
+
+**CI pipeline capacity:**
+- 10M CI runs/day ÷ 86,400 sec = **~115 pipeline starts/sec**
+- Each pipeline runs for ~5 minutes average
+- Concurrently running pipelines: 115/sec × 300 sec = **~34,500 concurrent CI jobs**
+- Each job needs ~4 vCPUs + 8 GB RAM (build + test): 34,500 × 4 vCPUs = **138,000 vCPUs** for CI fleet
+
+**Metadata DB (repo, commit, PR, issue):**
+- 100M repos × 1,000 commits avg = **100B commit objects** (stored as compressed git objects, not DB rows)
+- DB stores: repo metadata, PR records, issue records, user data — not git objects
+- PR records: 100M repos × 5 avg open PRs = **500M PR rows** × 2 KB each = **~1 TB** — shardable by repo_id
+
+**Architecture decisions driven by these numbers:**
+- **Git object store on distributed blob storage (S3-like), not POSIX filesystem**: 5 PB of git objects across 100M repos cannot fit on one filesystem. Git's content-addressed model (every object is SHA1/SHA256 of its content, stored as a blob) maps naturally to S3's key-value semantics. Repo ID + object SHA = S3 key. No directory structure needed. At 3,472 pushes/sec, S3's parallel PUT rate (~5,500 requests/sec per prefix) handles the load.
+- **Shallow clone by default for CI**: CI doesn't need full git history — only the current commit tree. Shallow clone (depth=1) reduces clone size from 50 MB to ~5 MB average — **10× bandwidth reduction**. At 115 CI pipeline starts/sec, full clones would consume 115 × 50 MB = 5.75 GB/sec of bandwidth. Shallow clones: 115 × 5 MB = 575 MB/sec — fits within a reasonable CDN budget.
+- **Webhook fan-out via Kafka, not synchronous HTTP**: At 5,208 webhook events/sec, synchronously calling each webhook URL (which can be slow, fail, or timeout) on the critical path of a push would make pushes unreliable. Kafka decouples: push completes, event is written to Kafka (<1ms), a webhook delivery service reads from Kafka and retries failed deliveries with exponential backoff. This also enables the event stream for CI triggers, notifications, and audit logs from a single Kafka topic.

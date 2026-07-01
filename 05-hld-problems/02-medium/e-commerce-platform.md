@@ -230,3 +230,43 @@ State transitions are events in Kafka. Each service listens to relevant events a
 - How do you implement the distributed transaction for order placement using the saga pattern?
 - How do you handle the case where payment succeeds but the order record creation fails?
 - How would you design a personalized recommendation engine at Amazon scale?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 100M users; 10M orders/day; 1B product views/day; 100× traffic spike during flash sales; checkout < 2s P99
+
+**Read throughput:**
+- 1B product views/day ÷ 86,400 sec = **~11,574 reads/sec** average
+- Peak (flash sale starts): 100× = **~1.16M product page reads/sec**
+- Each product page: product metadata (~2 KB) + inventory count (~50 bytes) + reviews summary (~1 KB)
+- CDN serves product metadata (static, changes < once/hour): handles 99% of 1.16M/sec peak
+- Inventory count (changes every second during flash sale): cannot be cached; **~11,574 inventory reads/sec** during normal operations, **~1.16M/sec** during flash sale
+
+**Write throughput (normal):**
+- 10M orders/day ÷ 86,400 sec = **~115 orders/sec** average
+- Each order write touches: orders table (1 row), inventory table (decrement), payments (1 record) = 3 DB writes/order
+- 115 × 3 = **~345 DB writes/sec** — trivial for PostgreSQL
+
+**Flash sale write throughput:**
+- 100× traffic: **11,500 orders/sec** peak; 3 DB writes each = **34,500 writes/sec**
+- Inventory decrement at 11,500/sec for the same SKU → extreme lock contention on one row
+- Redis `DECR inventory:{sku_id}` is atomic, in-memory, single-threaded: handles 1M ops/sec → **11,500 DECR/sec** is 1.15% of Redis capacity
+
+**Inventory storage:**
+- 10M SKUs × 3 warehouses × 50 bytes = **~1.5 GB** for all inventory in Redis (fits in one instance)
+- DB mirrors Redis state (eventual consistency, synced every second) for durability
+
+**Order storage:**
+- 10M orders/day × 365 days × 500 bytes/order = **~1.8 TB/year** — partitioned PostgreSQL handles this easily
+
+**Product catalog storage:**
+- 1M products × 5 KB per product (metadata + images indexed) = **~5 GB** product catalog
+- Elasticsearch index for search: 1M products × 2 KB index size = **~2 GB** — fits in one ES node's heap
+
+**Architecture decisions driven by these numbers:**
+- **Redis for inventory reservation during flash sales**: At 11,500 order attempts/sec for a single SKU, a PostgreSQL `UPDATE inventory SET quantity = quantity - 1 WHERE sku_id = ? AND quantity > 0` causes a row-level lock held for ~5ms per transaction. Queue depth: 11,500 × 5ms = **57.5 concurrent lock-waits** → P99 latency spikes to seconds, killing the < 2s checkout SLA. Redis `DECR inventory:{sku_id}` (atomic, 0.1ms, no locking) handles 11,500/sec with P99 < 1ms. The DB is only written on confirmed purchase (Saga: reserve in Redis → charge card → confirm in DB).
+- **CDN for product catalog, dynamic inventory API for stock counts**: Product metadata (title, images, description) changes at most once/day. CDN with 24h TTL serves 1.16M product page loads/sec during flash sale at near-zero origin cost. Inventory counts change every millisecond during a flash sale — must hit the backend (Redis, not DB) for accuracy. Separating these two concerns means CDN absorbs 99% of the flash sale read surge, and only inventory+order writes hit the backend.
+- **Flash sale event bus via Kafka**: At 100× surge, 1.16M simultaneous requests hitting checkout within milliseconds is a thundering herd. Kafka queues the order requests; a checkout consumer processes them at a controlled rate (matching inventory processing capacity). Users see "your order is in queue" rather than a 503 error. This also prevents the inventory DECR from going negative during race conditions at system boundaries.

@@ -338,3 +338,47 @@ def on_token_expired(token):
 - How do you serve the seating chart at scale during a flash sale? What is cached, what is dynamic, and how do you keep the two in sync?
 - Design the seat hold system using Redis atomic operations. What failure modes exist (Redis crash, network partition between Redis and PostgreSQL) and how do you handle them?
 - How do you handle partial payment failures — payment succeeds at the PSP but the DB write to create the booking fails. How do you recover without double-charging?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 10M concurrent users during flash sales; 100K seat selections/sec at peak
+
+**Seat hold request rate:**
+- 100K seat selections/sec at peak (on-sale moment)
+- Each hold request: lock seat for 10 minutes → write to Redis with TTL
+- Redis `SET seat:{seat_id} {user_id} NX EX 600`: ~0.1ms per op, Redis handles ~1M ops/sec
+- 100K hold ops/sec is **10% of a single Redis node's capacity** — comfortable on one node
+
+**Seating chart reads:**
+- At on-sale moment: 10M users all load the seating chart simultaneously
+- Seating chart SVG + availability data: ~500 KB per venue
+- 10M × 500 KB = **~5 TB** if served from origin → must be cached
+- CDN cache hit: 500 KB × 10M users = 5 TB served from edge; origin sees only cache misses (~1% = 100K requests)
+- Availability overlay (which seats are held/booked): changes at 100K/sec → **cannot be in CDN cache**
+- Solution: serve static seating chart from CDN; serve live availability as a separate lightweight API (`GET /venues/{id}/availability` returns a compact bitmask, ~500 bytes for 5,000 seats)
+
+**Availability bitmask:**
+- 5,000 seats per venue: 5,000 bits = **625 bytes** — trivially small
+- Redis `GETBIT seat_availability:{venue_id} {seat_index}` for per-seat check
+- Redis `BITCOUNT seat_availability:{venue_id}` for total available count
+- 10M users polling availability every 2s = 5M reads/sec → needs Redis cluster (~5 nodes at 1M reads/sec each)
+
+**Booking DB writes:**
+- Popular event: 50,000 seats sell out in ~30 seconds
+- Peak booking rate: 50,000 ÷ 30 = **~1,667 confirmed bookings/sec**
+- PostgreSQL easily handles 10K writes/sec — the real bottleneck is the payment PSP call (500ms–1.5s each)
+- Payment must be async: hold seat in Redis, charge card, confirm booking in DB on payment success
+
+**Virtual waiting room queue:**
+- 10M users arrive at 10:00 AM for a 50,000-seat event
+- Admit users at controlled rate: 50,000 seats ÷ average session time (10 min) = 5,000 users/min = **~83 users/sec** into the booking flow
+- Queue depth at peak: 10M users × 30-second average wait = Redis sorted set with 10M members = ~400 MB in Redis
+
+**Architecture decisions driven by these numbers:**
+- **Redis for seat holds, not DB row locks**: At 100K seat selections/sec, PostgreSQL `SELECT FOR UPDATE` at that rate causes lock contention and deadlocks. Redis atomic `SET NX EX 600` is lock-free and processes 1M ops/sec. The DB only sees confirmed bookings (~1,667/sec), not the full selection rate.
+- **Separate CDN path for static vs dynamic content**: Serving the seating chart SVG (static, changes only when venue changes layout) from CDN eliminates 99% of origin load. Only the availability bitmask (dynamic, 100K changes/sec) hits the backend. Without this split, 10M users loading 500 KB each = 5 TB of origin bandwidth in seconds.
+- **Bitmask for availability, not row-per-seat**: A per-seat DB query at 5M reads/sec is impossible. A Redis bitmask (625 bytes for 5,000 seats) returned in one operation gives each client complete availability state. Client-side JS renders available/held/booked colors from the bitmask.
+- **Virtual waiting room for fairness**: Without a queue, 10M TCP connections hitting the booking endpoint simultaneously causes thundering herd — servers collapse. A waiting room admits a controlled flow (83/sec), keeps servers below saturation, and gives earlier arrivals priority via queue position timestamp.

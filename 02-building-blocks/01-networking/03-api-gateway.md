@@ -1,90 +1,255 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** The front door to your microservices. How to manage chaos when your app is split into 50 different pieces.
+> **What this covers:** API gateways in production — what they actually do beyond "routing," how they relate to service meshes, and patterns like BFF and API composition that come up in design interviews.
 >
 > **Key topics:**
-> - **The Problem:** If you have an app made of 50 microservices (Users, Payments, Videos), the mobile app shouldn't have to memorize 50 different IP addresses to talk to them.
-> - **The API Gateway:** A single "Front Desk" for your entire company. The mobile app only talks to the Front Desk, and the Front Desk routes the request to the correct department.
-> - **Cross-Cutting Concerns:** Things that *every* service needs (like checking if a user is logged in, or blocking hackers). Instead of writing security code 50 times, you just put it in the API Gateway once!
-> - **Rate Limiting:** The Gateway acts as a bouncer, blocking anyone who tries to send 1,000 requests per second.
-> - **BFF (Backend for Frontend):** Creating a special, custom API Gateway just for mobile phones, and a different one just for laptops.
+> - **Core functions** — routing, AuthN, rate limiting, SSL termination
+> - **API composition** — aggregating multiple backend calls into one client response
+> - **BFF (Backend for Frontend)** — why mobile and web get different gateway shapes
+> - **Gateway vs service mesh** — what lives at the edge vs what lives east-west
+> - **Service discovery** — how gateways know where to route
+> - **Request/response transformation** — header injection, payload reshaping
 >
-> **Key takeaway:** If you have microservices, you *must* have an API Gateway. It simplifies your frontend code and centralizes all your security.
+> **Key takeaway:** The API gateway is the north-south traffic boundary (external → internal). The service mesh is the east-west boundary (service → service). They're complementary, not competing.
 
 ---
 module: 02-building-blocks
 status: unread
 tags: [02-building-blocks, system-design, networking]
 ---
-# API Gateways - System Design Guide
-
-> This guide explains the purpose of an API Gateway in a microservice architecture using simple analogies.
+# API Gateways
 
 ---
 
-## 🤷‍♂️ Why Should I Care?
+## What Problem It Solves
 
-Imagine a massive hospital. It has a Cardiology department, a Neurology department, an X-Ray lab, and a Pharmacy. 
+In a monolith, a client calls one URL. The app handles routing internally. When you decompose into microservices — 20, 50, 100 services — the client can't call each one directly:
+- The client would need to know the address of every service.
+- Auth, rate limiting, and SSL termination would need to be reimplemented in every service.
+- The internal network topology would be exposed.
 
-If you are a sick patient (The Mobile App), it would be incredibly annoying if you had to memorize the GPS coordinates for every single department and drive between them. 
-Worse, if every single department had to hire their own personal security guard to check your ID, the hospital would waste millions of dollars on duplicate security.
+An **API gateway** is the single entry point for all external clients. It handles the shared concerns once, centrally.
 
-**The Solution:** The hospital builds a massive "Front Desk Reception" at the main entrance. 
-You walk in. You only need to know one address (The API Gateway). You show your ID to the security guard once. The receptionist looks at what you need, and walks you to the correct department. 
-
-When you break a monolith application into Microservices, you create the exact same problem. The API Gateway is your Front Desk. 
-
----
-
-## 🚪 What exactly does an API Gateway do?
-
-An API Gateway is a piece of software (like AWS API Gateway, Kong, or Apigee) that sits between the public internet and your private microservices. It does 3 main jobs:
-
-### 1. Request Routing (The Receptionist)
-The mobile app only has to remember one URL: `api.netflix.com`.
-If the mobile app asks for `/users/123`, the Gateway says, "Ah, I will forward this to the User Microservice." 
-If the mobile app asks for `/billing`, the Gateway forwards it to the Payment Microservice. 
-
-### 2. Authentication & Security (The Security Guard)
-Every single microservice needs to know if the user is actually logged in. 
-Instead of writing password-checking code in 50 different microservices, you put it in the API Gateway. 
-The Gateway checks the user's JWT (VIP Wristband). If the token is fake, the Gateway instantly kicks the user out. The microservices behind the wall don't even have to worry about it! This is called handling a **Cross-Cutting Concern**.
-
-### 3. Rate Limiting (The Bouncer)
-If a hacker tries to launch a DDoS attack by refreshing the page 10,000 times a second, the API Gateway tracks their IP address and blocks them at the front door. The fragile microservices inside are completely protected.
+```
+Mobile App ─────┐
+                ├──→ API Gateway ──→ User Service
+Web Client ─────┤                ──→ Order Service
+3rd Party API ──┘                ──→ Payment Service
+```
 
 ---
 
-## 📱 BFF (Backend For Frontend) Pattern
+## Core Gateway Functions
 
-Sometimes, a single "Front Desk" isn't good enough. 
-Imagine a desktop computer on a fast WiFi connection vs a 10-year-old mobile phone on a 3G cell network. 
+### 1. Request Routing
 
-If the Mobile App asks for a user profile, it only wants the Name and Profile Picture. 
-If the Desktop App asks for a user profile, it has a giant screen, so it wants the Name, Picture, full Biography, 10 recent posts, and a list of friends. 
+Routes incoming requests to the correct backend service based on URL path, Host header, or request attributes.
 
-Instead of having one API Gateway that tries to make everyone happy, we create the **BFF Pattern**:
-- You build one small API Gateway specifically designed for Mobile Apps (It strips out extra data to save battery and data limits).
-- You build a second, different API Gateway specifically designed for Desktop Apps (It grabs massive amounts of data). 
+```
+GET /users/123     → User Service
+GET /orders/456    → Order Service
+POST /payments     → Payment Service
+GET /videos/abc    → Video Service (different cluster, different region)
+```
+
+Gateway maintains a routing table (static config or pulled from a service registry). On a path match, the request is proxied to the corresponding upstream.
+
+### 2. Authentication and Authorization
+
+Validate JWTs or API keys at the gateway before the request ever reaches a service.
+
+```
+Request arrives with: Authorization: Bearer <JWT>
+Gateway:
+  1. Validates JWT signature (using public key from auth service)
+  2. Checks expiry, issuer, audience
+  3. If valid: inject user claims as headers (X-User-Id, X-User-Role)
+  4. If invalid: return 401 immediately
+
+Backend services receive: X-User-Id: 12345 (trusted, injected by gateway)
+```
+
+Backend services don't need to validate JWTs themselves — they trust the gateway's injected headers (since only requests through the gateway reach them; no external access).
+
+### 3. Rate Limiting
+
+Prevent abuse and protect backend services from traffic spikes.
+
+```
+Per-IP: 100 req/min  (protects against DDoS)
+Per-API-key: 1000 req/min  (enforces SLA tiers)
+Per-user: 10 req/s for /search endpoint  (prevents expensive query abuse)
+```
+
+Counters are stored in Redis for distributed rate limiting across multiple gateway instances. On limit breach, return `429 Too Many Requests` with `Retry-After` header.
+
+### 4. SSL Termination
+
+Decrypt TLS at the gateway. Traffic between the gateway and backends travels over plain HTTP (or re-encrypted via mTLS handled by the service mesh).
+
+- Centralizes certificate management: renew one cert (or use Let's Encrypt automation) rather than per-service.
+- Backends don't need TLS configuration.
+
+### 5. Request/Response Transformation
+
+Reshape requests or responses between what the client sends and what the backend expects.
+
+**Common patterns:**
+- Inject authentication headers (`X-User-Id` from JWT claims)
+- Strip internal headers before forwarding to upstream
+- Add CORS headers to all responses
+- Rewrite URL paths (`/api/v1/users` → `/users`)
+- Transform response payloads (rename fields, filter fields the client doesn't need)
+
+### 6. Observability
+
+Every request through the gateway gets a unique request ID. Log all requests with: path, method, status code, latency, upstream service, user identity. This provides an audit trail for security and a central place to measure latency across all services.
 
 ---
 
-## 🆚 API Gateway vs Reverse Proxy vs Load Balancer
+## API Composition
 
-These three things sound identical. In the real world, a single piece of software (like NGINX) can actually do all three jobs at the same time! But in a system design interview, you need to know the textbook definitions:
+When a client needs data from multiple services, it can either make N calls or the gateway can aggregate them.
 
-1. **Load Balancer:** A traffic cop. It doesn't care what the message says; it just splits traffic evenly across 10 identical servers so none of them crash.
-2. **Reverse Proxy:** A bodyguard. It sits in front of a server to hide the server's true IP address from the internet and decrypt SSL certificates. 
-3. **API Gateway:** A smart receptionist. It actively reads the URL, checks passwords, enforces rate limits, and routes traffic to completely different microservices based on what the user asked for.
+**Without composition:** Mobile app makes 3 requests:
+```
+GET /users/123        → User Service
+GET /orders?user=123  → Order Service
+GET /recommendations?user=123 → Recommendation Service
+```
+
+**With API composition (gateway aggregates):**
+```
+GET /dashboard/123
+
+Gateway:
+  1. Call User Service → get user profile
+  2. Call Order Service → get recent orders
+  3. Call Recommendation Service → get recommendations
+  4. Merge responses into one JSON
+  5. Return single response to client
+```
+
+**Benefits:** Fewer round trips for the client (critical on mobile where each round trip costs battery + latency). Backend services remain simple (single-concern APIs).
+
+**Pitfalls:**
+- Gateway becomes bottleneck if composition logic grows complex.
+- Error handling: if one upstream fails, do you return partial data or fail the whole request?
+- Timeouts: the composed response is as slow as the slowest upstream.
+
+Mitigation: set per-upstream timeouts; return partial responses with explicit nulls for failed upstreams; circuit-break failing upstreams.
 
 ---
 
-## 🎤 Interview Questions to Practice
+## BFF: Backend for Frontend
 
-1. **"Why do we need an API Gateway in a microservices architecture?"**
-   *Answer:* It provides a single entry point for all clients, abstracting away the complex internal architecture. It also centralizes "cross-cutting concerns" like authentication, rate limiting, and logging, so we don't have to duplicate that code in every single microservice.
-2. **"What is the BFF (Backend for Frontend) pattern?"**
-   *Answer:* Instead of having one massive, generic API Gateway for all clients, we create multiple, smaller API Gateways tailored to specific clients (e.g., one for iOS, one for Web). This allows the iOS gateway to compress data and aggregate requests specifically to save battery and network bandwidth on mobile devices.
-3. **"Where should you validate a user's JWT token?"**
-   *Answer:* At the API Gateway. Validating it at the edge prevents malicious, unauthenticated traffic from ever reaching your internal network, saving CPU resources on your backend microservices.
+Different clients have different data needs:
+- Mobile: low bandwidth, small screen, battery-sensitive. Wants minimal data, pre-aggregated.
+- Web: large screen, fast connection. Wants rich data, multiple fields.
+- 3rd party API: specific schema expectations, versioning requirements.
+
+**Single gateway problem:** The gateway either returns the maximum data set (mobile wastes bandwidth) or the minimum (web makes extra calls).
+
+**BFF pattern:** Each client gets its own gateway tailored to its needs.
+
+```
+Mobile App  → Mobile BFF  ──┐
+Web App     → Web BFF    ──┤─→ Internal Services
+Partner API → Partner BFF──┘
+```
+
+Each BFF has its own team ownership, its own composition logic, and its own routing rules. The internal services remain generic and stable.
+
+**When to use BFF:** When different client types have genuinely different data shape requirements, or when clients are built by separate teams.
+
+**When not to:** Avoid BFF proliferation — if the clients need essentially the same data, a single gateway with query parameters is simpler.
+
+---
+
+## API Gateway vs Load Balancer vs Service Mesh
+
+These are often confused. Each operates at a different boundary.
+
+| | API Gateway | Load Balancer | Service Mesh |
+|---|---|---|---|
+| Traffic | External → internal | External → internal | Internal → internal |
+| Layer | L7 (HTTP application layer) | L4 or L7 | L7 (sidecar) |
+| Concerns | Auth, rate limit, routing, composition | Distribute load | mTLS, retries, circuit break, tracing |
+| Auth enforcement | Yes | No | Workload identity (mTLS) |
+| Where it runs | Dedicated gateway fleet | Before any backend | Sidecar per pod |
+| Example | Kong, AWS API GW, Nginx | AWS NLB, HAProxy | Istio + Envoy |
+
+**In a production Kubernetes setup:**
+```
+Internet
+  ↓
+Load Balancer (AWS NLB) — TCP distribution across gateway pods
+  ↓
+API Gateway (Kong / Nginx Ingress) — AuthN, rate limit, routing
+  ↓
+Service Mesh (Istio/Envoy sidecar) — mTLS, retries, tracing
+  ↓
+Backend Service
+```
+
+---
+
+## Service Discovery Integration
+
+Gateway must know where to route. In a dynamic fleet, service instances change constantly. Two patterns:
+
+**Static routing (small/simple):** Gateway config file maps paths to fixed upstream URLs. Simple; requires deploy to update.
+
+**Dynamic routing via service registry:** Gateway queries Consul or Kubernetes DNS to get healthy endpoints for each service. Auto-updates when instances start/stop.
+
+```
+# Kubernetes: Gateway routes to service DNS name
+GET /orders → http://order-service.default.svc.cluster.local:8080/orders
+```
+
+Kubernetes Service objects act as the service registry — `kube-proxy` ensures the DNS name always resolves to healthy pods.
+
+---
+
+## Rate Limiting Architecture
+
+For a distributed gateway fleet, rate limit state must be shared:
+
+```
+Gateway Instance A ──→ Redis (shared counter) ←── Gateway Instance B
+                           ↑
+                    Rate limit logic: INCR + EXPIRE
+```
+
+**Token bucket algorithm (common choice):**
+```python
+def is_allowed(client_id, limit_per_minute):
+    key = f"rate:{client_id}"
+    with redis.pipeline() as pipe:
+        pipe.incr(key)
+        pipe.expire(key, 60)  # TTL = 1 minute window
+        count, _ = pipe.execute()
+    return count <= limit_per_minute
+```
+
+**Sliding window** is more accurate but requires more Redis operations (sorted set with timestamps). Token bucket is the common production choice.
+
+---
+
+## Interview Questions to Practice
+
+1. **"What is the difference between an API gateway and a service mesh? Do you need both?"**
+   *The API gateway handles north-south traffic (external clients to internal services): authentication, rate limiting, SSL termination, URL routing. The service mesh handles east-west traffic (service to service): mTLS, retries, circuit breaking, distributed tracing. They're complementary. In a mature microservices deployment you need both: the gateway at the edge, the mesh for internal resilience. At small scale (< 10 services), just the API gateway is often enough.*
+
+2. **"How does the API gateway handle authentication without making services implement it themselves?"**
+   *The gateway validates the JWT signature using the auth server's public key. If valid, it extracts claims (user_id, roles) and injects them as trusted headers (X-User-Id, X-User-Role). Backend services receive these headers and trust them — they know only requests that passed through the gateway arrive on the internal network. No service implements JWT validation; they just read headers. mTLS (via service mesh) enforces that only the gateway can be the source of internal calls.*
+
+3. **"What is API composition and when would you use it?"**
+   *API composition is when the gateway aggregates multiple upstream calls into a single response for the client. Use it when a screen or feature needs data from several services and the client making N sequential calls would be slow (high latency, mobile battery cost). Common in BFF pattern. Risk: the composed response is as slow as the slowest upstream — set per-upstream timeouts and decide whether to return partial data on failure.*
+
+4. **"A gateway is receiving 100K requests/second. How would you rate-limit by user?"**
+   *Run multiple gateway instances behind a load balancer. Use Redis for shared rate-limit state: token bucket per user_id. Each gateway instance increments the Redis counter on each request. INCR + EXPIRE in a pipeline gives atomic increment with TTL. This scales horizontally — add gateway instances without changing rate-limit logic. Redis can handle ~1M ops/sec on a single node; for larger scale, use Redis Cluster or shard counters by user_id range across Redis shards.*
+
+5. **"What is the BFF pattern and when would you avoid it?"**
+   *BFF (Backend for Frontend) creates a dedicated API gateway per client type (mobile, web, partner). Each BFF has its own team, its own composition logic, and its own data shaping. Use it when clients have genuinely different data needs or are owned by different teams. Avoid it when clients need essentially the same data — a single gateway with optional query params is simpler and avoids duplicating routing, auth, and rate-limiting logic across multiple BFF instances.*

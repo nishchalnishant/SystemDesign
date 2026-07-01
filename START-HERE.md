@@ -26,8 +26,8 @@ This repo covers system design end-to-end — HLD, LLD, design patterns, and int
 | `02-building-blocks/` | Load balancers, caching, sharding, message brokers, rate limiting, CDN, API gateway |
 | `03-scaling/` | Scaling strategies, DB scaling deep dive, LSM vs B-Tree, global distribution |
 | `04-advanced-topics/` | Distributed systems, observability, event-driven architecture, microservices, chaos engineering, internals (Kafka, Redis, DynamoDB, Cassandra, Postgres, MySQL, Elasticsearch, Zookeeper) |
-| `05-hld-problems/` | 27 HLD problems — easy (9), medium (7), hard (11) |
-| `06-lld/` | OOP fundamentals, SOLID principles, 21 design patterns, concurrency, 26 LLD problems |
+| `05-hld-problems/` | 36 HLD problems — easy (9), medium (7), hard (20) |
+| `06-lld/` | OOP fundamentals, SOLID principles, 21 design patterns, concurrency, 36 LLD problems |
 | `07-interview-templates/` | HLD/LLD frameworks, capacity estimation, trade-off cheat sheets, anti-patterns, question bank |
 | `08-reference/` | Numbers to know, cloud services, glossary, book summaries |
 | `09-patterns/` | Saga, CQRS/event sourcing, outbox, bulkhead, strangler fig, two-phase commit |

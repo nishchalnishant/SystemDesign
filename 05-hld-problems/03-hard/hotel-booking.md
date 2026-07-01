@@ -231,3 +231,50 @@ total = subtotal * (0.9 if nights >= 7 else 1.0)  # 10% weekly discount
 - A hotel overbooks by mistake (more bookings than rooms). How does the system detect and handle this?
 - Design the dynamic pricing system — how do you support per-date, per-room-type pricing with last-minute discounts and minimum-stay requirements?
 - How do you handle a flash sale where a hotel drops prices at midnight and 100,000 users try to book the same 50 rooms?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 500K hotels; 10M rooms; 10M searches/day; 500K bookings/day
+
+**Search throughput:**
+- 10M searches/day ÷ 86,400 sec = **~115 searches/sec** average
+- Peak (weekend mornings, travel season): 10× = **~1,150 searches/sec**
+- Each search: `{city, check_in, check_out, guests, filters}` → returns up to 20 hotels with availability
+
+**Availability check complexity:**
+- To check if a hotel has a room available for dates [check_in, check_out]:
+  - Naive: query all bookings that overlap the date range for each room
+  - `SELECT count(*) FROM bookings WHERE room_id = ? AND check_in < ? AND check_out > ?`
+  - For 10M rooms × 1,150 searches/sec: 11.5B DB queries/sec — impossible
+- Optimization: pre-aggregate availability into a date-partitioned cache
+  - `available_rooms:{hotel_id}:{date}` → integer count of available rooms
+  - Pre-compute nightly (batch) + update on booking/cancellation (incremental)
+  - 1,150 searches × 7 nights (avg stay) × 20 hotels per search = **161,000 Redis reads/sec** — comfortable on a Redis cluster
+
+**Availability cache sizing:**
+- 500K hotels × 365 days × 10 bytes per `{date: available_count}` entry = **~1.8 GB** — fits in a single Redis instance
+
+**Booking write throughput:**
+- 500K bookings/day ÷ 86,400 sec = **~5.8 bookings/sec** average
+- Peak: 10× = **~58 bookings/sec** — very low throughput for a DB
+- Each booking: `{booking_id, user_id, hotel_id, room_id, check_in, check_out, guests, status, price}` ≈ 500 bytes
+- Peak write: 58 × 500 bytes = **29 KB/sec** — negligible
+
+**Concurrency risk (high-season flash booking):**
+- Popular hotel, 1 remaining room: 100 users try to book simultaneously
+- Without locking: all 100 see "1 room available," all 100 try to INSERT booking → 100 double-bookings
+- With `SELECT FOR UPDATE` on availability row: serialized, only 1 succeeds, 99 get "no availability" error
+- At 58 bookings/sec, this lock contention is negligible — P99 wait < 5ms
+
+**Payment processing:**
+- 500K bookings/day × $150 avg transaction = **$75M/day** through the payment system
+- Credit card hold (not capture): charge on check-in or 24h before
+- Idempotency key per booking: prevent double-charges on retry
+
+**Architecture decisions driven by these numbers:**
+- **Pre-aggregated availability cache, not per-booking queries**: Search is 10M/day vs bookings 500K/day (20× more searches). Querying raw booking rows for every search at 1,150/sec is 161K DB queries/sec for 7 nights × 20 hotels — unsustainable. Pre-aggregated Redis counters reduce this to 161K simple Redis GET calls/sec — 20× faster and eliminates DB read load.
+- **Optimistic locking for room assignment, pessimistic for final booking commit**: The search phase (which room type is available?) uses optimistic reads from cache. The final room assignment (`UPDATE rooms SET status='reserved' WHERE room_id=? AND status='available'`) uses a DB-level UPDATE with row-level lock. If the row was already taken (0 rows updated), return 409 Conflict. This avoids holding locks during the slow payment processing step.
+- **Date-range index on bookings table**: `CREATE INDEX idx_bookings_overlap ON bookings (hotel_id, check_out, check_in)` enables efficient overlap queries for availability recomputation. Without this index, recomputing availability after a cancellation requires a full table scan.

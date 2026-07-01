@@ -207,6 +207,61 @@ def compute_surge(h3_cell, time_window=5):  # minutes
 
 ---
 
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 5M concurrent drivers; 10M concurrent riders; 1M trips/hour
+
+**Driver GPS ping rate:**
+- Drivers send GPS pings every 4 seconds while on trip (tighter) or every 10 seconds while available
+- Assume 5M drivers online (worst case all active): 5M / 4 sec = **1.25M location writes/sec**
+- Each ping: `{driver_id, lat, lng, heading, speed, h3_cell, ts}` ≈ 100 bytes
+- Write throughput: 1.25M × 100 bytes = **~125 MB/sec** to the location store
+
+**Redis sizing for driver locations:**
+- 5M drivers × 200 bytes per Redis hash = **~1 GB** for all driver locations in memory
+- Well within a single Redis node (typically 30–100 GB RAM available)
+- H3 cell sets: ~1M distinct H3 cells at resolution 8 (city block scale), each set averages 5 drivers = 5M entries, ~500 MB additional
+- Total: **~1.5 GB** — comfortably in-memory with no eviction needed
+
+**Ride request rate:**
+- 1M trips/hour = **~278 ride requests/sec** peak
+- Each ride request triggers: H3 lookup (1 Redis query for each of ~57 neighbor cells) + driver ranking + match send
+- 278 req/sec × 57 SUNIONSTORE ops = **~15,800 Redis ops/sec** for matching — manageable on a single Redis instance (handles ~1M ops/sec)
+
+**Match latency budget (5 seconds total):**
+- H3 geo lookup: ~5 ms (Redis in-memory)
+- Driver ranking (up to 50 candidates, ETA computation): ~50 ms
+- Match request → driver response: up to 15 seconds (driver has 15s to accept)
+- Re-match on decline: ~5 ms (already have ranked list)
+- Total to first acceptance: P50 ~2s, P99 ~4.5s — within 5s SLA
+
+**Location update write path:**
+- 1.25M writes/sec to Redis: ~125 MB/sec. Redis single-threaded can do ~1M SET/sec — this approaches the limit.
+- Solution: shard Redis by driver_id prefix across 4 Redis nodes → 312K writes/sec per node (comfortable headroom)
+- H3 index: `SADD h3:{cell} driver_id` on every GPS ping is expensive at 1.25M/sec. Optimization: only update H3 index when the driver crosses into a new H3 cell (changes every ~460m at resolution 8). Reduces H3 index writes by ~10× since most pings stay in the same cell.
+
+**Trip data storage:**
+- 1M trips/hour × 24 hours = 24M trips/day
+- Trip record: ~1 KB (rider, driver, origin, destination, pricing, timestamps, route)
+- 24M × 1 KB = **~24 GB/day** → ~8.7 TB/year
+- PostgreSQL handles this comfortably — trips are OLTP: low write rate (1M/hr = 278/sec), high read rate, relational (join riders/drivers/payments)
+
+**Surge pricing computation:**
+- Compute supply/demand ratio per H3 cell, updated every 1 minute
+- ~1M distinct H3 cells at resolution 7 (neighborhood scale for surge) globally
+- Pipeline: Kafka location-updates → Flink streaming (1-minute tumbling window) → Redis surge cache per H3 cell
+- 1M cells × 50 bytes = **50 MB** in Redis for all surge multipliers globally
+
+**Architecture decisions driven by these numbers:**
+- **Redis over PostgreSQL for driver locations**: 1.25M writes/sec with sub-2ms read latency for H3 lookups is impossible with a relational DB. Redis in-memory operations are the only option that satisfies the matching latency budget.
+- **H3 index update only on cell change**: Reduces write amplification by ~10× (from 1.25M/sec to ~125K H3 index updates/sec). Without this optimization, a driver doing 35 km/h in a city generates 9 H3 index updates/min even while staying in the same cell.
+- **4-shard Redis cluster**: One Redis node cannot handle 1.25M writes/sec. Shard on driver_id prefix; consistent hashing for rebalancing when adding nodes.
+- **PostgreSQL for trips**: 278 writes/sec is trivially low for PostgreSQL. The relational model is valuable — trip joins to riders, drivers, and payments are critical for billing and analytics. No justification for a NoSQL solution here.
+- **30-second TTL for driver locations**: If a driver hasn't pinged in 30 seconds, they're offline or lost signal. Evict from H3 index immediately to avoid matching riders to unreachable drivers. TTL-based eviction in Redis is the correct mechanism.
+
+---
+
 ## Interviewer Questions by Level
 
 **Junior**:

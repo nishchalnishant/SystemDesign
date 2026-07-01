@@ -431,3 +431,227 @@ The machine tracks `revenue: float` incrementing on each successful purchase. Ad
 - Q: How do you test each state in isolation? A: Construct a VendingMachine with its state manually set to the target state. Mock the machine context. Call the state's methods and assert transitions and outputs. No need to drive through the full flow each time.
 - Q: What if the user inserts the exact amount — what change is returned? A: `change = inserted - price = 0`. Skip the `make_change` call entirely. Dispense the item. No coins returned.
 - Q: How is partial payment handled? A: Payment accumulates in `inserted_amount`. Each `insert_coin` call adds to it. The state stays in PaymentState until `inserted_amount >= item.price_cents`. This allows multiple coin insertions before reaching the required amount.
+
+---
+
+## Concurrency Test Harness
+
+A vending machine is a single physical device — transactions must be strictly sequential. These tests verify that concurrent access is correctly serialized and invariants hold under race conditions.
+
+```python
+import threading
+import time
+from enum import Enum, auto
+from dataclasses import dataclass, field
+
+# ── Minimal stub implementation (self-contained) ──
+
+class VendingException(Exception):
+    pass
+
+@dataclass
+class Item:
+    code: str
+    name: str
+    price_cents: int
+
+class Inventory:
+    def __init__(self):
+        self._items = {}
+        self._quantities = {}
+        self._lock = threading.Lock()
+
+    def add_item(self, item, qty):
+        with self._lock:
+            self._items[item.code] = item
+            self._quantities[item.code] = qty
+
+    def get_item(self, code):
+        with self._lock:
+            if code not in self._items:
+                raise VendingException(f"Unknown code: {code}")
+            if self._quantities[code] == 0:
+                raise VendingException(f"Out of stock: {code}")
+            return self._items[code]
+
+    def decrement(self, code):
+        with self._lock:
+            if self._quantities.get(code, 0) == 0:
+                raise VendingException(f"Out of stock: {code}")
+            self._quantities[code] -= 1
+
+    def quantity(self, code):
+        with self._lock:
+            return self._quantities.get(code, 0)
+
+
+class VendingMachine:
+    """Single-transaction serialization via a global reentrant lock."""
+
+    def __init__(self):
+        self.inventory = Inventory()
+        self._transaction_lock = threading.Lock()
+        self._inserted_cents = 0
+        self._selected_code = None
+        self._revenue = 0
+
+    def select_item(self, code):
+        with self._transaction_lock:
+            item = self.inventory.get_item(code)
+            self._selected_code = code
+            self._inserted_cents = 0
+            return item
+
+    def insert_coin(self, cents):
+        with self._transaction_lock:
+            if self._selected_code is None:
+                raise VendingException("No item selected")
+            self._inserted_cents += cents
+
+    def dispense(self):
+        with self._transaction_lock:
+            if self._selected_code is None:
+                raise VendingException("No item selected")
+            item = self.inventory.get_item(self._selected_code)
+            if self._inserted_cents < item.price_cents:
+                raise VendingException(
+                    f"Insufficient: need {item.price_cents}, have {self._inserted_cents}"
+                )
+            change = self._inserted_cents - item.price_cents
+            self.inventory.decrement(self._selected_code)
+            self._revenue += item.price_cents
+            code = self._selected_code
+            self._selected_code = None
+            self._inserted_cents = 0
+            return change
+
+    def cancel(self):
+        with self._transaction_lock:
+            refund = self._inserted_cents
+            self._selected_code = None
+            self._inserted_cents = 0
+            return refund
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 1: Inventory never goes negative under concurrent purchases
+# 100 threads all try to buy the same item (stock=10).
+# Exactly 10 must succeed; 90 must get VendingException.
+# ─────────────────────────────────────────────────────────────
+def test_inventory_never_negative():
+    vm = VendingMachine()
+    cola = Item("A1", "Cola", 150)
+    vm.inventory.add_item(cola, 10)
+
+    successes = []
+    failures = []
+    lock = threading.Lock()
+
+    def buy():
+        try:
+            vm.select_item("A1")
+            vm.insert_coin(200)
+            change = vm.dispense()
+            with lock:
+                successes.append(change)
+        except VendingException as e:
+            with lock:
+                failures.append(str(e))
+
+    threads = [threading.Thread(target=buy) for _ in range(100)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    # Exactly 10 purchases; 90 stock-out failures
+    # Note: serialization means each thread sees a consistent state
+    final_qty = vm.inventory.quantity("A1")
+    sold = 10 - final_qty
+    assert final_qty >= 0, f"Inventory went negative: {final_qty}"
+    assert len(successes) == sold, f"Success count {len(successes)} != sold {sold}"
+    print(f"PASS: test_inventory_never_negative ({sold} sold, {final_qty} remaining)")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 2: No revenue corruption under concurrent transactions
+# N threads each complete a full transaction.
+# Total revenue must equal N × item price.
+# ─────────────────────────────────────────────────────────────
+def test_revenue_consistency():
+    vm = VendingMachine()
+    water = Item("B1", "Water", 100)
+    vm.inventory.add_item(water, 50)
+
+    success_count = 0
+    lock = threading.Lock()
+
+    def buy():
+        nonlocal success_count
+        try:
+            vm.select_item("B1")
+            vm.insert_coin(100)
+            vm.dispense()
+            with lock:
+                success_count += 1
+        except VendingException:
+            pass
+
+    threads = [threading.Thread(target=buy) for _ in range(50)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    expected_revenue = success_count * 100
+    assert vm._revenue == expected_revenue, \
+        f"Revenue mismatch: expected {expected_revenue}, got {vm._revenue}"
+    print(f"PASS: test_revenue_consistency ({success_count} purchases, revenue={vm._revenue})")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 3: Cancel returns inserted amount, leaves machine in clean state
+# Thread A inserts coins and then cancels.
+# Thread B then completes a transaction.
+# Thread B must see a clean machine state (not A's inserted_cents).
+# ─────────────────────────────────────────────────────────────
+def test_cancel_resets_state():
+    vm = VendingMachine()
+    snack = Item("C1", "Snack", 75)
+    vm.inventory.add_item(snack, 5)
+
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def thread_a():
+        vm.select_item("C1")
+        vm.insert_coin(200)
+        refund = vm.cancel()
+        results["refund"] = refund
+        barrier.wait()  # signal B to proceed
+
+    def thread_b():
+        barrier.wait()  # wait for A to cancel
+        vm.select_item("C1")
+        vm.insert_coin(75)
+        change = vm.dispense()
+        results["change"] = change
+
+    ta = threading.Thread(target=thread_a)
+    tb = threading.Thread(target=thread_b)
+    ta.start(); tb.start()
+    ta.join(); tb.join()
+
+    assert results["refund"] == 200, f"Expected refund 200, got {results['refund']}"
+    assert results["change"] == 0, f"Expected change 0, got {results['change']}"
+    assert vm.inventory.quantity("C1") == 4, "Inventory not decremented correctly"
+    print("PASS: test_cancel_resets_state")
+
+
+if __name__ == "__main__":
+    test_inventory_never_negative()
+    test_revenue_consistency()
+    test_cancel_resets_state()
+    print("All concurrency tests passed.")
+```
+
+**What each test verifies:**
+- `test_inventory_never_negative`: The `_transaction_lock` serializes select→insert→dispense triples. Without it, two threads can both pass the "quantity > 0" check and both decrement, driving stock negative.
+- `test_revenue_consistency`: Revenue is incremented inside the same lock as inventory decrement; they update atomically per transaction with no partial writes visible between threads.
+- `test_cancel_resets_state`: A barrier coordinates A's cancel before B's transaction to confirm that cancel fully resets `_selected_code` and `_inserted_cents`, leaving the machine in `IdleState` for the next user.

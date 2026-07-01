@@ -222,3 +222,46 @@ Discrepancies are investigated manually and corrected with adjustment entries.
 - How do you handle a PSP outage? The user clicks "Pay" and Stripe returns a 503. What does the system do?
 - Design the payout system that transfers accumulated merchant funds to their bank account via ACH. What are the risks and how do you handle them?
 - How do you handle chargebacks (when a customer disputes a charge with their bank)?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1M transactions/day, 100 TPS sustained, 10,000 TPS peak (Black Friday)
+
+**Transaction volume:**
+- 1M txns/day ÷ 86,400 sec = **~11.6 TPS** average
+- Peak: 10,000 TPS (Black Friday flash — ~860× average)
+- Each transaction record: `{txn_id, user_id, merchant_id, amount, currency, psp_ref, status, idempotency_key, created_at}` ≈ 500 bytes
+- Write throughput at peak: 10,000 × 500 bytes = **5 MB/sec** — trivial for PostgreSQL
+
+**Idempotency key storage:**
+- Every payment request carries an idempotency key (UUID, 36 bytes)
+- Redis stores `idempotency_key → {status, response}` with 24h TTL
+- At 10,000 TPS peak × 24 hours × 36 bytes key + 200 bytes response = **~84 GB** in Redis at peak
+- A single Redis node (128 GB RAM) handles this comfortably
+
+**PSP (Payment Service Provider) timeout budget:**
+- User sees payment confirmation < 3s
+- Network to PSP (Stripe/Braintree): ~100ms round trip
+- PSP internal processing: ~500ms–1.5s (card network authorization)
+- DB write + response: ~50ms
+- Total: ~2s P50, 2.8s P95 — within 3s SLA
+- If PSP returns 503: retry with same idempotency key after 200ms (max 2 retries); if still failing, queue for async retry and show user "payment processing"
+
+**Storage sizing:**
+- 1M txns/day × 365 = 365M txns/year × 500 bytes = **~183 GB/year**
+- 7-year audit retention (PCI DSS): **~1.3 TB** — fits on a single PostgreSQL instance with partitioning by month
+- Audit log (every state change): 5 events/txn × 365M × 300 bytes = **~550 GB/year** additional
+
+**Fraud scoring:**
+- Every transaction scored before authorization: user's 30-day history, device fingerprint, geo-velocity check
+- Redis stores user feature vectors: 100M users × 500 bytes = **~50 GB** — fits in a Redis cluster
+- ML inference: 10,000 TPS × 10ms scoring = 100 cores needed for fraud scoring alone
+
+**Architecture decisions driven by these numbers:**
+- **PostgreSQL for transactions, not Cassandra**: 10,000 TPS peak is low for a relational DB (PostgreSQL handles 100K+ TPS on modern hardware). The data model is strongly relational (txn → user → merchant → PSP ref → refund). ACID correctness prevents double-charges. NoSQL would sacrifice transactional guarantees for throughput that isn't needed.
+- **Idempotency keys in Redis, not DB**: At 10,000 TPS, checking an idempotency key before every write must be sub-millisecond to stay within the 3s user-facing budget. Redis `SETNX` is ~0.1ms. A DB `SELECT + INSERT` is ~5ms + lock contention at peak.
+- **Async PSP retry via Kafka**: If Stripe returns 503, the system publishes to a `payment-retry` Kafka topic. A retry consumer re-attempts with the same idempotency key. This decouples the user-facing request (returns "processing" immediately) from the PSP call, eliminating user-visible failures for transient PSP outages.
+- **Ledger as append-only log**: Every money movement is an immutable append (credit/debit entries). Balance = sum of all entries for an account. Never update a row in the ledger. This gives a complete audit trail by design and prevents accidental overwrites from corrupting balances.

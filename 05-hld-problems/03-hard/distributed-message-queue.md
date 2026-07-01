@@ -226,3 +226,48 @@ except Exception:
 - How does Kafka handle a broker failure during a write that has `acks=all`?
 - A consumer group has 100 consumers and a topic has 10 partitions. What's the problem and how do you fix it?
 - Design a multi-region Kafka deployment for a global payment system — how do you handle cross-region replication and failover?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1M messages/sec write; 10M messages/sec read (fan-out); < 10ms P99 end-to-end
+
+**Ingest throughput:**
+- 1M messages/sec × 1 KB average message size = **~1 GB/sec** write throughput
+- With replication factor 3: 3 GB/sec actual disk write across the cluster
+- NVMe SSD sequential write: ~2 GB/sec per disk → need at least 2 disks per broker for replication writes
+- At 10 brokers: 100 MB/sec per broker (ingest) + 200 MB/sec replication = 300 MB/sec per broker — within NVMe capacity
+
+**Fan-out read throughput:**
+- 10M messages/sec read = 10× write rate → typical for pub-sub (1 topic, 10 consumer groups)
+- 10M × 1 KB = **~10 GB/sec** read throughput from the cluster
+- Page cache is the key: NVMe read ~3 GB/sec; Linux page cache hits are memory speed (~50 GB/sec)
+- If messages are consumed within seconds of production (hot data), they're in page cache — 10 GB/sec served from RAM, not disk
+
+**Partition sizing:**
+- Each partition: one leader broker handles all reads and writes for that partition
+- Leader throughput limit: ~100 MB/sec per partition (single-threaded in Kafka)
+- 1 GB/sec ingest ÷ 100 MB/sec per partition = **10 partitions minimum** for write path
+- For fan-out: 10 GB/sec ÷ 100 MB/sec = **100 partitions minimum** across the cluster
+- Production recommendation: 200 partitions with 10 brokers = 20 partitions/broker = 2 GB/sec per broker read capacity
+
+**Storage sizing:**
+- 1 GB/sec ingest × 7-day retention × 86,400 sec/day = **~605 TB** raw
+- With RF=3: **~1.8 PB** total cluster storage
+- With compression (LZ4 on typical JSON payloads, ~3× ratio): **~600 TB** physical
+- At 10 brokers: **60 TB per broker** (NVMe-backed storage arrays in production)
+
+**Latency breakdown (< 10ms P99 budget):**
+- Producer batch delay: 1ms (linger.ms=1)
+- Network to broker leader: 1ms (same DC)
+- Broker write to page cache + replicate to 2 followers: 4ms
+- Follower ack: 2ms (acks=all)
+- Consumer poll + network: 2ms
+- Total: **~10ms** — exactly at SLA with no slack; use acks=1 (leader-only) to drop to ~4ms P99 if latency > durability
+
+**Architecture decisions driven by these numbers:**
+- **Sequential disk I/O as the design principle**: Kafka's 1 GB/sec write rate is only achievable via sequential appends to a log file (OS batches writes, page cache absorbs bursts). Random I/O at 1 GB/sec would require ~250K IOPS — beyond any single disk. The immutable append-only log is not just a design choice; it's what makes the throughput target achievable.
+- **Page cache as the read tier**: 10 GB/sec read from disk is impossible (NVMe max ~3 GB/sec). But if consumers lag by less than the page cache size (~100 GB on a modern server), reads hit RAM at memory bandwidth (~50 GB/sec). This is why Kafka discourages consumer lag — a lagging consumer falls out of page cache and causes disk reads that degrade performance for all partitions on that broker.
+- **200 partitions across 10 brokers**: Fewer, larger partitions simplify routing but create hot spots (one slow consumer blocks a large partition). More partitions distribute load but add coordination overhead (ZooKeeper/KRaft metadata per partition). 200 partitions at 10 brokers gives 20 per broker — the sweet spot for this throughput.

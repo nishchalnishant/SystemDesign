@@ -204,3 +204,43 @@ pattern = CEP.pattern()
 - Design the fraud detection pipeline — what signals do you use in real-time vs retrospectively?
 - How would you handle a 10× traffic spike (100,000 clicks/sec) — where does the system bottleneck first and how do you scale each component?
 - How do you ensure exactly-once semantics end-to-end from click ingestion to ClickHouse insert?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 10,000 clicks/sec sustained; 100,000/sec spike; 10B clicks/day
+
+**Ingest throughput:**
+- Sustained: 10K clicks/sec; spike: 100K clicks/sec (10× surge during campaign launches)
+- Each click event: `{click_id, ad_id, user_id, campaign_id, placement_id, ts, ip, user_agent}` ≈ 300 bytes
+- Sustained write: 10K × 300 bytes = **3 MB/sec** to Kafka
+- Spike write: 100K × 300 bytes = **30 MB/sec** — one Kafka partition handles ~100 MB/sec, so a single topic with 3 partitions absorbs the spike
+
+**Raw event storage:**
+- 10B clicks/day × 300 bytes = **~3 TB/day** raw click data
+- Retention for audit/reprocessing: 2 years = **~2.2 PB** — stored as Parquet in S3 (Snappy compressed, ~5× ratio) → **~440 TB** physical storage
+- Cost at $23/TB/month (S3 Standard): ~$10K/month for cold storage; use S3 Glacier after 90 days → ~$2/TB/month = **~$900/month**
+
+**Aggregation output (pre-aggregated, not raw):**
+- Aggregation granularity: clicks per `(ad_id, campaign_id, hour)` 
+- 1M active ads × 24 hours = 24M aggregate rows/day, each ~100 bytes = **2.4 GB/day** in the analytics DB
+- This is 1,000× smaller than raw — dashboards query aggregates, not raw events
+
+**Real-time dashboard latency:**
+- Target: data visible within 10 seconds of click
+- Flink streaming job: reads from Kafka, tumbling 1-minute windows per `(ad_id, hour)`, writes partial aggregates to Redis every 10 seconds
+- Redis key: `agg:{ad_id}:{hour}` → value: `{clicks, impressions, conversions}` (60 bytes)
+- 1M active ads × 60 bytes = **60 MB** in Redis for all live aggregates — trivial
+
+**Deduplication:**
+- Click fraud / bot traffic: same click_id arrives multiple times from Kafka consumer retries
+- Bloom filter per 5-minute window: 10K clicks/sec × 300 sec = 3M items; at 1% false positive rate → **~4 MB** per window → 12 Bloom filters in memory (1-hour lookback) = **50 MB total**
+- True dedup for billing: Redis `SETNX click_id:{id} 1 EX 86400` — 10K/sec × 86,400 sec × 40 bytes/key = **~34 GB** in Redis; use a dedicated dedup Redis instance
+
+**Architecture decisions driven by these numbers:**
+- **Kafka as ingest buffer, not direct DB writes**: A 10× spike (100K clicks/sec) against a DB would saturate connections and cause write failures. Kafka absorbs the spike elastically; consumers process at their own pace. The aggregation job doesn't need to keep up with spikes — it catches up when load drops.
+- **Two-tier storage (raw + aggregated)**: Dashboards querying 10B raw rows/day is impossible. Pre-aggregate to `(ad_id, hour)` counts in Flink. Raw events go to S3 Parquet for audit and ML reprocessing. Aggregates go to a time-series DB (ClickHouse, TimescaleDB) for fast dashboard queries.
+- **Bloom filter for approximate dedup, Redis for exact**: Bloom filter catches ~99% of duplicates in-stream with 50 MB memory. The 1% that slip through are caught by the Redis exact-dedup layer. Two-tier because Redis at 34 GB × 24-hour window is expensive; Bloom filter handles the bulk cheaply.
+- **Flink over Spark for real-time aggregation**: 10-second visibility requirement rules out micro-batch (minimum ~30-second latency with Spark SS). Flink event-time processing with 10-second watermarks achieves the 10-second target.

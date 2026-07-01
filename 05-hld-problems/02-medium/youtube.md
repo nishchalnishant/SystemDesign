@@ -209,3 +209,42 @@ This reduces write rate from 1M/sec to 1 update per video per 5 seconds.
 - How do you count views for a video getting 1M concurrent viewers without overwhelming the database?
 - How would you design YouTube's recommendation system — what signals do you use and how do you serve recommendations at 500M DAU scale?
 - How do you handle copyright detection (Content ID) at upload time — scanning 500 hours/minute for matching content?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 500M DAU; 500 hours of video uploaded/minute; 1B hours watched/day; 23 Tbps global serving bandwidth
+
+**Upload throughput:**
+- 500 hours/min of video × 60 min = 30,000 hours/hour uploaded
+- At 50 GB/hour (1080p raw): 30,000 × 50 GB = **1.5 PB/hour** raw upload volume
+- Compressed source (H.264, ~5 GB/hour for upload): 30,000 × 5 GB = **~150 TB/hour** = **~42 GB/sec** inbound
+
+**Transcoding compute:**
+- Each uploaded video must be transcoded to multiple renditions (360p, 480p, 720p, 1080p, 4K)
+- Transcoding 1 hour of video to 5 renditions: ~5× real-time → 5 hours of CPU per uploaded hour
+- 30,000 hours uploaded/hour × 5 renditions = **150,000 hours** of transcoding needed per hour
+- At 10× real-time speed on a modern CPU: 150,000 ÷ 10 = **15,000 CPU-hours/hour** = 15,000 cores running continuously
+
+**Storage after transcoding:**
+- Each uploaded hour → 5 renditions at avg 2 GB/rendition = 10 GB per uploaded hour
+- 30,000 hours/hour × 10 GB = **300 TB/hour** new video storage
+- Annual: 300 TB × 8,760 hours = **~2.6 PB/day → ~950 PB/year** (with popular videos stored longer)
+
+**Streaming bandwidth:**
+- 1B hours watched/day at average 2 Mbps bitrate: 1B × 3,600 sec × 2 Mbps = **7.2 × 10¹⁵ bits/day**
+- Per second: 7.2 × 10¹⁵ ÷ 86,400 = **~83 Tbps** average; NFR says peak is **23 Tbps** (either the NFR is a peak-per-region or uses different assumptions — use 23 Tbps as the constraint)
+- At 23 Tbps across 200 CDN PoPs: **~115 Gbps per PoP** average; peak 3× = **~345 Gbps per PoP** — needs multiple 100 GbE links per PoP
+
+**CDN cache hit rate for video:**
+- Popular videos (top 1% viewed): accounts for ~50% of watch-hours
+- CDN caches top 1% videos: 950 PB/year × 1% = **~9.5 PB** of popular video across CDN edge
+- At 10 TB SSD per PoP × 200 PoPs = 2 PB CDN edge storage → caches top 0.2% of videos, serves ~30% of requests
+- For the remaining 70%, CDN fetches from origin mid-tier cache or S3
+
+**Architecture decisions driven by these numbers:**
+- **Async transcoding pipeline, not synchronous**: Transcoding 1 uploaded video takes minutes (5× duration at 1× CPU). The upload API can't block for 5 minutes before returning. Upload writes raw video to S3, publishes a `video-uploaded` Kafka event, and returns immediately (status: PROCESSING). A transcoding fleet of 15,000 cores consumes the queue asynchronously. Users see the video available for viewing minutes after upload completes.
+- **Adaptive bitrate streaming (HLS/DASH) over fixed-bitrate**: A user on a 3G phone switching to WiFi should get seamless quality improvement. HLS segments video into 2-second chunks at each quality level. The player switches renditions per-segment based on download speed. This requires pre-transcoding to 5 renditions (the 15,000 CPU-core investment), but eliminates buffering and delivers optimal quality per client, reducing rebuffering rate from ~8% (fixed bitrate) to < 1%.
+- **Tiered CDN with regional mid-tier caches**: At 23 Tbps peak, serving all video from a central origin cluster is impossible — a single S3 region maxes out at a few Tbps. Tiered CDN: edge PoPs (close to users) cache hot segments; regional mid-tier caches (one per continent) hold long-tail content; origin (S3) holds everything. Cache hit rates: edge ~60%, mid-tier ~90% of edge misses, origin serves only ~4% of total requests — reducing origin bandwidth from 23 Tbps to ~920 Gbps.

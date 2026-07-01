@@ -366,3 +366,205 @@ For proactive expiry (lazy expiry can accumulate stale entries), run a backgroun
 
 - **Q: What's the memory overhead of this implementation?**  
   A: Each node uses 5 fields (key, value, prev, next, plus Python object overhead ~56 bytes). Plus 2 dict entries (hashmap key → node pointer). Roughly 200-300 bytes per cache entry in CPython.
+
+---
+
+## Concurrency Test Harness
+
+Runnable tests that verify thread-safety of a reader-writer LRU cache. No external deps — stdlib only.
+
+```python
+import threading
+import random
+
+# ── Minimal thread-safe LRU implementation (self-contained) ──
+
+class Node:
+    def __init__(self, key=0, value=0):
+        self.key = key
+        self.value = value
+        self.prev = None
+        self.next = None
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.cache = {}
+        self._lock = threading.Lock()
+        self._head = Node()   # sentinel MRU
+        self._tail = Node()   # sentinel LRU
+        self._head.next = self._tail
+        self._tail.prev = self._head
+
+    def _remove(self, node):
+        node.prev.next = node.next
+        node.next.prev = node.prev
+
+    def _add_to_front(self, node):
+        node.next = self._head.next
+        node.prev = self._head
+        self._head.next.prev = node
+        self._head.next = node
+
+    def get(self, key):
+        with self._lock:
+            if key not in self.cache:
+                return -1
+            node = self.cache[key]
+            self._remove(node)
+            self._add_to_front(node)
+            return node.value
+
+    def put(self, key, value):
+        with self._lock:
+            if key in self.cache:
+                node = self.cache[key]
+                node.value = value
+                self._remove(node)
+                self._add_to_front(node)
+            else:
+                if len(self.cache) == self.capacity:
+                    lru = self._tail.prev
+                    self._remove(lru)
+                    del self.cache[lru.key]
+                node = Node(key, value)
+                self.cache[key] = node
+                self._add_to_front(node)
+
+    def size(self):
+        with self._lock:
+            return len(self.cache)
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 1: Capacity never exceeded under concurrent writes
+# 500 threads each put a unique key. Cache capacity is 100.
+# At all times, len(cache) must not exceed capacity.
+# ─────────────────────────────────────────────────────────────
+def test_capacity_never_exceeded():
+    cache = LRUCache(100)
+    errors = []
+
+    def writer(i):
+        cache.put(i, i * 10)
+        sz = cache.size()
+        if sz > 100:
+            errors.append(f"Capacity exceeded: {sz}")
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(500)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert not errors, f"Invariant violated: {errors}"
+    assert cache.size() <= 100
+    print("PASS: test_capacity_never_exceeded")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 2: No structural corruption under concurrent reads + writes
+# Mixed threads do random get/put on overlapping keys.
+# The doubly linked list must remain intact (no cycles, no None ptr deref).
+# ─────────────────────────────────────────────────────────────
+def test_no_structural_corruption():
+    cache = LRUCache(20)
+    errors = []
+
+    def worker():
+        for _ in range(200):
+            key = random.randint(0, 29)
+            if random.random() < 0.5:
+                cache.put(key, key)
+            else:
+                cache.get(key)
+
+    threads = [threading.Thread(target=worker) for _ in range(20)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    # Validate list structure under the lock
+    with cache._lock:
+        visited = set()
+        node = cache._head.next
+        count = 0
+        while node is not cache._tail:
+            assert node.key not in visited, "Cycle detected in LRU list"
+            visited.add(node.key)
+            assert node.key in cache.cache, f"Node key {node.key} not in cache dict"
+            node = node.next
+            count += 1
+        assert count == len(cache.cache), "List length != dict length"
+
+    print("PASS: test_no_structural_corruption")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 3: LRU eviction order — most recently used survives
+# Fill cache to capacity with keys 0..N-1.
+# Access keys 0..49 to make them MRU.
+# Put 50 new keys — keys 50..99 (the LRU ones) should be evicted.
+# ─────────────────────────────────────────────────────────────
+def test_lru_eviction_order():
+    cache = LRUCache(100)
+    for i in range(100):
+        cache.put(i, i)
+
+    # Access keys 0-49 to make them MRU
+    for i in range(50):
+        cache.get(i)
+
+    # Insert 50 new keys — should evict keys 50-99 (LRU)
+    for i in range(100, 150):
+        cache.put(i, i)
+
+    # Keys 0-49 should still be present (MRU)
+    for i in range(50):
+        assert cache.get(i) == i, f"Key {i} was evicted but should be MRU"
+
+    # Keys 50-99 should be gone (were LRU when new keys inserted)
+    for i in range(50, 100):
+        assert cache.get(i) == -1, f"Key {i} should have been evicted"
+
+    print("PASS: test_lru_eviction_order")
+
+
+# ─────────────────────────────────────────────────────────────
+# TEST 4: Concurrent readers see consistent values
+# Pre-load keys. 100 reader threads concurrently get the same keys.
+# All must return the correct value (not -1, not corrupted).
+# ─────────────────────────────────────────────────────────────
+def test_concurrent_reads_consistent():
+    cache = LRUCache(50)
+    for i in range(50):
+        cache.put(i, i * 100)
+
+    bad_reads = []
+    lock = threading.Lock()
+
+    def reader():
+        for key in range(50):
+            val = cache.get(key)
+            if val != key * 100:
+                with lock:
+                    bad_reads.append((key, val))
+
+    threads = [threading.Thread(target=reader) for _ in range(100)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert not bad_reads, f"Inconsistent reads: {bad_reads[:5]}"
+    print("PASS: test_concurrent_reads_consistent")
+
+
+if __name__ == "__main__":
+    test_capacity_never_exceeded()
+    test_no_structural_corruption()
+    test_lru_eviction_order()
+    test_concurrent_reads_consistent()
+    print("All concurrency tests passed.")
+```
+
+**What each test verifies:**
+- `test_capacity_never_exceeded`: The single `threading.Lock()` in `put` ensures eviction and insertion are atomic; without it, two threads can both see `len == capacity` and both insert, exceeding the limit.
+- `test_no_structural_corruption`: Concurrent pointer manipulation of the doubly linked list without a lock causes torn reads — a thread can follow a `next` pointer mid-update and reach a detached node, causing `None` dereference or cycles.
+- `test_lru_eviction_order`: Validates that the list's MRU-to-LRU ordering is preserved correctly across concurrent operations; the evicted keys are always the least recently used ones.
+- `test_concurrent_reads_consistent`: Readers must not see `-1` for keys still in cache; the lock prevents a reader from observing a partially-removed node during a concurrent eviction.

@@ -202,3 +202,39 @@ Tweet posted → Kafka `tweets` topic
 - How would you design real-time trending topics with geographic segmentation?
 - How do you handle eventual consistency — a follower posts a tweet and sees it in their own timeline immediately, but their followers don't for 5 seconds?
 - Design the Twitter search system — how do you index 500M tweets/day for sub-second full-text search?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 300M MAU; 500M tweets/day; 50B timeline reads/day; celebrity accounts with 100M followers
+
+**Write throughput:**
+- 500M tweets/day ÷ 86,400 sec = **~5,800 writes/sec** (new tweets)
+- Each tweet: `{tweet_id, user_id, text, media_urls[], created_at}` ≈ 300 bytes
+- Write to DB: 5,800 × 300 bytes = **~1.7 MB/sec** — trivial
+
+**Read throughput:**
+- 50B timeline reads/day ÷ 86,400 sec = **~580,000 reads/sec**
+- Read:write ratio = 580K ÷ 5,800 = **~100:1** — extremely read-heavy
+
+**Fan-out workload:**
+- 5,800 tweets/sec × average 200 followers = **1.16M fan-out events/sec**
+- Peak celeb tweet: 1 tweet → 100M writes to follower timelines = **100M events** from 1 write
+- At 1.16M events/sec: single celeb tweet takes **~86 seconds** to fan-out to all followers
+- This motivates the hybrid approach: pre-compute ordinary users, pull-on-read for celebrities
+
+**Timeline cache sizing:**
+- 300M MAU × 800 tweets cached per user × 8 bytes (tweet_id pointer) = **~1.9 TB** for all timeline caches
+- Only DAU (say 150M active today) needs hot cache: 150M × 800 × 8 bytes = **~960 GB** in Redis
+- At $7/GB for Redis Enterprise: **~$6.7M/month** just for timeline Redis — motivates tiering (Redis for hot, Cassandra for older timeline)
+
+**Tweet storage:**
+- 500M tweets/day × 365 days × 300 bytes = **~54 TB/year** raw tweet text
+- With media (30% of tweets include images, avg 100 KB): 500M × 30% × 100 KB = **~15 TB/day** media → **5.5 PB/year** media
+
+**Architecture decisions driven by these numbers:**
+- **Fan-out on write for non-celebrity accounts, pull on read for celebrities**: At 580K reads/sec, pulling and assembling a timeline from raw tweets + follow lists at read time (580K DB joins/sec) would require thousands of DB cores. Pre-computed timelines in Redis serve 580K reads/sec in < 1ms each. For celebrities (> 1M followers), fan-out on write takes 86+ seconds — user's tweet appears late. Hybrid: fan-out writes to followers of ordinary users; at read time, merge celebrity tweets from a separate celebrity tweet store.
+- **Snowflake IDs for tweet ordering without DB sort**: Sorting 50B timelines/day by `created_at` requires time-based ordering of pointers in Redis sorted sets. Snowflake IDs (64-bit: 41-bit timestamp + 10-bit machine + 12-bit sequence) embed time, enabling `ZRANGEBYSCORE` on tweet_id as a proxy for time — no separate timestamp sort needed. At 5,800 new tweets/sec, Snowflake's 4,096 IDs/sec/machine × multiple machines provides sufficient uniqueness.
+- **Cassandra for tweet storage over PostgreSQL**: 54 TB/year of tweet text with mostly append writes (new tweets, like count increments) and time-range reads (fetch tweets for user X between time T1 and T2). Cassandra's partition key `(user_id)` + clustering key `(tweet_id DESC)` gives O(1) write and efficient time-range scans. PostgreSQL sharding at this scale requires complex manual sharding; Cassandra scales horizontally by adding nodes with automatic rebalancing.

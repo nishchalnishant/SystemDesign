@@ -226,3 +226,51 @@ CREATE TABLE permissions (
 - How do you check permissions efficiently for a deeply nested folder structure with group memberships?
 - Design the version history system — how do you store 30 days of revision history for 15 EB of files without tripling storage costs?
 - How do you implement cross-organizational sharing (Alice at Company A shares a file with Bob at Company B)?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 1B users; 2B files stored; average file 500 KB; 50M uploads/day; 1B file accesses/day
+
+**Storage sizing:**
+- 2B files × 500 KB average = **~1 PB** raw file data
+- With 3× replication: **~3 PB** physical storage
+- Growth rate: 50M uploads/day × 500 KB = **~25 TB/day** new data
+- Annual growth: **~9 PB/year** — requires continuous capacity planning
+
+**Upload throughput:**
+- 50M uploads/day ÷ 86,400 sec = **~579 uploads/sec** average
+- Peak (business hours): 5× = **~2,895 uploads/sec**
+- Average upload: 500 KB in ~400ms on a 10 Mbps link
+- Peak aggregate bandwidth: 2,895 × 500 KB / 400ms = **~3.6 GB/sec** inbound peak
+
+**Download/access throughput:**
+- 1B file accesses/day ÷ 86,400 sec = **~11,574 accesses/sec** average
+- Average file: 500 KB; P99 file: ~10 MB (documents, presentations)
+- Aggregate outbound: 11,574 × 500 KB = **~5.8 GB/sec** average
+- CDN handles ~95% of accesses (frequently accessed files cached at edge) → origin sees ~580 accesses/sec
+
+**Metadata DB sizing:**
+- Per file: `{file_id, owner_id, name, mime_type, size, storage_key, parent_folder_id, created_at, modified_at, shared_with[]}` ≈ 1 KB
+- 2B files × 1 KB = **~2 TB** metadata storage
+- Sharded by `owner_id` (user's files on the same shard — efficient tree traversal)
+- Each shard: 2 TB ÷ 20 shards = **100 GB per shard** — manageable for PostgreSQL
+
+**Sharing and permission model:**
+- 1B users; assume 10% files shared = 200M shared files
+- Each shared file: avg 5 share entries → 1B share records
+- 1B share records × 200 bytes = **~200 GB** ACL storage
+- ACL lookup on every file access: Redis cache (`file_id → {allowed_users_set}`) for hot files
+
+**Thumbnail generation:**
+- Images/videos: assume 30% of 50M uploads = 15M thumbnail requests/day
+- Thumbnail job: ~500ms CPU per image (resize to 256×256, encode JPEG)
+- 15M ÷ 86,400 sec = **~174 thumbnail jobs/sec** → needs ~87 workers at 2 jobs/sec/worker
+- Thumbnails stored in object storage; served via CDN (immutable once generated)
+
+**Architecture decisions driven by these numbers:**
+- **Chunked upload for large files**: Uploading a 500 MB video in one HTTP request means a single TCP failure loses everything and the client must restart. Chunking at 5 MB per chunk means only 1 chunk (5 MB) is retried on failure. At 2,895 uploads/sec including large files, chunked upload also enables parallel chunk uploads (4× concurrency = 4× effective bandwidth utilization per client).
+- **Separate metadata store from blob store**: Metadata (2 TB) requires ACID transactions, foreign keys, and complex queries (list folder contents, search by name, check permissions). Blob data (1 PB) requires high throughput, cheap per-byte cost, and geo-replication. Merging them would force the blob store to handle relational queries it's not optimized for, or force the metadata DB to handle 25 TB/day of blob ingestion. S3 for blobs + PostgreSQL for metadata is the natural split.
+- **CDN for file downloads**: At 5.8 GB/sec average outbound, serving from origin servers in one region would require massive bandwidth and would be slow for geographically distant users. Files are immutable per version — a file's content at version V never changes. CDN TTL can be long (24h+). 95% CDN hit rate reduces origin outbound from 5.8 GB/sec to **290 MB/sec** — a 20× reduction in origin bandwidth cost.

@@ -252,3 +252,48 @@ def match(self, incoming_buy):
 - How do you persist all orders and trades durably without degrading matching latency?
 - Design the market data feed — how do you broadcast 1M price updates/sec to thousands of subscribers with minimum latency?
 - How do you prevent front-running (a trading firm using your exchange's systems to get an unfair timing advantage)?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 500K orders/sec; 1M market data messages/sec; < 100µs order-to-trade latency
+
+**Order throughput and matching engine load:**
+- 500K orders/sec × 2 sides (buy/sell) = up to 1M order book mutations/sec
+- Each match generates a trade event: assume 30% fill rate → 150K trades/sec
+- Trade event size: `{trade_id, symbol, price, qty, buyer, seller, ts}` ≈ 200 bytes
+- Trade stream: 150K × 200 bytes = **~30 MB/sec** persisted to trade log
+
+**Market data fan-out:**
+- 1M price update messages/sec to thousands of subscribers
+- Each message: `{symbol, bid, ask, last_price, volume, ts}` ≈ 100 bytes
+- Aggregate outbound bandwidth: 1M × 100 bytes × 500 subscribers = **~50 GB/sec** via multicast UDP
+- Why multicast: unicast TCP to 500 subscribers at 1M msgs/sec = 500M sends/sec — impossible. Multicast delivers one packet to a network group; all subscribers receive it simultaneously.
+
+**Latency budget breakdown (100µs total for co-located):**
+- Network (co-located, same rack): ~5µs round trip
+- Order deserialization (FIX/ITCH protocol): ~2µs
+- Order book lookup (Red-Black tree or sorted array): ~1µs
+- Matching logic: ~5µs
+- Trade confirmation serialization + send: ~2µs
+- Disk persistence (NVMe SSD, async write): ~10µs (non-blocking; ack before persist)
+- Total critical path: **~25µs** — leaves headroom for 100µs SLA
+
+**Storage sizing:**
+- 500K orders/sec × 300 bytes/order = 150 MB/sec raw order log
+- 150K trades/sec × 200 bytes/trade = 30 MB/sec trade log
+- Retention: regulatory requirement = 7 years
+- 7 years × 365 days × 86,400 sec × (150 MB + 30 MB) = **~40 PB** raw (before compression)
+- Compressed (LZ4, ~5× ratio for structured data): **~8 PB** long-term cold storage
+
+**Order book in-memory sizing:**
+- 5,000 symbols (NYSE + NASDAQ tradeable) × 100 price levels per side × 2 sides × 100 bytes = **~100 MB** — trivially fits in L3 cache on a single NUMA node
+- This is why matching engines use a single-threaded loop on a pinned CPU core: no lock contention, L3 cache warm, predictable latency
+
+**Architecture decisions driven by these numbers:**
+- **Single-threaded matching engine (no locks)**: At 100µs latency budget, a mutex acquisition alone costs 1–10µs. Lock-free ring buffers (LMAX Disruptor pattern) feed orders to the matching core; the core processes one order at a time, eliminating contention. 500K orders/sec = one order every 2µs — well within single-thread capacity.
+- **Async persistence**: Writing to disk synchronously would add ~10µs and blow the latency budget. The engine ACKs the order, appends to an in-memory ring buffer, and a separate thread flushes to NVMe SSDs. Recovery uses the persisted log to rebuild state.
+- **UDP multicast for market data**: TCP fan-out to 500+ subscribers at 1M msg/sec is 500M sends/sec — impossible. UDP multicast delivers one packet to all subscribers simultaneously. Subscribers use sequence numbers to detect gaps and request retransmission.
+- **Co-location data center**: At 100µs, the speed of light is the constraint. Light travels ~30 km in 100µs. Co-located traders are in the same rack — <5µs network. Remote traders at 1ms are 150 km away. This is why exchanges sell co-location rack space for millions per year.

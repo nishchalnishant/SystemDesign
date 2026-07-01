@@ -229,3 +229,48 @@ score(d) = α × BM25(query, d) + β × PageRank(d) + γ × freshness(d) + δ ×
 - Implement DAAT intersection with skip pointers — how do skip pointers reduce scan time?
 - Design the web crawler — how do you prioritize which pages to crawl first? How do you handle crawl traps (infinite URL spaces)?
 - How do you keep the index fresh without re-crawling all 50B pages daily?
+
+---
+
+## Back-of-Envelope Estimation
+
+**Scale inputs (given in NFRs):**
+- 10B documents; 100K queries/sec; index < 1 minute freshness; < 100ms query latency
+
+**Inverted index size:**
+- 10B documents × avg 500 unique terms/doc = **5T term-document pairs**
+- After deduplication (many docs share terms): ~100B unique `(term → posting_list)` entries
+- Each posting entry: `{doc_id (8B), tf-idf score (4B), position (4B)}` = 16 bytes
+- Total: 100B × 16 bytes = **~1.6 TB** for the inverted index
+- Compressed (Roaring bitmaps for doc_id lists, variable-byte encoding for positions): ~5× compression → **~320 GB** in memory
+- Distributed: 320 GB ÷ 128 GB/node = **~3 index shards** minimum; use 10 for redundancy and parallelism
+
+**Query processing:**
+- 100K queries/sec arriving; each query: tokenize → look up 3–5 terms in inverted index → merge posting lists → rank → return top-10
+- Posting list merge for a 3-term query: intersect up to 1M docs per term → typically narrows to ~10K candidates after AND merge → rank top-10 via BM25 scoring
+- Per query latency: 5ms (inverted index lookups from RAM) + 10ms (posting list merge + ranking) + 5ms (network) = **~20ms** — well within 100ms budget
+- Leaves 80ms headroom for: query parsing, spell correction, synonym expansion, personalization
+
+**Real-time index update (< 1 minute freshness):**
+- New documents crawled: assume 10M new/updated docs/day = **~115 new docs/sec**
+- Each doc must be indexed within 60 seconds of crawl completion
+- Indexing pipeline: parse → tokenize → compute TF-IDF → write to inverted index segment
+- Write to a separate in-memory "delta index" segment updated in real-time; merge delta into main index every 5 minutes (Lucene's segment merge strategy)
+- Delta index size: 115 docs/sec × 60 sec × 500 terms/doc × 16 bytes = **~55 MB** per minute → trivial in memory
+
+**Throughput and fan-out:**
+- 100K queries/sec × 10 shard replicas (for HA) = 1M query operations/sec across shards
+- Per shard: 100K ÷ 10 shards = **10K queries/sec per shard** → each shard needs to handle 10K concurrent posting list lookups
+- Each posting list lookup: O(1) from inverted index (hash map) + O(M log M) sort for top-K ranking
+- At 10K queries/sec per shard, a 16-core server handles 160K ops/sec → **3 servers per shard** with headroom
+
+**Storage for raw documents + metadata:**
+- 10B docs × avg 5 KB raw document = **~50 PB** raw document storage
+- With compression (LZ4): **~10 PB** physical — stored in distributed file system (HDFS/S3), not queried at search time
+- Search hits: return URL + snippet; snippet extracted from stored forward index or cached summary (~200 bytes per doc)
+- Forward index for snippets: 10B × 200 bytes = **~2 TB** — stored on fast SSD, not RAM
+
+**Architecture decisions driven by these numbers:**
+- **10 shards with replica sets, not one monolithic index**: 320 GB inverted index distributed across 10 shards = 32 GB per shard. A single 320 GB index on one machine requires 320 GB RAM — possible but creates a single point of failure. 10 shards fit in 64 GB RAM with room for the operating system. At 100K queries/sec, query fan-out to 10 shards and merge top-10 results takes ~5ms of network overhead but enables horizontal scaling: add more shards to increase throughput or index size.
+- **Delta index + periodic merge for < 1-minute freshness**: Writing a new document directly into the main sorted inverted index would require rebuilding the sorted structure — O(N) insert into a sorted array. Instead, a small in-memory delta index (~55 MB) accepts real-time writes (O(1) hash insert). Queries search both the main index and delta index, merging results. Every 5 minutes, the delta is merged into the main index (background, while queries continue). This achieves near-real-time freshness without disrupting query serving.
+- **BM25 ranking computed at query time, not pre-sorted**: Pre-sorting 10B documents by relevance for every possible query is impossible. Instead, BM25 (TF-IDF variant with term saturation and document length normalization) is computed at query time from per-term statistics (IDF pre-computed, stored per term) and per-document statistics (term frequency + doc length, stored per posting). At 10 posting list merges per query × 1M documents per posting list → 10M scoring ops per query → takes ~5ms on modern CPUs. This is the right trade-off: index is smaller (no pre-computed scores per query), ranking quality is high.
