@@ -67,6 +67,21 @@ How does the Bouncer actually keep track of the math? There are 4 famous ways to
 
 *(Note: Real-world systems use a hybrid called the **Sliding Window Counter**, which combines the cheap memory of the Fixed Window with the mathematical accuracy of the Sliding Window).*
 
+### 5. GCRA (The Appointment Book)
+> **💡 Analogy:** Instead of counting tokens, the Bouncer writes down one thing: *"the earliest time you're allowed back."* If you show up before that time, you're turned away. If you show up after, he lets you in and writes down your next allowed time.
+
+GCRA (Generic Cell Rate Algorithm) comes from telecom network scheduling. It behaves like Token Bucket — same burst allowance, same steady rate — but stores **one timestamp per user** instead of a token count plus a last-refill time.
+
+**Why that matters:** Token Bucket needs read → compute refill → write, which is three steps. If two servers do this at once, both read the same count and both allow the request — the classic race. You fix it with a Lua script or a transaction to make it atomic.
+
+GCRA needs only a compare-and-set on a single value, so it is **naturally atomic** with no scripting. This is what the `redis-cell` Redis module implements.
+
+- **Pros:** Smallest memory footprint of any algorithm; atomic without Lua; smooth rate with configurable burst.
+- **Cons:** The arithmetic is less intuitive to explain on a whiteboard than "tokens in a bucket."
+- **Used by:** `redis-cell`, and many API gateways under the hood.
+
+> **⚠️ The atomicity trap:** Whichever algorithm you pick, the check-and-increment must be atomic. `GET` then `SET` from multiple servers lets requests slip through. Use a Lua script (Redis runs it atomically), `INCR` with expiry, or an algorithm like GCRA that is atomic by construction. Interviewers ask this specifically.
+
 ---
 
 ## 🌍 Where do we put the Rate Limiter?
