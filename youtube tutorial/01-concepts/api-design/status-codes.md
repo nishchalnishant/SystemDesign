@@ -2,7 +2,7 @@
 id: status-codes
 tags: [api-design, http, error-handling]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Status codes"
 ---
 # Status codes

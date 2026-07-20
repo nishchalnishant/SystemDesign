@@ -6,10 +6,19 @@ Notes built from system design video playlists and individual videos, organized 
 
 ---
 
+## Start here
+
+**[`01-concepts/`](./01-concepts/INDEX.md)** — folders 3–6 restructured into 31 single-claim concept files. Each one states a claim, gives a line to say verbatim in an interview, and lists the probes that usually follow it.
+
+This is the rehearsal layer and the better entry point. The numbered folders below are the long-form sources it was built from; they are kept for now because the atomized files are a rewrite, not a move. The [index](./01-concepts/INDEX.md) also carries the per-topic "common mistakes" tables and HLD→LLD mappings, which are the fastest pre-interview skim.
+
+---
+
 ## Contents
 
 | # | Folder | Source | Files |
 |---|---|---|---|
+| — | [**Concepts**](./01-concepts/INDEX.md) | Restructured from 3–6 | [Index](./01-concepts/INDEX.md) + 31 concept files |
 | 1 | [System Design Basics](./1.%20System%20Design%20Basics/) | [Hello Interview playlist](https://www.youtube.com/playlist?list=PL5q3E8eRUieVFeK1oLahJ8KONkAxDpqk2) | [Index](./1.%20System%20Design%20Basics/00-playlist-index.md) + 10 notes |
 | 2 | [System Design Fundamentals](./2.%20System%20Design%20Fundamentals/) | [ByteByteGo playlist](https://www.youtube.com/playlist?list=PLCRMIe5FDPsd0gVs500xeOewfySTsmEjf) (101 videos) | [Index](./2.%20System%20Design%20Fundamentals/00-playlist-index.md) + 29 notes |
 | 3 | [API Design](./3.%20API%20Design/) | Hello Interview | [HLD + LLD](./3.%20API%20Design/01-api-design-hld-and-lld.md) |
@@ -30,7 +39,9 @@ Folder 7 is the clearest case of this policy — rate limiting was already cover
 
 ## Reading order
 
-These topics interlock. A reasonable path:
+For rehearsal, work from [`01-concepts/INDEX.md`](./01-concepts/INDEX.md) instead — the mistakes tables there are the fast path, and each row links to the concept file behind it.
+
+The long-form order below is better for a *first* read of a topic, since it builds the argument continuously rather than one claim at a time:
 
 1. **[API Design](./3.%20API%20Design/01-api-design-hld-and-lld.md)** — the contract, at both HLD and LLD levels. Establishes the interface-hiding principle the other files reuse.
 2. **[Caching](./4.%20Caching/01-caching-hld-and-lld.md)** — sizing math and the cache-aside race. Introduces hot keys.
@@ -44,7 +55,7 @@ These topics interlock. A reasonable path:
 
 Worth noticing, because interviewers move between these levels:
 
-- **Two different sizing methods, worth not confusing.** [Scalability](./6.%20Scalability/01-scalability-hld-and-lld.md) sizes thread and connection pools from Little's Law (`threads = throughput × latency`). [Load Balancing](./5.%20Load%20Balancing/01-load-balancing-hld-and-lld.md) sizes on resource exhaustion instead — file descriptors, socket buffers, and the ~28k ephemeral port ceiling per source IP/destination pair. For long-lived connections you size on *connections*, not requests/sec, which is why Little's Law is not the tool there.
+- **Two different sizing methods, worth not confusing.** [Scalability](./6.%20Scalability/01-scalability-hld-and-lld.md) sizes thread and connection pools from Little's Law (`threads = throughput × latency`). [Load Balancing](./5.%20Load%20Balancing/01-load-balancing-hld-and-lld.md) sizes on resource exhaustion instead — file descriptors, socket buffers, and the ephemeral port ceiling per source IP/destination pair (~28k on Linux by default; platform-specific, not a law). For long-lived connections you size on *connections*, not requests/sec, which is why Little's Law is not the tool there.
 - **Hiding the policy behind an interface** appears as eviction strategy ([Caching](./4.%20Caching/01-caching-hld-and-lld.md)), balancing strategy ([Load Balancing](./5.%20Load%20Balancing/01-load-balancing-hld-and-lld.md)), and API contracts ([API Design](./3.%20API%20Design/01-api-design-hld-and-lld.md)).
 - **Reducing coordination** is the single idea behind sharding, `LongAdder`, copy-on-write registries, and GCRA's single-value atomicity.
 - **Tail latency vs average** — caching helps the average; hedging, draining, and outlier detection help the tail.

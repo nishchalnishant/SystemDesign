@@ -2,7 +2,7 @@
 id: ttl-expiry-strategies
 tags: [caching, redis, eviction]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 4. Caching — "Eviction and expiry"
 ---
 # TTL, expiry, and eviction

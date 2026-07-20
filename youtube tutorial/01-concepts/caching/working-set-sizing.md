@@ -2,7 +2,7 @@
 id: working-set-sizing
 tags: [caching, capacity-planning, estimation]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 4. Caching — "Sizing: the question that separates levels"
 ---
 # Working-set sizing

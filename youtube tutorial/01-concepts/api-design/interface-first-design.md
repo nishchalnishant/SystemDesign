@@ -2,7 +2,7 @@
 id: interface-first-design
 tags: [lld, oop, solid, java]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Start with the interface" + "Design rules that carry weight"
 ---
 # Interface-first design

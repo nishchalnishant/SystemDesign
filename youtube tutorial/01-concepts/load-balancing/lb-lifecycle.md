@@ -2,7 +2,7 @@
 id: lb-lifecycle
 tags: [load-balancing, deployment, health-checks]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 5. Load Balancing — "The lifecycle: what happens when servers come and go"
 ---
 # LB lifecycle: draining, slow start, outlier detection

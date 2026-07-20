@@ -2,7 +2,7 @@
 id: single-flight-loading
 tags: [caching, concurrency, thundering-herd]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 4. Caching — "Thundering herd / cache stampede"
 ---
 # Single-flight loading

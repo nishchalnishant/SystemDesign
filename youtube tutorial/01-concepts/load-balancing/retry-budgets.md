@@ -2,7 +2,7 @@
 id: retry-budgets
 tags: [load-balancing, reliability, resilience]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 5. Load Balancing — "Retries and their danger"
 ---
 # Retry budgets

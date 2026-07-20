@@ -2,7 +2,7 @@
 id: concurrency-in-contract
 tags: [lld, concurrency, java, cas]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Concurrency belongs in the contract"
 ---
 # Concurrency in the contract

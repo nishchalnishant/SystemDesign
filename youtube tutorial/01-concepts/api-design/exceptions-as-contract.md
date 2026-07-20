@@ -2,7 +2,7 @@
 id: exceptions-as-contract
 tags: [lld, error-handling, java]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Exceptions are part of the contract"
 ---
 # Exceptions as contract

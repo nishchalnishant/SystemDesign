@@ -2,7 +2,7 @@
 id: negative-caching
 tags: [caching, security, availability]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 4. Caching — "Cache penetration"
 ---
 # Negative caching

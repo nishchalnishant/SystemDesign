@@ -2,7 +2,7 @@
 id: idempotency-keys
 tags: [api-design, reliability, distributed-systems]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Idempotency"
 ---
 # Idempotency keys

@@ -2,7 +2,7 @@
 id: cache-placement
 tags: [caching, cdn, architecture]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 4. Caching — "Where the cache goes" + "When not to cache"
 ---
 # Cache placement (and when not to cache)

@@ -2,7 +2,7 @@
 id: api-versioning
 tags: [api-design, compatibility, evolution]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Versioning"
 ---
 # API versioning

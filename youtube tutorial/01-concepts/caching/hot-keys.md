@@ -2,7 +2,7 @@
 id: hot-keys
 tags: [caching, sharding, tail-latency]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 4. Caching — "Hot keys"
 ---
 # Hot keys

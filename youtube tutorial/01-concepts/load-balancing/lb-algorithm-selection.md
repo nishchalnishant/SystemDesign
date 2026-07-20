@@ -2,7 +2,7 @@
 id: lb-algorithm-selection
 tags: [load-balancing, p2c, distributed-systems]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 5. Load Balancing — "Least-connections is not the default answer"
 ---
 # LB algorithm selection

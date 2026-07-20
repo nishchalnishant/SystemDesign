@@ -2,7 +2,7 @@
 id: cursor-pagination
 tags: [api-design, databases, pagination]
 confidence: 3
-last-rehearsed: 2026-07-20
+last-rehearsed: 2026-07-21
 source: 3. API Design — "Pagination"
 ---
 # Cursor pagination
