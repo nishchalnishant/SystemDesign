@@ -382,3 +382,24 @@ def on_token_expired(token):
 - **Separate CDN path for static vs dynamic content**: Serving the seating chart SVG (static, changes only when venue changes layout) from CDN eliminates 99% of origin load. Only the availability bitmask (dynamic, 100K changes/sec) hits the backend. Without this split, 10M users loading 500 KB each = 5 TB of origin bandwidth in seconds.
 - **Bitmask for availability, not row-per-seat**: A per-seat DB query at 5M reads/sec is impossible. A Redis bitmask (625 bytes for 5,000 seats) returned in one operation gives each client complete availability state. Client-side JS renders available/held/booked colors from the bitmask.
 - **Virtual waiting room for fairness**: Without a queue, 10M TCP connections hitting the booking endpoint simultaneously causes thundering herd — servers collapse. A waiting room admits a controlled flow (83/sec), keeps servers below saturation, and gives earlier arrivals priority via queue position timestamp.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [Saga Pattern](../../09-patterns/01-data-consistency/03-saga-pattern.md)
+- [Two-Phase Commit](../../09-patterns/01-data-consistency/02-two-phase-commit.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [PostgreSQL Internals](../../04-advanced-topics/03-internals/06-postgresql-internals.md)
+
+**Practice next**
+
+- [Hotel Booking](../03-hard/hotel-booking.md)
+- [Booking System](../01-easy/booking-system.md)
+
+Hotel booking shares the hold-then-confirm reservation flow.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

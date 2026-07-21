@@ -90,3 +90,16 @@ It uses a **Write-Ahead Log (WAL)**.
    *Answer:* Because of MVCC, every `UPDATE` or `DELETE` creates a "dead tuple" (an old, invisible version of the row). The VACUUM process runs in the background to physically remove these dead tuples and reclaim disk space. If VACUUM fails or cannot keep up, the table suffers from "Table Bloat," drastically reducing read performance and filling up the hard drive.
 3. **"How does the Write-Ahead Log (WAL) ensure durability (The 'D' in ACID)?"**
    *Answer:* Before any changes are made to the actual database data files on disk, the change is first appended sequentially to the WAL. If the database crashes, upon reboot, PostgreSQL reads the WAL and replays any transactions that were committed but not yet fully written to the main data files, ensuring no data is ever lost.
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design a Hotel Booking System (Booking.com)](../../05-hld-problems/03-hard/hotel-booking.md)
+- [Design a Ticket Booking System (Ticketmaster)](../../05-hld-problems/03-hard/ticketmaster-seat-booking.md)
+

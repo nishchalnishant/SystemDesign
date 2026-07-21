@@ -238,3 +238,24 @@ Tweet posted → Kafka `tweets` topic
 - **Fan-out on write for non-celebrity accounts, pull on read for celebrities**: At 580K reads/sec, pulling and assembling a timeline from raw tweets + follow lists at read time (580K DB joins/sec) would require thousands of DB cores. Pre-computed timelines in Redis serve 580K reads/sec in < 1ms each. For celebrities (> 1M followers), fan-out on write takes 86+ seconds — user's tweet appears late. Hybrid: fan-out writes to followers of ordinary users; at read time, merge celebrity tweets from a separate celebrity tweet store.
 - **Snowflake IDs for tweet ordering without DB sort**: Sorting 50B timelines/day by `created_at` requires time-based ordering of pointers in Redis sorted sets. Snowflake IDs (64-bit: 41-bit timestamp + 10-bit machine + 12-bit sequence) embed time, enabling `ZRANGEBYSCORE` on tweet_id as a proxy for time — no separate timestamp sort needed. At 5,800 new tweets/sec, Snowflake's 4,096 IDs/sec/machine × multiple machines provides sufficient uniqueness.
 - **Cassandra for tweet storage over PostgreSQL**: 54 TB/year of tweet text with mostly append writes (new tweets, like count increments) and time-range reads (fetch tweets for user X between time T1 and T2). Cassandra's partition key `(user_id)` + clustering key `(tweet_id DESC)` gives O(1) write and efficient time-range scans. PostgreSQL sharding at this scale requires complex manual sharding; Cassandra scales horizontally by adding nodes with automatic rebalancing.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Redis Internals](../../04-advanced-topics/03-internals/04-redis-internals.md)
+- [Global Distribution](../../03-scaling/04-global-distribution.md)
+
+**Practice next**
+
+- [Instagram](../02-medium/instagram.md)
+- [Chat System](../03-hard/chat-system.md)
+
+Instagram shares the fan-out model with a media pipeline on top.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

@@ -209,3 +209,18 @@ The human will look at the DLQ, realize the refund API has been broken for 3 day
 
 **Q: "When would you choose Choreography vs Orchestration?"**
 > "I choose Choreography for very simple, linear flows of 2 to 3 steps because it's fast and requires no central infrastructure. However, for anything complex—like a checkout flow with 5 steps, parallel branches, and tricky rollback logic—I strictly use Orchestration. Having a central 'conductor' makes the code readable and debugging a million times easier when things break."
+
+---
+
+## Applied In
+
+This concept is used by **5 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design an E-Commerce Platform (Amazon)](../../05-hld-problems/02-medium/e-commerce-platform.md)
+- [Design a Hotel Booking System (Booking.com)](../../05-hld-problems/03-hard/hotel-booking.md)
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md)
+- [Design a Ticket Booking System (Ticketmaster)](../../05-hld-problems/03-hard/ticketmaster-seat-booking.md)
+

@@ -312,3 +312,20 @@ In Java, GC handles this automatically (no manual reclamation).
 
 - **Q**: Is the Michael-Scott queue wait-free?
   **A**: No — it's lock-free. A thread might repeatedly fail CAS (another thread always wins) and theoretically starve. In practice, random backoff prevents sustained starvation. True wait-free queues exist but are more complex.
+
+---
+
+## Related
+
+**SOLID focus**: [Interface Segregation](../../02-solid-principles/04-interface-segregation.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Producer-Consumer](../../04-concurrency/producer-consumer.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design a Concurrent LRU Cache](35-design-concurrent-lru-cache.md)
+- [Design a High-Contention Counter](36-design-high-contention-counter.md)
+
+The three concurrency problems build on one another.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

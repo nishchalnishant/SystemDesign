@@ -500,3 +500,27 @@ Enforce transitions in Driver methods; `go_offline()` raises if status is ON_RID
 - **Q: How do you handle a driver going offline mid-ride?** A: System should detect missed heartbeats and mark driver OFFLINE; reassign a new driver or escalate to support. The existing ride remains IN_PROGRESS.
 - **Q: How is fare calculated?** A: Base fare + (distance_km × per_km_rate) + (duration_min × per_min_rate), then multiplied by surge if applicable.
 - **Q: How does rating work?** A: After COMPLETED status, rider rates driver and driver rates rider; ratings stored as running averages in RatingService.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design Food Delivery](../02-frequent-problems/14-design-food-delivery.md)
+- [Design Mentorship Platform](18-design-mentorship-platform.md)
+
+All three match supply to demand in real time.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

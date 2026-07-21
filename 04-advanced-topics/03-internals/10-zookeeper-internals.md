@@ -95,3 +95,16 @@ How do 5 equal servers use ZooKeeper to elect a Leader without arguing?
    *Answer:* A Persistent Znode remains in ZooKeeper indefinitely until it is explicitly deleted by a client. An Ephemeral Znode is tied to the active session of the client that created it. If the client disconnects or crashes (fails to send a heartbeat), ZooKeeper automatically deletes the Ephemeral Znode.
 3. **"How does ZooKeeper facilitate Leader Election among a group of servers?"**
    *Answer:* All candidate servers attempt to create the exact same Ephemeral Znode (e.g., `/leader`). Because ZooKeeper enforces strict consistency, only one server will succeed and become the Leader. The other servers place a "Watch" on the `/leader` node. If the Leader crashes, the Ephemeral node is deleted, the Watch triggers, and the remaining servers immediately race to create the node and become the new Leader.
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a Chat System (Slack)](../../05-hld-problems/03-hard/chat-system.md)
+- [Design a Distributed Job Scheduler](../../05-hld-problems/03-hard/distributed-job-scheduler.md)
+

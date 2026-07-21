@@ -553,3 +553,24 @@ if __name__ == "__main__":
 - `test_per_user_isolation`: Each user's bucket is independent; a burst by one user must not consume tokens from another's bucket.
 - `test_refill_replenishes`: Lazy refill correctly adds tokens proportional to elapsed time; capacity cap prevents overflow.
 - `test_single_bucket_per_user`: Double-checked locking in `_get_or_create` prevents creating duplicate `TokenBucket` instances when hundreds of threads race to create the first bucket for a new user.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Notification System](../02-frequent-problems/16-design-notification-system.md)
+- [Design a High-Contention Counter](../04-advanced-niche/36-design-high-contention-counter.md)
+
+The counter problem is this one stripped to its contention core.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

@@ -468,3 +468,27 @@ class Return:
 - **Q: Can a partially shipped order be cancelled?** A: No — once status is SHIPPED or later, `can_cancel()` returns False.
 - **Q: How would you handle order timeout (user places but never pays)?** A: Background job scans PLACED orders older than TTL and runs `cancel_order` to release inventory.
 - **Q: How do observers get notified?** A: `OrderService._notify(order)` iterates all registered `OrderObserver` instances and calls `on_status_change(order)` after every valid state transition.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Inventory Management](24-design-inventory-management.md)
+- [Design Food Delivery](../02-frequent-problems/14-design-food-delivery.md)
+
+Order state and stock levels move together.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

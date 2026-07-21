@@ -413,3 +413,17 @@ The composite's `get_price()` is recursive: it calls `get_price()` on each child
 - **Overkill for flat structures**: If you never need nesting, the interface adds unnecessary abstraction.
 - **Type safety concerns**: Sometimes you genuinely need to distinguish leaves from composites (e.g., you can only call `add_item()` on bundles, not products). The common interface hides this.
 - **SRP strain at scale**: The composite manages both its children and the business logic, which can grow complex.
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design a Nested Comment System](../../05-problems/02-frequent-problems/10-design-comment-system.md)
+- [Design Coupon System](../../05-problems/02-frequent-problems/17-design-coupon-system.md)
+- [Design S3 Object Storage / File System](../../05-problems/04-advanced-niche/26-design-s3-object-storage.md)
+- [Design Version Control System](../../05-problems/04-advanced-niche/29-design-version-control.md)
+

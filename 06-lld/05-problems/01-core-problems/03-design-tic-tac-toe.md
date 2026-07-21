@@ -384,3 +384,22 @@ In Game, `undo_move()` pops the move stack, reverts the board, and switches `cur
 - Q: How do you distinguish a draw from a game still in progress? A: Track `move_count`. When `move_count == N*N` and no winner has been detected, state is DRAW. Check win first — a move that fills the last cell and wins is X_WINS or O_WINS, not DRAW.
 - Q: How would you add undo? A: Push each move to a stack. On undo, pop and reverse: set grid cell to None, decrement the four counters, decrement move_count, switch turns back.
 - Q: What's wrong with storing who won as a boolean? A: Three outcomes exist: X wins, O wins, draw. A boolean can't represent all three. Use a GameState enum with at least 4 values: IN_PROGRESS, X_WINS, O_WINS, DRAW.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Chess](../02-frequent-problems/07-design-chess.md)
+- [Design Snake and Ladder](../02-frequent-problems/08-design-snake-and-ladder.md)
+
+Same board abstraction, increasing rule complexity.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

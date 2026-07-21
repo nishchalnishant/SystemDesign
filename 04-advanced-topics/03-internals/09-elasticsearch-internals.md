@@ -96,3 +96,18 @@ When you search for "Shoes", Elasticsearch asks all 10 librarians to search thei
    *Answer:* It transforms raw text into standardized tokens before placing them in the Inverted Index. By lowercasing, removing stop words, and stemming words to their root (e.g., turning "jumped" into "jump"), it ensures that a user searching for "jump" will successfully match a document containing the word "jumped."
 3. **"What is the relationship between Elasticsearch, Lucene, and Shards?"**
    *Answer:* Apache Lucene is the underlying search library that actually builds the Inverted Indexes and executes the queries on a single machine. Elasticsearch is a distributed wrapper around Lucene. It divides your data into logical 'Shards', where each Shard is a fully functional, independent Lucene instance, allowing the search workload to be distributed across multiple physical servers.
+
+---
+
+## Applied In
+
+This concept is used by **5 problems** in this repo:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design Typeahead Search (Google Search Bar)](../../05-hld-problems/02-medium/typeahead-search.md)
+- [Design GitHub (Code Repository Hosting)](../../05-hld-problems/03-hard/github-code-repo.md)
+- [Design a RAG System (Retrieval-Augmented Generation)](../../05-hld-problems/03-hard/rag-system.md)
+- [Design a Web Search Engine (Google)](../../05-hld-problems/03-hard/search-system.md)
+

@@ -204,3 +204,23 @@ Workers call `ZPOPMIN` to get the URL with the earliest scheduled crawl time. UR
 - Design the recrawl scheduler — how do you decide when to re-crawl a page?
 - How do you handle JavaScript-rendered pages (SPAs) that require a headless browser?
 - How would you distribute the crawler across multiple datacenters without duplicate work?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Bloom Filter](../../02-building-blocks/02-performance/04-bloom-filter.md)
+- [Rate Limiting](../../02-building-blocks/02-performance/02-rate-limiting.md)
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+
+**Practice next**
+
+- [Typeahead Search](../02-medium/typeahead-search.md)
+- [GitHub Code Repo](../03-hard/github-code-repo.md)
+
+A crawler feeds the search index built in typeahead.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

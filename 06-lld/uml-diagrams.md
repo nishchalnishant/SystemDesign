@@ -614,3 +614,22 @@ public class Main {
 <table data-header-hidden><thead><tr><th width="139.1796875"></th><th width="191.05078125"></th><th></th><th></th></tr></thead><tbody><tr><td><strong>Concept</strong></td><td><strong>Keyword(s)</strong></td><td><strong>Key Implementation</strong></td><td><strong>Focus</strong></td></tr><tr><td>Encapsulation</td><td><code>private</code>, <code>getters/setters</code></td><td>Restrict variable access</td><td>Security &#x26; Data Integrity</td></tr><tr><td>Inheritance</td><td><code>extends</code></td><td>Parent-Child relationship</td><td>Code Reusability</td></tr><tr><td>Polymorphism</td><td><code>Override</code>, <code>Overload</code></td><td>Same name, different behavior</td><td>Flexibility</td></tr><tr><td>Abstraction</td><td><code>abstract</code>, <code>interface</code>, <code>implements</code></td><td>Hide internal details</td><td>Reducing Complexity</td></tr></tbody></table>
 
 ***
+
+---
+
+## Applied In
+
+This concept is used by **36 problems** in this repo — a representative selection:
+
+**Low-Level Design**
+
+- [Design a Parking Lot](05-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Rate Limiter](05-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design Tic-Tac-Toe](05-problems/01-core-problems/03-design-tic-tac-toe.md)
+- [Design a Vending Machine](05-problems/01-core-problems/04-design-vending-machine.md)
+- [Design Splitwise](05-problems/01-core-problems/05-design-splitwise.md)
+- [Design BookMyShow](05-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Chess](05-problems/02-frequent-problems/07-design-chess.md)
+- [Design Snake and Ladder](05-problems/02-frequent-problems/08-design-snake-and-ladder.md)
+- …and 28 more
+

@@ -93,3 +93,22 @@ Both of these tools are pre-built to handle locks, TTLs, and Fencing Tokens perf
    *Answer:* To prevent Deadlocks. If a client acquires a lock and then crashes before releasing it, the lock would be held forever, freezing the system. A TTL ensures the lock will automatically expire and be released after a set amount of time.
 3. **"What is a Fencing Token and why is it necessary?"**
    *Answer:* A Fencing Token is a monotonically increasing number attached to a lock. It solves the edge case where a client is paused (e.g., during a long Garbage Collection cycle), its lock's TTL expires, a second client gets the lock, and then the first client wakes up and tries to execute its write. The storage system uses the Fencing Token to reject the older client's write.
+
+---
+
+## Applied In
+
+This concept is used by **9 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a Distributed Job Scheduler](../../05-hld-problems/03-hard/distributed-job-scheduler.md)
+- [Design a Hotel Booking System (Booking.com)](../../05-hld-problems/03-hard/hotel-booking.md)
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md)
+- [Design a Ride-Sharing Service (Uber)](../../05-hld-problems/03-hard/ride-sharing.md)
+- [Design a Stock Exchange](../../05-hld-problems/03-hard/stock-exchange.md)
+- …and 1 more
+

@@ -633,3 +633,24 @@ The 4:1 ratio between double and tetris (300 vs 800 * 2 = 1600 relative) makes s
 
 - **Q: What is the 7-bag randomizer and why use it?**
   A: Shuffle all 7 piece types and deal sequentially; reshuffle when depleted. Guarantees no drought of any piece type longer than 12 consecutive pieces, making the game fairer than pure random.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Minesweeper](25-design-minesweeper.md)
+- [Design Chess](../02-frequent-problems/07-design-chess.md)
+
+Grid state plus undoable moves is the shared model.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

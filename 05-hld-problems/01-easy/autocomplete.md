@@ -197,3 +197,23 @@ Trending queries (spike in last 1h) rise fast; stale queries fall off naturally.
 - Design the aggregation pipeline that computes query frequencies from raw search logs.
 - How would you support fuzzy matching — showing suggestions even when the user misspells the prefix?
 - How do you handle autocomplete for languages with non-Latin scripts (Chinese, Arabic)?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Elasticsearch Internals](../../04-advanced-topics/03-internals/09-elasticsearch-internals.md)
+- [Index Structures](../../04-advanced-topics/03-internals/01-index-structures.md)
+- [Bloom Filter](../../02-building-blocks/02-performance/04-bloom-filter.md)
+
+**Practice next**
+
+- [Typeahead Search](../02-medium/typeahead-search.md)
+- [Leaderboard](../01-easy/leaderboard.md)
+
+Typeahead is the full-scale version of this problem.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

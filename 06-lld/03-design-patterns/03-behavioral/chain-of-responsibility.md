@@ -375,3 +375,17 @@ This pattern is valuable in: customer support routing, middleware pipelines (Spr
 3. **GUI Event Bubbling**: A mouse click on a button bubbles up: Button → Panel → Window → Application.
 4. **Servlet Filters / Spring Security Filter Chain**: Each filter handles authentication, authorization, logging, etc. in sequence.
 5. **Logging Frameworks**: Log4j uses levels as a chain — DEBUG passes through if level is set higher.
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design an ATM System](../../05-problems/02-frequent-problems/12-design-atm.md)
+- [Design Notification System](../../05-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design Coupon System](../../05-problems/02-frequent-problems/17-design-coupon-system.md)
+- [Design a Logger Library](../../05-problems/03-domain-specific/19-design-logger-library.md)
+

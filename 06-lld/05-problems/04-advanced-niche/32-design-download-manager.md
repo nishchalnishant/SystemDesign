@@ -403,3 +403,26 @@ Add a `priority: int` field to each download request. Use a `PriorityQueue` inst
 
 - **Q**: How do you track overall progress?
   **A**: Sum `bytes_downloaded` across all chunks, divide by `file_size`. Each chunk's counter is incremented as data arrives. For thread safety, use an atomic counter or a lock around the increment.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Producer-Consumer](../../04-concurrency/producer-consumer.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md) · [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Tunneling Service](30-design-tunneling-service.md)
+- [Design Elevator System](../02-frequent-problems/09-design-elevator-system.md)
+
+Both schedule concurrent work against limited capacity.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

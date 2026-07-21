@@ -342,3 +342,24 @@ Extend `Booking` with `max_capacity: int` and `attendees: list[str]`. Change `fi
 
 - **Q**: How would you allow a mentor to block time (vacation)?
   **A**: `DateOverride` with `is_blocked=True`. `_get_availability_windows` returns empty for that date, so `get_open_slots` yields nothing and `is_slot_available` returns False.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Practice next**
+
+- [Design Ride-Sharing](22-design-ride-sharing.md)
+- [Design Food Delivery](../02-frequent-problems/14-design-food-delivery.md)
+
+Matching two sides of a marketplace is the shared problem.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

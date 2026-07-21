@@ -271,3 +271,24 @@ except Exception:
 - **Sequential disk I/O as the design principle**: Kafka's 1 GB/sec write rate is only achievable via sequential appends to a log file (OS batches writes, page cache absorbs bursts). Random I/O at 1 GB/sec would require ~250K IOPS — beyond any single disk. The immutable append-only log is not just a design choice; it's what makes the throughput target achievable.
 - **Page cache as the read tier**: 10 GB/sec read from disk is impossible (NVMe max ~3 GB/sec). But if consumers lag by less than the page cache size (~100 GB on a modern server), reads hit RAM at memory bandwidth (~50 GB/sec). This is why Kafka discourages consumer lag — a lagging consumer falls out of page cache and causes disk reads that degrade performance for all partitions on that broker.
 - **200 partitions across 10 brokers**: Fewer, larger partitions simplify routing but create hot spots (one slow consumer blocks a large partition). More partitions distribute load but add coordination overhead (ZooKeeper/KRaft metadata per partition). 200 partitions at 10 brokers gives 20 per broker — the sweet spot for this throughput.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Kafka Internals](../../04-advanced-topics/03-internals/03-kafka-internals.md)
+- [Replication](../../02-building-blocks/03-data-partitioning/02-replication.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+- [Raft & Paxos](../../04-advanced-topics/03-internals/11-raft-paxos-conceptual.md)
+
+**Practice next**
+
+- [Distributed Job Scheduler](../03-hard/distributed-job-scheduler.md)
+- [Chat System](../03-hard/chat-system.md)
+
+The scheduler is a consumer of exactly the guarantees built here.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

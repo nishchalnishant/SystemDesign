@@ -199,3 +199,23 @@ Redis
 - How do you balance privacy (private pastes) with abuse prevention (scanning content)?
 - A viral paste gets 1M views in 5 minutes. Walk me through what happens at each layer and where you'd see failures.
 - How would you implement paste versioning (edit history)?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [CDN](../../02-building-blocks/01-networking/05-cdn.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Storage Fundamentals](../../01-foundations/02-hardware-and-networking/01-storage-fundamentals.md)
+
+**Practice next**
+
+- [URL Shortener](../01-easy/url-shortener.md)
+- [Google Drive](../03-hard/google-drive.md)
+
+Blob storage plus metadata is the shared shape.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

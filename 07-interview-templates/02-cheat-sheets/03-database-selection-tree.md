@@ -117,3 +117,14 @@ It focuses entirely on the *relationships* between things, rather than the thing
 ## 🎤 Phrase to use in an interview:
 
 > "I will use PostgreSQL for the Payments system, because we absolutely need ACID guarantees and cannot afford to lose a single dollar. However, for the Product Catalog, I will use MongoDB. A T-shirt has a 'size' attribute, while a Laptop has a 'RAM' attribute. MongoDB's flexible Document schema allows us to store both easily without creating 50 empty columns in a SQL database."
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+

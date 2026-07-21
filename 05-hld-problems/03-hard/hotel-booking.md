@@ -278,3 +278,24 @@ total = subtotal * (0.9 if nights >= 7 else 1.0)  # 10% weekly discount
 - **Pre-aggregated availability cache, not per-booking queries**: Search is 10M/day vs bookings 500K/day (20× more searches). Querying raw booking rows for every search at 1,150/sec is 161K DB queries/sec for 7 nights × 20 hotels — unsustainable. Pre-aggregated Redis counters reduce this to 161K simple Redis GET calls/sec — 20× faster and eliminates DB read load.
 - **Optimistic locking for room assignment, pessimistic for final booking commit**: The search phase (which room type is available?) uses optimistic reads from cache. The final room assignment (`UPDATE rooms SET status='reserved' WHERE room_id=? AND status='available'`) uses a DB-level UPDATE with row-level lock. If the row was already taken (0 rows updated), return 409 Conflict. This avoids holding locks during the slow payment processing step.
 - **Date-range index on bookings table**: `CREATE INDEX idx_bookings_overlap ON bookings (hotel_id, check_out, check_in)` enables efficient overlap queries for availability recomputation. Without this index, recomputing availability after a cancellation requires a full table scan.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [Saga Pattern](../../09-patterns/01-data-consistency/03-saga-pattern.md)
+- [Two-Phase Commit](../../09-patterns/01-data-consistency/02-two-phase-commit.md)
+- [PostgreSQL Internals](../../04-advanced-topics/03-internals/06-postgresql-internals.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+
+**Practice next**
+
+- [Booking System](../01-easy/booking-system.md)
+- [Payment System](../03-hard/payment-system.md)
+
+The easy variant introduces the reservation model this extends.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

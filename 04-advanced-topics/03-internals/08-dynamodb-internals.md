@@ -86,3 +86,15 @@ To fix this, you must create a **Global Secondary Index (GSI)**.
    *Answer:* Because DynamoDB does not support SQL JOINs or complex ad-hoc filtering across partitions. To maintain O(1) performance at scale, you must know every exact access pattern (read/write query) your application will need *before* you design the table, and you structure your Partition/Sort Keys specifically to answer those exact queries.
 3. **"What is a GSI (Global Secondary Index) and what is the cost of using it?"**
    *Answer:* A GSI allows you to query a table using a completely different attribute as the Partition Key. The cost is that DynamoDB physically duplicates your data into a hidden secondary table in the background. You must pay for the additional storage, and you must provision separate Read and Write Capacity Units (RCUs/WCUs) for the GSI, significantly increasing your AWS bill.
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+

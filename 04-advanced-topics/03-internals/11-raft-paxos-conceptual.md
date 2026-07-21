@@ -254,3 +254,16 @@ In Multi-Paxos, if a leader proposes entries at indices 1, 2, 3, but only 2 and 
 
 5. **"How does etcd use Raft, and what does that mean for Kubernetes?"**
    *etcd is a distributed key-value store that uses Raft for consensus. Kubernetes stores all cluster state — pod specs, service definitions, secrets, config maps — in etcd. The Raft protocol guarantees that all etcd nodes agree on the current state. If etcd loses quorum (more than ⌊N/2⌋ nodes fail), the Kubernetes API server becomes read-only — no new pods can be scheduled. This is why production Kubernetes clusters run etcd with 3 or 5 nodes across failure domains.*
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Distributed Job Scheduler](../../05-hld-problems/03-hard/distributed-job-scheduler.md)
+- [Design a Distributed Message Queue (Kafka)](../../05-hld-problems/03-hard/distributed-message-queue.md)
+- [Design a Stock Exchange](../../05-hld-problems/03-hard/stock-exchange.md)
+

@@ -193,3 +193,15 @@ Older log segments are offloaded to object storage (S3/GCS). Brokers serve recen
 
 5. **"What is log compaction and when would you use it instead of time-based retention?"**
    *Log compaction retains only the latest value per key. Use it for CDC / changelog topics where consumers need to reconstruct current state (e.g., a table snapshot). Time-based retention is for ephemeral streams where historical state doesn't matter.*
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**High-Level Design**
+
+- [Design an Ad Click Aggregator](../../05-hld-problems/03-hard/ad-click-aggregator.md)
+- [Design a Distributed Message Queue (Kafka)](../../05-hld-problems/03-hard/distributed-message-queue.md)
+

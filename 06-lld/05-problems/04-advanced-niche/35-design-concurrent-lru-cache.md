@@ -346,3 +346,24 @@ def get(self, key):
 
 - **Q**: Does `get` need a write lock in LRU?
   **A**: Yes. `get` moves the node to the MRU position, which modifies the DLL (two pointer updates + two pointer updates on neighboring nodes) and conceptually the ordering. This is a write to shared state — needs a write lock, not a read lock.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Interface Segregation](../../02-solid-principles/04-interface-segregation.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Thread-Safe Singleton](../../04-concurrency/thread-safe-singleton.md)
+
+**Practice next**
+
+- [Design an LRU Cache](../02-frequent-problems/13-design-lru-cache.md)
+- [Design a Lock-Free Queue](34-design-lock-free-queue.md)
+
+Do the single-threaded LRU first, then add locking.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

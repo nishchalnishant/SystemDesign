@@ -395,3 +395,24 @@ Or use Redis INCR and compare against limit — atomic, no race condition.
 
 - **Q**: How would you add time-based coupons (flash sale — valid only 1–3 PM)?
   **A**: Add `valid_time_window: Optional[Tuple[time, time]]` to Coupon. Add `TimeWindowRule` to the chain — checks `time_start <= current_time <= time_end`.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Composite Pattern](../../03-design-patterns/02-structural/composite-pattern.md)
+- [Chain of Responsibility Pattern](../../03-design-patterns/03-behavioral/chain-of-responsibility.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Liskov Substitution](../../02-solid-principles/03-liskov-substitution.md)
+
+**Practice next**
+
+- [Design Inventory Management](../03-domain-specific/24-design-inventory-management.md)
+- [Design Splitwise](../01-core-problems/05-design-splitwise.md)
+
+Rule composition and pricing arithmetic overlap.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

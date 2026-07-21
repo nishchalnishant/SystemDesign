@@ -279,3 +279,15 @@ test_thread_safety()
 | Enum | ✅ | ✅ Fast | ✅ Best |
 
 **Recommendation**: Use enum in Java. Use DCL in other languages (C++, Python).
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design a Logger Library](../05-problems/03-domain-specific/19-design-logger-library.md)
+- [Design Concurrent LRU Cache](../05-problems/04-advanced-niche/35-design-concurrent-lru-cache.md)
+

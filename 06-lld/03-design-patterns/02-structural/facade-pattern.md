@@ -344,3 +344,14 @@ class OrderController:
 
 **Q: "Real-world Facade example?"**
 - "A hotel operator. Instead of you calling housekeeping, room service, and the front desk separately, you call one number. The hotel operator coordinates everything. Similarly, `CheckoutFacade.checkout(order)` coordinates payment, inventory, shipping, and notification internally."
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**Low-Level Design**
+
+- [Design S3 Object Storage / File System](../../05-problems/04-advanced-niche/26-design-s3-object-storage.md)
+

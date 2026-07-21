@@ -245,3 +245,24 @@ class ConsistentHashRing:
 - **80-node cluster with 128 GB RAM nodes, not fewer larger nodes**: NUMA effects degrade Redis on very large machines (>256 GB). Single-threaded Redis doesn't saturate multi-core machines. Spreading across 80 smaller nodes also means any single node failure impacts only 1/80 = 1.25% of keys (mitigated by replica), not 1/8 = 12.5% with 8 large nodes.
 - **Consistent hashing for key distribution**: With 80 nodes and modulo hashing (`key % 80`), adding node 81 invalidates ~99% of all key→node mappings (new modulo changes most results). Consistent hashing changes only ~1.25% of mappings. At 10B entries, 1.25% = 125M keys to rehash vs 9.9B — critical for zero-downtime scaling.
 - **< 1ms P99 target drives co-location requirement**: Redis RTT within a data center = ~0.1–0.3ms. Redis processing = ~0.05ms. Total ~0.3–0.5ms P50. P99 headroom allows for occasional GC pauses and tail latency. Cross-DC Redis would add ~5–50ms per hop — incompatible with the SLA. The cache tier must be in the same DC as the application servers.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Replication](../../02-building-blocks/03-data-partitioning/02-replication.md)
+- [Redis Internals](../../04-advanced-topics/03-internals/04-redis-internals.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+
+**Practice next**
+
+- [Key-Value Store](../01-easy/key-value-store.md)
+- [CDN Design](../03-hard/cdn-design.md)
+
+A CDN is a geo-distributed cache with the same eviction questions.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

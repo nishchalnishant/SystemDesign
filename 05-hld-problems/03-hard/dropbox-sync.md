@@ -266,3 +266,23 @@ RETURNING version;
 - **Content-addressed chunk storage (S3 + SHA-256 hash as key)**: Deduplication eliminates 40% of storage (600 TB vs 1 PB). Chunk identity is the hash — two identical chunks (same SHA-256) are stored once. This is only possible with content-addressing; path-based storage can't deduplicate across users. At $23/TB/month S3 standard, dedup saves $9.2K/month.
 - **Delta sync, not full-file upload on every change**: A 10 MB Word document that had one sentence changed: without delta sync, upload 10 MB. With delta sync (rsync-style or Dropbox's ZXDB chunking), re-upload only the changed chunks (maybe 1 × 4 MB chunk). At 1,150 uploads/sec peak, delta sync reduces upload bandwidth from 1.15 GB/sec to **~460 MB/sec** (60% reduction).
 - **Block server separate from metadata server**: The 1.15 GB/sec upload stream and the 500 GB metadata DB have completely different access patterns. Block storage is write-once, read-many, gigabytes per item. Metadata is small random reads/writes, byte-sized items. Merging them means the block I/O saturates the metadata server's I/O subsystem. Separating allows S3 to handle block bytes (optimized for throughput) while PostgreSQL handles metadata (optimized for ACID and complex queries).
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Storage Fundamentals](../../01-foundations/02-hardware-and-networking/01-storage-fundamentals.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+
+**Practice next**
+
+- [Google Drive](../03-hard/google-drive.md)
+- [GitHub Code Repo](../03-hard/github-code-repo.md)
+
+Both resolve concurrent edits to a shared file tree.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

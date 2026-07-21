@@ -96,3 +96,19 @@ If you set the TTL of `logo.png` to 24 hours, the CDN will hold the image for ex
    *Answer:* This is called a Cache Miss. The CDN Edge Server will forward the request back to the Origin Server (your main server), download the image, serve it to the user, and cache a copy locally for the next user.
 3. **"How do you update a file that is already cached in a CDN?"**
    *Answer:* You either wait for the file's TTL (Time to Live) to expire, or you issue an explicit "Cache Invalidation" request to the CDN provider to purge the file from all Edge Servers immediately. (Another common trick is "Versioning" — instead of overwriting `logo.png`, you upload `logo_v2.png` and update your HTML to point to the new URL!).
+
+---
+
+## Applied In
+
+This concept is used by **6 problems** in this repo:
+
+**High-Level Design**
+
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design Instagram](../../05-hld-problems/02-medium/instagram.md)
+- [Design YouTube](../../05-hld-problems/02-medium/youtube.md)
+- [Design a Content Delivery Network (CDN)](../../05-hld-problems/03-hard/cdn-design.md)
+- [Design Google Drive](../../05-hld-problems/03-hard/google-drive.md)
+- [Design Google Maps](../../05-hld-problems/03-hard/google-maps.md)
+

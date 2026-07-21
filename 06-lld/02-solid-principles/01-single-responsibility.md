@@ -317,3 +317,22 @@ Too many reasons! Split into: OrderValidator, PaymentService, InventoryService, 
 
 **Q: "How do you balance SRP with not having too many classes?"**
 - "Use common sense. Group related methods into one class if they change together for the same reason. Don't split every method into its own class — that's over-engineering."
+
+---
+
+## Applied In
+
+This concept is used by **23 problems** in this repo — a representative selection:
+
+**Low-Level Design**
+
+- [Design a Parking Lot](../05-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Vending Machine](../05-problems/01-core-problems/04-design-vending-machine.md)
+- [Design Splitwise](../05-problems/01-core-problems/05-design-splitwise.md)
+- [Design BookMyShow](../05-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Elevator System](../05-problems/02-frequent-problems/09-design-elevator-system.md)
+- [Design a Nested Comment System](../05-problems/02-frequent-problems/10-design-comment-system.md)
+- [Design a Hotel Management System](../05-problems/02-frequent-problems/11-design-hotel-management.md)
+- [Design an ATM System](../05-problems/02-frequent-problems/12-design-atm.md)
+- …and 15 more
+

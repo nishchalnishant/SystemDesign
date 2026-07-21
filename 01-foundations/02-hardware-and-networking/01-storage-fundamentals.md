@@ -144,3 +144,19 @@ If you get confused in an interview, ask yourself these questions:
    *Answer:* Object storage (like Amazon S3 Glacier). It's incredibly cheap, highly durable, and photos don't need to be loaded in microseconds.
 3. **Stripe:** "Our database is freezing up. The CPU is only at 10%, but responses are taking 5 seconds. What is wrong?"
    *Answer:* You are likely "I/O Bound." This means your super-fast CPU is sitting around waiting for your slow hard drive (I/O) to find the data. You should upgrade to an SSD, or add more RAM to cache the data.
+
+---
+
+## Applied In
+
+This concept is used by **6 problems** in this repo:
+
+**High-Level Design**
+
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design Instagram](../../05-hld-problems/02-medium/instagram.md)
+- [Design YouTube](../../05-hld-problems/02-medium/youtube.md)
+- [Design Dropbox File Sync](../../05-hld-problems/03-hard/dropbox-sync.md)
+- [Design GitHub (Code Repository Hosting)](../../05-hld-problems/03-hard/github-code-repo.md)
+- [Design Google Drive](../../05-hld-problems/03-hard/google-drive.md)
+

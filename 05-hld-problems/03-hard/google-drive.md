@@ -274,3 +274,23 @@ CREATE TABLE permissions (
 - **Chunked upload for large files**: Uploading a 500 MB video in one HTTP request means a single TCP failure loses everything and the client must restart. Chunking at 5 MB per chunk means only 1 chunk (5 MB) is retried on failure. At 2,895 uploads/sec including large files, chunked upload also enables parallel chunk uploads (4× concurrency = 4× effective bandwidth utilization per client).
 - **Separate metadata store from blob store**: Metadata (2 TB) requires ACID transactions, foreign keys, and complex queries (list folder contents, search by name, check permissions). Blob data (1 PB) requires high throughput, cheap per-byte cost, and geo-replication. Merging them would force the blob store to handle relational queries it's not optimized for, or force the metadata DB to handle 25 TB/day of blob ingestion. S3 for blobs + PostgreSQL for metadata is the natural split.
 - **CDN for file downloads**: At 5.8 GB/sec average outbound, serving from origin servers in one region would require massive bandwidth and would be slow for geographically distant users. Files are immutable per version — a file's content at version V never changes. CDN TTL can be long (24h+). 95% CDN hit rate reduces origin outbound from 5.8 GB/sec to **290 MB/sec** — a 20× reduction in origin bandwidth cost.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Storage Fundamentals](../../01-foundations/02-hardware-and-networking/01-storage-fundamentals.md)
+- [CDN](../../02-building-blocks/01-networking/05-cdn.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+
+**Practice next**
+
+- [Dropbox Sync](../03-hard/dropbox-sync.md)
+- [Pastebin](../01-easy/pastebin.md)
+
+Dropbox sync is this problem viewed from the client.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

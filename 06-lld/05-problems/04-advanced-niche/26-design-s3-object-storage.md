@@ -404,3 +404,26 @@ class StorageBackend:
 
 - **Q**: What is the Composite pattern and why use it for a file system?
   **A**: Composite treats individual objects (files) and collections (directories) uniformly. `get_size()` on a directory recursively sums its children's sizes. Callers don't need to know if they're dealing with a file or directory — they call the same interface.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Composite Pattern](../../03-design-patterns/02-structural/composite-pattern.md)
+- [Facade Pattern](../../03-design-patterns/02-structural/facade-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Interface Segregation](../../02-solid-principles/04-interface-segregation.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design Version Control](29-design-version-control.md)
+- [Design an LRU Cache](../02-frequent-problems/13-design-lru-cache.md)
+
+Version control layers history over the same object store.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

@@ -514,3 +514,20 @@ classDiagram
 - Increases the number of classes — every action becomes a class.
 - Simple operations like "turn on the light" get wrapped in a class, which may feel over-engineered for small systems.
 - Undo/redo logic requires careful thought for commands with side effects (e.g., network calls).
+
+---
+
+## Applied In
+
+This concept is used by **7 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design a Vending Machine](../../05-problems/01-core-problems/04-design-vending-machine.md)
+- [Design an Order Management System](../../05-problems/03-domain-specific/21-design-order-management.md)
+- [Design a Pub-Sub Messaging System](../../05-problems/03-domain-specific/23-design-pub-sub.md)
+- [Design Tetris](../../05-problems/04-advanced-niche/28-design-tetris.md)
+- [Design Version Control System](../../05-problems/04-advanced-niche/29-design-version-control.md)
+- [Design Text Editor](../../05-problems/04-advanced-niche/31-design-text-editor.md)
+- [Design Download Manager](../../05-problems/04-advanced-niche/32-design-download-manager.md)
+

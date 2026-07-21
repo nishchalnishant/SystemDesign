@@ -340,3 +340,23 @@ def from_config(cls, config: dict):
 
 - **Q**: What if two players are on the same cell?
   **A**: No conflict — position is per-player and independent. Multiple players can share a cell.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Tic-Tac-Toe](../01-core-problems/03-design-tic-tac-toe.md)
+- [Design Minesweeper](../04-advanced-niche/25-design-minesweeper.md)
+
+Grid traversal and cell-effect modelling recur in both.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

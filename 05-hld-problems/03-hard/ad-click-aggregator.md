@@ -187,6 +187,47 @@ pattern = CEP.pattern()
 
 ---
 
+## Deep Dive 4: Approximate Counting — Unique Reach and Heavy Hitters
+
+**Problem**: The report API returns `unique_users` per ad. Exact distinct counting requires storing every `user_id` that clicked each ad. At 10B clicks/day across 1M active ads, a `SET` per ad holding 8-byte user IDs costs hundreds of GB of Redis and grows without bound. Advertisers query reach across arbitrary date ranges, so precomputed daily sets must also be mergeable.
+
+**HyperLogLog for unique reach**: HLL estimates cardinality in fixed 12 KB per counter, regardless of whether the ad got 1,000 or 100M unique viewers, with ~0.81% standard error.
+
+```
+PFADD reach:{ad_id}:{date} {user_id}      # on each click, O(1)
+PFCOUNT reach:a123:2026-07-22             # estimate for one day
+PFMERGE reach:a123:july reach:a123:2026-07-01 ... # union across days
+```
+
+The property that matters is that **HLL unions are lossless** — `PFMERGE` of 31 daily counters gives the same error bound as a single monthly counter. Exact sets cannot do this without storing the raw IDs, because `|A ∪ B| ≠ |A| + |B|`. This is what makes arbitrary date-range reach queries tractable.
+
+**Cost**: 1M ads × 12 KB × 30 days retained = ~360 GB, versus tens of TB for exact sets. Accuracy is 0.81% — well inside what advertisers tolerate for a reach number, and the requirements already state real-time may be approximate.
+
+**Count-Min Sketch for heavy hitters**: Fraud detection (Deep Dive 3) needs "which IPs are clicking far more than normal" in the streaming path. Tracking a counter per IP is unbounded — IPv6 and botnets make the key space effectively infinite.
+
+CMS is a 2D array of counters, `d` hash functions × `w` counters wide. Increment hashes the key into one counter per row; the estimate is the **minimum** across rows (collisions only ever inflate a counter, so the min is the tightest bound).
+
+```
+w = 2000, d = 5  →  10,000 counters × 4 bytes = 40 KB total
+increment(ip):  for i in 0..d: C[i][h_i(ip) % w] += 1
+estimate(ip):   min(C[i][h_i(ip) % w] for i in 0..d)
+```
+
+Error is one-sided — CMS **never undercounts**, it can only overestimate (by at most `ε·N` with probability `1-δ`). For fraud that bias is the safe direction: a heavy hitter can never be missed, only occasionally flagged spuriously — and the flagged candidates then go to the exact per-IP Redis check, which is now bounded to a few thousand suspects instead of every IP.
+
+**Where each fits**:
+
+| Need | Structure | Cost | Error direction |
+|------|-----------|------|-----------------|
+| Was this click_id seen? | Bloom filter (Deep Dive 1) | ~1 KB/min | Never false negative |
+| How many unique users? | HyperLogLog | 12 KB/counter | ±0.81%, two-sided |
+| Which IPs are hottest? | Count-Min Sketch | 40 KB total | Never undercounts |
+| Exact billable clicks | ClickHouse + batch | TBs | Exact |
+
+**The line to say**: approximate structures serve the real-time path where the requirement explicitly permits approximation; the hourly Spark batch job remains the exact ground truth for billing. Never bill an advertiser from an HLL estimate.
+
+---
+
 ## Interviewer Questions by Level
 
 **Junior**:
@@ -244,3 +285,24 @@ pattern = CEP.pattern()
 - **Two-tier storage (raw + aggregated)**: Dashboards querying 10B raw rows/day is impossible. Pre-aggregate to `(ad_id, hour)` counts in Flink. Raw events go to S3 Parquet for audit and ML reprocessing. Aggregates go to a time-series DB (ClickHouse, TimescaleDB) for fast dashboard queries.
 - **Bloom filter for approximate dedup, Redis for exact**: Bloom filter catches ~99% of duplicates in-stream with 50 MB memory. The 1% that slip through are caught by the Redis exact-dedup layer. Two-tier because Redis at 34 GB × 24-hour window is expensive; Bloom filter handles the bulk cheaply.
 - **Flink over Spark for real-time aggregation**: 10-second visibility requirement rules out micro-batch (minimum ~30-second latency with Spark SS). Flink event-time processing with 10-second watermarks achieves the 10-second target.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Stream Processing](../../04-advanced-topics/01-distributed-architecture/05-stream-processing.md)
+- [Stream vs Batch](../../04-advanced-topics/03-internals/12-stream-vs-batch.md)
+- [Kafka Internals](../../04-advanced-topics/03-internals/03-kafka-internals.md)
+- [Bloom Filter](../../02-building-blocks/02-performance/04-bloom-filter.md)
+- [Cassandra Internals](../../04-advanced-topics/03-internals/05-cassandra-internals.md)
+
+**Practice next**
+
+- [Metrics Monitoring System](../03-hard/metrics-monitoring-system.md)
+- [YouTube](../02-medium/youtube.md)
+
+Metrics monitoring solves the same ingest/aggregate problem for time series.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

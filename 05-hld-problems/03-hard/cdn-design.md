@@ -242,3 +242,23 @@ Purge request → Purge Coordinator
 - **Origin shield tier between edge PoPs and origin**: Without it, 10K misses/sec × 200 PoPs = 2M origin requests/sec. Origin would need thousands of servers purely for CDN misses. Origin shield consolidates misses at 20 regional hubs: the shield checks its own cache first; only a true global miss (not in any shield) reaches origin. This reduces origin load by **200× (2M → 10K/sec)** for a cold cache, and higher as shields warm up.
 - **50 TB SSD cache per PoP**: The Zipf distribution means a small fraction of content drives most traffic. 50 TB of local cache (the popular "long tail" for that region) achieves 99.9% hit rate. Going to 500 TB per PoP would improve hit rate from 99.9% to 99.99% but at 10× the hardware cost. The 0.09% improvement (900 fewer origin requests/sec globally) doesn't justify 10× more SSDs. The marginal value of cache storage follows diminishing returns sharply after the 99.9% threshold.
 - **BGP anycast for automatic failover**: If a PoP goes down, BGP withdraws its route announcements. Within ~30 seconds (BGP convergence), traffic reroutes to the next nearest PoP. No DNS change needed, no client-side failover logic. The 50K requests/sec from the failed PoP redistribute to neighboring PoPs — each absorbs ~5K additional requests/sec (spreading to 10 neighboring PoPs), staying within their capacity headroom.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [CDN](../../02-building-blocks/01-networking/05-cdn.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Global Distribution](../../03-scaling/04-global-distribution.md)
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+
+**Practice next**
+
+- [Distributed Cache](../03-hard/distributed-cache.md)
+- [YouTube](../02-medium/youtube.md)
+
+YouTube is the canonical workload a CDN is built to serve.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

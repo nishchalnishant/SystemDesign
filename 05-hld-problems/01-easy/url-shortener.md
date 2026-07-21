@@ -189,3 +189,24 @@ For generated codes:
 - How does the CDN handle URL expiry? (CDN cached 302 pointing to an expired URL)
 - Design the analytics pipeline — how do you count 10B clicks/month without impacting redirect latency?
 - How would you support vanity URL campaigns with guaranteed availability (a Fortune 500 company's marketing launch)?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [DynamoDB Internals](../../04-advanced-topics/03-internals/08-dynamodb-internals.md)
+- [Database Selection Tree](../../07-interview-templates/02-cheat-sheets/03-database-selection-tree.md)
+
+**Practice next**
+
+- [Unique ID Generator](../01-easy/unique-id-generator.md)
+- [Key-Value Store](../01-easy/key-value-store.md)
+
+Both reuse the ID-generation and key-value lookup core.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

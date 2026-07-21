@@ -9,14 +9,14 @@ Three tracks for interview prep, based on where you are. Each track is a sequenc
 Goal: understand what distributed systems are, why they're hard, and be able to discuss a simple system end-to-end.
 
 **Start here:**
-1. `00-start-here/START-HERE.md` — orientation and how to navigate the repo
-2. `01-foundations/01-core-concepts/01-client-server.md` — request/response model
-3. `01-foundations/01-core-concepts/02-dns.md` — how a URL becomes a server IP
-4. `01-foundations/01-core-concepts/03-http.md` — HTTP verbs, status codes, headers
-5. `01-foundations/02-data-storage/01-databases.md` — relational vs NoSQL, when to use each
+1. `START-HERE.md` — orientation and how to navigate the repo
+2. `01-foundations/01-system-design-basics/01-fundamentals.md` — the four axes: scalability, availability, consistency, performance
+3. `01-foundations/02-hardware-and-networking/02-networking.md` — DNS, TCP, HTTP: how a URL becomes a response
+4. `01-foundations/02-hardware-and-networking/01-storage-fundamentals.md` — disk, memory, and the latency hierarchy
+5. `01-foundations/03-database-foundations/01-databases.md` — relational vs NoSQL, when to use each
 6. `02-building-blocks/01-networking/01-load-balancers.md` — why you need more than one server
 7. `02-building-blocks/02-performance/01-caching-layer.md` — why caches exist
-8. `02-building-blocks/02-performance/02-cdn.md` — why CDNs exist
+8. `02-building-blocks/01-networking/05-cdn.md` — why CDNs exist
 
 **First HLD problems (Easy tier — `05-hld-problems/01-easy/`):**
 - `url-shortener.md` — classic starter: hashing, DB, redirection
@@ -35,13 +35,13 @@ Goal: handle end-to-end system design for medium-complexity systems. Understand 
 **Prerequisites:** Track 1 complete, or equivalent experience.
 
 **Core building blocks:**
-1. `01-foundations/03-distributed-concepts/01-cap-theorem.md` — the fundamental trade-off
-2. `01-foundations/03-distributed-concepts/02-consistency-models.md` — eventual vs strong consistency
+1. `01-foundations/01-system-design-basics/01-fundamentals.md` — CAP and PACELC: the fundamental trade-off
+2. `01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md` — eventual vs strong consistency
 3. `01-foundations/04-security/01-security.md` — TLS, encryption, authentication
 4. `01-foundations/04-security/02-oauth-jwt.md` — auth in production
-5. `02-building-blocks/03-storage/01-blob-storage.md` — S3, object storage
+5. `02-building-blocks/03-data-partitioning/01-sharding.md` — partitioning data across nodes
 6. `02-building-blocks/04-coordination/01-message-brokers.md` — Kafka, SQS, async patterns
-7. `03-scaling/01-horizontal-scaling.md` — stateless services and horizontal scale
+7. `03-scaling/01-scaling-fundamentals.md` — stateless services and horizontal scale
 8. `03-scaling/03-database-scaling.md` — replication, sharding, read replicas
 9. `02-building-blocks/01-networking/03-api-gateway.md` — gateway patterns
 
@@ -64,21 +64,21 @@ Goal: demonstrate production depth in system design interviews — not just "wha
 
 **Advanced distributed theory:**
 1. `01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md` — linearizability, CRDTs, vector clocks, PACELC
-2. `04-advanced-topics/03-internals/01-lsm-vs-btree.md` — storage engine internals
+2. `03-scaling/02-database-internals.md` — storage engine internals
 3. `04-advanced-topics/03-internals/03-kafka-internals.md` — acks, ISR, exactly-once, leader election
-4. `04-advanced-topics/03-internals/02-consensus-algorithms.md` — Raft / Paxos, when consensus matters
-5. `04-advanced-topics/03-internals/04-change-data-capture.md` — CDC, Debezium, outbox pattern
+4. `01-foundations/05-advanced-distributed-theory/02-consensus-algorithms.md` — Raft / Paxos, when consensus matters
+5. `01-foundations/05-advanced-distributed-theory/03-change-data-capture.md` — CDC, Debezium, outbox pattern
 
 **Reliability and observability:**
 1. `04-advanced-topics/02-system-reliability/01-observability.md` — RED/USE, distributed tracing, SLO/error budgets
-2. `04-advanced-topics/02-system-reliability/02-failure-recovery-playbook.md` — incident response, chaos engineering
-3. `04-advanced-topics/02-system-reliability/03-monitoring-slo-template.md` — SLO design
+2. `07-interview-templates/03-pitfalls-and-recovery/02-failure-recovery-playbook.md` — incident response, chaos engineering
+3. `07-interview-templates/01-frameworks/04-monitoring-slo-template.md` — SLO design
 
 **Distributed architecture:**
-1. `04-advanced-topics/01-distributed-architecture/01-consistency-and-conflicts.md` — MVCC, isolation levels
-2. `04-advanced-topics/01-distributed-architecture/02-cache-eviction.md` — eviction policies, cache warm-up
+1. `01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md` — MVCC, isolation levels
+2. `02-building-blocks/02-performance/01-caching-layer.md` — eviction policies, stampede, cache warm-up
 3. `04-advanced-topics/01-distributed-architecture/03-microservices.md` — service mesh, circuit breakers, Saga
-4. `04-advanced-topics/01-distributed-architecture/04-strangler-fig.md` — monolith decomposition
+4. `09-patterns/03-migration-and-pitfalls/01-strangler-fig.md` — monolith decomposition
 
 **Hard HLD problems (`05-hld-problems/03-hard/`):**
 Work through all of these. The ones with the highest signal for SDE-3 interviews:

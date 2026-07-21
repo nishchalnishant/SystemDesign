@@ -283,3 +283,22 @@ class Application:
 
 **Q: "What's the relationship between DIP and Spring Framework?"**
 - "Spring's IoC container implements DIP at the framework level. You define interfaces; Spring injects the correct implementation at runtime based on configuration. Your beans never call `new` on their dependencies."
+
+---
+
+## Applied In
+
+This concept is used by **12 problems** in this repo — a representative selection:
+
+**Low-Level Design**
+
+- [Design a Rate Limiter](../05-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design BookMyShow](../05-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design a Food Delivery System](../05-problems/02-frequent-problems/14-design-food-delivery.md)
+- [Design Notification System](../05-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design Mentorship Platform](../05-problems/03-domain-specific/18-design-mentorship-platform.md)
+- [Design a Logger Library](../05-problems/03-domain-specific/19-design-logger-library.md)
+- [Design a Ride Sharing System](../05-problems/03-domain-specific/22-design-ride-sharing.md)
+- [Design a Pub-Sub Messaging System](../05-problems/03-domain-specific/23-design-pub-sub.md)
+- …and 4 more
+

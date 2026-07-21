@@ -174,3 +174,22 @@ r.setex(key, jittered_ttl, value)
    *We use an Eviction Policy, most commonly LRU (Least Recently Used). When the cache reaches its memory limit, it automatically deletes the data that hasn't been accessed in the longest amount of time to make room for new data.*
 4. **"What is a cache stampede, and how do you prevent it?"**
    *A cache stampede occurs when a popular key expires and a flood of concurrent requests all miss the cache simultaneously, overwhelming the database. Fix it with: (1) mutex lock — only one thread fetches while others wait; (2) probabilistic early expiry — threads randomly recompute before TTL expires; (3) TTL jitter — spread expiration times so entries don't all expire at once.*
+
+---
+
+## Applied In
+
+This concept is used by **16 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+- [Design Instagram](../../05-hld-problems/02-medium/instagram.md)
+- [Design Twitter / News Feed](../../05-hld-problems/02-medium/twitter-news-feed.md)
+- [Design Typeahead Search (Google Search Bar)](../../05-hld-problems/02-medium/typeahead-search.md)
+- [Design a Content Delivery Network (CDN)](../../05-hld-problems/03-hard/cdn-design.md)
+- …and 8 more
+

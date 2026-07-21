@@ -18,7 +18,7 @@
 
 27 curated system design problems with files, organized by difficulty and recommended study order.
 
-**For each problem:** use [hld-template.md](../07-interview-templates/hld-template.md) for structure, [capacity-estimation.md](../07-interview-templates/capacity-estimation.md) for math, and [trade-offs-cheat-sheet.md](../07-interview-templates/trade-offs-cheat-sheet.md) for decision points.
+**For each problem:** use [hld-template.md](../07-interview-templates/01-frameworks/01-hld-template.md) for structure, [capacity-estimation.md](../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) for math, and [trade-offs-cheat-sheet.md](../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md) for decision points.
 
 ---
 
@@ -82,12 +82,12 @@ Recognizing these patterns lets you apply a known solution rather than inventing
 
 | Pattern | Appears In | Building Block |
 |---------|-----------|----------------|
-| Cache-aside + TTL | URL Shortener, Twitter, Instagram, YouTube | [caching-layer.md](../02-building-blocks/caching-layer.md) |
-| Consistent hashing | URL Shortener, Distributed Cache, Web Crawler | [sharding.md](../02-building-blocks/sharding.md) |
-| Pub-sub / message queue | Notification, YouTube, Twitter, Ride Sharing | [message-brokers.md](../02-building-blocks/message-brokers.md) |
-| Fan-out (push vs. pull) | Twitter, Instagram, WhatsApp | [replication.md](../02-building-blocks/replication.md) |
+| Cache-aside + TTL | URL Shortener, Twitter, Instagram, YouTube | [caching-layer.md](../02-building-blocks/02-performance/01-caching-layer.md) |
+| Consistent hashing | URL Shortener, Distributed Cache, Web Crawler | [sharding.md](../02-building-blocks/03-data-partitioning/01-sharding.md) |
+| Pub-sub / message queue | Notification, YouTube, Twitter, Ride Sharing | [message-brokers.md](../02-building-blocks/04-coordination/01-message-brokers.md) |
+| Fan-out (push vs. pull) | Twitter, Instagram, WhatsApp | [replication.md](../02-building-blocks/03-data-partitioning/02-replication.md) |
 | Bloom filter dedup | Web Crawler, Distributed Cache | [02-building-blocks/](../02-building-blocks/) |
-| Idempotency key | Payment System, Notification, WhatsApp | [distributed-concepts.md](../04-advanced-topics/distributed-concepts.md) |
+| Idempotency key | Payment System, Notification, WhatsApp | [distributed-concepts.md](../04-advanced-topics/01-distributed-architecture/02-distributed-concepts.md) |
 | Geo-indexing | Ride Sharing | [02-building-blocks/](../02-building-blocks/) |
 
 ---

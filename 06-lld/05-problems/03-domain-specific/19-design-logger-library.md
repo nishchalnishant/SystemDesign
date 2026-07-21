@@ -454,3 +454,27 @@ JSONFormatter reads `record.extras` and merges into the output payload.
 - **Q: How do you prevent a buggy handler from crashing the application?** A: Wrap `emit()` in try/except inside `handle()`; swallow the exception and print to stderr.
 - **Q: What is double-checked locking and why is it needed for Singleton?** A: Check `_instance is None` outside and inside the lock. Without the outer check every call acquires the lock (unnecessary contention); without the inner check two threads can both pass the outer check and create two instances.
 - **Q: How do you ensure log ordering across threads?** A: The Logger-level `_lock` serializes `log()` calls; for async logging, a single-threaded drain worker processes the queue in FIFO order.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Singleton Pattern](../../03-design-patterns/01-creational/singleton.md)
+- [Decorator Pattern](../../03-design-patterns/02-structural/decorator-pattern.md)
+- [Chain of Responsibility Pattern](../../03-design-patterns/03-behavioral/chain-of-responsibility.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Thread-Safe Singleton](../../04-concurrency/thread-safe-singleton.md) · [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Notification System](../02-frequent-problems/16-design-notification-system.md)
+- [Design an ATM](../02-frequent-problems/12-design-atm.md)
+
+Handler chains and pluggable sinks recur in both.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

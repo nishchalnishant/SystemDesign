@@ -42,4 +42,4 @@ High-level design problems at **SDE-3 / Staff** level. Focus: multi-region, cons
 | **RAG System** | [rag-system.md](rag-system.md) | Vector embeddings, semantic search, retrieval pipeline, LLM grounding |
 | **Stock Exchange** | [stock-exchange.md](stock-exchange.md) | Order book, matching engine, low-latency, market data distribution |
 
-Use the [HLD template](../../07-interview-templates/hld-template.md) and [SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md](../../SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md) when practicing.
+Use the [HLD template](../../07-interview-templates/01-frameworks/01-hld-template.md) and [SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md](../../SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md) when practicing.

@@ -225,3 +225,22 @@ Main Queue → Consumer (fails 3x) → DLQ → Alert → Engineer inspects → R
 
 5. **"What is the outbox pattern and when do you need it?"**
    *The outbox pattern solves the dual-write problem: you can't atomically write to a DB and publish to a broker in one transaction. Solution: write both the business event and a record in an `outbox` table in one DB transaction, then have a relay process publish the outbox records to the broker and mark them sent. Guarantees no event is lost even if the broker is temporarily unavailable.*
+
+---
+
+## Applied In
+
+This concept is used by **13 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design a Web Crawler](../../05-hld-problems/01-easy/web-crawler.md)
+- [Design Instagram](../../05-hld-problems/02-medium/instagram.md)
+- [Design a Notification Service](../../05-hld-problems/02-medium/notification-service.md)
+- [Design Twitter / News Feed](../../05-hld-problems/02-medium/twitter-news-feed.md)
+- [Design WhatsApp (Real-Time Messaging)](../../05-hld-problems/02-medium/whatsapp.md)
+- [Design YouTube](../../05-hld-problems/02-medium/youtube.md)
+- [Design a Chat System (Slack)](../../05-hld-problems/03-hard/chat-system.md)
+- [Design a Distributed Job Scheduler](../../05-hld-problems/03-hard/distributed-job-scheduler.md)
+- …and 5 more
+

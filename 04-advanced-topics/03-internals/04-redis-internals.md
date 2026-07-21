@@ -80,3 +80,18 @@ To prevent a total disaster, Redis quietly backs up the RAM to the physical Hard
    *Answer:* Because Redis stores data in RAM, any data not written to disk will be lost. To mitigate this, Redis provides two persistence mechanisms: RDB (point-in-time snapshots) and AOF (an append-only log of every write operation). If AOF is configured to sync every second, you will lose a maximum of 1 second of data.
 3. **"In System Design, what are the most common use cases for Redis?"**
    *Answer:* The most common is Caching (using Cache-Aside) to reduce database load. Other massive use cases include Distributed Locks (using Redlock to prevent race conditions), Rate Limiting (using `INCR` commands and TTL), and Real-time Leaderboards (using Redis Sorted Sets, which are mathematically perfect for ranking).
+
+---
+
+## Applied In
+
+This concept is used by **5 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design Twitter / News Feed](../../05-hld-problems/02-medium/twitter-news-feed.md)
+- [Design a Distributed Cache](../../05-hld-problems/03-hard/distributed-cache.md)
+- [Design a Real-Time Gaming Leaderboard](../../05-hld-problems/03-hard/realtime-gaming-leaderboard.md)
+

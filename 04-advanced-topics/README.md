@@ -28,4 +28,4 @@ SDE-3 level deep dives: distributed systems, observability, resilience.
 | **Chaos Engineering** | [chaos-engineering.md](02-system-reliability/02-chaos-engineering.md) | Fault injection, resilience patterns, Game Days |
 | **Internals** | [internals/](03-internals/) | Kafka, Redis, Cassandra, PostgreSQL, Elasticsearch, ZooKeeper |
 
-Consistency models and distributed transactions are also linked from [../distributed-systems/](../distributed-systems/) (pointers to content in distributed-systems.md).
+Consistency models and distributed transactions are also linked from [../distributed-systems/](01-distributed-architecture/01-distributed-systems.md) (pointers to content in distributed-systems.md).

@@ -222,3 +222,23 @@ Index: `(property_id, check_in, check_out, available_count)`. For hotels with 36
 - How do you ensure the inventory count in Redis stays consistent with PostgreSQL?
 - Design a cancellation flow that handles partial refunds and ensures the payment refund is eventually consistent.
 - How would you support overbooking (like airlines do intentionally) at a configurable rate?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [Two-Phase Commit](../../09-patterns/01-data-consistency/02-two-phase-commit.md)
+- [Saga Pattern](../../09-patterns/01-data-consistency/03-saga-pattern.md)
+- [PostgreSQL Internals](../../04-advanced-topics/03-internals/06-postgresql-internals.md)
+
+**Practice next**
+
+- [Hotel Booking](../03-hard/hotel-booking.md)
+- [Payment System](../03-hard/payment-system.md)
+
+Hotel booking scales this; payments handle the money leg.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

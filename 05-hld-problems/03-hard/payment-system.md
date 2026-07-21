@@ -265,3 +265,25 @@ Discrepancies are investigated manually and corrected with adjustment entries.
 - **Idempotency keys in Redis, not DB**: At 10,000 TPS, checking an idempotency key before every write must be sub-millisecond to stay within the 3s user-facing budget. Redis `SETNX` is ~0.1ms. A DB `SELECT + INSERT` is ~5ms + lock contention at peak.
 - **Async PSP retry via Kafka**: If Stripe returns 503, the system publishes to a `payment-retry` Kafka topic. A retry consumer re-attempts with the same idempotency key. This decouples the user-facing request (returns "processing" immediately) from the PSP call, eliminating user-visible failures for transient PSP outages.
 - **Ledger as append-only log**: Every money movement is an immutable append (credit/debit entries). Balance = sum of all entries for an account. Never update a row in the ledger. This gives a complete audit trail by design and prevents accidental overwrites from corrupting balances.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Saga Pattern](../../09-patterns/01-data-consistency/03-saga-pattern.md)
+- [Two-Phase Commit](../../09-patterns/01-data-consistency/02-two-phase-commit.md)
+- [Outbox Pattern](../../09-patterns/01-data-consistency/01-outbox-pattern.md)
+- [Outbox & CDC](../../04-advanced-topics/01-distributed-architecture/07-outbox-cdc-pattern.md)
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [Security](../../01-foundations/04-security/01-security.md)
+
+**Practice next**
+
+- [E-Commerce Platform](../02-medium/e-commerce-platform.md)
+- [Hotel Booking](../03-hard/hotel-booking.md)
+
+Both call into this for the money leg of the transaction.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

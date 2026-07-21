@@ -441,3 +441,15 @@ classDiagram
 - Adds extra classes/interfaces — more boilerplate for simple lists.
 - Can be overkill for small, simple data structures where a direct `for` loop is cleaner.
 - External iteration is manual — the client manages the `while iterator.has_next()` loop unless further abstracted.
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design Search Engine (Inverted Index)](../../05-problems/04-advanced-niche/27-design-search-engine.md)
+- [Design Text Editor](../../05-problems/04-advanced-niche/31-design-text-editor.md)
+

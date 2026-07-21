@@ -230,3 +230,23 @@ class SnowflakeGenerator:
 - How would you modify Snowflake to support 1024 machines instead of 32 per datacenter?
 - How do you handle the epoch problem — Snowflake's 41-bit timestamp overflows in 69 years. What's your migration plan?
 - Compare Snowflake, ULID, and UUID v7 — when would you use each?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [ZooKeeper Internals](../../04-advanced-topics/03-internals/10-zookeeper-internals.md)
+- [Consensus Algorithms](../../01-foundations/05-advanced-distributed-theory/02-consensus-algorithms.md)
+
+**Practice next**
+
+- [URL Shortener](../01-easy/url-shortener.md)
+- [Distributed Job Scheduler](../03-hard/distributed-job-scheduler.md)
+
+Snowflake IDs underpin the short-code and job-ID schemes.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

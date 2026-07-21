@@ -240,3 +240,23 @@ user:{user_id}:online = 1                  # TTL = 30s, refreshed via heartbeat
 - Explain the Signal Protocol at a high level — why does it provide forward secrecy?
 - A group has 256 members. When one member sends a message, how is it delivered to all 256? What's the server-side load?
 - How would you design message search (search across the user's entire message history) while maintaining E2E encryption?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [WebSockets & SSE](../../02-building-blocks/01-networking/06-websockets-sse.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+
+**Practice next**
+
+- [Chat System](../03-hard/chat-system.md)
+- [Notification Service](../02-medium/notification-service.md)
+
+The hard chat-system problem generalises this to groups and presence.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

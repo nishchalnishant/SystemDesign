@@ -20,7 +20,7 @@
 
 # Easy — HLD Problems
 
-High-level design problems that introduce one or two core concepts in isolation. Do these first and time yourself at 45 minutes each. Use the [HLD template](../../07-interview-templates/hld-template.md) on every run.
+High-level design problems that introduce one or two core concepts in isolation. Do these first and time yourself at 45 minutes each. Use the [HLD template](../../07-interview-templates/01-frameworks/01-hld-template.md) on every run.
 
 ## Recommended Order
 
@@ -46,7 +46,7 @@ Easy does not mean trivial. It means the problem tests one or two concepts deepl
 
 The building blocks used across all seven problems:
 
-- Caching: [02-building-blocks/caching-layer.md](../../02-building-blocks/caching-layer.md)
-- Rate Limiting: [02-building-blocks/rate-limiting.md](../../02-building-blocks/rate-limiting.md)
-- Sharding: [02-building-blocks/sharding.md](../../02-building-blocks/sharding.md)
-- Message Brokers (Web Crawler): [02-building-blocks/message-brokers.md](../../02-building-blocks/message-brokers.md)
+- Caching: [02-building-blocks/caching-layer.md](../../02-building-blocks/02-performance/01-caching-layer.md)
+- Rate Limiting: [02-building-blocks/rate-limiting.md](../../02-building-blocks/02-performance/02-rate-limiting.md)
+- Sharding: [02-building-blocks/sharding.md](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- Message Brokers (Web Crawler): [02-building-blocks/message-brokers.md](../../02-building-blocks/04-coordination/01-message-brokers.md)

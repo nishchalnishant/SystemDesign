@@ -253,3 +253,23 @@ Flink job: read from Kafka score-updates (filter tournament events)
 - **Redis sorted set as the core data structure**: The leaderboard requires rank queries (`ZREVRANK`), range queries (`ZREVRANGE top-10`), and point updates (`ZADD`) all in O(log N). At 10M players, a DB `SELECT ... ORDER BY score DESC LIMIT 10` with a full table sort is O(N log N) = unacceptable. A DB with an index can do O(log N) for rank, but the index write overhead at 57,870 updates/sec causes lock contention. Redis sorted set is a native, lock-free skip list implementation optimized exactly for this pattern.
 - **Kafka buffer for burst absorption, not direct Redis writes**: At peak, 57,870 updates/sec to Redis is fine (5.8% utilization). But at flash game events with 10M simultaneous score submissions, direct Redis writes would spike to 10M/sec (100% Redis utilization, queueing). Kafka absorbs the spike; a consumer batch-processes updates every 100ms using Redis `ZADD` pipeline calls (pipeline 1,000 ZADDs in one roundtrip) — 57 pipeline calls vs 57,870 individual calls.
 - **500 MB in-memory global leaderboard enables < 10ms reads**: Storing the leaderboard in PostgreSQL and querying `SELECT ... ORDER BY score DESC LIMIT 10` at 575 reads/sec requires an index on `score DESC`. At 10M rows × 57,870 updates/sec, index maintenance would cause significant write amplification. Redis sorted set's 500 MB footprint fits in L3 cache on modern servers, giving sub-millisecond reads without any disk I/O.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Redis Internals](../../04-advanced-topics/03-internals/04-redis-internals.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+
+**Practice next**
+
+- [Leaderboard](../01-easy/leaderboard.md)
+- [Metrics Monitoring System](../03-hard/metrics-monitoring-system.md)
+
+Start with the easy leaderboard for the sorted-set fundamentals.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

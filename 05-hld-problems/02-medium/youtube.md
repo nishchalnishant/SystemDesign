@@ -248,3 +248,24 @@ This reduces write rate from 1M/sec to 1 update per video per 5 seconds.
 - **Async transcoding pipeline, not synchronous**: Transcoding 1 uploaded video takes minutes (5× duration at 1× CPU). The upload API can't block for 5 minutes before returning. Upload writes raw video to S3, publishes a `video-uploaded` Kafka event, and returns immediately (status: PROCESSING). A transcoding fleet of 15,000 cores consumes the queue asynchronously. Users see the video available for viewing minutes after upload completes.
 - **Adaptive bitrate streaming (HLS/DASH) over fixed-bitrate**: A user on a 3G phone switching to WiFi should get seamless quality improvement. HLS segments video into 2-second chunks at each quality level. The player switches renditions per-segment based on download speed. This requires pre-transcoding to 5 renditions (the 15,000 CPU-core investment), but eliminates buffering and delivers optimal quality per client, reducing rebuffering rate from ~8% (fixed bitrate) to < 1%.
 - **Tiered CDN with regional mid-tier caches**: At 23 Tbps peak, serving all video from a central origin cluster is impossible — a single S3 region maxes out at a few Tbps. Tiered CDN: edge PoPs (close to users) cache hot segments; regional mid-tier caches (one per continent) hold long-tail content; origin (S3) holds everything. Cache hit rates: edge ~60%, mid-tier ~90% of edge misses, origin serves only ~4% of total requests — reducing origin bandwidth from 23 Tbps to ~920 Gbps.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [CDN](../../02-building-blocks/01-networking/05-cdn.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Storage Fundamentals](../../01-foundations/02-hardware-and-networking/01-storage-fundamentals.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Stream Processing](../../04-advanced-topics/01-distributed-architecture/05-stream-processing.md)
+
+**Practice next**
+
+- [Instagram](../02-medium/instagram.md)
+- [CDN Design](../03-hard/cdn-design.md)
+
+CDN design is the delivery layer this problem assumes.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

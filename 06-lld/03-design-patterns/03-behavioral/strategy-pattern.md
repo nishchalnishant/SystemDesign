@@ -338,3 +338,22 @@ File manager picks the strategy based on format selected. Core compression logic
 
 **Q: How does dependency injection relate to Strategy?**
 - DI is often the mechanism used to inject a specific Strategy implementation into the Context. The concrete strategy is configured externally and injected at construction time.
+
+---
+
+## Applied In
+
+This concept is used by **27 problems** in this repo — a representative selection:
+
+**Low-Level Design**
+
+- [Design a Parking Lot](../../05-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Rate Limiter](../../05-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design Splitwise](../../05-problems/01-core-problems/05-design-splitwise.md)
+- [Design BookMyShow](../../05-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Chess](../../05-problems/02-frequent-problems/07-design-chess.md)
+- [Design Snake and Ladder](../../05-problems/02-frequent-problems/08-design-snake-and-ladder.md)
+- [Design Elevator System](../../05-problems/02-frequent-problems/09-design-elevator-system.md)
+- [Design a Nested Comment System](../../05-problems/02-frequent-problems/10-design-comment-system.md)
+- …and 19 more
+

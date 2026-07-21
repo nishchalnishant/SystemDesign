@@ -381,3 +381,20 @@ class RateLimiter:
 
 - **Q**: When would you use a high-contention counter over a simple database column?
   **A**: DB column: durable, consistent, but each increment is a network round-trip + disk write (low throughput, high latency). In-memory striped counter: millions of increments/second, no disk, but lost on crash and single-machine only. Use in-memory for hot real-time metrics; periodically flush to DB for durability.
+
+---
+
+## Related
+
+**SOLID focus**: [Interface Segregation](../../02-solid-principles/04-interface-segregation.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design a Lock-Free Queue](34-design-lock-free-queue.md)
+- [Design Rate Limiter](../01-core-problems/02-design-rate-limiter.md)
+
+Contention on a shared counter is the rate limiter core.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

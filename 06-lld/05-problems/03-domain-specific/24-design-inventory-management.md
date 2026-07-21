@@ -381,3 +381,25 @@ Add `reorder_point: int` and `reorder_quantity: int` to Product. When `_check_lo
 
 - **Q**: How would you scale this to millions of SKUs?
   **A**: Shard inventory table by product_id. Cache frequently queried stock levels in Redis with write-through. Use async event processing for low-stock notifications (Kafka consumer). Batch expiry jobs with pagination.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Order Management](21-design-order-management.md)
+- [Design Library Management](20-design-library-management.md)
+
+Stock reservation is the same hold-then-commit flow.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

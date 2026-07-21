@@ -332,3 +332,14 @@ Breach any one layer → the others still protect the data.
 
 5. **"How would you prevent SQL injection in a system that takes user input and queries a database?"**
    *Never interpolate user input into SQL strings. Always use parameterized queries (prepared statements) or an ORM that handles parameterization. Example: `cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))` — the DB driver handles escaping. At design level: apply least-privilege DB roles (the app user has only SELECT/INSERT, not DROP TABLE), use an ORM with input validation, and add WAF rules to detect common injection patterns at the edge.*
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md)
+

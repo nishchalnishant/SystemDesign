@@ -358,3 +358,22 @@ def verify_pattern(self, input_pattern):
 
 - **Q**: Does 1→5→9 skip anything?
   **A**: No skip beyond 5, but going 1→9 would skip 5. If the pattern is [1, 5, 9], going 1→5 is fine (no skip), then 5→9 is fine (no dot at midpoint between 5 and 9 since (1+2)/2=1.5, not integer). But skipping 1→9 directly without having visited 5 would be invalid.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md)
+
+**Practice next**
+
+- [Design Minesweeper](25-design-minesweeper.md)
+- [Design Tic-Tac-Toe](../01-core-problems/03-design-tic-tac-toe.md)
+
+Grid-path validation is the common mechanic.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

@@ -368,3 +368,26 @@ Or use a DB-level compare-and-swap: `UPDATE lockers SET status='OCCUPIED' WHERE 
 
 - **Q**: Why geohash for nearest station search?
   **A**: Geohash encodes location as a string where lexicographic proximity approximates geographic proximity. Prefix search + neighbor cells gives all stations within ~1–5 km without scanning all stations.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Elevator System](09-design-elevator-system.md)
+- [Design Hotel Management](11-design-hotel-management.md)
+
+Allocation of a scarce physical resource is the common core.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

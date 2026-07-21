@@ -27,19 +27,19 @@ Design patterns are typical solutions to common problems in software design. Eac
 
 Design patterns are categorised into three main types based on their purpose:
 
-### &#x20;[Creational Patterns](creational/)
+### &#x20;[Creational Patterns](01-creational/)
 
 Deal with object creation mechanisms, trying to create objects in a manner suitable to the situation.
 
 **Patterns:** Abstract Factory, Builder, Factory Method, Prototype, Singleton
 
-### &#x20;[Structural Patterns](structural/)
+### &#x20;[Structural Patterns](02-structural/)
 
 Explain how to assemble objects and classes into larger structures while keeping these structures flexible and efficient.
 
 **Patterns:** Adapter, Bridge, Composite, Decorator, Facade, Flyweight, Proxy
 
-### &#x20;[Behavioral Patterns](behavioral/)
+### &#x20;[Behavioral Patterns](03-behavioral/)
 
 Concerned with algorithms and the assignment of responsibilities between objects.
 

@@ -229,3 +229,23 @@ Rules are stored in a configuration service and cached locally on each app serve
 - What do you do when Redis is unavailable — fail open or fail closed? How does your answer change based on the API?
 - How would you implement rate limiting for a streaming API (WebSocket, gRPC streaming) where the unit is bytes transferred, not requests?
 - Design rate limits that are fair under shared resources — how do you prevent one user from starving others when the system is under load?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Rate Limiting](../../02-building-blocks/02-performance/02-rate-limiting.md)
+- [Redis Internals](../../04-advanced-topics/03-internals/04-redis-internals.md)
+- [Circuit Breaker](../../02-building-blocks/02-performance/03-circuit-breaker.md)
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+
+**Practice next**
+
+- [Unique ID Generator](../01-easy/unique-id-generator.md)
+- [Notification Service](../02-medium/notification-service.md)
+
+Notification fan-out needs the same token buckets for per-user caps.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

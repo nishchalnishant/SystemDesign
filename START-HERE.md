@@ -35,8 +35,8 @@ This repo covers system design end-to-end — HLD, LLD, design patterns, and int
 ## Fastest Path to Interview-Ready
 
 **If you have 2 weeks:**
-1. `07-interview-templates/hld-template.md` — learn this framework cold
-2. `07-interview-templates/capacity-estimation.md` — practice until automatic
+1. `07-interview-templates/01-frameworks/01-hld-template.md` — learn this framework cold
+2. `07-interview-templates/02-cheat-sheets/02-capacity-estimation.md` — practice until automatic
 3. `08-reference/numbers-to-know.md` — memorize latency numbers
 4. All of `02-building-blocks/` — the Lego pieces for every HLD answer
 5. HLD easy tier (all 9), then medium (all 7), then 3-4 hard problems
@@ -49,11 +49,11 @@ This repo covers system design end-to-end — HLD, LLD, design patterns, and int
 
 | Decision | File |
 |----------|------|
-| SQL vs NoSQL | `07-interview-templates/database-selection-tree.md` |
+| SQL vs NoSQL | `07-interview-templates/02-cheat-sheets/03-database-selection-tree.md` |
 | Which pattern to use | `06-lld/03-design-patterns/README.md` |
-| Trade-off any choice | `07-interview-templates/trade-offs-cheat-sheet.md` |
-| Capacity math | `07-interview-templates/capacity-estimation.md` |
-| Failure & recovery | `07-interview-templates/failure-recovery-playbook.md` |
+| Trade-off any choice | `07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md` |
+| Capacity math | `07-interview-templates/02-cheat-sheets/02-capacity-estimation.md` |
+| Failure & recovery | `07-interview-templates/03-pitfalls-and-recovery/02-failure-recovery-playbook.md` |
 
 ## LLD Problem Tiers
 

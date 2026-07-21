@@ -387,3 +387,25 @@ Shard the inverted index by term across multiple nodes (hash(term) % num_shards)
 
 - **Q**: What's the time complexity of search?
   **A**: O(Q × D) where Q = query terms and D = average postings list length per term. For top-K, use a min-heap of size K → O(Q × D × log K). In practice, postings lists are sorted by score so top-K emerges early.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Iterator Pattern](../../03-design-patterns/03-behavioral/iterator-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Interface Segregation](../../02-solid-principles/04-interface-segregation.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Producer-Consumer](../../04-concurrency/producer-consumer.md)
+
+**Practice next**
+
+- [Design S3 Object Storage](26-design-s3-object-storage.md)
+- [Design Text Editor](31-design-text-editor.md)
+
+Tokenisation and indexing appear in both.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

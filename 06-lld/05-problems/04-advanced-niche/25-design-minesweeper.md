@@ -405,3 +405,24 @@ class Board:
 
 - **Q**: What happens if a player flags a mine — does it count toward win?
   **A**: Standard rules: flagged cells are not revealed. Win requires all non-mine cells to be REVEALED (flagged cells don't count). The win check only counts REVEALED state.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Snake and Ladder](../02-frequent-problems/08-design-snake-and-ladder.md)
+- [Design Unlock Pattern](33-design-unlock-pattern.md)
+
+Grid adjacency logic is the shared mechanic.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

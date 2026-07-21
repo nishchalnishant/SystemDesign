@@ -85,6 +85,44 @@ By creating hundreds of Virtual Nodes for every physical server, the slices of t
 
 ---
 
+## 🎯 Rendezvous Hashing (The Simpler Alternative)
+
+Consistent hashing is the famous answer. But there's a second technique that solves the same problem — **minimal reshuffling when servers change** — with far less machinery, and knowing it is a genuine differentiator.
+
+**Rendezvous hashing** (also called *Highest Random Weight*) throws away the ring entirely.
+
+To find which server owns a key:
+
+```python
+def pick_server(key, servers):
+    return max(servers, key=lambda s: hash(f"{key}:{s}"))
+```
+
+That's the whole algorithm. Hash the key *together with each server name*, and whichever combination produces the highest number wins.
+
+> **💡 Analogy:** Every server rolls a dice for the key. The dice are loaded — the same key and server always roll the same number — so everyone independently agrees on who rolled highest. No ring, no coordination, no virtual nodes.
+
+**Why it survives server changes:** if a server is removed, only the keys where *that server* was the winner need to move. Every other key still has the same winner as before. If a server is added, a key only moves if the newcomer out-rolls the current winner. Both cases relocate exactly the minimal fraction of keys — the same guarantee the ring gives you.
+
+### Consistent Hashing vs Rendezvous Hashing
+
+| | Consistent Hashing | Rendezvous Hashing |
+|---|---|---|
+| **Lookup cost** | O(log n) — binary search the ring | O(n) — hash against every server |
+| **Distribution** | Uneven; needs virtual nodes to fix | Perfectly even by construction |
+| **Complexity** | Ring + hundreds of vnodes per server | Five lines of code, no state |
+| **Picking k replicas** | Walk clockwise around the ring | Take the top-k scores |
+| **Weighting servers** | Give strong servers more vnodes | Multiply the score by a weight |
+| **Best for** | Large clusters (hundreds of nodes) | Small/medium clusters, client-side routing |
+
+**The trade-off is lookup cost.** Rendezvous is O(n) per lookup, so with 1,000 servers you're hashing 1,000 times per key — that's when the ring's O(log n) wins. But for 10–50 servers, rendezvous is faster in practice *and* gives better distribution with none of the virtual-node bookkeeping.
+
+**Used in production by:** Apache Ignite, and it's the standard technique for client-side cache sharding where every client must independently agree on placement without talking to each other.
+
+> **🎤 Interview note:** When asked "how would you shard this cache?", answering *"consistent hashing, or rendezvous hashing if the cluster is small — rendezvous gives perfectly even distribution without virtual nodes, at O(n) lookup instead of O(log n)"* shows you know the design space, not just the one famous answer.
+
+---
+
 ## 🎤 Interview Questions to Practice
 
 1. **"What problem does Consistent Hashing solve?"**
@@ -93,3 +131,22 @@ By creating hundreds of Virtual Nodes for every physical server, the slices of t
    *Answer:* It places both the servers and the data keys onto a conceptual "Hash Ring" (a circle). To find which server owns a piece of data, you find the data's position on the ring and move clockwise until you find the first server.
 3. **"Why do we use Virtual Nodes in Consistent Hashing?"**
    *Answer:* To balance the load. Without virtual nodes, the physical servers might be unevenly distributed around the ring, meaning some servers get massive chunks of data while others get very little. Virtual nodes assign dozens of random spots on the ring to each physical server, ensuring a perfectly even statistical distribution.
+
+---
+
+## Applied In
+
+This concept is used by **9 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+- [Design a Web Crawler](../../05-hld-problems/01-easy/web-crawler.md)
+- [Design a Content Delivery Network (CDN)](../../05-hld-problems/03-hard/cdn-design.md)
+- [Design a Distributed Cache](../../05-hld-problems/03-hard/distributed-cache.md)
+- [Design a Distributed Message Queue (Kafka)](../../05-hld-problems/03-hard/distributed-message-queue.md)
+- …and 1 more
+

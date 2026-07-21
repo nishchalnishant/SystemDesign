@@ -95,3 +95,15 @@ If you are in an interview and someone asks you about Paxos, you only need to kn
    *Answer:* To prevent a tie vote (Split-Brain). To save data, you must get a majority vote (a Quorum). If you have 4 servers, and the network splits them 2-vs-2, neither side can get a majority (which requires 3). The database will completely freeze. If you have 5 servers, it will split 3-vs-2, and the group of 3 can continue working!
 3. **"What is the difference between Raft and Paxos?"**
    *Answer:* Both solve the same problem (distributed consensus). Paxos is older, leaderless, and incredibly complex to implement. Raft was designed specifically to be understandable by relying on a strict Leader-Follower architecture.
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a Distributed Job Scheduler](../../05-hld-problems/03-hard/distributed-job-scheduler.md)
+

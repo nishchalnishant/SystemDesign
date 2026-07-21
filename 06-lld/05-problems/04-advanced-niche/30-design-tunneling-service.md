@@ -548,3 +548,26 @@ def _handle_websocket_upgrade(self, request: HttpRequest):
 
 - **Q: How would you implement custom (non-random) subdomains?**
   A: Allow users to specify a desired subdomain during tunnel creation. Check the registry for conflicts; if taken, return an error. Premium users get reserved subdomains persisted across sessions.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Proxy Pattern](../../03-design-patterns/02-structural/proxy-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+
+**SOLID focus**: [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md) · [Interface Segregation](../../02-solid-principles/04-interface-segregation.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design Pub/Sub](../03-domain-specific/23-design-pub-sub.md)
+- [Design Download Manager](32-design-download-manager.md)
+
+Connection multiplexing and stream handling overlap.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

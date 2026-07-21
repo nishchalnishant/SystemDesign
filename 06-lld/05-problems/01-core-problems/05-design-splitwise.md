@@ -430,3 +430,22 @@ Challenges: exchange rates change — use the rate at the time of the expense, n
 - Q: Is the greedy min-cash-flow algorithm always optimal? A: Yes for minimizing transaction count. It achieves the lower bound of `n-1` transactions for n users with non-zero net balances. The key insight: any user who reaches net=0 can be eliminated in a single transaction.
 - Q: What if two users have exactly offsetting debts? A: Example: A owes B $10 and B owes A $10 → net for both is $0. BalanceSheet.update with the sorted-key approach would show the balance canceling to $0 and the key gets deleted. No transaction needed.
 - Q: How do you handle the payer being in the expense split? A: The payer's share is already covered by their payment. In `add_expense`, skip updating BalanceSheet for the payer — only non-payer participants generate debt entries.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Order Management](../03-domain-specific/21-design-order-management.md)
+- [Design Inventory Management](../03-domain-specific/24-design-inventory-management.md)
+
+Balance settlement mirrors ledger and stock reconciliation.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

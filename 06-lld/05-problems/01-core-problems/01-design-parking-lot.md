@@ -720,3 +720,25 @@ if __name__ == "__main__":
 - `test_no_double_booking`: The per-floor lock prevents two threads assigning the same spot simultaneously. If `find_and_assign` had no lock, two threads could both see `is_occupied=False` and both assign the same spot.
 - `test_concurrent_park_and_exit`: Spot availability counts are correctly updated under concurrent exit; freed spots become available for new arrivals.
 - `test_duplicate_plate_rejected`: The `active_tickets` lock ensures the duplicate check + insert is atomic. Without the lock, two threads could both pass the duplicate check before either inserts.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Singleton Pattern](../../03-design-patterns/01-creational/singleton.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Vending Machine](04-design-vending-machine.md)
+- [Design Hotel Management](../02-frequent-problems/11-design-hotel-management.md)
+
+Both reuse the slot-allocation and pricing-strategy shape.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

@@ -89,3 +89,22 @@ It makes your code 10x more complicated. Only use Sharding when you absolutely h
    *Answer:* It's the specific column (like User_ID or Region) used to mathematically determine which shard a specific row of data belongs to.
 3. **"What is the Celebrity Problem (Hotspotting)?"**
    *Answer:* It occurs when one specific shard receives an overwhelming amount of traffic compared to the others, usually because a highly active user (a celebrity) or piece of data resides entirely on that single shard, negating the benefits of distributing the load.
+
+---
+
+## Applied In
+
+This concept is used by **17 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+- [Design an E-Commerce Platform (Amazon)](../../05-hld-problems/02-medium/e-commerce-platform.md)
+- [Design Instagram](../../05-hld-problems/02-medium/instagram.md)
+- [Design Twitter / News Feed](../../05-hld-problems/02-medium/twitter-news-feed.md)
+- [Design WhatsApp (Real-Time Messaging)](../../05-hld-problems/02-medium/whatsapp.md)
+- [Design YouTube](../../05-hld-problems/02-medium/youtube.md)
+- …and 9 more
+

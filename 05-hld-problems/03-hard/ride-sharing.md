@@ -279,3 +279,24 @@ def compute_surge(h3_cell, time_window=5):  # minutes
 - Design surge pricing computation — how do you compute supply/demand ratios in real-time across all geo cells globally?
 - How do you handle driver supply in a new city where Uber has no history? What are cold-start problems and how do you solve them?
 - Design the payment and trip completion flow — from driver tapping "End Trip" to rider's card being charged.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [WebSockets & SSE](../../02-building-blocks/01-networking/06-websockets-sse.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Global Distribution](../../03-scaling/04-global-distribution.md)
+
+**Practice next**
+
+- [Google Maps](../03-hard/google-maps.md)
+- [Payment System](../03-hard/payment-system.md)
+
+Maps supplies the geospatial index; payments settle the completed trip.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

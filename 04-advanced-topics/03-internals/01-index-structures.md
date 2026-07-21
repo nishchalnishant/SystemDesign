@@ -80,3 +80,17 @@ If you want to find every page in a textbook that mentions the word "Photosynthe
    *Answer:* Because every time you `INSERT`, `UPDATE`, or `DELETE` a row, the database must also update every single index associated with that table. Having too many indexes will severely degrade write performance and consume a massive amount of disk space and RAM.
 3. **"How does Elasticsearch perform full-text search so quickly?"**
    *Answer:* By using an Inverted Index. Instead of scanning documents for a word, it tokenizes the text upon ingestion and creates a mapping from every unique word to a list of Document IDs that contain that word. Searching is as fast as a single index lookup and an array intersection.
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design Typeahead Search (Google Search Bar)](../../05-hld-problems/02-medium/typeahead-search.md)
+- [Design a RAG System (Retrieval-Augmented Generation)](../../05-hld-problems/03-hard/rag-system.md)
+- [Design a Web Search Engine (Google)](../../05-hld-problems/03-hard/search-system.md)
+

@@ -101,3 +101,17 @@ If a hacker is sending 100,000 requests, you want to block them at the outermost
    *Answer:* `HTTP 429 Too Many Requests`.
 3. **"Can you explain the Token Bucket algorithm?"**
    *Answer:* It's an algorithm where a "bucket" is assigned to a user, filled with a maximum number of tokens. Every request consumes a token. The bucket is refilled at a constant rate. If the bucket is empty, the request is rejected. It's popular because it's memory-efficient and allows for brief bursts of traffic.
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design a Web Crawler](../../05-hld-problems/01-easy/web-crawler.md)
+- [Design a Notification Service](../../05-hld-problems/02-medium/notification-service.md)
+- [Design an LLM Chat System (ChatGPT)](../../05-hld-problems/03-hard/llm-chat-system.md)
+

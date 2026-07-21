@@ -27,7 +27,7 @@ Consolidated system design guide for senior/staff engineer interviews. No fluff,
 | HLD Problems (Easy) | 9 | `05-hld-problems/01-easy/` |
 | HLD Problems (Medium) | 7 | `05-hld-problems/02-medium/` |
 | HLD Problems (Hard) | 20 | `05-hld-problems/03-hard/` |
-| LLD Problems | 26 | `06-lld/05-problems/` |
+| LLD Problems | 36 | `06-lld/05-problems/` |
 | Design Patterns | 21 | `06-lld/03-design-patterns/` |
 | System Design Patterns | 7 | `09-patterns/` |
 | Interview Templates | 17 | `07-interview-templates/` |
@@ -41,106 +41,86 @@ Consolidated system design guide for senior/staff engineer interviews. No fluff,
 
 ```
 SystemDesign/
-├── README.md
-├── START-HERE.md
-├── AUDIT.md
-├── FLOWCHARTS.md
-├── MINDMAP.md
-├── SUMMARY.md
+├── README.md                             # This file — master index
+├── START-HERE.md                         # Quick-start: fastest path to interview-ready
+├── LEARNING-PATH.md                      # Structured week-by-week path
+├── FLOWCHARTS.md · MINDMAP.md · SUMMARY.md
 ├── SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md  # Interview execution: clarify → estimate → HLD → trade-offs → deep dive
 │
 ├── 01-foundations/
-│   ├── fundamentals.md                   # Scalability, availability, consistency axes
-│   ├── databases.md                      # SQL vs NoSQL, ACID, CAP theorem, replication, sharding
-│   ├── networking.md
-│   ├── security.md
-│   ├── storage-fundamentals.md
-│   ├── consistency-and-conflicts.md
-│   ├── consensus-algorithms.md
-│   ├── change-data-capture.md
+│   ├── 01-system-design-basics/          # 01-fundamentals.md — scalability, availability, consistency, CAP
+│   ├── 02-hardware-and-networking/       # 01-storage-fundamentals.md, 02-networking.md
+│   ├── 03-database-foundations/          # 01-databases.md — SQL vs NoSQL, ACID, indexing
+│   ├── 04-security/                      # 01-security.md, 02-oauth-jwt.md
+│   └── 05-advanced-distributed-theory/   # consistency-and-conflicts, consensus-algorithms, change-data-capture
 │
-├── 02-building-blocks/                   # Deep dives on individual components (15 files)
-│   ├── load-balancers.md
-│   ├── reverse-proxy.md
-│   ├── cdn.md
-│   ├── caching-layer.md                  # Covers: why caching, cache patterns, eviction policies, Redis, CDN layer
-│   ├── message-brokers.md
-│   ├── service-discovery.md
-│   ├── api-gateway.md
-│   ├── distributed-locks.md
-│   ├── rate-limiting.md
-│   ├── sharding.md
-│   ├── replication.md
-│   ├── bloom-filter.md
-│   ├── architecture-composition.md
-│   ├── circuit-breaker.md
-│   └── consistent-hashing.md
+├── 02-building-blocks/                   # 16 component deep dives
+│   ├── 01-networking/                    # load-balancers, reverse-proxy, api-gateway, service-discovery, cdn, websockets-sse
+│   ├── 02-performance/                   # caching-layer, rate-limiting, circuit-breaker, bloom-filter
+│   ├── 03-data-partitioning/             # sharding, replication, consistent-hashing
+│   ├── 04-coordination/                  # message-brokers, distributed-locks
+│   └── 05-composition/                   # architecture-composition
 │
 ├── 03-scaling/
-│   ├── scaling-strategies.md            # Horizontal/vertical, DB scaling, queues, async
-│   ├── database-scaling-deep-dive.md
-│   ├── lsm-vs-btree.md
-│   └── global-distribution.md
+│   ├── 01-scaling-fundamentals.md        # Horizontal/vertical, queues, async
+│   ├── 02-database-internals.md          # B-tree, LSM, WAL, MVCC, isolation levels
+│   ├── 03-database-scaling.md            # Read replicas, shard keys, resharding, hot partitions
+│   └── 04-global-distribution.md         # Multi-region, active-active, CRDTs, data residency
 │
 ├── 04-advanced-topics/
-│   ├── distributed-systems.md           # Consistency models, Lamport/Vector clocks, CRDTs
-│   ├── distributed-concepts.md          # Idempotency, retry, backpressure
-│   ├── microservices.md                 # Microservices patterns, trade-offs, Kubernetes
-│   ├── event-driven-architecture.md     # EDA, Kafka, event sourcing, CQRS, outbox pattern
-│   ├── observability.md                 # Metrics, distributed tracing, SLI/SLO/SLA
-│   ├── chaos-engineering.md
-│   ├── stream-processing.md
-│   └── internals/                       # kafka, redis, dynamodb, cassandra, postgresql, mysql, elasticsearch, zookeeper
+│   ├── 01-distributed-architecture/      # distributed-systems, distributed-concepts, microservices,
+│   │                                     #   event-driven-architecture, stream-processing, kubernetes,
+│   │                                     #   outbox-cdc-pattern, grpc-rest-graphql
+│   ├── 02-system-reliability/            # observability, chaos-engineering, telemetry-tracing
+│   └── 03-internals/                     # index-structures, consensus-protocols, kafka, redis, cassandra,
+│                                         #   postgresql, mysql, dynamodb, elasticsearch, zookeeper,
+│                                         #   raft-paxos-conceptual, stream-vs-batch
 │
-├── 05-hld-problems/
-│   ├── 01-easy/                         # 9 problems: URL Shortener, Pastebin, Rate Limiter, Key-Value Store, Web Crawler, Autocomplete, Unique ID Generator, Booking System, Leaderboard
-│   ├── 02-medium/                       # 7 problems: Twitter, Instagram, YouTube, WhatsApp, Notification Service, E-Commerce Platform, Typeahead Search
-│   └── 03-hard/                         # 20 problems: Chat, Distributed Cache, Kafka, Payment, Ride-Sharing, Google Drive, Search, Ad Click Aggregator, Google Maps, LLM Chat, RAG, Stock Exchange, CDN, Job Scheduler, Dropbox, GitHub, Hotel Booking, Metrics Monitoring, Gaming Leaderboard, Ticketmaster
+├── 05-hld-problems/                      # 36 problems
+│   ├── 01-easy/                          # 9: URL Shortener, Pastebin, Rate Limiter, Key-Value Store, Web Crawler,
+│   │                                     #    Autocomplete, Unique ID Generator, Booking System, Leaderboard
+│   ├── 02-medium/                        # 7: Twitter, Instagram, YouTube, WhatsApp, Notification Service,
+│   │                                     #    E-Commerce, Typeahead Search
+│   └── 03-hard/                          # 20: Chat, Distributed Cache, Message Queue, Payment, Ride-Sharing,
+│                                         #    Google Drive, Search, Ad Click Aggregator, Google Maps, LLM Chat,
+│                                         #    RAG, Stock Exchange, CDN, Job Scheduler, Dropbox, GitHub,
+│                                         #    Hotel Booking, Metrics Monitoring, Gaming Leaderboard, Ticketmaster
 │
 ├── 06-lld/
-│   ├── 01-oop-fundamentals/             # 5 files
-│   ├── 02-solid-principles/             # 5 files
-│   ├── 03-design-patterns/              # 21 patterns: 01-creational (5), 02-structural (7), 03-behavioral (9)
-│   ├── 04-concurrency/                  # 3 files
-│   ├── 05-problems/                     # 26 LLD problems (01-design-parking-lot → 26-design-high-contention-counter)
-│   ├── uml-diagrams.md
-│   └── SUMMARY.md
+│   ├── 01-oop-fundamentals/              # 5 files
+│   ├── 02-solid-principles/              # 5 files (01-single-responsibility → 05-dependency-inversion)
+│   ├── 03-design-patterns/               # 21 patterns: 01-creational (5), 02-structural (7), 03-behavioral (9)
+│   ├── 04-concurrency/                   # 4 files
+│   ├── 05-problems/                      # 36 LLD problems
+│   │   ├── 01-core-problems/             # 5 (Tier 1): parking-lot, rate-limiter, tic-tac-toe, vending-machine, splitwise
+│   │   ├── 02-frequent-problems/         # 12 (Tier 2): bookmyshow, chess, elevator, LRU cache, ATM, ...
+│   │   ├── 03-domain-specific/           # 7: mentorship, logger, library, order-mgmt, ride-sharing, pub-sub, inventory
+│   │   └── 04-advanced-niche/            # 12: minesweeper, S3, search engine, version control, lock-free queue, ...
+│   └── uml-diagrams.md
 │
-├── 07-interview-templates/              # 17 files
-│   ├── hld-template.md                  # 45-60 min HLD interview guide (7 phases)
-│   ├── lld-template.md
-│   ├── capacity-estimation.md           # QPS, storage, bandwidth formulas
-│   ├── trade-offs-cheat-sheet.md        # SQL vs NoSQL, sync vs async, etc.
-│   ├── interview-question-bank.md
-│   ├── mock-interview-problems.md
-│   ├── failure-recovery-playbook.md
-│   ├── api-design-template.md
-│   ├── database-selection-tree.md
-│   ├── architecture-by-scale.md
-│   ├── monitoring-slo-template.md
-│   ├── interview-anti-patterns.md
-│   ├── worked-examples.md
-│   ├── spaced-repetition-schedule.md
-│   ├── self-assessment-rubric.md
-│   ├── concept-dependency-map.md
-│   ├── company-specific-guide.md
-│   └── security-compliance-checklist.md
+├── 07-interview-templates/               # 15 files
+│   ├── 01-frameworks/                    # hld-template, lld-template, api-design-template, monitoring-slo-template
+│   ├── 02-cheat-sheets/                  # trade-offs, capacity-estimation, database-selection-tree,
+│   │                                     #   architecture-by-scale, concept-to-problem-map
+│   ├── 03-pitfalls-and-recovery/         # interview-anti-patterns, failure-recovery-playbook
+│   └── 04-practice-and-prep/             # prep-toolkit, question-bank, mock-interview-problems, worked-examples
 │
 ├── 08-reference/
-│   ├── numbers-to-know.md               # Latency, throughput, cost estimates
-│   ├── ml-system-design.md              # Feature stores, training pipelines, model monitoring
+│   ├── numbers-to-know.md                # Latency, throughput, cost estimates
+│   ├── ml-system-design.md               # Feature stores, training pipelines, model monitoring
 │   ├── cloud-services-cheat-sheet.md
 │   ├── system-design-glossary.md
-│   └── book-summaries/                  # ddia.md, Head First Java, Head First OOA&D
+│   └── book-summaries/                   # ddia.md, Head First Java, Head First OOA&D
 │
-└── 09-patterns/                         # 7 cross-cutting design patterns
-    ├── saga-pattern.md
-    ├── cqrs-event-sourcing.md
-    ├── outbox-pattern.md
-    ├── bulkhead-pattern.md
-    ├── strangler-fig.md
-    ├── two-phase-commit.md
-    └── anti-patterns.md
+├── 09-patterns/                          # 7 cross-cutting patterns
+│   ├── 01-data-consistency/              # outbox, two-phase-commit, saga
+│   ├── 02-architecture-and-scaling/      # cqrs-event-sourcing, bulkhead
+│   └── 03-migration-and-pitfalls/        # strangler-fig, anti-patterns
+│
+└── youtube tutorial/                     # Companion video notes
+    ├── 01-concepts/                      # Atomized deep-dive notes: api-design, caching,
+    │                                     #   load-balancing, rate-limiting, scaling
+    └── 1..7/                             # Per-playlist walkthrough notes
 ```
 
 ---
@@ -155,25 +135,25 @@ This repo has two parallel tracks — HLD and LLD — that build on each other. 
 
 **Phase 1 — Mental models (read once, then reference constantly)**
 1. `SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md` — the 7-phase interview structure; know this cold
-2. `01-foundations/fundamentals.md` — scalability, availability, consistency: the four axes every system is measured on
+2. `01-foundations/01-system-design-basics/01-fundamentals.md` — scalability, availability, consistency: the four axes every system is measured on
 3. `08-reference/numbers-to-know.md` — memorize these; rattling off latency numbers builds credibility instantly
-4. `07-interview-templates/capacity-estimation.md` — capacity math becomes muscle memory with 3-4 practice runs
+4. `07-interview-templates/02-cheat-sheets/02-capacity-estimation.md` — capacity math becomes muscle memory with 3-4 practice runs
 
 **Phase 2 — Foundations (each builds on the previous)**
-5. `01-foundations/networking.md` — TCP, HTTP, DNS; every system lives on a network
-6. `01-foundations/databases.md` — SQL vs. NoSQL, ACID, CAP; every system stores data
-   See also: `03-scaling/database-internals.md` — B-tree indexes, WAL, MVCC, isolation levels
-7. `02-building-blocks/caching-layer.md` — when to cache, when not to, cache patterns, eviction policies, Redis, CDN layer (consolidated from former caching-cdn.md and cache-eviction.md)
-8. `01-foundations/security.md` — auth, encryption, OWASP top 10
+5. `01-foundations/02-hardware-and-networking/02-networking.md` — TCP, HTTP, DNS; every system lives on a network
+6. `01-foundations/03-database-foundations/01-databases.md` — SQL vs. NoSQL, ACID, CAP; every system stores data
+   See also: `03-scaling/02-database-internals.md` — B-tree indexes, WAL, MVCC, isolation levels
+7. `02-building-blocks/02-performance/01-caching-layer.md` — when to cache, when not to, cache patterns, eviction policies, Redis, CDN layer (consolidated from former caching-cdn.md and cache-eviction.md)
+8. `01-foundations/04-security/01-security.md` — auth, encryption, OWASP top 10
 
 **Phase 3 — Building blocks (the Lego pieces you assemble into every system)**
-9. `02-building-blocks/load-balancers.md`
-10. `02-building-blocks/caching-layer.md` — Redis internals, eviction, cache-aside vs. write-through
-11. `02-building-blocks/message-brokers.md` — Kafka, SQS, pub-sub; required for any async problem
-12. `02-building-blocks/sharding.md` + `02-building-blocks/replication.md` — read these together
-13. `02-building-blocks/rate-limiting.md` — token bucket, sliding window
-14. `02-building-blocks/api-gateway.md` + `02-building-blocks/service-discovery.md`
-15. `03-scaling/scaling-strategies.md` — ties everything together
+9. `02-building-blocks/01-networking/01-load-balancers.md`
+10. `02-building-blocks/02-performance/01-caching-layer.md` — Redis internals, eviction, cache-aside vs. write-through
+11. `02-building-blocks/04-coordination/01-message-brokers.md` — Kafka, SQS, pub-sub; required for any async problem
+12. `02-building-blocks/03-data-partitioning/01-sharding.md` + `02-building-blocks/03-data-partitioning/02-replication.md` — read these together
+13. `02-building-blocks/02-performance/02-rate-limiting.md` — token bucket, sliding window
+14. `02-building-blocks/01-networking/03-api-gateway.md` + `02-building-blocks/01-networking/04-service-discovery.md`
+15. `03-scaling/01-scaling-fundamentals.md` — ties everything together
 
 **Phase 4 — HLD Problems (easy → medium → hard; timed at 45 min each)**
 
@@ -205,18 +185,18 @@ This repo has two parallel tracks — HLD and LLD — that build on each other. 
 | 24 | `05-hld-problems/03-hard/rag-system.md` | Vector embeddings, semantic search, retrieval grounding |
 
 **Phase 5 — Advanced (SDE-2/3 differentiators)**
-20. `04-advanced-topics/distributed-systems.md` — consistency models, linearizability, Raft/Paxos
-21. `04-advanced-topics/distributed-concepts.md` — idempotency, retry strategies, backpressure
-22. `04-advanced-topics/event-driven-architecture.md` — CQRS, event sourcing, outbox pattern
-23. `04-advanced-topics/microservices.md` — service mesh, sagas, operational complexity
-24. `04-advanced-topics/observability.md` — SLI/SLO/SLA, distributed tracing, on-call readiness
-25. `04-advanced-topics/chaos-engineering.md` — game days, failure injection
+20. `04-advanced-topics/01-distributed-architecture/01-distributed-systems.md` — consistency models, linearizability, Raft/Paxos
+21. `04-advanced-topics/01-distributed-architecture/02-distributed-concepts.md` — idempotency, retry strategies, backpressure
+22. `04-advanced-topics/01-distributed-architecture/04-event-driven-architecture.md` — CQRS, event sourcing, outbox pattern
+23. `04-advanced-topics/01-distributed-architecture/03-microservices.md` — service mesh, sagas, operational complexity
+24. `04-advanced-topics/02-system-reliability/01-observability.md` — SLI/SLO/SLA, distributed tracing, on-call readiness
+25. `04-advanced-topics/02-system-reliability/02-chaos-engineering.md` — game days, failure injection
 
 **Internals (study alongside the problem that uses the technology)**
-- `04-advanced-topics/internals/kafka-internals.md` — alongside distributed-message-queue.md
-- `04-advanced-topics/internals/redis-internals.md` — alongside distributed-cache.md
-- `04-advanced-topics/internals/cassandra-internals.md` — alongside any write-heavy problem
-- `04-advanced-topics/internals/postgresql-internals.md` — alongside any RDBMS-heavy problem
+- `04-advanced-topics/03-internals/03-kafka-internals.md` — alongside distributed-message-queue.md
+- `04-advanced-topics/03-internals/04-redis-internals.md` — alongside distributed-cache.md
+- `04-advanced-topics/03-internals/05-cassandra-internals.md` — alongside any write-heavy problem
+- `04-advanced-topics/03-internals/06-postgresql-internals.md` — alongside any RDBMS-heavy problem
 
 ---
 
@@ -234,7 +214,7 @@ Read these in order — each principle solves a problem introduced by ignoring t
 - Single Responsibility → Open/Closed → Liskov Substitution → Interface Segregation → Dependency Inversion
 
 **Layer 3 — Design patterns (1–2 weeks)**
-Don't read all 16 at once. Group by what you're about to build:
+Don't read all 21 at once. Group by what you're about to build:
 - Creational: Singleton (before Parking Lot), Factory (before any multi-type system), Builder (before complex object construction)
 - Behavioral: Observer (before any event-driven problem), Strategy (before any algorithm-swap problem), State (before Vending Machine, Elevator)
 - Structural: Decorator (before Logger, Rate Limiter), Composite (before file systems, coupon chains)
@@ -255,9 +235,9 @@ Don't read all 16 at once. Group by what you're about to build:
 
 ### Interview templates (use from Day 1, not Day N)
 
-- `07-interview-templates/hld-template.md` — your 45-60 min interview script; use it on every problem you practice
-- `07-interview-templates/lld-template.md` — requirements → use cases → class diagram → patterns
-- `07-interview-templates/trade-offs-cheat-sheet.md` — decision matrices for every fork: SQL vs. NoSQL, sync vs. async, push vs. pull
+- `07-interview-templates/01-frameworks/01-hld-template.md` — your 45-60 min interview script; use it on every problem you practice
+- `07-interview-templates/01-frameworks/02-lld-template.md` — requirements → use cases → class diagram → patterns
+- `07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md` — decision matrices for every fork: SQL vs. NoSQL, sync vs. async, push vs. pull
 
 ---
 
@@ -269,13 +249,13 @@ Run HLD and LLD tracks in parallel. HLD requires more time; LLD can be done in s
 
 **Week 1 — Mental models + interview framework**
 - `SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md`
-- `07-interview-templates/hld-template.md` + `07-interview-templates/capacity-estimation.md`
-- `01-foundations/fundamentals.md` + `08-reference/numbers-to-know.md`
+- `07-interview-templates/01-frameworks/01-hld-template.md` + `07-interview-templates/02-cheat-sheets/02-capacity-estimation.md`
+- `01-foundations/01-system-design-basics/01-fundamentals.md` + `08-reference/numbers-to-know.md`
 - LLD: `06-lld/01-oop-fundamentals/four-pillars.md` + `principles.md`
 
 **Week 2 — Foundations deep**
-- `01-foundations/databases.md` + `01-foundations/networking.md`
-- `02-building-blocks/caching-layer.md` + `01-foundations/security.md`
+- `01-foundations/03-database-foundations/01-databases.md` + `01-foundations/02-hardware-and-networking/02-networking.md`
+- `02-building-blocks/02-performance/01-caching-layer.md` + `01-foundations/04-security/01-security.md`
 - All of `02-building-blocks/` (read as a block — they reference each other)
 - LLD: All 5 SOLID principles in order
 
@@ -289,27 +269,27 @@ Run HLD and LLD tracks in parallel. HLD requires more time; LLD can be done in s
 
 **Week 5 — Hard HLD (Part 1)**
 - Distributed Cache + Chat System + Search System
-- `04-advanced-topics/distributed-systems.md`
+- `04-advanced-topics/01-distributed-architecture/01-distributed-systems.md`
 - LLD: Decorator, Composite, Chain of Responsibility + solve Rate Limiter LLD + LRU Cache
 
 **Week 6 — Hard HLD (Part 2) + Distributed Systems**
 - Payment System + Ride Sharing + Google Drive + Distributed Message Queue
-- `04-advanced-topics/distributed-concepts.md` (idempotency, retry — critical for Payment System)
-- `04-advanced-topics/event-driven-architecture.md`
+- `04-advanced-topics/01-distributed-architecture/02-distributed-concepts.md` (idempotency, retry — critical for Payment System)
+- `04-advanced-topics/01-distributed-architecture/04-event-driven-architecture.md`
 - LLD: solve Splitwise + Elevator System
 
 **Week 7 — Advanced Topics + Internals**
-- `04-advanced-topics/microservices.md` + `04-advanced-topics/observability.md`
-- `04-advanced-topics/internals/kafka-internals.md` + `04-advanced-topics/internals/redis-internals.md`
+- `04-advanced-topics/01-distributed-architecture/03-microservices.md` + `04-advanced-topics/02-system-reliability/01-observability.md`
+- `04-advanced-topics/03-internals/03-kafka-internals.md` + `04-advanced-topics/03-internals/04-redis-internals.md`
 - LLD: solve 3-4 Tier 2 problems (Hotel, Comment System, Locker Service)
 
 **Week 8 — Advanced hard problems + mock interviews**
 - `05-hld-problems/03-hard/ad-click-aggregator.md` + `05-hld-problems/03-hard/stock-exchange.md` — data pipeline and low-latency systems
 - `05-hld-problems/03-hard/google-maps.md` — geo-indexing at scale
 - `05-hld-problems/03-hard/llm-chat-system.md` + `05-hld-problems/03-hard/rag-system.md` — AI system design (increasingly common at SDE-3)
-- `04-advanced-topics/chaos-engineering.md`
+- `04-advanced-topics/02-system-reliability/02-chaos-engineering.md`
 - LLD: attempt 1-2 Tier 3 problems (S3, Version Control)
-- Final review: `07-interview-templates/trade-offs-cheat-sheet.md`
+- Final review: `07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md`
 - Re-solve 4 HLD problems end-to-end without notes (pick weakest ones)
 
 ---
@@ -317,7 +297,7 @@ Run HLD and LLD tracks in parallel. HLD requires more time; LLD can be done in s
 ## Interview Execution Checklist
 
 ### Before the interview
-- [ ] Know the 7 HLD phases from `07-interview-templates/hld-template.md`
+- [ ] Know the 7 HLD phases from `07-interview-templates/01-frameworks/01-hld-template.md`
 - [ ] Memorize key numbers: 1M req/day ≈ 12 QPS, L1 cache 0.5ns, RAM 100ns, SSD 150μs
 - [ ] Know 99.9% = 8.76 hrs downtime/year, 99.99% = 52 min/year
 
@@ -375,13 +355,13 @@ Drive through the phases. Don't wait for the interviewer to ask — ask yourself
 
 | File | Purpose |
 |------|---------|
-| `07-interview-templates/hld-template.md` | Master this — it's your interview script |
-| `07-interview-templates/capacity-estimation.md` | Practice until estimation is automatic |
-| `07-interview-templates/trade-offs-cheat-sheet.md` | Decision matrices for SQL vs NoSQL, sync vs async |
+| `07-interview-templates/01-frameworks/01-hld-template.md` | Master this — it's your interview script |
+| `07-interview-templates/02-cheat-sheets/02-capacity-estimation.md` | Practice until estimation is automatic |
+| `07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md` | Decision matrices for SQL vs NoSQL, sync vs async |
 | `08-reference/numbers-to-know.md` | Latency numbers — memorize the orders of magnitude |
-| `04-advanced-topics/distributed-systems.md` | Consistency models, consensus — senior-level differentiators |
-| `04-advanced-topics/microservices.md` | When to use microservices and the operational cost |
-| `04-advanced-topics/event-driven-architecture.md` | Kafka, event sourcing, CQRS — appears in many hard problems |
+| `04-advanced-topics/01-distributed-architecture/01-distributed-systems.md` | Consistency models, consensus — senior-level differentiators |
+| `04-advanced-topics/01-distributed-architecture/03-microservices.md` | When to use microservices and the operational cost |
+| `04-advanced-topics/01-distributed-architecture/04-event-driven-architecture.md` | Kafka, event sourcing, CQRS — appears in many hard problems |
 
 ---
 

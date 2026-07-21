@@ -458,3 +458,23 @@ Each InsertCommand stores the inserted text (typically 1-N chars) and position (
 
 - **Q**: How would you limit memory usage for undo history?
   **A**: `deque(maxlen=100)` — when full, appending a new command evicts the oldest one automatically in O(1). No manual management needed.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [Iterator Pattern](../../03-design-patterns/03-behavioral/iterator-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Version Control](29-design-version-control.md)
+- [Design Search Engine](27-design-search-engine.md)
+
+Undo stacks and buffer traversal are shared concerns.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

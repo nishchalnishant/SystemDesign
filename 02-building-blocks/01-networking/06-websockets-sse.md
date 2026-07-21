@@ -305,3 +305,17 @@ A: All clients connected to that server lose their connection. They must reconne
 > - **Chat / Gaming** → WebSockets (full-duplex)
 > - **Notifications / Live Scores / AI streaming** → SSE (one-way, simpler)
 > - **Background job polling / legacy** → Long Polling (fallback only)
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**High-Level Design**
+
+- [Design WhatsApp (Real-Time Messaging)](../../05-hld-problems/02-medium/whatsapp.md)
+- [Design a Chat System (Slack)](../../05-hld-problems/03-hard/chat-system.md)
+- [Design an LLM Chat System (ChatGPT)](../../05-hld-problems/03-hard/llm-chat-system.md)
+- [Design a Ride-Sharing Service (Uber)](../../05-hld-problems/03-hard/ride-sharing.md)
+

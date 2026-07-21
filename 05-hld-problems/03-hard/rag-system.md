@@ -272,3 +272,24 @@ No tuning of relative weights needed; ranks are combined directly.
 - **HNSW for high recall, IVF-PQ for memory-constrained deployments**: HNSW at 99% recall requires 610 GB — needs a 10-node cluster. IVF-PQ achieves 95% recall with 6 GB — fits on one node. At 58 queries/sec peak, the latency difference is small (5ms vs 2ms for ANN search). The real constraint is memory budget: if the full 10M-doc corpus must fit in RAM for < 500ms latency, HNSW on a 10-node cluster is correct; if memory budget is tight, IVF-PQ with a slight recall trade-off is the right call.
 - **Chunking strategy directly impacts retrieval quality**: A 10M-document corpus with 4,000-token documents in single chunks makes retrieval imprecise — a query about one paragraph retrieves the entire document. Chunking at 200-400 tokens with 50-token overlap ensures retrieved context is tightly relevant. 25M chunks vs 10M documents increases index size 2.5× but improves retrieval precision significantly.
 - **Self-hosted embedding model to hit 500ms SLA**: OpenAI API embedding call: 10–50ms (network round trip to API). Self-hosted `text-embedding-3-small` on GPU: ~2ms. At 58 queries/sec, API calls add 58 × 50ms = 2.9 seconds of aggregate latency per second of throughput — creating a bottleneck. Self-hosted embedding eliminates this bottleneck and also eliminates per-query API cost ($0.00002/1K tokens × 11.6 queries/sec × 100 tokens = **$0.0023/sec = $200/day** saved).
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Elasticsearch Internals](../../04-advanced-topics/03-internals/09-elasticsearch-internals.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Index Structures](../../04-advanced-topics/03-internals/01-index-structures.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+
+**Practice next**
+
+- [LLM Chat System](../03-hard/llm-chat-system.md)
+- [Typeahead Search](../02-medium/typeahead-search.md)
+
+The chat system is the product surface over this retrieval core.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

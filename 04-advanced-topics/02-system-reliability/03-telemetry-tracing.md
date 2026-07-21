@@ -360,3 +360,14 @@ A: A globally unique identifier assigned to a single user request at the entry p
 > - **Metrics** → Prometheus + Grafana (open source) or Datadog (commercial)
 > - **Logs** → Elasticsearch + Kibana (ELK) or Grafana Loki + Grafana
 > - **All three, vendor-neutral collection** → OpenTelemetry Collector
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design a Metrics Monitoring System (Prometheus + Grafana)](../../05-hld-problems/03-hard/metrics-monitoring-system.md)
+

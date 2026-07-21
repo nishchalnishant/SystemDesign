@@ -93,3 +93,18 @@ Because the Bloom Filter only stores *light switches* (Bits: 0 or 1) instead of 
    *Answer:* No. A Bloom Filter guarantees 100% accuracy for negatives (if it says the item is not there, it is definitely not there). It can only return False Positives (it might say an item exists when it actually doesn't).
 3. **"How do you remove an item from a Bloom Filter?"**
    *Answer:* You cannot remove items from a standard Bloom Filter. Because multiple items might share the same "switches" (bits) due to hash collisions, turning a switch off to delete one item might accidentally delete other items too! If you need deletions, you must use a more complex structure like a Counting Bloom Filter.
+
+---
+
+## Applied In
+
+This concept is used by **5 problems** in this repo:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design a Web Crawler](../../05-hld-problems/01-easy/web-crawler.md)
+- [Design Typeahead Search (Google Search Bar)](../../05-hld-problems/02-medium/typeahead-search.md)
+- [Design an Ad Click Aggregator](../../05-hld-problems/03-hard/ad-click-aggregator.md)
+- [Design a Web Search Engine (Google)](../../05-hld-problems/03-hard/search-system.md)
+

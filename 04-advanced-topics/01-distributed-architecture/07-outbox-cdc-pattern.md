@@ -282,3 +282,14 @@ If multiple rows in the outbox table belong to the same aggregate and are proces
 
 3. **"Why is dual write dangerous even if you retry the Kafka publish?"**
    *Retrying only solves transient failures. If the DB write succeeds but the application process crashes before the Kafka publish, no retry ever happens — the event is permanently lost. If you retry after a timeout but the first publish did go through (slow network, not a real failure), you send a duplicate event. Without a distributed transaction, there's no way to know whether the publish succeeded or not. The outbox pattern avoids this by making "publish intent" part of the DB transaction — you can always know whether the event needs to be published by checking the outbox.*
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md)
+

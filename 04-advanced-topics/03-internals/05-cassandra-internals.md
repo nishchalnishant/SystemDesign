@@ -78,6 +78,53 @@ Cassandra lets you turn a dial (Tunable Consistency) on *every single query*.
 
 ---
 
+## Healing Stale Replicas (Read Repair, Hints, Anti-Entropy)
+
+Tunable consistency raises an obvious question: if you write at QUORUM (2 of 3), **the third replica is now wrong**. What fixes it?
+
+Cassandra has three repair mechanisms, running at different timescales. Knowing all three — and when each one fires — is a standard senior follow-up.
+
+### 1. Read Repair (fixes it on the next read)
+
+When a read touches multiple replicas and they disagree, Cassandra notices:
+
+1. Coordinator asks replicas for the data (and cheap digests from the rest).
+2. The digests don't match → some replica is stale.
+3. Coordinator picks the newest version by timestamp, returns it to the user.
+4. **In the background, it writes the correct value back to the stale replica.**
+
+> **💡 Analogy:** Three friends each wrote down a phone number. You ask all three, notice one has an old number, tell the user the correct one — and then correct your friend's notebook while you're at it.
+
+The catch: read repair only fixes data that somebody actually *reads*. Cold data stays wrong forever.
+
+### 2. Hinted Handoff (fixes it when a node comes back)
+
+Replica 3 is down when the write arrives. Rather than lose it, the coordinator stores a **hint** — a note saying "when Replica 3 returns, give it this write."
+
+When Replica 3 rejoins, the coordinator replays the hints and it catches up in seconds.
+
+> **💡 Analogy:** Your neighbour isn't home, so you sign for their parcel and hand it over when they're back.
+
+The catch: hints have a time limit (`max_hint_window_in_ms`, 3 hours by default). A node down longer than that gets no hints — it has to be repaired the slow way.
+
+### 3. Anti-Entropy Repair (the scheduled deep clean)
+
+The backstop for everything the other two missed: cold data never read, and nodes that were down longer than the hint window.
+
+Nodes compare **Merkle trees** — a hash tree over their data ranges. Comparing root hashes is one comparison; if they differ, you walk down the tree and find the exact mismatched ranges without shipping the whole dataset over the network. Only the differing ranges get streamed.
+
+This runs as an explicit operation (`nodetool repair`), typically weekly, and it's expensive.
+
+| Mechanism | Trigger | Fixes | Misses |
+|-----------|---------|-------|--------|
+| Read repair | On read | Data being actively read | Cold data |
+| Hinted handoff | Node rejoins | Short outages | Outages > hint window |
+| Anti-entropy repair | Scheduled / manual | Everything | Nothing (but slow + costly) |
+
+> **🎤 Interview note:** "Write at QUORUM and read at QUORUM gives you strong consistency because R + W > N" is the correct headline — but the follow-up is *"so what repairs the replica that missed the write?"* Naming all three mechanisms, and noting that read repair alone leaves cold data permanently stale, is what separates a memorized formula from real understanding. These same three mechanisms appear in DynamoDB and Riak — they all descend from the Dynamo paper.
+
+---
+
 ## Interview Questions to Practice
 
 1. **"What is the main architectural difference between Cassandra and MongoDB?"**
@@ -86,3 +133,16 @@ Cassandra lets you turn a dial (Tunable Consistency) on *every single query*.
    *Answer:* It uses a Gossip Protocol. Every second, each node randomly selects 1 to 3 other nodes and exchanges state information about itself and the rest of the cluster. This peer-to-peer communication ensures that topology changes and node failures propagate exponentially and quickly to the entire cluster.
 3. **"What does 'Tunable Consistency' mean in Cassandra?"**
    *Answer:* Because Cassandra is a Masterless, distributed system, replicas can become temporarily out of sync. Tunable Consistency allows the developer to choose the `Consistency Level` (e.g., ONE, QUORUM, ALL) for each individual read or write operation. You can explicitly trade off latency and availability against strict data consistency based on the specific needs of the query.
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design an Ad Click Aggregator](../../05-hld-problems/03-hard/ad-click-aggregator.md)
+- [Design a Metrics Monitoring System (Prometheus + Grafana)](../../05-hld-problems/03-hard/metrics-monitoring-system.md)
+

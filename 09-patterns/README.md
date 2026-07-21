@@ -32,6 +32,7 @@ These are cross-cutting distributed system patterns — each one solves a specif
 | [Bulkhead](02-architecture-and-scaling/02-bulkhead-pattern.md) | Fault isolation between subsystems | Prevent one slow dependency from collapsing the whole service |
 | [Strangler Fig](03-migration-and-pitfalls/01-strangler-fig.md) | Incremental legacy migration | Replacing a monolith without a big-bang rewrite |
 | [Two-Phase Commit](01-data-consistency/02-two-phase-commit.md) | Atomic commit across multiple databases | Distributed transactions requiring strong consistency |
+| [Retries + Idempotency](02-architecture-and-scaling/03-retry-and-idempotency.md) | Safe retries; duplicate-execution bugs | Any network call that can time out — especially payments |
 | [Anti-Patterns](03-migration-and-pitfalls/02-anti-patterns.md) | Learn what NOT to do | Before designing any system — know the failure modes |
 
 ---
@@ -47,8 +48,9 @@ These are cross-cutting distributed system patterns — each one solves a specif
 - **CQRS** — read model and write model are different shapes; query performance suffers when using the same model for both
 
 ### You need to handle failures gracefully
+- **Retries + Idempotency** — a call timed out and you cannot tell whether it succeeded; retry with exponential backoff *and jitter*, against an idempotent endpoint
 - **Bulkhead** — one dependency (payment service, recommendations) is slow; you don't want it to exhaust your thread pool and take down checkout
-- **Circuit Breaker** (see `02-building-blocks/circuit-breaker.md`) — open the circuit when error rate exceeds threshold; fail fast instead of waiting
+- **Circuit Breaker** (see [`02-building-blocks/02-performance/03-circuit-breaker.md`](../02-building-blocks/02-performance/03-circuit-breaker.md)) — open the circuit when error rate exceeds threshold; fail fast instead of waiting
 
 ### You need to migrate incrementally
 - **Strangler Fig** — route traffic gradually from old system to new; no cutover risk
@@ -77,5 +79,5 @@ Read these in dependency order — later patterns assume you know the earlier on
 3. **Saga** — builds on outbox; adds multi-step compensation
 4. **Two-Phase Commit** — understand why Saga exists by seeing 2PC's downsides first
 5. **CQRS + Event Sourcing** — advanced; requires understanding event-driven architecture
-6. **Bulkhead** — read alongside `02-building-blocks/circuit-breaker.md`
-7. **Strangler Fig** — operational pattern; read last, alongside `04-advanced-topics/microservices.md`
+6. **Bulkhead** — read alongside [Circuit Breaker](../02-building-blocks/02-performance/03-circuit-breaker.md)
+7. **Strangler Fig** — operational pattern; read last, alongside [Microservices](../04-advanced-topics/01-distributed-architecture/03-microservices.md)

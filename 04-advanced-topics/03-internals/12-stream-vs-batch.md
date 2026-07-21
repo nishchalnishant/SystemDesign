@@ -365,3 +365,15 @@ Most teams building new systems today use Kappa or a variation of it.
 
 4. **"Your team currently runs a Spark batch job nightly. The business now needs results every 5 minutes. What do you recommend?"**
    *Migrate to Spark Structured Streaming with a 5-minute trigger. The API is nearly identical to the batch Spark code the team already knows — `spark.readStream` instead of `spark.read`, `writeStream` instead of `write`, and a trigger interval. This reuses existing Spark expertise and avoids a full migration to Flink. If the team later needs sub-second latency or more sophisticated windowing, migrate to Flink at that point. Don't over-engineer now.*
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**High-Level Design**
+
+- [Design an Ad Click Aggregator](../../05-hld-problems/03-hard/ad-click-aggregator.md)
+- [Design a Metrics Monitoring System (Prometheus + Grafana)](../../05-hld-problems/03-hard/metrics-monitoring-system.md)
+

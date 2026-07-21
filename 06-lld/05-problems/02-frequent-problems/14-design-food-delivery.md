@@ -585,3 +585,26 @@ def submit_review(self, order_id: str, rest_rating: int,
 
 - **Q: How would you model a multi-restaurant cart?**  
   A: Cart becomes a dict of restaurant_id → List[CartItem]. Placing the order creates one Order per restaurant. Delivery assignments are per-order. Checkout total aggregates across all sub-orders.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Ride-Sharing](../03-domain-specific/22-design-ride-sharing.md)
+- [Design Order Management](../03-domain-specific/21-design-order-management.md)
+
+Ride-sharing shares the matching and dispatch model.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

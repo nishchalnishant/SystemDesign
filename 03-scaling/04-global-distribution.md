@@ -88,3 +88,17 @@ To solve this, you must build an Active-Active data center in Frankfurt, Germany
    *Answer:* By using Geo-Routing at the DNS level (e.g., AWS Route 53). The DNS provider checks the IP address of the incoming request, determines the geographic location, and returns the IP address of the data center physically closest to the user.
 3. **"What is Data Sovereignty and how does it affect system design?"**
    *Answer:* Data Sovereignty refers to laws (like GDPR) that require a citizen's digital data to be physically stored within their own country or region. It forces system designers to implement regional data partitioning, ensuring certain database rows never replicate across international borders.
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**High-Level Design**
+
+- [Design Twitter / News Feed](../05-hld-problems/02-medium/twitter-news-feed.md)
+- [Design a Content Delivery Network (CDN)](../05-hld-problems/03-hard/cdn-design.md)
+- [Design Google Maps](../05-hld-problems/03-hard/google-maps.md)
+- [Design a Ride-Sharing Service (Uber)](../05-hld-problems/03-hard/ride-sharing.md)
+

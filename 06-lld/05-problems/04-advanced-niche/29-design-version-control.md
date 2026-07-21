@@ -566,3 +566,23 @@ def garbage_collect(self):
 
 - **Q: What is a tree object?**
   A: A tree maps file paths to blob hashes. It represents the state of the working directory at a commit. Trees can reference sub-trees (directories), forming a Composite pattern.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Composite Pattern](../../03-design-patterns/02-structural/composite-pattern.md)
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design S3 Object Storage](26-design-s3-object-storage.md)
+- [Design Text Editor](31-design-text-editor.md)
+
+The text editor uses the same undo/snapshot machinery.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

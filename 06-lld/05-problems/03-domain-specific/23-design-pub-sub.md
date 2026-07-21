@@ -741,3 +741,26 @@ if __name__ == "__main__":
 - `test_each_group_sees_all_messages`: Each `ConsumerGroup` maintains its own independent offset; publishing to a topic does not advance any group's offset automatically. All three groups start at offset 0 and consume independently.
 - `test_concurrent_publishers_no_loss`: `topic._messages` is a list protected by `_msg_lock`. Without the lock, concurrent `append()` calls from multiple threads can corrupt the list (CPython's GIL makes bare appends safe, but the lock is required for non-CPython runtimes and for compound operations like publish+notify).
 - `test_dlq_after_max_retries`: The DLQ path exercises the expiry-based redelivery loop; after `max_retries` attempts, the message must be quarantined rather than silently dropped or re-queued indefinitely.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Interface Segregation](../../02-solid-principles/04-interface-segregation.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Producer-Consumer](../../04-concurrency/producer-consumer.md) · [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design Notification System](../02-frequent-problems/16-design-notification-system.md)
+- [Design Comment System](../02-frequent-problems/10-design-comment-system.md)
+
+Notifications and comment feeds are consumers of this.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

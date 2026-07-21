@@ -250,3 +250,23 @@ Flink job: 5-minute sliding window
 - **In-memory trie with full replication across 12 servers**: 250 MB per trie × 12 servers = 3 GB total. This is cheap enough to replicate fully (no sharding needed). Sharding a trie by prefix (A–G on server 1, H–N on server 2) would require knowing which server to query based on the first character — adds routing complexity for 0 benefit at 250 MB trie size. Full replication gives each server complete independence: any request can go to any server (no routing logic, no cross-shard fan-out).
 - **Hourly batch rebuild from query logs + Redis for trending delta**: Rebuilding the trie in real-time on every search (increment frequency, re-rank top-10 at every node) requires locking the trie during writes — blocks 580K reads/sec. Batch rebuild from yesterday's query logs (clean, stable frequencies) keeps the trie read-only. The Redis trending set (`ZINCRBY`) handles real-time frequency increments lock-free at 290K writes/sec → used to detect emerging trends and inject them at read time.
 - **CDN caching for top-1000 prefixes**: The top 1,000 prefixes (e.g., "th", "wh", "ho", "how to") account for ~30% of all requests. Their suggestions are static for hours. CDN caches these responses with a 5-minute TTL → 30% of 580K = **174K requests/sec** served from CDN edge without hitting trie servers. This reduces trie server load from 580K to **~406K requests/sec** — need only 9 servers instead of 12.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Elasticsearch Internals](../../04-advanced-topics/03-internals/09-elasticsearch-internals.md)
+- [Index Structures](../../04-advanced-topics/03-internals/01-index-structures.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Bloom Filter](../../02-building-blocks/02-performance/04-bloom-filter.md)
+
+**Practice next**
+
+- [Autocomplete](../01-easy/autocomplete.md)
+- [Web Crawler](../01-easy/web-crawler.md)
+
+The crawler supplies the corpus this indexes.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

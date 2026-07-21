@@ -357,3 +357,27 @@ class NotificationLog:
 
 - **Q**: How does template rendering work and what are the security risks?
   **A**: Simple string replace is safe. Risks arise if the template or variables come from untrusted user input (injection via `{{}}` substitution). Fix: escape variable values and disallow arbitrary template syntax.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Chain of Responsibility Pattern](../../03-design-patterns/03-behavioral/chain-of-responsibility.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Producer-Consumer](../../04-concurrency/producer-consumer.md) · [Futures & Async Patterns](../../04-concurrency/futures-async-patterns.md)
+
+**Practice next**
+
+- [Design Pub/Sub](../03-domain-specific/23-design-pub-sub.md)
+- [Design Rate Limiter](../01-core-problems/02-design-rate-limiter.md)
+
+Pub-sub is the delivery backbone; rate limiting caps fan-out.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

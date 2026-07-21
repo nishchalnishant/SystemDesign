@@ -270,3 +270,24 @@ State transitions are events in Kafka. Each service listens to relevant events a
 - **Redis for inventory reservation during flash sales**: At 11,500 order attempts/sec for a single SKU, a PostgreSQL `UPDATE inventory SET quantity = quantity - 1 WHERE sku_id = ? AND quantity > 0` causes a row-level lock held for ~5ms per transaction. Queue depth: 11,500 × 5ms = **57.5 concurrent lock-waits** → P99 latency spikes to seconds, killing the < 2s checkout SLA. Redis `DECR inventory:{sku_id}` (atomic, 0.1ms, no locking) handles 11,500/sec with P99 < 1ms. The DB is only written on confirmed purchase (Saga: reserve in Redis → charge card → confirm in DB).
 - **CDN for product catalog, dynamic inventory API for stock counts**: Product metadata (title, images, description) changes at most once/day. CDN with 24h TTL serves 1.16M product page loads/sec during flash sale at near-zero origin cost. Inventory counts change every millisecond during a flash sale — must hit the backend (Redis, not DB) for accuracy. Separating these two concerns means CDN absorbs 99% of the flash sale read surge, and only inventory+order writes hit the backend.
 - **Flash sale event bus via Kafka**: At 100× surge, 1.16M simultaneous requests hitting checkout within milliseconds is a thundering herd. Kafka queues the order requests; a checkout consumer processes them at a controlled rate (matching inventory processing capacity). Users see "your order is in queue" rather than a 503 error. This also prevents the inventory DECR from going negative during race conditions at system boundaries.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Saga Pattern](../../09-patterns/01-data-consistency/03-saga-pattern.md)
+- [Outbox Pattern](../../09-patterns/01-data-consistency/01-outbox-pattern.md)
+- [CQRS & Event Sourcing](../../09-patterns/02-architecture-and-scaling/01-cqrs-event-sourcing.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Circuit Breaker](../../02-building-blocks/02-performance/03-circuit-breaker.md)
+
+**Practice next**
+
+- [Payment System](../03-hard/payment-system.md)
+- [Hotel Booking](../03-hard/hotel-booking.md)
+
+Checkout hands off to the payment system; inventory mirrors booking.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

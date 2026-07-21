@@ -655,3 +655,23 @@ if __name__ == "__main__":
 - `test_inventory_never_negative`: The `_transaction_lock` serializes select→insert→dispense triples. Without it, two threads can both pass the "quantity > 0" check and both decrement, driving stock negative.
 - `test_revenue_consistency`: Revenue is incremented inside the same lock as inventory decrement; they update atomically per transaction with no partial writes visible between threads.
 - `test_cancel_resets_state`: A barrier coordinates A's cancel before B's transaction to confirm that cancel fully resets `_selected_code` and `_inserted_cents`, leaving the machine in `IdleState` for the next user.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design an ATM](../02-frequent-problems/12-design-atm.md)
+- [Design Parking Lot](01-design-parking-lot.md)
+
+The ATM is the same state machine with money and auth.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

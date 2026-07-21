@@ -390,3 +390,14 @@ class CachingWeatherProxy(WeatherService):
 
 **Q: "Give a real-world Proxy example"**
 - "Hibernate's lazy loading. When you load a `User`, the `orders` field isn't fetched from DB immediately — it's a Proxy. The first time you call `user.get_orders()`, the proxy fetches the real data. This saves DB calls when you don't need the related data."
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**Low-Level Design**
+
+- [Design HTTP Tunneling Service](../../05-problems/04-advanced-niche/30-design-tunneling-service.md)
+

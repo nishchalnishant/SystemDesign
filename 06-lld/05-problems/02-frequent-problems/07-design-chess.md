@@ -441,3 +441,23 @@ class Game:
 
 - **Q**: How would you make `board.clone()` efficient?
   **A**: With a dict, clone is `dict(self.grid)` plus reconstructing each Piece. Since there are at most 32 pieces and each is lightweight (color + position), this is O(32) = O(1) effectively.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Liskov Substitution](../../02-solid-principles/03-liskov-substitution.md)
+
+**Practice next**
+
+- [Design Tic-Tac-Toe](../01-core-problems/03-design-tic-tac-toe.md)
+- [Design Tetris](../04-advanced-niche/28-design-tetris.md)
+
+Start with tic-tac-toe for the board and turn model.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

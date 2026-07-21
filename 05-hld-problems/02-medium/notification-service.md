@@ -250,3 +250,24 @@ for channel in requested_channels:
 - **Kafka priority queues (separate topics per priority tier)**: High-priority notifications (flash sale starts NOW, OTP code) must be delivered in < 1 second. Low-priority (weekly digest) can wait minutes. A single Kafka topic processes FIFO — a burst of 10K low-priority emails could block 6K urgent push notifications. Separate topics `notifications-high`, `notifications-low` with dedicated consumer groups ensure high-priority consumers are never blocked by low-priority volume.
 - **Separate workers per channel (push, email, SMS)**: FCM calls, SMTP relay calls, and SMS gateway calls have different rate limits, retry semantics, and SLAs. A single multi-channel worker would have FCM's 6,000 calls/sec competing with email's 11.6 calls/sec for the same thread pool. Dedicated workers per channel can be scaled independently: scale push workers for flash sales, scale email workers for newsletter sends.
 - **Redis for user preference caching**: 10,000 preference lookups/sec at < 1ms each = Redis (0.1ms per GET). DB query for preferences: 5–10ms × 10,000/sec = 100 core-seconds/sec of DB capacity just for preference reads. Redis cache (100 GB for DAU's preferences) eliminates the DB bottleneck entirely. Preferences change rarely (user settings changes are < 1/day per user) so cache TTL of 1 hour is safe.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Rate Limiting](../../02-building-blocks/02-performance/02-rate-limiting.md)
+- [Circuit Breaker](../../02-building-blocks/02-performance/03-circuit-breaker.md)
+- [Event-Driven Architecture](../../04-advanced-topics/01-distributed-architecture/04-event-driven-architecture.md)
+- [Outbox Pattern](../../09-patterns/01-data-consistency/01-outbox-pattern.md)
+
+**Practice next**
+
+- [WhatsApp](../02-medium/whatsapp.md)
+- [Rate Limiter](../01-easy/rate-limiter.md)
+
+Delivery guarantees here mirror the chat pipeline.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

@@ -232,3 +232,24 @@ Fan-out on read: for celebrity accounts (>1M followers), skip fan-out; pull on r
 - **Pre-computed feed cache in Redis (fan-out on write)**: At 115,700 feed reads/sec with < 200ms P99, querying a DB for each read would require joining posts + follows for each user — 500M users × 20 feed items = 10B DB reads/day. Redis feed cache (80 GB total) serves all reads in < 1ms. The 230K pre-write events/sec to maintain the cache is acceptable given the 100:1 read:write ratio.
 - **Hybrid fan-out for celebrities**: Pure fan-out on write for a 100M-follower post takes 7 minutes of background work — users see the post 7 minutes late. Pure pull-on-read for all users means every feed load queries all following relationships (expensive DB joins). Hybrid: pre-compute for ≤ 1M followers (covers 99.9% of users); pull-and-merge celebrity posts at read time (affects < 0.1% of accounts but they have 99% of followers).
 - **CDN for all media**: 100 TB/day uploads means 100 TB × (avg 10 views each) = 1 PB/day served. Serving from origin: 1 PB ÷ 86,400 sec = **~11.6 GB/sec** aggregate bandwidth — requires a massive CDN. CDN cache hit rate >95% for popular photos. Media is immutable (never updated) so cache TTL can be years. Origin only serves cache misses (< 5%) = 580 MB/sec origin bandwidth.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [CDN](../../02-building-blocks/01-networking/05-cdn.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Storage Fundamentals](../../01-foundations/02-hardware-and-networking/01-storage-fundamentals.md)
+
+**Practice next**
+
+- [Twitter News Feed](../02-medium/twitter-news-feed.md)
+- [YouTube](../02-medium/youtube.md)
+
+YouTube replaces the photo pipeline with transcoding.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

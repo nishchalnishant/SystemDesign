@@ -255,3 +255,24 @@ Partition key: `channel_id` — all messages in a channel go to the same partiti
 - **Dedicated WebSocket gateway tier, not HTTP request/response**: 20M concurrent connections need persistent sockets for < 500ms delivery. HTTP request/response for each message delivery would require 20M concurrent open HTTP connections + polling overhead. Dedicated WebSocket servers use async I/O (event loop, not one thread per connection) — 1.25M connections per server is achievable. HTTP polling at 20M users × every 500ms = 40M HTTP requests/sec — far exceeds the WebSocket model.
 - **Message queue (Kafka) between ingest and delivery for fan-out**: At 34.2M delivery events/sec, synchronously pushing to all 50 group members in the HTTP handler would tie up the request thread for 50 × delivery time. Kafka decouples: ingest writes one message to Kafka; a fan-out service reads and distributes to 50 member delivery queues. This also handles offline users (messages queued in Kafka until the user comes online).
 - **Cassandra for message history at PB scale**: Message writes are append-only (never UPDATE, just INSERT). Reads are: "give me messages in conversation X from time T1 to T2" — a time-range scan within a partition. Cassandra's partition-key model (`sender_id + receiver_id` → partition) with clustering key (`ts`) is exactly this access pattern. At 4.5 PB/year after compression, Cassandra's horizontal scaling (add nodes, data redistributes automatically) and tunable consistency (ONE for reads to reduce latency) matches requirements better than PostgreSQL (hard to shard this schema) or DynamoDB (expensive at this data volume).
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [WebSockets & SSE](../../02-building-blocks/01-networking/06-websockets-sse.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+- [ZooKeeper Internals](../../04-advanced-topics/03-internals/10-zookeeper-internals.md)
+
+**Practice next**
+
+- [WhatsApp](../02-medium/whatsapp.md)
+- [Notification Service](../02-medium/notification-service.md)
+
+WhatsApp is the 1:1 subset; notifications share the delivery path.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

@@ -560,3 +560,24 @@ def debit(self, account_id: str, amount: float) -> bool:
 
 - **Q: Could you use Template Method instead of State here?**  
   A: Template Method defines a skeleton transaction flow (authenticate → select → execute → end). State is better here because the valid actions vary entirely by state, not just one step. They're complementary — Template Method could define the withdraw flow, State handles which flow is valid.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Chain of Responsibility Pattern](../../03-design-patterns/03-behavioral/chain-of-responsibility.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Vending Machine](../01-core-problems/04-design-vending-machine.md)
+- [Design Logger Library](../03-domain-specific/19-design-logger-library.md)
+
+Cash dispensing and log routing both chain handlers.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

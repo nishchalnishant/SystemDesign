@@ -86,3 +86,16 @@ When a user clicks "Save Profile", the Primary database saves it. But when does 
    *Answer:* It's the delay between when data is written to the Primary database and when that data is finally copied to the Replica databases. If a user reads from a Replica during this lag, they will see stale, outdated data.
 3. **"Why might you choose Asynchronous replication over Synchronous?"**
    *Answer:* You choose Asynchronous for performance and availability. If you use Synchronous replication, a single slow or offline replica can freeze the entire write operation. Asynchronous returns success to the user instantly, trading strict consistency for speed.
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design a Distributed Cache](../../05-hld-problems/03-hard/distributed-cache.md)
+- [Design a Distributed Message Queue (Kafka)](../../05-hld-problems/03-hard/distributed-message-queue.md)
+

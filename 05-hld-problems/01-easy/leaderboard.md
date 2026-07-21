@@ -209,3 +209,23 @@ def get_nearby(player_id, season_id):
 - How would you design a leaderboard for 1 billion players? Does Redis still work?
 - How would you implement a "relative leaderboard" that shows only friends of the current user (not global)?
 - Design the score update pipeline that handles out-of-order events (a match result arriving late).
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Redis Internals](../../04-advanced-topics/03-internals/04-redis-internals.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+
+**Practice next**
+
+- [Real-Time Gaming Leaderboard](../03-hard/realtime-gaming-leaderboard.md)
+- [Autocomplete](../01-easy/autocomplete.md)
+
+The real-time gaming variant adds hot-shard and tie-break handling.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

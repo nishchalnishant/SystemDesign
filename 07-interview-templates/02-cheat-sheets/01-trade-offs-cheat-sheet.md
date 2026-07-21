@@ -132,3 +132,22 @@ tags: [07-interview-templates, system-design, interview-templates, cheat-sheets]
 ## 🎤 Phrase to use in an interview:
 
 > "Every architectural choice comes with a trade-off. For the database, I chose Cassandra (NoSQL) over PostgreSQL because we need horizontal scale and can tolerate Eventual Consistency. The trade-off is that we lose ACID transactions, but for a social media feed, Availability is far more critical than Strong Consistency."
+
+---
+
+## Applied In
+
+This concept is used by **36 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+- …and 28 more
+

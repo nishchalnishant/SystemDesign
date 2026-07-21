@@ -251,3 +251,24 @@ Insert a new row in `job_executions` with `next_retry_at` as the `next_run_at`. 
 - **Redis sorted set for ready-queue, not polling DB**: At 10 Hz polling × 10 scheduler instances, a `SELECT ... WHERE run_at <= now() LIMIT 1000` on a DB with 70K pending rows requires an index scan under concurrent writes (new job submissions). Under peak burst, this causes index lock contention. Redis `ZRANGEBYSCORE` is O(log N + M) on an in-memory sorted set with no locking — it's ~0.01ms at 70K entries vs ~5ms for a DB query under load.
 - **At-least-once execution with idempotency, not exactly-once**: Exactly-once requires distributed transactions (scheduler + worker + DB). At the 1,157 jobs/sec rate, two-phase commit adds ~10ms of overhead per job — 11.57 seconds of overhead per second of throughput. Instead: detect duplicate execution (job_id uniqueness in the result table) and make jobs idempotent. Worker claims a job with `UPDATE ... SET status='running', worker_id=? WHERE job_id=? AND status='pending'` — a single atomic DB update.
 - **< 1 second scheduling latency drives in-memory queue**: If the pending queue lives only in PostgreSQL, the scheduler must execute a DB query round trip (5–10ms), parse results, then dispatch. At 11,570 jobs/sec burst, 10ms × 11,570 = 115 seconds of queue backlog accumulates per second — unacceptable. Redis sorted set enables 0.1ms dispatch, processing the full burst in under 1 second.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [ZooKeeper Internals](../../04-advanced-topics/03-internals/10-zookeeper-internals.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Consensus Algorithms](../../01-foundations/05-advanced-distributed-theory/02-consensus-algorithms.md)
+- [Raft & Paxos](../../04-advanced-topics/03-internals/11-raft-paxos-conceptual.md)
+
+**Practice next**
+
+- [Distributed Message Queue](../03-hard/distributed-message-queue.md)
+- [Unique ID Generator](../01-easy/unique-id-generator.md)
+
+Both hinge on leader election and exactly-once delivery.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

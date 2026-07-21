@@ -568,3 +568,24 @@ if __name__ == "__main__":
 - `test_no_structural_corruption`: Concurrent pointer manipulation of the doubly linked list without a lock causes torn reads — a thread can follow a `next` pointer mid-update and reach a detached node, causing `None` dereference or cycles.
 - `test_lru_eviction_order`: Validates that the list's MRU-to-LRU ordering is preserved correctly across concurrent operations; the evicted keys are always the least recently used ones.
 - `test_concurrent_reads_consistent`: Readers must not see `-1` for keys still in cache; the lock prevents a reader from observing a partially-removed node during a concurrent eviction.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Interface Segregation](../../02-solid-principles/04-interface-segregation.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design a Concurrent LRU Cache](../04-advanced-niche/35-design-concurrent-lru-cache.md)
+- [Design S3 Object Storage](../04-advanced-niche/26-design-s3-object-storage.md)
+
+The concurrent variant adds locking to this exact structure.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

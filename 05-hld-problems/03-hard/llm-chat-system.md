@@ -253,3 +253,24 @@ Better coherence for long conversations. Costs an extra LLM call, adds ~500ms.
 - **Streaming (SSE/WebSocket) for response delivery**: LLM generates ~100 tokens/sec; 200-token response takes 2 seconds before the client sees anything without streaming. With streaming, the user sees the first token in ~200ms (time to first token) and reads as generation proceeds. For a 2-second response, streaming reduces perceived latency from 2000ms to **~200ms TTFT** — a 10× UX improvement.
 - **KV cache for system prompt**: The system prompt (500 tokens) is identical for every request. LLM inference frameworks (vLLM, TensorRT-LLM) maintain a KV cache for the prefix — the attention computation for those 500 tokens is done once and reused. This eliminates 500 tokens of computation from every request: at 1,157 requests/sec, saves **578,500 token-computations/sec**, reducing GPU load by ~20%.
 - **231 A100s with dynamic batching**: Individual requests arrive at 1,157/sec but each takes 2 seconds. Naive serving (one request per GPU at a time) wastes 90% of GPU compute on idle time between tokens. Dynamic batching (vLLM's continuous batching / PagedAttention) fills GPU with 10 concurrent generation sequences simultaneously, achieving near-100% GPU utilization and reducing required GPUs from 2,314 to **~231**.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [WebSockets & SSE](../../02-building-blocks/01-networking/06-websockets-sse.md)
+- [Rate Limiting](../../02-building-blocks/02-performance/02-rate-limiting.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Circuit Breaker](../../02-building-blocks/02-performance/03-circuit-breaker.md)
+
+**Practice next**
+
+- [RAG System](../03-hard/rag-system.md)
+- [Chat System](../03-hard/chat-system.md)
+
+RAG supplies the retrieval layer this streams answers from.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

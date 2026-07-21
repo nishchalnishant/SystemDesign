@@ -451,3 +451,24 @@ Moderators see a priority queue of flagged comments sorted by flag count descend
 
 - **Q: Your toggle_like is not thread-safe in a distributed system — what do you do?**  
   A: Use atomic DB operations: `INSERT INTO likes(comment_id, user_id) ON CONFLICT DO NOTHING` for like, `DELETE FROM likes WHERE comment_id=? AND user_id=?` for unlike. Or Redis SADD/SREM which are atomic.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Composite Pattern](../../03-design-patterns/02-structural/composite-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Pub/Sub](../03-domain-specific/23-design-pub-sub.md)
+- [Design Inventory Management](../03-domain-specific/24-design-inventory-management.md)
+
+Pub-sub generalises the notification fan-out used here.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

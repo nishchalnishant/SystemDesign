@@ -224,6 +224,35 @@ routes:
 
 ---
 
+## Deep Dive 4: Cardinality Control with Sketches
+
+**Problem**: The non-functional requirements assume 5M active series. Cardinality explosion is the single most common way a metrics system dies: one team ships `http_requests_total{user_id="..."}` and 5M series becomes 500M overnight. Every series costs an inverted-index entry plus an open chunk in memory, so the TSDB OOMs — and it does so *during* the incident the metrics were supposed to explain.
+
+Detecting this by exactly counting distinct series per metric name defeats the purpose: the tracking structure would itself hold the exploding key set.
+
+**HyperLogLog per metric name**: On ingest, hash the full label-set of each incoming sample into an HLL keyed by metric name.
+
+```
+PFADD cardinality:{metric_name}:{hour} {labelset_hash}
+PFCOUNT cardinality:http_requests_total:2026-07-22T14
+```
+
+12 KB per metric name per hour, regardless of whether that metric has 100 or 100M distinct label combinations. Alert when `PFCOUNT` crosses a budget (say 100K series for one metric name), and the offending metric is identified *before* it exhausts memory. Because HLLs merge losslessly, hourly counters roll up into daily cardinality trends for capacity planning without retaining raw label sets.
+
+**Count-Min Sketch for the top talkers**: HLL says *how many* series a metric has, not *which* labels are responsible. A CMS keyed on individual label values (`user_id=...`, `pod=...`) surfaces the highest-frequency offenders in ~40 KB:
+
+```
+w = 2000, d = 5  → estimate(label_value) = min across d rows
+```
+
+CMS never undercounts, so a genuine top talker cannot hide; false positives are harmless because the candidate list is then verified exactly against the index. This turns "cardinality is high" into "`user_id` on `http_requests_total` is responsible" — the difference between an alert and an actionable one.
+
+**Enforcement**: at the ingest gateway, reject or drop samples for a metric name past its series budget, emit `metrics_dropped_total{reason="cardinality"}`, and notify the owning team. Dropping one team's runaway metric is strictly better than losing the whole TSDB — a bounded, attributable failure instead of a total one.
+
+**The line to say**: cardinality limits are only enforceable if you can measure cardinality cheaply, and you cannot measure it exactly without reproducing the very explosion you're guarding against. HLL for the count, CMS for the culprit.
+
+---
+
 ## Interviewer Questions by Level
 
 **Junior**:
@@ -282,3 +311,24 @@ routes:
 - **Multi-resolution storage with automatic rollup**: Storing raw 1-second data is 864 PB/day — impossible. The key insight: no one queries 1-second granularity for data older than 1 hour. Prometheus/Thanos/VictoriaMetrics use multi-resolution compaction: keep 1-second for 1 hour, 10-second for 24 hours, 1-minute for 30 days, 1-hour for 1 year. This reduces storage from 864 PB/day to **~1.4 TB/year compressed** — a 224,000× reduction.
 - **Push-based collection with Kafka buffering, not pull-based**: Pull-based (Prometheus scraping 1M endpoints/sec) requires the monitoring system to maintain 1M TCP connections and poll each every second. At 1M services, that's 1M concurrent scrape operations — connection overhead alone is prohibitive. Push-based (services emit to Kafka) decouples the collection rate from scraper capacity. Kafka absorbs bursts; Flink aggregators process at their own rate.
 - **In-memory recent data for alert evaluation**: The < 30s alert latency requirement means alert queries must be answered in ~1ms (10K rules in 10 seconds = 1ms/rule budget). Hitting a disk-backed time-series DB for each rule evaluation adds 5–50ms I/O per read. Keeping the last 30 minutes of data in RAM (100M points × 30 min × 100 bytes uncompressed ≈ 300 GB — feasible with a dedicated in-memory store) enables sub-millisecond alert evaluation.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Observability](../../04-advanced-topics/02-system-reliability/01-observability.md)
+- [Telemetry & Tracing](../../04-advanced-topics/02-system-reliability/03-telemetry-tracing.md)
+- [Stream Processing](../../04-advanced-topics/01-distributed-architecture/05-stream-processing.md)
+- [Cassandra Internals](../../04-advanced-topics/03-internals/05-cassandra-internals.md)
+- [Stream vs Batch](../../04-advanced-topics/03-internals/12-stream-vs-batch.md)
+
+**Practice next**
+
+- [Ad Click Aggregator](../03-hard/ad-click-aggregator.md)
+- [Distributed Job Scheduler](../03-hard/distributed-job-scheduler.md)
+
+The click aggregator shares the approximate-counting toolkit.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

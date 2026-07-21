@@ -498,3 +498,25 @@ For the browse experience, compute `available_count` as `total - confirmed - act
 - Q: What is the TTL cleanup strategy — lazy or scheduled? A: Lazy (evict on each `lock_seats` call) is simple and correct. Scheduled (background thread every 30s) is more accurate for real-time availability counts. Production systems use both — lazy for correctness, scheduler for freshness.
 - Q: How does the seat lock TTL interact with payment processing time? A: The TTL must be longer than the worst-case payment processing time. 10 minutes is conservative. If payment takes longer (rare), the lock expires, the user must restart. A heartbeat mechanism can extend the lock TTL during active payment.
 - Q: What is the difference between PENDING and CONFIRMED status? A: PENDING means seats are locked but payment hasn't completed. CONFIRMED means payment succeeded and seats are permanently reserved. Only CONFIRMED bookings are reflected in `confirmed_seats`.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md)
+
+**Practice next**
+
+- [Design Hotel Management](11-design-hotel-management.md)
+- [Design Locker Service](15-design-locker-service.md)
+
+All three are hold-then-confirm reservation systems.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

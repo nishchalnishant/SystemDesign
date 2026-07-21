@@ -102,3 +102,14 @@ If John asks for his balance, the database quickly does the math ($100 - $20 + $
    *Answer:* Instead of storing the current state of a domain object in a database, Event Sourcing stores every state-changing action as an immutable sequence of events in an append-only log. The current state is derived by replaying these events from the beginning.
 3. **"What is the biggest drawback of Event-Driven Architecture?"**
    *Answer:* Observability and Debugging. Because workflows are spread out asynchronously across multiple disconnected services, tracking a single user request from start to finish requires complex distributed tracing (like Jaeger or Zipkin). If a message fails silently in the middle of a choreography flow, finding the root cause is very difficult.
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design a Notification Service](../../05-hld-problems/02-medium/notification-service.md)
+

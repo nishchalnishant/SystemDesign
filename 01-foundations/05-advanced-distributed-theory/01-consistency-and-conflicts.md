@@ -217,3 +217,22 @@ CAP is often misapplied because network partitions are rare in practice. The rea
 
 5. **"Explain PACELC and why it's more useful than CAP for designing real systems."**
    *CAP only considers behavior during a partition (rare). PACELC also captures the latency-vs-consistency trade-off during normal operation (constant). For most systems, the partition scenario is a disaster-recovery concern; the latency/consistency trade-off is a daily architectural decision that directly affects user experience.*
+
+---
+
+## Applied In
+
+This concept is used by **9 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design WhatsApp (Real-Time Messaging)](../../05-hld-problems/02-medium/whatsapp.md)
+- [Design a Chat System (Slack)](../../05-hld-problems/03-hard/chat-system.md)
+- [Design a Distributed Cache](../../05-hld-problems/03-hard/distributed-cache.md)
+- [Design a Distributed Message Queue (Kafka)](../../05-hld-problems/03-hard/distributed-message-queue.md)
+- [Design Dropbox File Sync](../../05-hld-problems/03-hard/dropbox-sync.md)
+- [Design GitHub (Code Repository Hosting)](../../05-hld-problems/03-hard/github-code-repo.md)
+- [Design Google Drive](../../05-hld-problems/03-hard/google-drive.md)
+- …and 1 more
+

@@ -359,3 +359,15 @@ The DI approach lets you inject `InMemoryConnectionPool()` in tests — the Sing
 
 **Q: "What's wrong with Singleton?"**
 - "It introduces hidden global state, violates DIP (classes depend on a concrete singleton), and makes unit testing hard since you can't easily swap the instance."
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design a Parking Lot](../../05-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Logger Library](../../05-problems/03-domain-specific/19-design-logger-library.md)
+

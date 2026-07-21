@@ -287,3 +287,17 @@ public class TwoPhaseCommitCoordinator {
 
 **Q: "You need atomicity across two databases for a payment transfer. Would you use 2PC or Saga?"**
 > "It depends on the scale. If it's a legacy system with low traffic where absolute perfect consistency is legally required, I might use 2PC. But for a modern, high-traffic microservice architecture, 2PC is too slow and risks locking up the system. I would use the Saga pattern instead, which breaks the transaction into smaller local steps and uses compensating transactions to reverse mistakes, ensuring high availability."
+
+---
+
+## Applied In
+
+This concept is used by **4 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design a Hotel Booking System (Booking.com)](../../05-hld-problems/03-hard/hotel-booking.md)
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md)
+- [Design a Ticket Booking System (Ticketmaster)](../../05-hld-problems/03-hard/ticketmaster-seat-booking.md)
+

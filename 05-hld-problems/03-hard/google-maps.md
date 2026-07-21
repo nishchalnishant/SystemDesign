@@ -248,3 +248,23 @@ predicted_speed = α × current_speed + β × historical_speed_at_ETA_time + γ 
 - **Flink for traffic aggregation, not polling**: 10M GPS pings/sec must be aggregated into per-segment speeds continuously. A batch job every 5 minutes would make traffic data stale and inaccurate. Flink tumbling 1-minute windows per segment provide near-real-time traffic that feeds into ETA adjustments.
 - **CDN edge for map tiles**: 16.7M tile requests/sec globally cannot hit an origin — even a large S3 cluster would saturate. Tiles are immutable per zoom/coordinate (change only on map updates, ~weekly). CDN cache hit rate >99.9% means origin sees <17K requests/sec — entirely manageable.
 - **Road graph fits in RAM**: 1B nodes × 32 bytes + 2B edges × 64 bytes = **~160 GB** for the full road graph. A route server with 256 GB RAM holds the entire global graph in memory. No disk I/O during query — pure in-memory graph traversal at 30µs per route.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [CDN](../../02-building-blocks/01-networking/05-cdn.md)
+- [Global Distribution](../../03-scaling/04-global-distribution.md)
+
+**Practice next**
+
+- [Real-Time Gaming Leaderboard](../03-hard/realtime-gaming-leaderboard.md)
+- [Hotel Booking](../03-hard/hotel-booking.md)
+
+Geospatial indexing here also drives proximity search in booking.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

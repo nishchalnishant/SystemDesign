@@ -352,3 +352,25 @@ class Elevator:
 
 - **Q**: How do you prevent duplicate assignment of the same request?
   **A**: `assign()` picks exactly one elevator and adds the destination only to that one. The request is marked assigned before returning.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Concurrency**: [Concurrency Patterns](../../04-concurrency/concurrency-patterns.md) · [Producer-Consumer](../../04-concurrency/producer-consumer.md)
+
+**Practice next**
+
+- [Design Locker Service](15-design-locker-service.md)
+- [Design Download Manager](../04-advanced-niche/32-design-download-manager.md)
+
+Request scheduling under contention is the shared theme.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

@@ -274,3 +274,24 @@ score(d) = α × BM25(query, d) + β × PageRank(d) + γ × freshness(d) + δ ×
 - **10 shards with replica sets, not one monolithic index**: 320 GB inverted index distributed across 10 shards = 32 GB per shard. A single 320 GB index on one machine requires 320 GB RAM — possible but creates a single point of failure. 10 shards fit in 64 GB RAM with room for the operating system. At 100K queries/sec, query fan-out to 10 shards and merge top-10 results takes ~5ms of network overhead but enables horizontal scaling: add more shards to increase throughput or index size.
 - **Delta index + periodic merge for < 1-minute freshness**: Writing a new document directly into the main sorted inverted index would require rebuilding the sorted structure — O(N) insert into a sorted array. Instead, a small in-memory delta index (~55 MB) accepts real-time writes (O(1) hash insert). Queries search both the main index and delta index, merging results. Every 5 minutes, the delta is merged into the main index (background, while queries continue). This achieves near-real-time freshness without disrupting query serving.
 - **BM25 ranking computed at query time, not pre-sorted**: Pre-sorting 10B documents by relevance for every possible query is impossible. Instead, BM25 (TF-IDF variant with term saturation and document length normalization) is computed at query time from per-term statistics (IDF pre-computed, stored per term) and per-document statistics (term frequency + doc length, stored per posting). At 10 posting list merges per query × 1M documents per posting list → 10M scoring ops per query → takes ~5ms on modern CPUs. This is the right trade-off: index is smaller (no pre-computed scores per query), ranking quality is high.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Elasticsearch Internals](../../04-advanced-topics/03-internals/09-elasticsearch-internals.md)
+- [Index Structures](../../04-advanced-topics/03-internals/01-index-structures.md)
+- [Caching Layer](../../02-building-blocks/02-performance/01-caching-layer.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Bloom Filter](../../02-building-blocks/02-performance/04-bloom-filter.md)
+
+**Practice next**
+
+- [Typeahead Search](../02-medium/typeahead-search.md)
+- [Web Crawler](../01-easy/web-crawler.md)
+
+The crawler builds the corpus; typeahead is the query-suggest front end.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

@@ -599,3 +599,22 @@ The goal is always **maintainability**: code that a reasonable engineer can unde
 
 > For Java-specific syntax, access modifiers, and advanced patterns: see [java-oops.md](java-oops.md)
 > For Python-specific syntax and idioms: see [python-oops.md](python-oops.md)
+
+---
+
+## Applied In
+
+This concept is used by **36 problems** in this repo — a representative selection:
+
+**Low-Level Design**
+
+- [Design a Parking Lot](../05-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Rate Limiter](../05-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design Tic-Tac-Toe](../05-problems/01-core-problems/03-design-tic-tac-toe.md)
+- [Design a Vending Machine](../05-problems/01-core-problems/04-design-vending-machine.md)
+- [Design Splitwise](../05-problems/01-core-problems/05-design-splitwise.md)
+- [Design BookMyShow](../05-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Chess](../05-problems/02-frequent-problems/07-design-chess.md)
+- [Design Snake and Ladder](../05-problems/02-frequent-problems/08-design-snake-and-ladder.md)
+- …and 28 more
+

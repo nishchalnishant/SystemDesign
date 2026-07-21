@@ -299,3 +299,21 @@ task.result()                      # get result if done; raises if not yet done 
 - **try/except** around `await` handles both success path and failure recovery
 - **Promise bridge**: `loop.create_future()` + `.set_result()` / `.set_exception()` in callback
 - Never block (`future.result()`) inside a running event loop — always `await` or offload to a thread pool
+
+---
+
+## Applied In
+
+This concept is used by **8 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design Notification System](../05-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design a Ride Sharing System](../05-problems/03-domain-specific/22-design-ride-sharing.md)
+- [Design a Pub-Sub Messaging System](../05-problems/03-domain-specific/23-design-pub-sub.md)
+- [Design S3 Object Storage / File System](../05-problems/04-advanced-niche/26-design-s3-object-storage.md)
+- [Design HTTP Tunneling Service](../05-problems/04-advanced-niche/30-design-tunneling-service.md)
+- [Design Download Manager](../05-problems/04-advanced-niche/32-design-download-manager.md)
+- [Design Lock-Free Queue](../05-problems/04-advanced-niche/34-design-lock-free-queue.md)
+- [Design High-Contention Counter](../05-problems/04-advanced-niche/36-design-high-contention-counter.md)
+

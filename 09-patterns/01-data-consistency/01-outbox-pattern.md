@@ -288,3 +288,16 @@ WHERE status = 'PUBLISHED' AND published_at < NOW() - INTERVAL '7 days';
 
 **Q: "Why not just use Kafka transactions?"**
 > "Kafka transactions can't span across a database and Kafka atomically. You would need a distributed coordinator (like Two-Phase Commit), which is notoriously slow and brittle, and Kafka doesn't support it for external databases anyway. The Outbox Pattern is the industry standard because it avoids cross-system transactions entirely."
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design an E-Commerce Platform (Amazon)](../../05-hld-problems/02-medium/e-commerce-platform.md)
+- [Design a Notification Service](../../05-hld-problems/02-medium/notification-service.md)
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md)
+

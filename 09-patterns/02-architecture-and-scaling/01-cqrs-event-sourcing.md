@@ -182,3 +182,14 @@ Usually, these two patterns are used together.
 
 **Q: "What's the advantage of Event Sourcing over just storing the current state?"**
 > "Event Sourcing gives you three superpowers. First, a perfect audit trail, because you save every single action the user takes. Second, time travel—you can reconstruct the system state at any exact second in the past by replaying the event log up to that timestamp. Third, flexibility—if you want to build a brand new analytics dashboard tomorrow, you can replay the last 5 years of historical events into it. The downside is massive complexity and a steep learning curve."
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design an E-Commerce Platform (Amazon)](../../05-hld-problems/02-medium/e-commerce-platform.md)
+

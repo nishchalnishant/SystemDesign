@@ -74,3 +74,16 @@ To fix this, Stream Processors use **Time Windows**. They chop infinity into tin
    *Answer:* Because data streams are infinite/unbounded, you cannot perform aggregate functions (like SUM, COUNT, or AVERAGE) on the "entire" dataset. Windows chop the infinite stream into finite, time-based chunks (e.g., "the last 5 minutes") so the processor can calculate an aggregate result and output it.
 3. **"In Stream Processing, what is the difference between 'Event Time' and 'Processing Time'?"**
    *Answer:* 'Event Time' is the exact timestamp when the event actually occurred on the user's device (e.g., 12:00 PM). 'Processing Time' is the timestamp when the server finally received and processed the event (e.g., 12:05 PM). Because mobile phones can lose signal, events often arrive out of order or delayed. Good stream processors (like Flink) group data using 'Event Time' to ensure accuracy, even if the data arrives late.
+
+---
+
+## Applied In
+
+This concept is used by **3 problems** in this repo:
+
+**High-Level Design**
+
+- [Design YouTube](../../05-hld-problems/02-medium/youtube.md)
+- [Design an Ad Click Aggregator](../../05-hld-problems/03-hard/ad-click-aggregator.md)
+- [Design a Metrics Monitoring System (Prometheus + Grafana)](../../05-hld-problems/03-hard/metrics-monitoring-system.md)
+

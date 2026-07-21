@@ -289,3 +289,14 @@ Observability is a first-class design concern, not an afterthought.
 
 5. **"What's the cardinality trap in metrics?"**
    *Adding high-cardinality labels (user_id, order_id) to Prometheus metrics creates one time series per label value — potentially millions. Prometheus stores all active time series in memory; too many causes OOM and crashes. Rule: put high-cardinality data in logs and traces (designed for it), not metrics. Metric labels should only contain low-cardinality values: service name, status code, region, method.*
+
+---
+
+## Applied In
+
+This concept is used by **1 problem** in this repo:
+
+**High-Level Design**
+
+- [Design a Metrics Monitoring System (Prometheus + Grafana)](../../05-hld-problems/03-hard/metrics-monitoring-system.md)
+

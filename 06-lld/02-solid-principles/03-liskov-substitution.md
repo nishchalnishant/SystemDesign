@@ -302,3 +302,15 @@ class GiftCardProcessor(PaymentProcessor):
 
 **Q: "How do you detect LSP violations in code reviews?"**
 - "Look for `UnsupportedOperationException` in overrides, or overrides that throw when the parent wouldn't. Also look for precondition strengthening — a subclass that rejects inputs the parent would accept."
+
+---
+
+## Applied In
+
+This concept is used by **2 problems** in this repo:
+
+**Low-Level Design**
+
+- [Design Chess](../05-problems/02-frequent-problems/07-design-chess.md)
+- [Design Coupon System](../05-problems/02-frequent-problems/17-design-coupon-system.md)
+

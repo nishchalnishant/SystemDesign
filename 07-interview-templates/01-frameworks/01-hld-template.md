@@ -140,3 +140,22 @@ Explain the trade-offs! "I used NoSQL here for speed, but the trade-off is that 
 ## 🎤 Phrase to use to end the interview perfectly:
 
 > "To summarize, we designed a highly available system for 10 million users using a Microservices architecture. We separated the Read path from the Write path to handle the 100:1 read ratio. We used Redis to cache the timeline for sub-millisecond latency. The main trade-off we made was accepting 'Eventual Consistency' to ensure the app never goes down."
+
+---
+
+## Applied In
+
+This concept is used by **36 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+- …and 28 more
+

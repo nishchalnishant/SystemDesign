@@ -477,3 +477,25 @@ class OverdueObserver:
 - **Q: ISBN vs internal ID — which do you use as the key?** A: ISBN for external search (standard, human-readable); internal UUID for copies to handle re-acquisitions of the same edition.
 - **Q: How do you handle a copy going LOST?** A: Staff marks it LOST via `copy.status = CopyStatus.LOST`; it no longer appears in `available_copies()`; the borrowal may accrue a replacement charge.
 - **Q: How would you support book renewal?** A: Add `renew_borrowal(borrowal_id, extra_days)` that extends `due_date` if no reservation is pending for that isbn.
+
+---
+
+## Related
+
+**Patterns applied here**
+
+- [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
+- [Observer Pattern](../../03-design-patterns/03-behavioral/observer-pattern.md)
+- [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+
+**SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
+
+**Practice next**
+
+- [Design Hotel Management](../02-frequent-problems/11-design-hotel-management.md)
+- [Design Inventory Management](24-design-inventory-management.md)
+
+Lending is reservation plus stock tracking.
+
+**Frameworks**: [LLD Template](../../../07-interview-templates/01-frameworks/02-lld-template.md) · [UML Diagrams](../../uml-diagrams.md) · [OOP Four Pillars](../../01-oop-fundamentals/four-pillars.md)

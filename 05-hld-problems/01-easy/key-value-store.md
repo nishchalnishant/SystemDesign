@@ -178,3 +178,24 @@ Ring: consistent hash ring maps keys → nodes
 - Walk me through what happens when a node fails and then recovers — data flow, gossip, hinted handoff, anti-entropy.
 - How would you support range queries (get all keys between A and Z) in a hash-based key-value store?
 - Compare DynamoDB, Cassandra, and Redis — what workload is each optimized for?
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Consistent Hashing](../../02-building-blocks/03-data-partitioning/03-consistent-hashing.md)
+- [Replication](../../02-building-blocks/03-data-partitioning/02-replication.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+- [DynamoDB Internals](../../04-advanced-topics/03-internals/08-dynamodb-internals.md)
+- [Cassandra Internals](../../04-advanced-topics/03-internals/05-cassandra-internals.md)
+
+**Practice next**
+
+- [Distributed Cache](../03-hard/distributed-cache.md)
+- [URL Shortener](../01-easy/url-shortener.md)
+
+The distributed cache is this design plus eviction and volatility.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

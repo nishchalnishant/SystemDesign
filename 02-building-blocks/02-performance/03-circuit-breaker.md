@@ -85,3 +85,29 @@ Instead of showing a nasty "HTTP 500: Server Error" screen, good engineers write
    *Answer:* By monitoring the failure rate of a service. If the failure rate exceeds a threshold, the breaker "trips" into the OPEN state and immediately fails any new requests without even trying to contact the broken service. This frees up resources on the calling service and gives the broken service time to recover.
 3. **"What is the HALF-OPEN state?"**
    *Answer:* After a timeout period in the OPEN state, the breaker transitions to HALF-OPEN to test if the underlying problem is fixed. It allows a small number of test requests through. If they succeed, the breaker resets to CLOSED. If they fail, it goes back to OPEN.
+4. **"Circuit breaker or retries — which do you use?"**
+   *Answer:* Both, at different layers. Retries handle a request that failed *by accident* (a transient blip). The circuit breaker handles a service that is failing *consistently* — at that point retrying is actively harmful, because it piles load onto something already struggling. Put the retry logic inside the breaker: when the breaker is OPEN, don't attempt the call at all. And the retries themselves need exponential backoff **with jitter**, or every client retries in lockstep and re-kills the service the moment it recovers.
+
+---
+
+## Related
+
+- [Retries, Backoff, and Idempotency](../../09-patterns/02-architecture-and-scaling/03-retry-and-idempotency.md) — the other half of this topic: how to retry safely, and why every retry needs an idempotent target
+- [Rate Limiting](02-rate-limiting.md) — protects a service from the outside; the circuit breaker protects *callers* from a failing dependency
+- [Bulkhead Pattern](../../09-patterns/02-architecture-and-scaling/02-bulkhead-pattern.md) — isolate thread pools so one slow dependency can't exhaust the whole process
+- [Failure Recovery Playbook](../../07-interview-templates/03-pitfalls-and-recovery/02-failure-recovery-playbook.md) — interview framing for cascading-failure questions
+
+---
+
+## Applied In
+
+This concept is used by **5 problems** in this repo:
+
+**High-Level Design**
+
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design an E-Commerce Platform (Amazon)](../../05-hld-problems/02-medium/e-commerce-platform.md)
+- [Design a Notification Service](../../05-hld-problems/02-medium/notification-service.md)
+- [Design an LLM Chat System (ChatGPT)](../../05-hld-problems/03-hard/llm-chat-system.md)
+- [Design a Stock Exchange](../../05-hld-problems/03-hard/stock-exchange.md)
+

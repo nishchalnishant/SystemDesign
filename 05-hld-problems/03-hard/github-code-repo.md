@@ -260,3 +260,23 @@ RETURNING pr_id;
 - **Git object store on distributed blob storage (S3-like), not POSIX filesystem**: 5 PB of git objects across 100M repos cannot fit on one filesystem. Git's content-addressed model (every object is SHA1/SHA256 of its content, stored as a blob) maps naturally to S3's key-value semantics. Repo ID + object SHA = S3 key. No directory structure needed. At 3,472 pushes/sec, S3's parallel PUT rate (~5,500 requests/sec per prefix) handles the load.
 - **Shallow clone by default for CI**: CI doesn't need full git history — only the current commit tree. Shallow clone (depth=1) reduces clone size from 50 MB to ~5 MB average — **10× bandwidth reduction**. At 115 CI pipeline starts/sec, full clones would consume 115 × 50 MB = 5.75 GB/sec of bandwidth. Shallow clones: 115 × 5 MB = 575 MB/sec — fits within a reasonable CDN budget.
 - **Webhook fan-out via Kafka, not synchronous HTTP**: At 5,208 webhook events/sec, synchronously calling each webhook URL (which can be slow, fail, or timeout) on the critical path of a push would make pushes unreliable. Kafka decouples: push completes, event is written to Kafka (<1ms), a webhook delivery service reads from Kafka and retries failed deliveries with exponential backoff. This also enables the event stream for CI triggers, notifications, and audit logs from a single Kafka topic.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Storage Fundamentals](../../01-foundations/02-hardware-and-networking/01-storage-fundamentals.md)
+- [Sharding](../../02-building-blocks/03-data-partitioning/01-sharding.md)
+- [Elasticsearch Internals](../../04-advanced-topics/03-internals/09-elasticsearch-internals.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+
+**Practice next**
+
+- [Dropbox Sync](../03-hard/dropbox-sync.md)
+- [Web Crawler](../01-easy/web-crawler.md)
+
+Code search reuses the crawler and index machinery.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)

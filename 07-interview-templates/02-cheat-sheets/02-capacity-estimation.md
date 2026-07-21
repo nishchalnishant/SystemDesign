@@ -122,3 +122,22 @@ Reading from a Hard Drive is like walking to the library. Reading from Cache (RA
 ## 🎤 Phrase to use in an interview:
 
 > "Let's do some quick back-of-the-envelope math. Assuming 100 million daily active users making 5 requests a day, that gives us an average of 5,000 QPS. To handle peak traffic spikes, I'll multiply that by 3, giving us 15,000 Peak QPS. Since a single web server can handle about 5,000 QPS, we will need at least 3 web servers behind a Load Balancer to keep the system stable."
+
+---
+
+## Applied In
+
+This concept is used by **36 problems** in this repo — a representative selection:
+
+**High-Level Design**
+
+- [Design Autocomplete / Typeahead Search](../../05-hld-problems/01-easy/autocomplete.md)
+- [Design a Booking System (Hotels / Flights)](../../05-hld-problems/01-easy/booking-system.md)
+- [Design a Distributed Key-Value Store](../../05-hld-problems/01-easy/key-value-store.md)
+- [Design a Leaderboard](../../05-hld-problems/01-easy/leaderboard.md)
+- [Design Pastebin](../../05-hld-problems/01-easy/pastebin.md)
+- [Design a Rate Limiter](../../05-hld-problems/01-easy/rate-limiter.md)
+- [Design a Unique ID Generator](../../05-hld-problems/01-easy/unique-id-generator.md)
+- [Design a URL Shortener (Bitly)](../../05-hld-problems/01-easy/url-shortener.md)
+- …and 28 more
+

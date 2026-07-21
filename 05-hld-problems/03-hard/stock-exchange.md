@@ -297,3 +297,24 @@ def match(self, incoming_buy):
 - **Async persistence**: Writing to disk synchronously would add ~10µs and blow the latency budget. The engine ACKs the order, appends to an in-memory ring buffer, and a separate thread flushes to NVMe SSDs. Recovery uses the persisted log to rebuild state.
 - **UDP multicast for market data**: TCP fan-out to 500+ subscribers at 1M msg/sec is 500M sends/sec — impossible. UDP multicast delivers one packet to all subscribers simultaneously. Subscribers use sequence numbers to detect gaps and request retransmission.
 - **Co-location data center**: At 100µs, the speed of light is the constraint. Light travels ~30 km in 100µs. Co-located traders are in the same rack — <5µs network. Remote traders at 1ms are 150 km away. This is why exchanges sell co-location rack space for millions per year.
+
+---
+
+## Related
+
+**Concepts used in this design**
+
+- [Distributed Locks](../../02-building-blocks/04-coordination/02-distributed-locks.md)
+- [Consistency & Conflicts](../../01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md)
+- [Message Brokers](../../02-building-blocks/04-coordination/01-message-brokers.md)
+- [Raft & Paxos](../../04-advanced-topics/03-internals/11-raft-paxos-conceptual.md)
+- [Circuit Breaker](../../02-building-blocks/02-performance/03-circuit-breaker.md)
+
+**Practice next**
+
+- [Payment System](../03-hard/payment-system.md)
+- [Ticketmaster Seat Booking](../03-hard/ticketmaster-seat-booking.md)
+
+Both demand strict ordering and no double-allocation under contention.
+
+**Frameworks**: [HLD Template](../../07-interview-templates/01-frameworks/01-hld-template.md) · [Capacity Estimation](../../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) · [Trade-offs Cheat Sheet](../../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md)
