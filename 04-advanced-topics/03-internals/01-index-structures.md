@@ -83,6 +83,64 @@ If you want to find every page in a textbook that mentions the word "Photosynthe
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+B-Tree / Hash / Inverted is the taxonomy. Seniors get asked about **composite-index ordering and the leftmost-prefix rule, covering/index-only scans, when the planner *ignores* an index (selectivity), the LSM-vs-B-tree write trade, and the specialized indexes (GIN/GiST/partial) that solve real problems.**
+
+## Composite indexes and the leftmost-prefix rule
+
+An index on `(a, b, c)` is a *single* sorted structure keyed by `a`, then `b`, then `c`. This dictates what it can serve:
+
+- It can satisfy `WHERE a=?`, `WHERE a=? AND b=?`, `WHERE a=? AND b=? AND c=?`, and range on the *last* used column.
+- It **cannot** satisfy `WHERE b=?` alone — you skipped the leftmost column, so the index is unusable (like searching a phonebook by first name). This is the **leftmost-prefix rule** and the single most common "why isn't my index used?" bug.
+- **Column order matters:** put equality predicates before range predicates. `(status, created_at)` serves `status='X' AND created_at > T`; `(created_at, status)` does not efficiently.
+
+## Covering / index-only scans
+
+If an index contains *every column the query needs* (via the key columns or an `INCLUDE` clause), the DB answers **from the index alone** — no heap/clustered-index trip. This eliminates the MySQL "double lookup" ([`07-mysql-internals.md`](07-mysql-internals.md)) and Postgres's heap visibility check (when the page is all-visible). Deliberately designing a **covering index** for a hot query is a core senior optimization.
+
+## When the planner ignores your index — selectivity & cardinality
+
+An index isn't free to use; the planner weighs it against a scan:
+
+- **Low selectivity kills it.** An index on a boolean or `gender` column (few distinct values) returns a huge fraction of rows; the planner correctly chooses a **sequential scan** because random index I/O per row is slower than a bulk sequential read. Index columns with **high cardinality**.
+- **Stale statistics** cause bad plans — the planner estimates row counts from `ANALYZE`/histogram stats; if they're stale it mis-picks. `ANALYZE` after big data changes.
+- Functions on the indexed column (`WHERE lower(email)=...`) defeat a plain index — you need an **expression/functional index** on `lower(email)`.
+
+## LSM-tree vs B-tree — the write-path trade
+
+The deepest index question is the storage-engine trade (ties to [`02-database-internals`](../../03-scaling/02-database-internals.md)):
+
+| | **B-Tree** (Postgres, InnoDB) | **LSM-Tree** (Cassandra, RocksDB, LevelDB) |
+|---|---|---|
+| Writes | In-place update → random I/O | Append to memtable → sequential flush |
+| Write amplification | Lower per write, but random | Higher (compaction rewrites) but sequential |
+| Reads | One tree traversal | May check memtable + several SSTables (Bloom filters mitigate) |
+| Best for | Read-heavy, range-heavy, OLTP | Write-heavy ingest |
+
+The one-liner: **B-trees optimize reads with in-place random writes; LSM-trees optimize writes by turning them sequential, paying it back at read/compaction time.**
+
+## Specialized indexes worth naming
+
+- **Partial index** — index only rows matching a predicate (`WHERE status='active'`); tiny index for a hot subset.
+- **GIN** — inverted index for composite values (arrays, JSONB, full-text `tsvector`) — the Postgres cousin of Elasticsearch's inverted index.
+- **GiST / SP-GiST** — geospatial / range / nearest-neighbor (R-tree-like).
+- **Bitmap index scan** — the planner combines several medium-selectivity indexes by bitmapping matching rows, then fetching once in physical order.
+
+## Inverted index internals (beyond "word → docs")
+
+Real inverted indexes carry more than a doc list: **postings lists** store `(docID, term-frequency, positions)`, are **delta-encoded + compressed** and carry **skip pointers** for fast intersection; ranking uses **TF-IDF / BM25** over term/document frequencies; positions enable **phrase queries**. See [`09-elasticsearch-internals.md`](09-elasticsearch-internals.md).
+
+## Interview probes you should survive
+
+- *"You have an index on `(a,b)` but the query filters only on `b` — is it used?"* → No: leftmost-prefix rule. The index is sorted by `a` first, so `b`-only lookups can't use it. Reorder or add an index leading with `b`.
+- *"You added an index but the query got no faster — why?"* → Low selectivity (planner prefers a seq scan), stale stats, a function wrapping the column, or the query needs columns not in the index (heap trips). Check `EXPLAIN`.
+- *"Why is Cassandra fast at writes but can need multiple reads per lookup?"* → LSM-tree: writes append to a memtable (sequential); a read may probe the memtable plus several SSTables, mitigated by Bloom filters and compaction.
+- *"How would you make this hot query avoid touching the table?"* → Covering index: include every selected column so it's an index-only scan.
+- *"How does full-text ranking actually order results?"* → Postings lists with term frequencies feed TF-IDF/BM25 scoring; positions enable phrase matching.
+
+---
+
 ## Applied In
 
 This concept is used by **4 problems** in this repo:

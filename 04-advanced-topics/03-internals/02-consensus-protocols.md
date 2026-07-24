@@ -91,3 +91,50 @@ In 2014, engineers got so frustrated with Paxos that they invented **Raft** spec
    *Answer:* Every follower node has a randomized election timeout timer. If a node does not receive a heartbeat from the Leader before its timer expires, it transitions to a "Candidate" state, votes for itself, and requests votes from the other nodes. The first node to receive a quorum (majority) of votes becomes the new Leader.
 3. **"In Raft, what happens if two nodes start an election at the exact same millisecond and get a tie?"**
    *Answer:* The election fails because neither candidate achieved a strict majority. Both nodes will reset their randomized election timers and try again. Because the timers are randomized, one node will almost certainly wake up before the other in the next round, preventing an infinite loop of ties.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The election story is the happy path. Seniors get asked about **the safety properties that keep Raft correct, the subtle failure modes (committed-entry rules, term/epoch fencing, read linearizability), and the quorum math that governs fault tolerance.** For the full Raft/Paxos walkthrough and multi-Paxos see the companion [`11-raft-paxos-conceptual.md`](11-raft-paxos-conceptual.md); this covers the *gotchas* interviewers push on.
+
+## The quorum math: why "majority" and why odd numbers
+
+Consensus tolerates `f` failures with `2f+1` nodes (majority quorum). So **3 nodes tolerate 1 failure, 5 tolerate 2.** Two properties fall out:
+
+- **Odd cluster sizes are strictly better:** 4 nodes tolerate the *same* 1 failure as 3 but need a larger majority (3 of 4 vs 2 of 3) — more cost, no extra safety. Always size 3, 5, or 7.
+- **Overlapping majorities are the whole trick:** any two majorities share ≥1 node, so a newly elected leader's majority necessarily includes someone who saw the last committed entry — that's how committed data survives an election.
+- **You can't achieve consensus without a majority up.** Lose the majority (network partition isolating you to the minority) and that side **stops accepting writes** — this is the CP choice; availability is sacrificed to never diverge.
+
+## The commit rules that prevent lost writes
+
+The dangerous edge case: a leader replicates an entry to a minority, then crashes. Raft's rules:
+
+- An entry is **committed only once stored on a majority** — until then it can be overwritten by a new leader. Clients must not be told "success" before commit.
+- **A leader may only commit entries from its *own* term directly.** It cannot declare an older-term entry committed just because it's on a majority now (the famous Figure-8 case) — doing so could later be overwritten. It commits old entries *indirectly* by committing a new-term entry above them. This is the single subtlest Raft safety rule.
+- **Log Matching + Leader Completeness:** a candidate can't win unless its log is at least as up-to-date as the voter's (compared by last term, then index), guaranteeing the new leader already has every committed entry.
+
+## Terms/epochs are the fencing mechanism
+
+Every leader rules within a monotonically increasing **term** (Raft) / **epoch** / **ballot** (Paxos). This is how the system fences a **zombie leader**: an old leader that was partitioned and comes back still thinks it's in charge, but its writes carry a stale term and are **rejected** by nodes that have moved to a higher term. This is the same fencing-token idea as distributed locks ([`../../02-building-blocks/04-coordination/02-distributed-locks.md`](../../02-building-blocks/04-coordination/02-distributed-locks.md)) — it's why split-brain doesn't corrupt the log.
+
+## Reads are the trap: don't serve stale reads from a stale leader
+
+Naively "just read from the leader" is **not linearizable** — a leader that was network-partitioned may not yet know it's been deposed, so it could serve stale data. Correct linearizable reads require one of:
+
+- **Leader lease** (leader only serves reads while holding a time-bounded lease, assuming bounded clock drift), or
+- **ReadIndex** — the leader confirms it's still leader by exchanging a heartbeat round with a quorum before answering.
+
+This is a favorite senior probe: "you read from the Raft leader and got stale data — how?"
+
+## Consensus is not a general-purpose datastore
+
+State the scaling reality: **every write goes through the leader + a majority round trip**, so consensus throughput doesn't scale horizontally — you don't put your whole database behind one Raft group. Real systems (CockroachDB, Spanner, TiKV) **shard data into many Raft/Paxos groups (one per range)**, so writes parallelize across groups while each range stays strongly consistent. Consensus is for *metadata, membership, config, and per-shard ordering* — not a single global log for all traffic.
+
+## Interview probes you should survive
+
+- *"How many nodes to tolerate 2 failures, and why odd?"* → 5 (2f+1). Even sizes need a bigger majority for the same fault tolerance — pure cost. Overlapping majorities are what preserve committed data.
+- *"An old leader comes back after a partition and writes — does it corrupt data?"* → No: its term is stale, so a majority (now on a higher term) rejects its writes. Terms/epochs fence the zombie leader.
+- *"You read from the leader and saw stale data — how is that possible?"* → It was partitioned and didn't yet know it lost leadership. Use a leader lease or ReadIndex quorum check for linearizable reads.
+- *"Why can't a new leader immediately commit a replicated old-term entry?"* → Figure-8 safety: it could still be overwritten. The leader must commit a *current-term* entry, which commits the older ones indirectly.
+- *"Why don't we just run the whole database through one Raft group?"* → Throughput: all writes serialize through one leader + quorum. Shard into many consensus groups (one per key range) to scale.

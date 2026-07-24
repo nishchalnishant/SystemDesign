@@ -105,6 +105,51 @@ If John asks for his balance, the database quickly does the math ($100 - $20 + $
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+Commands/events + choreography/orchestration + event sourcing is the intro. Seniors are pushed on **the dual-write problem (and the outbox pattern that solves it), the Saga pattern for distributed transactions, delivery guarantees + idempotency, and the CQRS/event-sourcing operational realities (schema evolution, replay, ordering).**
+
+## The dual-write problem — the flaw in naive EDA
+
+The intro's "Order Service saves to its DB *and* publishes to Kafka" hides the #1 EDA bug: those are **two separate systems with no shared transaction.** If the DB commit succeeds but the Kafka publish fails (or vice versa), state and events diverge — a lost order or a phantom event. You **cannot** wrap a DB and a broker in one atomic transaction.
+
+The fix is the **Transactional Outbox** ([`07-outbox-cdc-pattern.md`](07-outbox-cdc-pattern.md)): write the event to an `outbox` table **in the same DB transaction** as the state change; a separate relay (poller or CDC via [`03-change-data-capture.md`](03-change-data-capture.md)) reads the outbox and publishes to Kafka. Now the event is durable iff the state change committed — atomicity restored. This is the single most important senior EDA pattern.
+
+## Sagas — distributed transactions without 2PC
+
+Choreography across services means no global ACID transaction. A **Saga** is the answer: a sequence of local transactions, each publishing an event that triggers the next; if a step fails, you run **compensating transactions** to semantically undo prior steps (refund the payment, restock the item) — there's no rollback, only forward-fixing.
+
+- **Choreography saga** (events, no coordinator): decoupled but the workflow is *implicit* and hard to trace — you can't see the flow in one place.
+- **Orchestration saga** (a central saga orchestrator / state machine, e.g., Temporal, Step Functions): explicit, observable, easier to reason about, at the cost of a coordinator.
+- Sagas give **eventual consistency + atomicity-via-compensation**, never isolation — so you must design for intermediate states being visible (an order briefly "pending").
+
+## Delivery guarantees & idempotency — non-negotiable
+
+Brokers deliver **at-least-once** (exactly-once delivery is impossible — two-generals, [`01-distributed-systems.md`](01-distributed-systems.md)), so **consumers WILL see duplicates** (retries, rebalances, redelivery after a crash before offset commit). Therefore:
+
+- **Every consumer must be idempotent** — dedupe on an event/idempotency key, or make the effect naturally idempotent (upsert, conditional write). This is the price of async.
+- **Ordering is per-partition only** — Kafka guarantees order within a partition, not across. To preserve per-entity order, **key events by entity ID** so all of one order's events land in one partition. Global ordering is not available at scale.
+- **Poison messages** need a **dead-letter queue** + retry policy, or one bad event blocks the partition forever.
+
+## Event sourcing's operational bill
+
+Event sourcing is powerful but the intro undersells the cost:
+
+- **Schema evolution:** events are immutable and kept forever, so a v1 event must be readable years later — you need versioned events and upcasters. You can't just "migrate the column."
+- **Replay & snapshots:** rebuilding state by replaying millions of events is slow; you take periodic **snapshots** and replay only the tail.
+- **CQRS pairs with it:** the write side appends events; **read models (projections)** are built by consuming the event stream into query-optimized stores. Reads are eventually consistent with writes — a UX consideration (show the user their own action optimistically).
+- **GDPR / deletes** fight immutability — "right to be forgotten" vs an append-only log forces crypto-shredding or tombstoning strategies.
+
+## Interview probes you should survive
+
+- *"Order Service saves to Postgres then publishes to Kafka — what breaks?"* → Dual-write: the two aren't atomic; a crash between them loses the event or emits a phantom. Use the transactional outbox (write event + state in one DB txn, relay via CDC).
+- *"How do you do a checkout across payment/inventory/shipping without a distributed transaction?"* → Saga: local transactions chained by events, with compensating transactions to undo on failure. Orchestrated if you need observability, choreographed for decoupling.
+- *"Your consumer processed the same event twice — how do you prevent double effects?"* → At-least-once delivery is a given; make consumers idempotent (dedupe on event key / conditional upsert).
+- *"How do you keep events for one order in order?"* → Key by order ID so they share a partition; Kafka orders within a partition, not across. No cheap global ordering.
+- *"What's hard about event sourcing in year 3?"* → Event schema evolution (immutable old events), replay performance (needs snapshots), read-model rebuilds, and reconciling append-only logs with GDPR deletion.
+
+---
+
 ## Applied In
 
 This concept is used by **1 problem** in this repo:

@@ -98,6 +98,50 @@ How do 5 equal servers use ZooKeeper to elect a Leader without arguing?
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+Znodes + ephemeral nodes + "race for `/leader`" is the intro. Seniors get probed on **the ZAB protocol and its consistency guarantees, the herd-effect bug in naive leader election, watches vs polling, and when ZooKeeper is the wrong tool.**
+
+## ZAB — and what "consistency" actually means here
+
+ZooKeeper runs **ZAB (ZooKeeper Atomic Broadcast)**, a consensus protocol in the same family as Raft (see [`02-consensus-protocols.md`](02-consensus-protocols.md)). Key guarantees to state precisely:
+
+- **Writes are linearizable** — every write goes through the leader, is assigned a monotonically increasing **zxid**, and is committed once a **quorum** (majority) of the ensemble acks it. Same `2f+1` fault tolerance: a 5-node ensemble survives 2 failures.
+- **Reads are NOT linearizable by default** — a client reads from whatever server it's connected to, which may lag the leader. You get **sequential consistency** (a client sees its own writes in order) but *not* the latest global write unless you issue a **`sync`** before the read. This is the #1 senior gotcha: "ZooKeeper is CP" but its *reads* are stale-tolerant for throughput.
+- Writes don't scale horizontally (all go through the leader + quorum) — ZooKeeper is for **low-volume, high-value coordination metadata**, never bulk data. Znodes cap at ~1MB for this reason.
+
+## The herd effect — why the naive "everyone races for `/leader`" is wrong
+
+The intro's "all servers watch `/leader`" has a real bug: when the leader dies, **all N-1 followers wake up simultaneously and stampede** to recreate the node — the **thundering herd**. The correct pattern is **sequential ephemeral nodes**:
+
+- Each candidate creates `/election/n_0000000x` (ZooKeeper assigns a monotonic suffix). The **lowest sequence number is the leader.**
+- Each node watches **only the node immediately before it**, not `/leader`. When a node dies, only its *one* successor wakes up. No herd.
+- This same sequential-ephemeral pattern is how you build a **distributed lock / fair queue** on ZooKeeper — the canonical recipe.
+
+## Watches are one-shot and edge-triggered
+
+A **watch** fires **exactly once** then must be re-registered — miss that and you stop getting notifications. Watches are *edge-triggered* (notify "something changed"), not level-triggered, so between the notification and your re-read the state may have changed again — always re-read after a watch fires. Missing this causes "why did my client stop seeing updates" bugs.
+
+## Sessions, ephemerals, and the false-failure trap
+
+Ephemeral nodes vanish when the **session** (not the connection) expires. A **GC pause or network blip longer than the session timeout** expires the session → ZooKeeper deletes your ephemeral → **the cluster thinks you're dead and elects a new leader, while you think you're still leader.** This is split-brain by session timeout — the reason ZooKeeper-based leadership still needs **fencing tokens** (use the zxid) on the protected resource. Ties directly to [`../../02-building-blocks/04-coordination/02-distributed-locks.md`](../../02-building-blocks/04-coordination/02-distributed-locks.md).
+
+## When ZooKeeper is the wrong tool
+
+- **etcd** (Raft, gRPC, used by Kubernetes) is the modern alternative — simpler API, MVCC key-value with revisions and leases.
+- **Kafka removed ZooKeeper (KRaft)** — folding metadata consensus into the brokers themselves — precisely because running a separate ZK ensemble is operational overhead and a scaling bottleneck.
+- Don't use ZooKeeper as a config *database*, message queue, or for high write throughput. It's a coordination kernel, not a datastore.
+
+## Interview probes you should survive
+
+- *"Is a ZooKeeper read guaranteed to be the latest value?"* → No — reads can be served by a lagging follower (sequential consistency). Issue `sync` before the read for linearizability, or read through the leader.
+- *"How do you do leader election without a thundering herd?"* → Sequential ephemeral nodes; each candidate watches only its immediate predecessor, so one node wakes on failure, not all.
+- *"A GC pause caused two leaders — how?"* → The paused node's session expired, ZK deleted its ephemeral and elected a new leader, but the old node resumed still believing it leads. Fence the resource with the zxid.
+- *"Why did Kafka drop ZooKeeper?"* → To eliminate a separate consensus system; KRaft embeds Raft-based metadata consensus in the brokers, reducing ops burden and the metadata-scaling ceiling.
+- *"Why can't you store lots of data in ZooKeeper?"* → All writes serialize through the leader+quorum and znodes are ~1MB-capped; it's built for small, high-value coordination state, not bulk storage.
+
+---
+
 ## Applied In
 
 This concept is used by **3 problems** in this repo:

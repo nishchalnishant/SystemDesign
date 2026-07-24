@@ -77,6 +77,48 @@ To fix this, Stream Processors use **Time Windows**. They chop infinity into tin
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+Windows + event-vs-processing time is the intro. Seniors are probed on **watermarks and late data, the delivery/consistency guarantees (exactly-once via checkpointing), stateful stream state management, and the architecture debates (Lambda vs Kappa, Flink vs Kafka Streams).**
+
+## Watermarks — how a stream decides a window is "done"
+
+Event-time processing has a hard problem: if events arrive late/out-of-order, *when* do you close a 12:00–12:05 window and emit its result? You can't wait forever. The answer is **watermarks**: a moving assertion "I believe I've now seen all events up to time T." When the watermark passes a window's end, the window fires.
+
+- **Late data** (an event with timestamp < current watermark) is the crux: options are **drop it**, route it to a **side output** for reconciliation, or keep the window open with **allowed lateness** and emit an updated result. Naming this trade is the senior signal.
+- Watermarks trade **latency vs completeness**: aggressive watermarks fire fast but risk missing stragglers; conservative ones are accurate but add delay. This is the same completeness/latency tension as everything else in distributed systems.
+
+## Exactly-once — and what it actually means
+
+"Exactly-once" is a myth at the *delivery* layer (two-generals, [`01-distributed-systems.md`](01-distributed-systems.md)). What Flink/Kafka Streams give is **exactly-once *processing* semantics**: at-least-once delivery + idempotent state updates gated by **checkpoints**.
+
+- **Flink's mechanism:** periodic **distributed snapshots** (Chandy–Lamport barriers flow through the dataflow) capture operator state + input offsets atomically. On failure it rewinds *both* state and source offsets to the last consistent checkpoint and replays — so effects land once.
+- For end-to-end exactly-once, the **sink must be transactional or idempotent** (two-phase commit to Kafka/DB); otherwise you get exactly-once *state* but at-least-once *output*. This is the part people miss.
+
+## State is the hard part
+
+Aggregations, joins, and windows are **stateful** — the operator must remember counts/buffers across events. At scale that state is huge:
+
+- State lives in an embedded store (Flink's **RocksDB** state backend), keyed and **partitioned by key** so it scales horizontally and is checkpointed to durable storage (S3/HDFS).
+- **Stream–stream joins** need bounded state (a time window) or the state grows forever — you can't join two infinite streams without a windowing constraint.
+- Rescaling a stateful job requires **redistributing keyed state** across new parallelism — non-trivial, which is why stateful streaming is operationally heavier than stateless.
+
+## The architecture debates
+
+- **Lambda vs Kappa:** *Lambda* runs a batch layer (accurate, slow) alongside a speed layer (fast, approximate) and merges — but you maintain **two codebases**. *Kappa* says: just make the stream layer replayable (reprocess history from Kafka) and drop the batch layer. Kappa wins when your stream engine can reprocess; Lambda persists where batch tooling is entrenched.
+- **Flink vs Kafka Streams vs Spark Structured Streaming:** Flink is true event-at-a-time, lowest latency, richest windowing/state; Kafka Streams is a *library* (no cluster) tightly coupled to Kafka, great for simpler per-record apps; Spark Structured Streaming is micro-batch (slightly higher latency, unifies with batch/ML). Match the tool to latency + ops tolerance.
+- Feeds naturally from **CDC** ([`03-change-data-capture.md`](03-change-data-capture.md)) and pairs with the **outbox pattern** ([`07-outbox-cdc-pattern.md`](07-outbox-cdc-pattern.md)) as the event source.
+
+## Interview probes you should survive
+
+- *"How does a window know all its events have arrived?"* → It doesn't, exactly — a watermark asserts progress up to time T and fires the window when it passes; late events are dropped, side-outputted, or handled via allowed lateness.
+- *"Flink claims exactly-once — how, given delivery can't be exactly-once?"* → Exactly-once *processing*: distributed checkpoints snapshot operator state + source offsets atomically; on failure it rewinds both and replays. End-to-end needs a transactional/idempotent sink.
+- *"Where does windowed aggregation state live and how does it scale?"* → In a keyed, partitioned embedded store (e.g., RocksDB), checkpointed to durable storage; it scales by key partitioning.
+- *"Lambda vs Kappa — which and why?"* → Kappa (single replayable stream codebase) if your engine can reprocess history; Lambda only where a separate batch layer is already justified — at the cost of dual code paths.
+- *"Why can't you naively join two streams?"* → Unbounded state; you must window the join or key state grows without limit.
+
+---
+
 ## Applied In
 
 This concept is used by **3 problems** in this repo:

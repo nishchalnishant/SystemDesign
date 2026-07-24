@@ -83,6 +83,52 @@ To prevent a total disaster, Redis quietly backs up the RAM to the physical Hard
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+RAM + single-thread + RDB/AOF is the intro. Seniors are probed on **eviction and the memory ceiling, how Redis scales past one node (replication + Cluster), the atomicity guarantees that make it a coordination primitive, and the failure modes** (Redlock caveat, persistence latency spikes).
+
+## What happens when RAM fills — eviction is a design decision
+
+Redis is bounded by RAM, so `maxmemory` + `maxmemory-policy` is a first-class choice:
+
+| Policy | Behavior | Use for |
+|---|---|---|
+| `noeviction` | Reject writes when full | Redis-as-database (can't lose data) |
+| `allkeys-lru` / `allkeys-lfu` | Evict least-recently/frequently-used across all keys | Pure cache |
+| `volatile-lru` / `volatile-ttl` | Evict only keys with a TTL | Mixed cache + persistent keys |
+
+The senior point: **using Redis as a cache and a data store in the same instance is a trap** — an eviction policy that protects the cache can drop your "persistent" keys, or `noeviction` can reject cache writes. Separate instances. Also: Redis LRU/LFU is **approximate** (samples a few keys), not exact, to stay O(1).
+
+## Scaling past one node
+
+- **Replication (primary → replicas):** async by default → a failover can **lose the last few writes** (the replica was behind). Read scaling via replicas, but reads are eventually consistent.
+- **Redis Sentinel:** monitors + automates failover for a single primary (HA, not sharding).
+- **Redis Cluster:** shards the keyspace across **16384 hash slots**; each primary owns a slot range. This is how you scale writes/memory. The catch: **multi-key operations only work if all keys are in the same slot** — you force that with **hash tags** (`{user123}:profile`, `{user123}:cart` hash to the same slot). Cross-slot transactions/Lua aren't allowed.
+
+## Atomicity — why Redis is a coordination primitive
+
+Because command execution is single-threaded, **each command is atomic**. Beyond that:
+
+- **Lua scripts / `MULTI`-`EXEC`** run to completion with nothing interleaved — this is how you make check-and-set atomic (e.g., rate limiters, `GETSET`, atomic token-bucket refills). See [`../../02-building-blocks/02-performance/02-rate-limiting.md`](../../02-building-blocks/02-performance/02-rate-limiting.md).
+- Redis "transactions" (`MULTI`/`EXEC`) are **not rollback transactions** — a command that errors at runtime doesn't roll back the others. They're atomicity + isolation, not the ACID "A."
+
+## The failure modes seniors must name
+
+- **Redlock is contested:** Redis's own distributed-lock algorithm is not a safe fencing mechanism under GC pauses / clock skew (Kleppmann's critique). For correctness-critical locks, use **fencing tokens** ([`../../02-building-blocks/04-coordination/02-distributed-locks.md`](../../02-building-blocks/04-coordination/02-distributed-locks.md)) or a CP store (etcd/ZooKeeper). Redis locks are fine for *efficiency* (avoid duplicate work), not for *correctness* (prevent double-spend).
+- **AOF `fsync=always` tanks throughput;** the default `everysec` risks ~1s of data on crash. **`fork()` for RDB/AOF-rewrite causes latency spikes** — copy-on-write can double memory and stall on huge datasets. This is why a big Redis on a memory-tight box gets latency blips at snapshot time.
+- **Single-threaded means one slow command blocks everything:** `KEYS *`, a big `SORT`, or an O(N) `LRANGE` on a giant list stalls *all* clients. Use `SCAN` (cursored) instead of `KEYS`, and watch for big-O-N commands.
+- **Hot key / big key:** a single hot key can't be sharded (it's one slot on one core) — cap it with client-side caching or key-splitting.
+
+## Interview probes you should survive
+
+- *"Redis is single-threaded — what's the risk of `KEYS *` in prod?"* → It's O(N) and blocks the one thread, stalling every other client for the scan. Use `SCAN`.
+- *"How does Redis Cluster handle a transaction across two keys?"* → Only if both keys map to the same hash slot; force it with a hash tag `{tag}`. Cross-slot multi-key ops are rejected.
+- *"Can you use Redis for a distributed lock guarding money?"* → For efficiency yes; for correctness, no — Redlock isn't safe under pauses/clock skew. Use fencing tokens or a CP coordinator.
+- *"Your Redis has latency spikes every few minutes — cause?"* → Likely the `fork()` for RDB snapshot / AOF rewrite (copy-on-write stalls, memory pressure). Tune save points, use a replica for snapshots, or ensure memory headroom.
+- *"You're using one Redis as cache + source of truth and lost data — why?"* → LRU/LFU eviction dropped keys under memory pressure; a cache eviction policy will discard your "persistent" data. Separate the instances.
+
+---
+
 ## Applied In
 
 This concept is used by **5 problems** in this repo:

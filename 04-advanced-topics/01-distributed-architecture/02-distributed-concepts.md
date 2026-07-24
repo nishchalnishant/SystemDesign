@@ -90,3 +90,48 @@ To fix this, distributed systems use **Logical Clocks (Lamport Timestamps)**. In
    *Answer:* It occurs when a network partition divides a cluster into two or more groups of nodes that cannot communicate with each other. If both groups independently elect a leader and accept writes, the data will diverge, causing irrecoverable conflicts when the network heals.
 3. **"Why do distributed systems require odd numbers of nodes (3, 5, 7) instead of even numbers?"**
    *Answer:* Odd numbers prevent ties during a network partition. If a 4-node cluster splits down the middle (2 and 2), neither side has a strict majority, leading to a split-brain or a total system freeze. With 5 nodes, a split will always leave one side with a majority (3 and 2), allowing the majority side to continue functioning safely.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+Quorum + split-brain + clock drift is the vocabulary. Seniors get pushed on **tunable quorum math (R+W>N), how split-brain is actually prevented in practice (fencing, witnesses), the failure-detection problem underneath it all, and vector clocks vs Lamport for real causality.**
+
+## Quorum is tunable, not just "majority"
+
+Leaderless systems (Dynamo/Cassandra) expose quorum as **N (replicas), W (write acks), R (read acks)**. The consistency rule is **R + W > N** — it guarantees the read set and write set overlap in ≥1 up-to-date replica, so a read sees the latest write:
+
+- `W=N, R=1` — fast reads, slow/fragile writes (write-once-read-many).
+- `W=1, R=N` — fast writes, slow reads.
+- `W=R=quorum` (e.g., N=3, W=R=2) — balanced, the common default.
+- `R+W ≤ N` — you've chosen speed and *dropped* the freshness guarantee (possible stale reads). Naming this trade is the senior signal.
+
+But quorum alone doesn't give linearizability — concurrent writes still need **read-repair + conflict resolution** (LWW / version vectors), and edge cases (sloppy quorum + hinted handoff for availability) weaken it further.
+
+## Preventing split-brain in practice
+
+"Use odd numbers" is the theory; production adds mechanisms:
+
+- **Witness / tiebreaker node:** a lightweight arbiter that only votes, so a 2-node app tier + 1 witness gets you majority without a third full replica.
+- **Fencing tokens:** even after a correct election, the *old* leader may not know it lost (GC pause). The new leader gets a monotonically increasing token; the shared resource **rejects any write with a stale token** — this is what actually stops a zombie leader from corrupting data ([`../03-internals/02-consensus-protocols.md`](../03-internals/02-consensus-protocols.md), [`../../02-building-blocks/04-coordination/02-distributed-locks.md`](../../02-building-blocks/04-coordination/02-distributed-locks.md)).
+- **STONITH** ("shoot the other node in the head"): the surviving side forcibly power-fences the suspected-dead node before taking over, so it can't resurrect as a second writer.
+
+## The problem under everything: you can't detect failure
+
+Alice-can't-tell-if-Bob-is-dead-or-slow is the **failure detection** problem, and it's fundamental. Practical systems use **timeouts + heartbeats**, accepting that a timeout can't distinguish a crashed node from a slow/partitioned one. This forces a choice:
+
+- **Aggressive timeout** → fast failover but **false positives** (evict a healthy-but-slow node, causing needless churn / flapping).
+- **Conservative timeout** → stable but slow to react to real failures.
+- **Phi-accrual failure detectors** (Cassandra) output a *suspicion level* instead of a boolean, adapting the threshold to observed network variance — the sophisticated answer.
+
+## Ordering: Lamport vs vector clocks
+
+Lamport timestamps give a *total order* but **can't tell you whether two events were concurrent or causally related** — if `L(A) < L(B)`, A might have caused B or might just be unrelated. **Vector clocks** (one counter per node) *can* detect concurrency: if neither vector dominates the other, the events are **concurrent** → a genuine conflict that needs resolution (LWW or app-level merge / CRDT). This is exactly how Dynamo detects sibling writes. Use Lamport when you only need *a* consistent order; vector clocks when you must detect real conflicts.
+
+## Interview probes you should survive
+
+- *"With N=3, what R and W give you consistent reads?"* → Any R+W>3 (e.g., W=2,R=2). It forces the read and write quorums to overlap on a fresh replica. R+W≤N trades freshness for latency.
+- *"Odd node counts prevent split-brain — but the old leader kept writing after a GC pause. How do you stop corruption?"* → Fencing tokens: the resource rejects writes carrying a stale (lower) token, so the deposed leader can't commit.
+- *"A healthy node keeps getting evicted from the cluster — why?"* → Failure detector timeout too aggressive; a slow/GC-pausing node trips it (false positive). Loosen the timeout or use a phi-accrual detector.
+- *"How do you know two writes actually conflict vs one caused the other?"* → Vector clocks: incomparable vectors ⇒ concurrent ⇒ conflict. Lamport timestamps can't distinguish this.
+- *"Why isn't quorum enough for strong consistency?"* → Concurrent writes can still create divergent versions; you need read-repair and conflict resolution, and sloppy-quorum/hinted-handoff further weakens freshness.

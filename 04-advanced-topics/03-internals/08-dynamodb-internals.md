@@ -89,6 +89,59 @@ To fix this, you must create a **Global Secondary Index (GSI)**.
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+PK/SK/GSI is the API surface. Seniors get asked about **the partition-throughput math that actually throttles you, the consistency and transaction model, LSI vs GSI trade-offs, and the single-table-design pattern that separates people who've run DynamoDB at scale from those who've read the docs.**
+
+## The throttling model is per-partition, not per-table
+
+The headline "elastic, single-digit ms" hides the real constraint: each physical partition caps at **~3000 RCU / 1000 WCU / ~10GB**. Your provisioned capacity is *spread across* partitions, so:
+
+- A **hot partition** (all traffic to one PK, e.g., a celebrity, or `status=ACTIVE` as PK) throttles even though the *table's* total capacity is far from exhausted. This is the #1 DynamoDB production failure.
+- **Adaptive capacity** now auto-borrows unused capacity for a hot partition, and **burst capacity** banks unused throughput — but neither saves a genuinely skewed key.
+- The senior fix: **write sharding** — append a suffix (`user#42#3` for shard 0–N) to spread a hot key across partitions, then scatter-read across the suffixes. Same trick as the hot-partition fix in [`../../03-scaling/03-database-scaling.md`](../../03-scaling/03-database-scaling.md).
+
+Also know the **capacity modes:** *provisioned* (cheap if predictable, throttles on spikes unless autoscaled) vs *on-demand* (pay-per-request, absorbs spikes, ~5–7× the per-request cost). On-demand for spiky/unknown traffic; provisioned + autoscaling for steady load.
+
+## Consistency and transactions
+
+- **Reads are eventually consistent by default** (may read a stale replica); pass `ConsistentRead=true` for a **strongly consistent read** at 2× RCU cost and no cross-region guarantee. GSIs are **always eventually consistent** — you can't do a strongly consistent read on a GSI.
+- **`TransactWriteItems`** gives ACID across up to 100 items / multiple tables via two-phase commit — but at **2× WCU** and it fails the whole batch on any conflict. Use it for the rare cross-item invariant, not routinely.
+- **Conditional writes** (`ConditionExpression`) are the idiomatic optimistic-concurrency primitive: `PutItem ... IF attribute_not_exists(PK)` is an atomic compare-and-set — the basis for idempotency and optimistic locking without a transaction.
+
+## LSI vs GSI — a real trade
+
+| | **GSI** | **LSI** |
+|---|---|---|
+| Partition key | *Different* PK | **Same PK**, different sort key |
+| Consistency | Eventual only | Strongly-consistent reads allowed |
+| Capacity | Own RCU/WCU | Shares the base table's |
+| Created | Anytime | **Only at table creation** |
+| Partition size limit | None | Item collection capped at **10GB** |
+
+LSI when you need a strongly-consistent alternate sort within one PK; GSI for any other access pattern (the common case).
+
+## Single-table design — the pattern
+
+Because there are no JOINs, the advanced pattern is to store **multiple entity types in one table** with generic `PK`/`SK` attributes and overloaded keys (`USER#123` / `ORDER#456`), so one query fetches a heterogeneous item collection (a user *and* their orders) in a single round trip. This is how you model relationships without JOINs. It's also why DynamoDB's other primitives matter:
+
+- **DynamoDB Streams** — a change log (CDC) of every item mutation, feeding Lambda/analytics/search indexing. This is the outbox/CDC mechanism for the DynamoDB world; see [`../01-distributed-architecture/07-outbox-cdc-pattern.md`](../01-distributed-architecture/07-outbox-cdc-pattern.md).
+- **TTL** — auto-expire items (session/cache use) with no delete cost.
+
+## Under the hood: it's a Dynamo-lineage system
+
+DynamoDB descends from the Dynamo paper: **consistent hashing** for partition placement, **replication across 3 AZs**, quorum-style writes, and leaderless-ish availability. Knowing this lets you connect it to the CAP/quorum theory in [`../../02-building-blocks/03-data-partitioning/02-replication.md`](../../02-building-blocks/03-data-partitioning/02-replication.md) — it chose AP-leaning availability with tunable read consistency.
+
+## Interview probes you should survive
+
+- *"Your table has plenty of provisioned capacity but requests are throttled — why?"* → Hot partition: one PK (or low-cardinality key) concentrates traffic; per-partition limits bind before table limits. Write-shard the key.
+- *"Can you read your own write immediately?"* → Only with `ConsistentRead=true` on the base table (2× RCU). Default and *all* GSI reads are eventually consistent.
+- *"How do you model a user and their orders without a JOIN?"* → Single-table design: same PK (`USER#123`), different SK prefixes (`PROFILE`, `ORDER#...`); one query returns the whole item collection.
+- *"How do you keep a search index / analytics store in sync with DynamoDB?"* → DynamoDB Streams (CDC) → Lambda → OpenSearch/warehouse. Async, at-least-once, idempotent consumers.
+- *"On-demand vs provisioned?"* → Provisioned + autoscaling for steady, predictable load (cheaper); on-demand for spiky/unpredictable traffic that would otherwise throttle.
+
+---
+
 ## Applied In
 
 This concept is used by **2 problems** in this repo:

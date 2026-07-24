@@ -93,6 +93,50 @@ It uses a **Write-Ahead Log (WAL)**.
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+MVCC + VACUUM + WAL is the intro. Seniors get asked about **the darker side of MVCC (bloat, transaction-ID wraparound, HOT updates), what the WAL enables beyond crash recovery (replication), the heap-vs-clustered contrast with MySQL, and the isolation levels PostgreSQL actually implements.**
+
+## The MVCC bill comes due: bloat, wraparound, and write amplification
+
+MVCC's "new row per update" is elegant but has three senior-level consequences:
+
+- **Every UPDATE is effectively an INSERT + dead tuple**, and — because indexes point at physical row locations (ctid) — **every index must also be updated**, even for unchanged columns. This is **write amplification**. The mitigation is **HOT (Heap-Only Tuple) updates**: if the changed column isn't indexed *and* the new tuple fits on the same page, PostgreSQL skips the index updates. This is why a table needs **fillfactor < 100** (leave free space per page) to get HOT updates on hot tables.
+- **Transaction-ID wraparound:** XIDs are 32-bit and wrap. VACUUM must "freeze" old tuples before the 2-billion-XID horizon, or PostgreSQL **shuts down writes to protect data**. A famous class of outages (Sentry, Mailchimp) came from autovacuum falling behind on wraparound. Monitor `age(datfrozenxid)`.
+- **Long-running transactions block VACUUM globally:** VACUUM can only remove tuples no snapshot can see; one idle-in-transaction session pins the "oldest snapshot" horizon and **bloat accumulates table-wide**. Same failure class as MySQL's undo bloat, different mechanism.
+
+## WAL isn't just crash recovery — it's the replication and PITR backbone
+
+The WAL is the source of truth that everything downstream consumes:
+
+- **Streaming (physical) replication:** replicas replay the primary's WAL byte-for-byte. `synchronous_commit` controls the durability/latency trade: `on` (wait for local flush), `remote_apply` (wait for replica to apply — no replication-lag reads), or `off` (fast, small data-loss window). This is the semi-sync knob.
+- **Logical replication / logical decoding:** decodes WAL into row-level change events — the foundation of **CDC** (Debezium reads the WAL via a replication slot). See [`../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md`](../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md).
+- **Replication slots** guarantee the primary retains WAL until a consumer has it — but a *dead/slow consumer* then makes WAL pile up and **fill the disk**. A classic CDC prod incident.
+- **PITR (Point-In-Time Recovery):** base backup + archived WAL lets you restore to any moment.
+
+## Heap storage vs MySQL's clustered index — the contrast to draw
+
+PostgreSQL stores rows in an unordered **heap**; *all* indexes (including the primary key) are **secondary** and point to physical tuple locations. Contrast with InnoDB's clustered index (see [`07-mysql-internals.md`](07-mysql-internals.md)):
+
+- Postgres has **no "double lookup" penalty distinction** — every index is one indirection to the heap. But it has no clustered-index locality either; range scans on the PK aren't physically sequential (you can `CLUSTER` a table manually, but it's a one-time reorder).
+- **Index-only scans** are possible when the query's columns are all in the index *and* the visibility map says the page is all-visible — otherwise Postgres must hit the heap to check tuple visibility (an MVCC tax MySQL avoids for PK reads).
+
+## Isolation levels — what Postgres actually gives you
+
+- **Read Committed (default):** each statement sees a fresh snapshot. Prone to non-repeatable reads and lost updates across statements.
+- **Repeatable Read:** snapshot at transaction start; Postgres's RR *also prevents phantoms* (stronger than the SQL standard) and aborts on write conflicts with a **serialization failure** — your app must retry.
+- **Serializable (SSI — Serializable Snapshot Isolation):** true serializability by tracking read/write dependencies and aborting dangerous cycles. Cheaper than locking, but retries under contention. Reach for it when correctness needs it (financial invariants) and handle `40001` retries.
+
+## Interview probes you should survive
+
+- *"Your Postgres table got slow and huge despite few rows — why?"* → Bloat: dead tuples not reclaimed because autovacuum fell behind or a long-running/idle-in-transaction session pinned the snapshot horizon. Fix vacuum, kill idle txns, consider `fillfactor`/HOT.
+- *"What is XID wraparound and why can it halt your database?"* → 32-bit transaction IDs wrap; unfrozen old tuples past the horizon risk data corruption, so Postgres refuses writes until vacuumed. Monitor and keep autovacuum healthy.
+- *"How does a replica stay in sync, and how do you avoid stale reads on it?"* → It replays the primary's WAL stream. For no-stale-read guarantees use `synchronous_commit = remote_apply`; accept lag otherwise.
+- *"CDC pipeline filled the primary's disk — how?"* → An inactive logical replication slot forced WAL retention. Monitor slot lag; drop dead slots.
+- *"Why might an UPDATE be surprisingly expensive even on one column?"* → Write amplification: MVCC writes a new tuple and updates *every* index unless it qualifies as a HOT update (non-indexed column + room on page). Tune fillfactor.
+
+---
+
 ## Applied In
 
 This concept is used by **3 problems** in this repo:

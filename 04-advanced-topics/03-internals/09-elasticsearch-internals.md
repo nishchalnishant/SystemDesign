@@ -99,6 +99,45 @@ When you search for "Shoes", Elasticsearch asks all 10 librarians to search thei
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+Inverted index + tokenization + shards is the mechanism. Seniors get asked about **segments and the near-real-time refresh model, scoring (BM25), the shard/replica architecture and why you can't reshard, and the operational failure modes that make Elasticsearch notoriously hard to run.**
+
+## Segments, refresh, and "near real time" (not real time)
+
+A Lucene shard isn't one file — it's a set of **immutable segments**. New docs land in an in-memory buffer and only become searchable when a **refresh** flushes the buffer into a new segment (default **every 1 second**). This is why Elasticsearch is **near-real-time**: a just-indexed doc isn't searchable for up to ~1s.
+
+- Because segments are **immutable**, a "delete" only marks a tombstone and an "update" is a **delete + re-index** — the old doc lingers until **merge**. Segment **merging** compacts many small segments into fewer large ones (LSM-like) and reclaims deleted-doc space — a background I/O cost, same family as compaction in [`02-database-internals`](../../03-scaling/02-database-internals.md).
+- Durability is the **translog** (write-ahead log): a doc is written to the translog before the next `fsync`/**flush**, so a crash between refreshes doesn't lose data. Refresh ≠ flush: refresh makes docs *searchable*; flush makes them *durable* on disk.
+- Tuning lever: bulk-loading? Raise the refresh interval (or set `-1`) to cut segment churn, then refresh once at the end.
+
+## Relevance scoring — it's not a boolean match
+
+Results are **ranked**, and seniors should know the model: modern Elasticsearch uses **BM25** (an improved TF-IDF). Score rises with **term frequency** (how often the term appears in the doc), falls with **document frequency** (common terms across the corpus matter less — the IDF), and normalizes by **field length** (a match in a short title beats one in a long body). See the postings-list/scoring internals in [`01-index-structures.md`](01-index-structures.md).
+
+## Shards, replicas, and the resharding wall
+
+- A **primary shard** count is **fixed at index creation** — you cannot add primaries later, because the routing formula is `hash(routing_key) % number_of_primary_shards`. Changing the divisor would misroute every existing doc. To "reshard" you **reindex into a new index** (or use the split/shrink APIs). This is *the* Elasticsearch capacity-planning trap — same class as the DynamoDB "model up front" and sharding-key problems.
+- **Replica shards** are copies for read-scaling + HA; a search hits one copy (primary or replica) of each shard. More replicas → more read throughput and fault tolerance, at storage cost.
+- **Oversharding** is the common mistake: thousands of tiny shards each carry fixed heap/segment overhead and crush the cluster. Rule of thumb: keep shards ~10–50GB, size for the future but don't over-split.
+
+## Operational failure modes seniors must name
+
+- **It's not your source of truth.** ES is a derived read model fed from your primary DB via CDC/dual-write ([`../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md`](../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md)); index loss should be recoverable by reindexing.
+- **Split-brain / quorum:** master-eligible nodes elect a master; with an even count a partition can elect two masters. Modern ES enforces a quorum (`2f+1` voting nodes) automatically — but know *why* odd master-eligible counts matter.
+- **JVM heap & GC:** ES is a JVM app; fielddata/aggregations on high-cardinality fields blow the heap and trigger long GC pauses that look like node failures. Cap heap ≤ ~31GB (compressed oops), use `doc_values` for aggregations.
+- **Deep pagination** (`from + size` at page 10,000) forces every shard to return `from+size` hits to the coordinator — O(N) memory. Use **`search_after`** / scroll for deep traversal.
+
+## Interview probes you should survive
+
+- *"You indexed a doc but a search doesn't find it — bug?"* → No: near-real-time. It becomes searchable on the next refresh (~1s). Force `?refresh` in tests if needed.
+- *"Your index is at capacity — just add shards?"* → Can't add primary shards; routing is `hash % primary_count`. Reindex into a new index with more shards (or split API).
+- *"How does ES decide result order?"* → BM25 scoring: term frequency up, document frequency down (IDF), normalized by field length. Not a boolean filter.
+- *"Why does an update not immediately free space?"* → Segments are immutable; update = delete-marker + re-index; space is reclaimed only at merge.
+- *"A node went unresponsive with no crash — why?"* → Likely a long JVM GC pause from heap pressure (fielddata/aggregations on high-cardinality fields). Cap heap, use doc_values, avoid unbounded aggregations.
+
+---
+
 ## Applied In
 
 This concept is used by **5 problems** in this repo:
