@@ -79,3 +79,52 @@ Because it remembers nothing, you can destroy 50 servers, create 50 new ones, an
    *Answer:* If servers hold state locally (like a user's session data in RAM), then a user must always be routed to that exact same server (sticky sessions), which breaks load balancing and causes errors if that server dies. By making servers stateless, any server can handle any request by fetching the necessary state from a shared external datastore like Redis.
 3. **"When would you choose Vertical Scaling over Horizontal Scaling?"**
    *Answer:* I would choose Vertical Scaling for a small, simple application where speed of development is critical, traffic is low and predictable, or when running a legacy monolithic relational database that is difficult or impossible to shard across multiple machines.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The vertical/horizontal/stateless story is the foundation. Seniors are judged on **the laws that bound scaling, what to scale for, and where statelessness actually leaks.**
+
+## The laws that cap your speedup
+
+- **Amdahl's Law:** if a fraction `s` of work is serial, max speedup with N cores is `1 / (s + (1−s)/N)`. Even 5% serial work caps you at 20× no matter how many machines you add. The lesson: **find and kill the serial bottleneck** (a global lock, a single-writer DB, a coordinator) — throwing hardware at it hits a wall.
+- **Universal Scalability Law (USL):** adds a **coherency cost** — beyond a point, throughput *decreases* as you add nodes, because they spend more time coordinating (cross-talk, cache coherence, lock contention) than working. Real systems have a peak N; past it, more servers = *less* throughput. This is why "just add servers" fails.
+- **Little's Law:** `L = λ · W` (concurrency = arrival-rate × latency). Lets you size pools: to serve 10k req/s at 20ms each you need ~200 concurrent slots. Also shows why **latency spikes silently blow up concurrency** and exhaust thread/connection pools.
+
+## Scale for the *dimension that's actually constrained*
+
+"Scaling" isn't one axis. Name which one:
+
+| Bottleneck | Scale by |
+|---|---|
+| Read QPS | Read replicas + cache |
+| Write QPS | Sharding (split the write set) |
+| Storage | Sharding / tiered storage |
+| CPU-bound compute | Horizontal stateless fleet |
+| Connection count | Connection pooling, L4 LB, edge termination |
+| Fan-out / tail latency | Reduce dependencies, hedge requests |
+
+The senior move: **measure to find the binding constraint, then scale that one.** Adding app servers when the DB is the bottleneck just moves the queue.
+
+## Where statelessness leaks (and what to do)
+
+"Stateless services" is the ideal, but state has to live *somewhere*, and some workloads are inherently stateful:
+
+- **Sessions →** externalize to Redis/JWT. Solved.
+- **WebSocket / long-lived connections** are stateful by nature — the connection *is* state pinned to one server. Scale with a connection-routing layer + pub/sub (Redis, or a gateway that tracks which server holds which connection). See [`../02-building-blocks/01-networking/06-websockets-sse.md`](../02-building-blocks/01-networking/06-websockets-sse.md).
+- **Sticky sessions** are the anti-pattern to call out: they break even load distribution and lose state on instance death. Use them only as a last resort.
+- **Stateful data systems** (databases, Kafka, ZooKeeper) can't be casually cloned — they scale via partitioning + replication + consensus, which is a different toolkit than stateless-fleet cloning.
+
+## Autoscaling — the reactive-vs-predictive trap
+
+- Reactive autoscaling (scale on CPU/latency) **lags** — new instances take minutes to boot and warm caches, so a sharp spike is served by an under-provisioned fleet. Mitigate with pre-warming, faster boot (pre-baked AMIs/containers), and headroom.
+- **Predictive/scheduled scaling** for known patterns (business hours, flash sales) beats reactive.
+- Scaling the stateless tier is easy; the DB rarely autoscales the same way — it's usually the real ceiling. Design the app so the DB isn't on the hot path for every request (cache, async writes).
+
+## Interview probes you should survive
+
+- *"You added 50 servers and throughput barely moved — why?"* → Amdahl/USL: a serial bottleneck (single-writer DB, global lock) or coordination overhead dominates. Find and remove the serial part; more nodes can even hurt (USL).
+- *"How many worker threads to serve 10k req/s at 50ms latency?"* → Little's Law: 10000 × 0.05 = 500 concurrent. Size the pool to that plus headroom.
+- *"WebSockets don't fit the stateless model — how do you scale them?"* → The connection is pinned state; route by connection ID, back it with pub/sub for cross-server delivery, and externalize the messaging fabric.
+- *"Your autoscaler reacts too slowly to spikes — options?"* → Pre-warm/keep headroom, speed up instance boot, use predictive/scheduled scaling for known peaks, and shield the DB with caching so the spike doesn't reach it.

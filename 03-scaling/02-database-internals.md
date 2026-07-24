@@ -76,3 +76,57 @@ NoSQL Databases (like Cassandra, DynamoDB, RocksDB) use **LSM Trees (Log-Structu
    *Answer:* An LSM-Tree based database like Cassandra. A B-Tree would thrash the disk trying to sort 100,000 inserts per second, but an LSM-Tree handles heavy write-throughput effortlessly by appending to a sequential log.
 3. **"What is Compaction in an LSM Tree?"**
    *Answer:* It is a background process that merges multiple smaller, read-only data files (SSTables) into larger, fully-sorted files, while throwing away deleted or overwritten data. This prevents the disk from filling up and speeds up future read queries.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The B-Tree-vs-LSM story is the setup. Seniors are judged on **the three amplifications, the compaction-strategy trade, and the concrete machinery each engine uses to survive** (WAL, tombstones, fence pointers). For index-structure depth (SSTable layout, fence pointers) see [`../04-advanced-topics/03-internals/01-index-structures.md`](../04-advanced-topics/03-internals/01-index-structures.md).
+
+## The three amplifications — the language seniors use
+
+Every storage engine trades off three costs. Name them:
+
+| Amplification | Meaning | B-Tree | LSM-Tree |
+|---|---|---|---|
+| **Write** | bytes written to disk per logical byte | Higher (page rewrites + WAL) — but *in place*, bounded | **Higher over time** — each byte rewritten on every compaction level |
+| **Read** | disk reads per logical lookup | ~1 (tree walk to one page) | Higher — may probe memtable + N SSTables (mitigated by Bloom filters) |
+| **Space** | disk used per logical byte | ~1 + fragmentation (page splits leave ~⅔-full pages) | Extra copies live until compaction reclaims them; tombstones linger |
+
+The senior insight: **you can't minimize all three — you pick two and pay the third.** LSM leaf-tiered compaction minimizes write amp but pays read/space; leveled compaction minimizes read/space but pays write amp. This is the RUM conjecture (Read, Update, Memory — pick two).
+
+## Compaction strategy is the real tuning knob
+
+| Strategy | Write amp | Read/Space amp | Use when |
+|---|---|---|---|
+| **STCS (Size-Tiered)** | Low | High (data spread across many overlapping SSTables; space spikes during merge) | Write-heavy, append-mostly (time-series, logs) |
+| **LCS (Leveled)** | High | Low (each level has non-overlapping SSTables; a key lives in ~1 file per level) | Read-heavy, update-heavy (bounded read amp) |
+| **TWCS (Time-Windowed)** | Low | Low for time-series | TTL'd time-series — drop whole expired SSTables, no merge |
+
+Cassandra/RocksDB let you choose per-table. The senior move: **match compaction to the workload**, and know that STCS can *double* disk usage transiently during a major compaction (why you keep headroom).
+
+## The machinery that makes reads survivable
+
+An LSM read isn't "search 5 files blindly" — it's short-circuited:
+
+- **Per-SSTable Bloom filter** ([`../02-building-blocks/02-performance/04-bloom-filter.md`](../02-building-blocks/02-performance/04-bloom-filter.md)) — skip files that definitely don't hold the key. A 1% FP means 1% wasted seeks.
+- **Fence pointers / sparse index** — an in-memory index of the first key per block, so within a chosen SSTable you binary-search to the right block instead of scanning.
+- **Block cache** — recently read blocks stay in RAM.
+
+## Tombstones and the delete problem
+
+LSM can't delete in place (SSTables are immutable) — a delete writes a **tombstone** (a marker). The read path must see the tombstone to hide the old value. Consequences seniors flag:
+
+- Tombstones are only reclaimed after compaction merges past all older copies **and** a grace period (`gc_grace_seconds` in Cassandra) that must exceed the repair interval — else a deleted value can **resurrect** on a replica that missed the delete.
+- **Range scans over many tombstones are slow** (the classic Cassandra queue-table anti-pattern: reading past millions of tombstoned rows). Don't model a work queue as delete-heavy rows.
+
+## Durability: WAL + fsync
+
+Both engines write to a **write-ahead log (commit log)** before acking, so a crash after ack is recoverable by replaying the WAL. The trade is the **fsync policy**: fsync-per-commit = durable but slow; group-commit/periodic fsync = fast but a crash can lose the last few ms of acked-but-unsynced writes. This is exactly the `fsync=on` vs `synchronous_commit=off` knob in Postgres — a senior connects it to the durability/latency trade.
+
+## Interview probes you should survive
+
+- *"Why is LSM better for writes if it rewrites data during compaction?"* → The *foreground* write is a cheap sequential append; the rewrite cost is deferred to background compaction and amortized, keeping the write path fast. B-Tree pays random-write page-split cost synchronously.
+- *"Your LSM read latency degraded — what's the cause?"* → Read amplification: too many SSTables to probe (compaction falling behind) or a Bloom-filter miss. Check compaction backlog and switch/tune strategy (LCS for read-heavy).
+- *"You deleted rows but disk didn't shrink and a value came back — why?"* → Tombstones aren't reclaimed until compaction + gc_grace; a value resurrects if a replica missed the delete and gc_grace elapsed before repair. Run repair within gc_grace.
+- *"Disk usage doubled at 3 AM then dropped — normal?"* → Yes: size-tiered compaction transiently needs space to merge overlapping SSTables. Keep ~50% headroom or use leveled/TWCS.

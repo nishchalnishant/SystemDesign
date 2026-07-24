@@ -91,6 +91,58 @@ To solve this, you must build an Active-Active data center in Frankfurt, Germany
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+Active-active vs active-passive is the framing. The senior questions are all about **the multi-region write problem: how conflicts are resolved, what topology you replicate over, and the RPO/RTO you can actually promise.**
+
+## The real hard part: multi-region writes
+
+Active-active is easy for reads and hard for writes because the speed of light means you **cannot have synchronous strong consistency across continents** without paying ~100–300ms per write (cross-region round trips). So you pick a strategy:
+
+| Strategy | How writes work | Consistency | Use when |
+|---|---|---|---|
+| **Single global primary** (regional read replicas) | All writes route to one region | Strong, but writers far from primary pay latency | Read-heavy; writes tolerate latency |
+| **Pinned/partitioned writers** (home-region per entity) | Each user/tenant's writes go to *their* home region | Strong *per entity*, no cross-region conflict | Data partitions cleanly by user/region (also satisfies sovereignty) |
+| **Multi-primary + conflict resolution** | Any region accepts writes, reconcile async | Eventual | Truly global mutable state (shopping carts, collaborative docs) |
+| **Synchronous quorum across regions** (Spanner) | Paxos commit across ≥3 regions | Strong (external consistency via TrueTime) | Willing to pay latency for global strong consistency |
+
+The senior line: **partition writes by home region when you can** — it dodges conflict resolution entirely and aligns with sovereignty. Reach for multi-primary conflict resolution only when the data is genuinely globally mutable.
+
+## Conflict resolution — the multi-primary tax
+
+When two regions write the same key concurrently, someone must resolve it:
+
+- **LWW (Last-Write-Wins):** pick the write with the highest timestamp. Simple, but **silently loses data** and depends on clock sync — needs bounded clock skew (NTP/TrueTime), else a lagging clock's write wins wrongly.
+- **Version vectors:** detect concurrency precisely and surface conflicts (Dynamo's siblings) for app-level merge. No data loss, more complexity.
+- **CRDTs (Conflict-free Replicated Data Types):** data types (counters, sets, ORMaps) that **merge deterministically** with no coordination — the merge is commutative/associative/idempotent. The right tool for collaborative editing, distributed counters, shopping carts (Riak, Redis CRDTs). See [`../01-foundations/05-advanced-distributed-theory/`](../01-foundations/05-advanced-distributed-theory/) for the consistency background.
+
+## Replication topology matters
+
+- **Leader–follower per region** — one global leader, others follow. Simple; the leader is a write bottleneck and a failover point.
+- **Multi-leader** — each region a leader, replicating to the others. Needs conflict resolution; topology (all-to-all vs ring vs star) affects propagation delay and failure blast radius. All-to-all is common but can deliver writes out of causal order (needs version vectors / causal tracking).
+- **Async cross-region replication** is the norm (sync is too slow), which means **failover can lose the last few seconds of writes** — the RPO.
+
+## RPO / RTO — the numbers that define the design
+
+State the disaster-recovery guarantee explicitly:
+
+- **RPO (Recovery Point Objective):** how much data you can lose. Async replication → RPO = replication lag (seconds). Synchronous → RPO ≈ 0 but you paid write latency.
+- **RTO (Recovery Time Objective):** how long to restore service. Active-passive with manual failover → minutes (DNS TTL + promotion). Active-active → near-zero (traffic just shifts).
+- The trade: active-passive is cheaper but has worse RTO and a cold-standby risk (the standby was never load-tested); active-active is costly but the standby is *already serving*, so failover is proven continuously.
+
+## Split-brain across regions
+
+If the network partitions and both regions think the other is dead, active-active multi-primary can accept **conflicting writes on both sides** (split-brain). Mitigations: a majority-quorum/witness region to break ties, fencing, or accepting eventual reconciliation via CRDTs. This is the CAP choice made concrete at global scale — during a partition you either stop accepting writes (CP) or accept-and-reconcile (AP).
+
+## Interview probes you should survive
+
+- *"Two regions accept writes to the same key concurrently — how do you resolve it?"* → LWW (lossy, clock-dependent), version vectors (detect + app-merge), or CRDTs (auto-merge, no loss). Prefer CRDTs for mutable shared state; better yet, partition writes by home region so it never happens.
+- *"What RPO can you promise with async cross-region replication?"* → RPO = replication lag (seconds of data loss on failover). For RPO≈0 you need synchronous quorum (Spanner-style) and must accept cross-region write latency.
+- *"Why not just make every region strongly consistent?"* → Speed of light: synchronous cross-continent commit adds 100–300ms per write. Strong global consistency (Spanner) is possible but you pay that latency; most systems partition writes or go eventually consistent.
+- *"Partition splits your active-active regions — what happens to writes?"* → Split-brain risk: CP (stop writes on minority via quorum/witness) or AP (accept both, reconcile via CRDT/version vectors). Decide per-workload which side of CAP you want.
+
+---
+
 ## Applied In
 
 This concept is used by **4 problems** in this repo:
