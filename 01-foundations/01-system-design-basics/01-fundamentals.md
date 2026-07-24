@@ -126,3 +126,86 @@ That means when a network breaks, you have to make a painful choice:
    *Answer:* Latency is how fast a single drop of water travels through a pipe. Throughput is how many gallons of water flow out of the pipe per minute. 
 3. **"When would you use vertical scaling instead of horizontal scaling?"**
    *Answer:* If the app is small, you don't have time to rewrite the code to support multiple servers, and buying a slightly bigger server solves the problem instantly for cheap.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The section above is the mental model. This section is the depth an SDE-3 / Staff interviewer is actually probing for. The gap between a mid-level and a senior answer is almost never *knowing the term* — it's being able to reason quantitatively about the trade-off and name the failure mode.
+
+## CAP is not enough — use PACELC
+
+CAP only describes behavior **during a partition**, which is rare. PACELC extends it to the common case:
+
+> **If** there is a **P**artition, choose between **A**vailability and **C**onsistency; **E**lse (normal operation), choose between **L**atency and **C**onsistency.
+
+| System | PACELC | Reading |
+|---|---|---|
+| DynamoDB, Cassandra (default) | **PA/EL** | Sacrifice consistency both during partition and normally, to minimize latency |
+| MongoDB | **PA/EC** | Available under partition, but favors consistency when healthy |
+| HBase, BigTable, Spanner | **PC/EC** | Consistency always; pays latency (Spanner uses TrueTime + Paxos) |
+| PostgreSQL (single-node) | **PC/EC** | Not partition-tolerant by design; strong consistency |
+
+**Why this matters in an interview:** saying "Cassandra is AP" is a mid-level answer. Saying "Cassandra is PA/EL — it gives up consistency *even without a partition* to keep tail latency low, which is why you tune it with per-query `QUORUM` vs `ONE`" is a senior answer. The consistency knob is per-request, not per-database.
+
+## Tail latency is the real SLO — averages lie
+
+The average latency is nearly useless. What matters is the **tail**: p99, p99.9.
+
+- **p50 (median):** half of requests are faster than this.
+- **p99:** 99% of requests are faster; 1% are slower. At 1M requests, that's **10,000 slow requests**.
+- **p99.9:** the number your biggest customers feel, because a single page view fans out to many backend calls.
+
+**Fan-out amplifies the tail.** If one user request makes 100 parallel backend calls and each backend has a p99 of 10ms, the probability that *at least one* of the 100 is a tail call is `1 − 0.99^100 ≈ 63%`. So **the median user experiences your p99 latency.** This is why tail latency, not average, is what you optimize.
+
+**Fixes for tail latency:**
+- **Hedged requests** — send the same read to two replicas, take the first to answer, cancel the other. Google's Dapper showed this cuts p99.9 dramatically for ~5% extra load.
+- **Request the second replica only after p95** (tied requests) — cheaper than always-hedging.
+- **Fan-out with a timeout budget** — return partial results rather than waiting for the slowest shard.
+
+## Availability math you must be able to do live
+
+Availability in "nines" and the downtime it implies:
+
+| SLA | Downtime / year | Downtime / month | Typical use |
+|---|---|---|---|
+| 99% (two nines) | 3.65 days | 7.2 hours | Internal tools |
+| 99.9% (three nines) | 8.77 hours | 43.8 min | Standard SaaS |
+| 99.99% (four nines) | 52.6 min | 4.38 min | Payments, e-commerce |
+| 99.999% (five nines) | 5.26 min | 26.3 sec | Telecom, critical infra |
+
+**Composing availability (the part people get wrong):**
+- **Sequential dependencies multiply.** If a request must pass through a load balancer (99.99%), a service (99.9%), and a database (99.95%) *in series*, total availability = `0.9999 × 0.999 × 0.9995 ≈ 99.84%` — **worse than any single component.** Every dependency in the critical path drags availability down.
+- **Redundant components use the complement.** Two independent replicas each at 99% give `1 − (0.01 × 0.01) = 99.99%`. Redundancy is how you *buy back* the nines that serial dependencies cost you.
+
+The senior instinct: **count the components in the critical path, and add redundancy or remove hops until the math clears your SLO.**
+
+## The latency numbers, with the reasoning
+
+Memorizing the table is table-stakes. Knowing *why* is the signal:
+
+| Operation | Latency | Why |
+|---|---|---|
+| L1 cache reference | 0.5 ns | On-die SRAM |
+| Branch mispredict | 5 ns | Pipeline flush |
+| L2 cache reference | 7 ns | Still on-die |
+| Mutex lock/unlock | 25 ns | Uncontended |
+| Main memory (RAM) | 100 ns | ~200× slower than L1 — *cache misses are expensive* |
+| Compress 1KB (Zippy/Snappy) | 3 µs | |
+| Send 1KB over 1 Gbps | 10 µs | |
+| SSD random read | 150 µs | ~1000× slower than RAM |
+| Read 1MB sequentially from RAM | 250 µs | |
+| Round trip within same datacenter | 500 µs | |
+| Read 1MB sequentially from SSD | 1 ms | 4× RAM |
+| Disk (HDD) seek | 10 ms | Mechanical head movement — avoid on the hot path |
+| Read 1MB sequentially from HDD | 20 ms | |
+| Round trip CA → Netherlands → CA | 150 ms | **Speed of light is the floor** — no engineering fixes this |
+
+**The three cliffs to internalize:** RAM is ~200× L1, SSD is ~1000× RAM, and cross-region is bounded by *physics* (`~150ms` RTT is `c` through fiber, not a slow server). This is why you (1) keep hot data in memory, (2) avoid random disk on the request path, and (3) replicate data to the user's region rather than round-tripping across the planet.
+
+## Interview probes you should survive
+
+- *"Your service is 99.99% but calls three dependencies each at 99.99% — what's your real availability?"* → `0.9999^3 ≈ 99.97%`. Serial dependencies multiply. To hit 99.99% end-to-end, each hop needs more nines than the target, or you add redundancy/fallbacks.
+- *"Average latency is 20ms, why are users complaining?"* → The average hides the tail. Ask for p99/p99.9. A 20ms average with a 2s p99 means a meaningful fraction of requests — and, under fan-out, most *page loads* — are slow.
+- *"Is Cassandra CP or AP?"* → Neither statically — it's PA/EL and tunable per query. `CL=ONE` is fast/eventual; `CL=QUORUM` reads+writes give read-your-writes if `R+W>N`.
+- *"How do you improve p99 without making the median slower?"* → Hedged/tied requests, timeouts with partial results, and removing serial hops — not by making the average server faster.

@@ -98,6 +98,52 @@ If you are in an interview and someone asks you about Paxos, you only need to kn
 
 ---
 
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The above explains *how* Raft elects a leader. Senior questions probe the **guarantees and the edges**: what consensus can and cannot promise, the quorum arithmetic, and what breaks. For the full protocol walkthrough (election terms, log matching, membership changes), see [`04-advanced-topics/03-internals/11-raft-paxos-conceptual.md`](../../04-advanced-topics/03-internals/11-raft-paxos-conceptual.md).
+
+## Quorum arithmetic — the numbers behind "majority"
+
+- A cluster of **N** nodes tolerates **⌊(N−1)/2⌋** failures, because commit requires a **majority = ⌊N/2⌋+1**.
+
+| N | Majority | Failures tolerated |
+|---|---|---|
+| 3 | 2 | 1 |
+| 5 | 3 | 2 |
+| 7 | 4 | 3 |
+
+- **Odd numbers only.** 3 tolerates 1 failure; 4 *also* tolerates only 1 (majority is 3) — the extra node adds cost and latency with no extra fault tolerance, and makes split-brain ties more likely. Always 3, 5, or 7.
+- **Why not more?** Every commit waits for a majority to acknowledge, so **latency grows with N** (you wait on the median-slowest of the majority). 5 is the common sweet spot; 7 only for the highest durability. Beyond that, use hierarchical schemes or sharding.
+- **Overlapping-quorum intuition:** any two majorities share at least one node, so a newly elected leader's majority always includes someone who saw the last committed entry — that's *why* committed data survives elections.
+
+## What consensus guarantees — and what it does not
+
+- **Safety (never wrong):** at most one leader per term, and a committed entry is never lost or reordered. This holds **even under arbitrary message delay, loss, and reordering** — the asynchronous network can't cause *incorrect* results.
+- **Liveness (eventually makes progress):** guaranteed only under **partial synchrony** — the system must be "stable enough" (bounded delays) for long enough to elect a leader. **FLP impossibility** proves no deterministic consensus can guarantee *both* safety and liveness in a fully asynchronous network with even one crash. Raft/Paxos keep safety unconditionally and get liveness once the network calms down.
+- **Randomized election timeouts** are how Raft escapes split votes — if two candidates tie, each waits a random interval before retrying, so one almost always goes first. Without this, symmetric candidates can livelock.
+
+## The failure edges seniors get asked about
+
+- **Split-brain / dual leaders:** a partitioned old leader that doesn't yet know it lost quorum can still *think* it's leader. It cannot **commit** (can't reach a majority), so no committed data diverges — but naive reads from it can be stale. This is why **linearizable reads** must go through the leader *with* a quorum check (or a lease), not just "whoever thinks it's leader."
+- **The stale-read trap:** reading from the leader is not automatically linearizable — the leader might have been deposed a moment ago. Solutions: **leader leases** (time-bounded exclusivity) or **ReadIndex** (confirm leadership with a heartbeat round before serving the read).
+- **Membership changes are dangerous:** changing the cluster from 3→5 nodes naively can create two disjoint majorities during the transition. Raft solves this with **joint consensus** (a transitional config requiring majorities of *both* old and new sets).
+- **Byzantine faults are out of scope:** Raft/Paxos assume nodes are honest-but-may-crash. A node that *lies* (corrupted, malicious) breaks them. That needs **BFT** consensus (PBFT, or blockchain-style), which costs `3f+1` nodes to tolerate `f` liars.
+
+## Where you actually meet consensus
+
+You rarely implement it — you **depend** on it: leader election and config in ZooKeeper/etcd (ZAB / Raft), Kafka's controller (KRaft), distributed locks, and the replication core of Spanner (Paxos), CockroachDB, and TiDB. The senior framing: **consensus is expensive (a majority round trip per decision), so systems use it sparingly** — to elect a leader or agree on metadata — and let that leader handle the high-volume path alone.
+
+## Interview probes you should survive
+
+- *"Why 5 nodes instead of 3?"* → Tolerates 2 simultaneous failures vs 1, so you survive losing a node *during* a maintenance window on another. Cost: higher commit latency. 3 for most; 5 for critical control planes.
+- *"Can you read from a Raft follower?"* → Yes for throughput, but the read may be stale. For linearizable reads, go to the leader with a ReadIndex/lease check, or have followers confirm the commit index with the leader first.
+- *"Consensus keeps working during a partition — true?"* → Only the majority side makes progress; the minority side blocks (can't reach quorum). It preserves safety by *sacrificing availability* on the minority — a CP choice.
+- *"Why can't Paxos guarantee it always finishes?"* → FLP: in a fully asynchronous network you can't distinguish a slow node from a dead one, so no algorithm guarantees termination. Real systems add timeouts/randomization to get practical liveness.
+
+---
+
 ## Applied In
 
 This concept is used by **2 problems** in this repo:

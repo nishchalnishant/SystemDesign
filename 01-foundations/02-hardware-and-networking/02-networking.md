@@ -163,3 +163,57 @@ This is called **TTL (Time To Live)**. If your TTL is set to 24 hours, local int
    *Answer:* SSE is a one-way street (Server pushing live scores to a client). WebSockets are a two-way street (Client and Server chatting back and forth in a multiplayer game).
 3. **"Why use gRPC instead of REST?"**
    *Answer:* For internal microservices. gRPC uses binary data instead of text, making it much smaller and faster than REST, but it's harder for front-end web browsers to use natively.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The analogies above get you the vocabulary. Senior networking questions are about **round trips and connection cost** — because on the request path, the number of RTTs, not bandwidth, usually determines latency.
+
+## Connection setup cost: count the round trips
+
+Latency is dominated by *round trips*, and each one costs a full RTT (~1ms intra-DC, ~150ms cross-continent).
+
+- **TCP handshake = 1 RTT** (SYN → SYN-ACK → ACK; you can send data on the third packet).
+- **TLS 1.2 handshake = 2 RTTs** on top of TCP. So a fresh HTTPS connection is **3 RTTs before the first byte of your request**.
+- **TLS 1.3 = 1 RTT** (and **0-RTT** resumption for repeat connections, at the cost of replay risk for non-idempotent requests).
+- **QUIC (HTTP/3) = 1 RTT** for a new connection, **0-RTT** on resumption, because it folds the transport and crypto handshakes together.
+
+**Why this dictates architecture:**
+- **Connection pooling / keep-alive** exists to *amortize* this. Never open a fresh TCP+TLS connection per request on a hot path — reuse pooled connections so you pay the handshake once.
+- Cross-region at 150ms RTT means **a naive design with 4 serial round trips = 600ms** before any compute. This is why you batch, pipeline, and colocate.
+
+## TCP mechanics that actually bite
+
+- **Head-of-line (HOL) blocking, two levels:**
+  - *HTTP/1.1:* one request per connection at a time → browsers open 6 connections per host as a workaround.
+  - *HTTP/2:* multiplexes streams over **one** TCP connection — but a single lost packet stalls *all* streams, because TCP delivers in order. This is TCP-level HOL blocking, and it's exactly why **HTTP/3 moved to QUIC/UDP**: independent streams, one lost packet only stalls its own stream.
+- **Slow start & congestion control:** TCP doesn't start at full speed. It ramps the congestion window exponentially from a small initial value (`initcwnd`, ~10 segments). Short connections **die before reaching full throughput** — another reason to keep connections warm. Modern stacks use **BBR** (models bandwidth+RTT) over the older loss-based **CUBIC**.
+- **Nagle's algorithm** batches small writes; combined with delayed ACKs it can add ~40ms of latency. Latency-sensitive services set `TCP_NODELAY`.
+
+## DNS as an infrastructure primitive
+
+DNS is not just name→IP; it's a load-balancing and failover layer:
+- **DNS round-robin / weighted records** distribute traffic across regions or data centers (GSLB — Global Server Load Balancing).
+- **Latency/geo-based routing** (Route 53, etc.) sends users to the nearest healthy region.
+- **Anycast** advertises the *same IP* from many locations via BGP; the network routes each user to the closest one — how CDNs and public DNS resolvers (8.8.8.8) work.
+- **The failover caveat:** DNS TTL caching means DNS is a *slow* failover mechanism (minutes, and some resolvers ignore low TTLs). For fast failover you use a load balancer with a stable VIP, not DNS.
+
+## Protocol selection, senior framing
+
+| Need | Choice | Because |
+|---|---|---|
+| Browser ↔ backend, cacheable, public API | REST/HTTP | Ubiquitous, cache-friendly, human-debuggable |
+| Mobile client, over/under-fetching pain, many nested resources | GraphQL | One round trip, client picks fields — but watch the **N+1 resolver** problem and caching difficulty |
+| Internal service ↔ service, high throughput, streaming | gRPC/HTTP2 | Binary Protobuf, ~3–10× smaller, bi-directional streaming, code-gen contracts |
+| Server → client push, one-way (feeds, notifications) | **SSE** | Simple, auto-reconnect, rides plain HTTP |
+| Bidirectional realtime (chat, games, collab) | **WebSocket** | Full duplex; but stateful — pins a user to a server, complicating load balancing and scaling |
+
+**The WebSocket scaling trap (a common senior probe):** WebSockets are *stateful long-lived connections*, so you can't load-balance them per-request. You need sticky routing, a way to push to a user connected to *another* server (a pub/sub backplane like Redis), and a plan for connection storms on redeploy. Prefer SSE if you only need server→client.
+
+## Interview probes you should survive
+
+- *"Your API is slow cross-region — how do you cut latency without moving servers?"* → Reduce round trips: TLS 1.3 / 0-RTT resumption, connection keep-alive/pooling, batch calls, and put a CDN/PoP with TLS termination near the user so the long-RTT hop is a warm connection.
+- *"HTTP/2 fixed multiplexing — why does HTTP/3 exist?"* → HTTP/2 still suffers TCP-level head-of-line blocking; one lost packet stalls all streams. QUIC over UDP gives per-stream independence plus faster (0/1-RTT) handshakes.
+- *"Why does opening a new HTTPS connection per request kill you?"* → 3 RTTs of handshake plus TCP slow start every time. Pool and reuse; the handshake should be paid once per connection, not per request.
+- *"How do you route users to the nearest datacenter?"* → GeoDNS or anycast at the edge, with health checks; keep DNS TTL low but rely on a regional LB VIP for fast failover, since DNS caching makes it slow to flip.

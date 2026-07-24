@@ -130,3 +130,70 @@ When your database gets too big for one computer, you have two tools:
    *Answer:* In a distributed database, if the network cable is cut between your servers (Partition), you have to choose. Do you stay online and potentially serve outdated data (Availability), or do you shut down the database to protect data integrity (Consistency)? You can't have both.
 3. **"Why shouldn't I just create an index on every column?"**
    *Answer:* Because every index takes up physical hard drive space, and more importantly, it slows down writes. Every time you insert a row, the database has to update every single index.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The section above is enough to *choose* a database. This section is what separates a senior answer: knowing the mechanisms — isolation levels, index internals, how ACID is actually enforced — well enough to reason about a concrete anomaly under load.
+
+## Transaction isolation levels and the anomalies they prevent
+
+"ACID" is not one thing — the **I (Isolation)** has levels, and each level permits specific anomalies. This is the single most common place a senior candidate is tested.
+
+| Isolation level | Dirty read | Non-repeatable read | Phantom read | Cost |
+|---|---|---|---|---|
+| **Read Uncommitted** | ✅ possible | ✅ possible | ✅ possible | Cheapest |
+| **Read Committed** (PG default) | ❌ prevented | ✅ possible | ✅ possible | Low |
+| **Repeatable Read** (MySQL default) | ❌ | ❌ prevented | ✅ possible* | Medium |
+| **Serializable** | ❌ | ❌ | ❌ prevented | Highest |
+
+The anomalies:
+- **Dirty read** — you read another transaction's *uncommitted* write, which may roll back.
+- **Non-repeatable read** — you read a row twice in one transaction and get different values (someone committed an update between).
+- **Phantom read** — you run the same `WHERE` query twice and get a different *set of rows* (someone inserted a matching row).
+- **Write skew** — two transactions each read an overlapping set, make disjoint writes that are individually valid but jointly violate an invariant (e.g., two doctors both go off-call because each saw the other on-call). **Only Serializable prevents write skew** — this is the classic hard-mode question.
+
+> *MySQL InnoDB's Repeatable Read prevents phantoms in practice via next-key (gap) locking, unlike the SQL standard's definition. Know this distinction; it's a favorite "gotcha."*
+
+**How isolation is implemented:**
+- **Pessimistic (2PL / two-phase locking):** acquire locks, hold to commit. Used by MySQL for Serializable. Blocks; risks deadlock.
+- **Optimistic (MVCC — Multi-Version Concurrency Control):** each write creates a new version tagged with a transaction ID; readers see a consistent snapshot without blocking writers. Used by PostgreSQL and Oracle. "Readers don't block writers, writers don't block readers." The cost is version bloat, cleaned up by **VACUUM** (Postgres) or the undo log (MySQL).
+
+## Index internals: B-Tree vs LSM-Tree
+
+"Create an index" hides a fundamental storage-engine choice that dictates read/write performance.
+
+| | **B+Tree** (Postgres, MySQL/InnoDB) | **LSM-Tree** (Cassandra, RocksDB, LevelDB) |
+|---|---|---|
+| Structure | Balanced tree, updated in place | In-memory memtable → flushed to immutable sorted files (SSTables) |
+| **Reads** | Fast, predictable (O(log n), ~3–4 seeks) | Slower — may check memtable + several SSTables (mitigated by **Bloom filters**) |
+| **Writes** | Slower — random in-place update, must find the page | **Fast** — sequential append to memtable, no seek |
+| Write amplification | Lower | Higher (compaction rewrites data), but **sequential** I/O |
+| Space | Fragmentation, some empty space per page | Compact; compaction reclaims space |
+| Best for | Read-heavy, range scans, OLTP | Write-heavy ingest (time-series, logs, event streams) |
+
+**The senior insight:** LSM turns random writes into sequential writes, which is why write-heavy stores (Cassandra) use it — sequential I/O is orders of magnitude faster on both SSD and HDD. The price is read amplification and **compaction** (background merging of SSTables), which competes for I/O and can cause latency spikes. B+Tree pays on every write to keep reads cheap. **Pick based on your read:write ratio.**
+
+## How ACID is actually enforced
+
+- **Atomicity + Durability** come from the **Write-Ahead Log (WAL)**: the change is appended to a sequential log and `fsync`'d *before* the data pages are updated. On crash, the DB replays the WAL to redo committed transactions and rolls back incomplete ones. This is also what physical replication ships (Postgres streaming replication = shipping the WAL).
+- **Consistency** (the C in ACID — constraint consistency, *not* the CAP C) = enforcing declared invariants: foreign keys, unique constraints, check constraints. Your job is to declare them; the DB enforces them transactionally.
+- **Isolation** = the levels above.
+
+**The `fsync` cost:** durability requires the WAL to hit stable storage, and `fsync` is ~1–10ms on spinning disks. This is why databases **group-commit** — batching many transactions' log flushes into one `fsync` — to amortize the cost. It's also why "durable" and "fast" are in tension, and why some systems offer relaxed durability (`fsync` every N ms) as a knob.
+
+## NoSQL data modeling: query-first, not entity-first
+
+The real reason to reach for NoSQL is usually not "flexibility" — it's **access-pattern-driven modeling** for horizontal scale:
+- **In SQL you normalize** (one fact in one place) and `JOIN` at read time. Joins don't shard — a cross-partition join is a scatter-gather.
+- **In NoSQL you denormalize and duplicate** so each query hits **one partition**. You model the *table around the query*, not the entity. DynamoDB single-table design and Cassandra's "one table per query pattern" are this taken to its conclusion.
+- **Partition key choice is the whole ballgame:** it must spread load evenly (avoid hot partitions) *and* colocate data you read together. A bad partition key (e.g., `country` for a US-heavy app) creates a hot shard that no amount of hardware fixes.
+
+## Interview probes you should survive
+
+- *"Two transactions both read a balance, both subtract $100 — how do you prevent the double-spend?"* → `SELECT ... FOR UPDATE` (pessimistic lock) or an optimistic version check / conditional update. At Read Committed the naive read-modify-write is a lost-update bug.
+- *"You need Cassandra to serve a read-your-writes guarantee — how?"* → Tune consistency: `R + W > N` (e.g., N=3, W=QUORUM=2, R=QUORUM=2). Then any read overlaps any write on at least one replica.
+- *"Your write-heavy service is I/O-bound on a B-Tree index — what do you change?"* → An LSM-based store converts random writes to sequential ones; or batch writes, or partition to spread the write hot spot. Name the compaction cost.
+- *"What's the difference between the C in ACID and the C in CAP?"* → ACID-C is invariant/constraint preservation within a transaction. CAP-C is linearizability across nodes. Unrelated; conflating them is a red flag.
+- *"When does Repeatable Read still bite you?"* → Write skew — disjoint writes that jointly break an invariant. Needs Serializable (or an explicit lock/constraint).
