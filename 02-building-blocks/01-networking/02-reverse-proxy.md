@@ -79,3 +79,46 @@ Before sending a massive HTML file back to the user, the Reverse Proxy can zip i
    *Answer:* Decrypting HTTPS traffic is CPU-intensive. By having the Reverse Proxy handle the decryption, we free up CPU resources on our backend application servers to handle actual business logic. The internal traffic is then sent unencrypted over a trusted, private VPC network.
 3. **"Is a Reverse Proxy the same thing as a Load Balancer?"**
    *Answer:* They are very similar, and modern tools (like NGINX or HAProxy) often do both! But technically, a Reverse Proxy is designed to hide and protect a server, while a Load Balancer is designed to distribute traffic across *multiple* servers.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The above covers *what* a reverse proxy is. Seniors get asked to **place it in the request path, distinguish it from adjacent components, and reason about failure and TLS.**
+
+## The full edge stack — who does what
+
+Interviewers want you to *not* conflate these:
+
+| Layer | Job | Example |
+|---|---|---|
+| **CDN** | Cache static assets close to users, absorb DDoS at the edge | CloudFront, Cloudflare |
+| **L4 Load Balancer** | Distribute TCP/UDP connections; no HTTP awareness; fastest | AWS NLB, IPVS |
+| **L7 Reverse Proxy / LB** | Route by URL/header/cookie, terminate TLS, retry, rate-limit | NGINX, Envoy, ALB |
+| **API Gateway** | L7 proxy + auth, quotas, request transformation, per-API routing | Kong, AWS API Gateway |
+
+A reverse proxy is the **L7** box. "Load balancer" and "reverse proxy" overlap because one process (NGINX/Envoy) plays both — the *distinction* is the job, not the binary.
+
+## L4 vs L7 — the trade you must be able to state
+
+- **L4** forwards packets by IP:port. Can't see the URL, so it can't do path routing or HTTP retries — but it's cheap, low-latency, and preserves the connection end-to-end. Handles millions of connections.
+- **L7** parses the HTTP request. Enables path/host routing, sticky sessions by cookie, header rewriting, response caching, WAF, per-route rate limits — at the cost of terminating and re-originating the connection (more CPU, more latency).
+- Common pattern: **L4 in front, L7 behind** — NLB spreads connections across a fleet of Envoy instances that do the smart routing.
+
+## TLS termination vs passthrough vs re-encryption
+
+- **Termination:** decrypt at the proxy, plaintext to backend. Simplest, offloads CPU, lets the proxy inspect/route. Requires a *trusted* internal network.
+- **Re-encryption (TLS bridging):** decrypt at proxy, re-encrypt to backend. Needed for compliance (PCI, zero-trust) where even the internal hop must be encrypted.
+- **Passthrough:** proxy forwards encrypted bytes without decrypting (L4). The backend terminates TLS. Used when the proxy must not see plaintext, at the cost of losing L7 features.
+
+## Failure reasoning
+
+- The reverse proxy is now on the critical path → it's a **potential single point of failure**. Run it as a horizontally-scaled fleet behind an L4 LB (or an anycast VIP), never a single box.
+- **Connection pooling / keep-alive:** the proxy multiplexes many short client connections onto a small pool of long-lived backend connections, saving backends from connection-setup storms — a real reason to have one even with a single backend.
+- **Health checks + outlier ejection:** the proxy actively probes backends and ejects ones returning 5xx / timing out, which is where reverse-proxy and load-balancer responsibilities merge.
+
+## Interview probes you should survive
+
+- *"CDN, reverse proxy, load balancer, API gateway — draw the order."* → Client → CDN → L4 LB → L7 reverse proxy / API gateway → services. Each layer sheds a different concern.
+- *"Where do you terminate TLS and why?"* → At the L7 edge for CPU offload and routing; re-encrypt to the backend if the internal network isn't trusted (zero-trust/PCI).
+- *"Your reverse proxy is a SPOF — fix it."* → Fleet of proxies behind an L4 LB or anycast VIP; health-check and auto-replace. State is externalized so any proxy can serve any request.

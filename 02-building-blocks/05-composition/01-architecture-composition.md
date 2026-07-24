@@ -72,3 +72,54 @@ The data travels all the way back up the chain, and the user's phone displays th
    *Answer:* At the API Gateway (or a dedicated proxy just behind the edge load balancer). You want to drop malicious traffic as early as possible before it consumes CPU cycles on your internal microservices or database.
 3. **"If the database is slow, how would you protect the microservices from a cascading failure?"**
    *Answer:* I would implement a Circuit Breaker pattern inside the Microservice, wrap the database calls with timeouts, and ensure that if the database fails, the Microservice returns a Fallback response (perhaps from the Cache) instead of hanging indefinitely.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The happy-path flow above is table stakes. Seniors are judged on **why each box is where it is, what the request budget looks like, and how the read and write paths diverge.**
+
+## Every box exists to shed a specific concern
+
+The interviewer's real question is *"defend this ordering."* Each layer removes one class of work before the next, most expensive, layer sees it:
+
+| Layer | Sheds | If you skip it |
+|---|---|---|
+| CDN | Static-asset traffic + DDoS volume | Origin serves every image; melts under load |
+| L4 LB | Uneven connection distribution | Hot servers, cold servers |
+| API Gateway | Unauthed / rate-exceeded / malformed requests | Bad traffic reaches (and can crash) services |
+| Cache | Repeated identical reads | Every read hits the DB — the scarcest resource |
+| Message broker | Synchronous coupling to slow work | User waits on email/analytics; failures cascade |
+
+The principle to state out loud: **push work outward and drop bad/cheap traffic as early as possible, so the expensive, stateful, hard-to-scale layer (the database) sees the least.**
+
+## The latency budget — think in a request budget
+
+A senior traces the flow *with a time budget*, not just boxes. For a 200ms p99 target:
+
+- CDN/edge TLS: ~10–30ms (user→edge RTT)
+- LB + gateway (auth, rate check): ~1–5ms
+- Service logic: ~5–20ms
+- Cache hit: ~1ms; **cache miss + DB: ~10–50ms** (the cliff)
+- Cross-service fan-out multiplies **tail** latency — see the tail-latency math in [`../../01-foundations/01-system-design-basics/01-fundamentals.md`](../../01-foundations/01-system-design-basics/01-fundamentals.md).
+
+The insight: your p99 is dominated by the cache-miss + DB path and by any **fan-out** (calling N services means waiting on the slowest of N). Cut tail latency by reducing fan-out, hedging requests, and raising cache hit-rate — not by shaving the median.
+
+## Read path vs write path — they're different systems
+
+The single flow above hides that **reads and writes compose differently**:
+
+- **Read path:** CDN → LB → gateway → service → **cache → read replica**. Optimized for throughput and low latency; tolerates slight staleness. Scale by adding replicas + cache.
+- **Write path:** LB → gateway → service → **primary DB** (single writer) → replicate out → **invalidate/update cache** → emit event to broker for downstream (search index, analytics, notifications via CDC/outbox).
+- The write path is where consistency lives: cache invalidation ordering, replication lag (read-your-writes), and the dual-write problem all bite here. This is why the broker/CDC layer exists — to fan a single write out to many derived stores **asynchronously and reliably**.
+
+## Stateless services, externalized state
+
+The reason this composition scales horizontally: **application/logic-tier services hold no state** — session, cache, and data all live in the data tier. Any request can hit any service instance, so you scale by cloning services behind the LB. The moment a service holds local state (in-memory session, a WebSocket connection), you've introduced sticky routing and a scaling ceiling — call that out as the thing to avoid.
+
+## Interview probes you should survive
+
+- *"Defend this ordering — why gateway before service, cache before DB?"* → Each layer sheds a cheaper class of work so the expensive stateful layer sees the least; drop bad traffic at the edge.
+- *"Where does your p99 latency actually come from?"* → Cache-miss + DB path and service fan-out (slowest-of-N). Raise hit-rate, cut fan-out, hedge — don't chase the median.
+- *"How does a write propagate to search, cache, and analytics without dual-write bugs?"* → Write to the primary in one transaction, then fan out asynchronously via CDC/outbox → broker → consumers. Each derived store is eventually consistent and independently retriable.
+- *"What breaks horizontal scaling of the logic tier?"* → Local state. Keep services stateless and push all state to the data tier so any instance serves any request.

@@ -89,3 +89,46 @@ Every microservice must send a "Heartbeat" ping to the Service Registry every fe
    *Answer:* It is a centralized database (like Consul or Zookeeper) that keeps a live, constantly updated directory of every healthy microservice and its current IP address. 
 3. **"What is the difference between Client-Side and Server-Side discovery?"**
    *Answer:* In Client-Side, the microservice queries the registry itself and directly connects to the target. In Server-Side, the microservice sends the request to a Load Balancer or API Gateway, which handles querying the registry and forwarding the request. Server-side is generally preferred as it removes complexity from the application code.
+
+---
+
+# 🎯 SDE-3 Deep Dive
+
+The above covers the *mechanism*. Senior questions probe **the registry's own consistency, how staleness is tolerated, and the modern service-mesh answer.**
+
+## The registry is itself a distributed system — CP vs AP
+
+The registry can't be a single box (SPOF). So it's replicated, and that forces a CAP choice:
+
+| Registry | Consistency model | Consequence |
+|---|---|---|
+| **ZooKeeper / etcd / Consul** | **CP** (consensus-backed) | Strongly consistent membership; during a partition the minority side **can't register/read** — correctness over availability |
+| **Eureka** | **AP** | Every node keeps serving its (possibly stale) view during a partition; favors *finding some instance* over a perfectly accurate list |
+
+The senior insight: for service discovery, **AP is often the right choice.** A slightly stale list (one dead instance in it) is survivable — your client retries and fails over. A registry that *refuses to answer* during a partition takes down healthy traffic. Netflix built Eureka AP deliberately for this reason.
+
+## Tolerating staleness — it's designed in, not a bug
+
+Because the list is eventually consistent, clients must assume **some returned instances are dead**:
+
+- **Retry with a different instance** on connection failure (with a budget/backoff to avoid retry storms).
+- **Circuit breakers** ([`../02-performance/03-circuit-breaker.md`](../02-performance/03-circuit-breaker.md)) stop hammering an instance that's failing.
+- **Client-side load balancing** picks among the healthy-looking subset (round-robin, least-connections, or power-of-two-choices).
+- **Deregistration is slow on purpose** — heartbeat timeout + propagation means a dead node lingers seconds; the retry path covers that gap.
+
+## Health checks: liveness vs readiness
+
+- **Liveness** — "is the process up?" Failing → restart the pod.
+- **Readiness** — "can it serve traffic *right now*?" (warmed caches, DB connected, not overloaded). Failing → pull from the registry/LB but **don't** kill it.
+Conflating them causes the classic outage: a service under load fails a health check, gets killed and restarted, comes back cold, fails again — a crash loop. Readiness gates traffic; liveness gates restarts.
+
+## The modern answer: service mesh / sidecar
+
+State the current best-practice explicitly: **a sidecar proxy (Envoy) per pod** handles discovery, load balancing, retries, mTLS, and observability *outside* the application. The app just calls `localhost`; the mesh control plane (Istio, Linkerd, Consul Connect) programs the sidecars from the registry. This is **server-side discovery pushed to a per-instance proxy** — you get the simplicity of server-side without a central LB bottleneck, plus zero-trust mTLS for free.
+
+## Interview probes you should survive
+
+- *"Should the service registry be CP or AP?"* → Usually AP: a stale-but-available list beats a consistent-but-unavailable one, since clients retry/fail over. CP (etcd/ZK) when you need strong membership for leader election or config, not just discovery.
+- *"A registered instance died 2 seconds ago and is still in the list — is that broken?"* → No, it's expected. Discovery is eventually consistent; clients retry another instance and circuit-break the dead one. Deregistration is inherently lagging.
+- *"How does a service mesh change this?"* → Discovery, LB, retries, and mTLS move into a per-pod Envoy sidecar programmed by a control plane. The app is oblivious; it just calls localhost.
+- *"Liveness vs readiness check — why both?"* → Readiness gates *traffic* (warming up, overloaded); liveness gates *restart* (hung process). Using liveness for load makes overloaded services crash-loop.

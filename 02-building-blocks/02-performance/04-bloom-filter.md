@@ -96,6 +96,49 @@ Because the Bloom Filter only stores *light switches* (Bits: 0 or 1) instead of 
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+The above covers *why* and *the light-switch intuition*. Seniors get asked to **size the filter, reason about the two knobs, and pick the right variant.**
+
+## The sizing math you should be able to sketch
+
+Two parameters control everything: **m** = number of bits, **k** = number of hash functions, for **n** inserted items.
+
+- **Optimal hash count:** `k = (m/n) · ln 2 ≈ 0.693 · (m/n)`.
+- **False-positive probability:** `p ≈ (1 − e^(−kn/m))^k`.
+- **Bits per element (the number to memorize):** `m/n = −ln(p) / (ln 2)²`. That's **~9.6 bits/element for 1% FP**, **~14.4 for 0.1%**, **~19.2 for 0.01%**. Each extra order of magnitude of accuracy costs ~4.8 bits/element.
+
+So for 1 billion items at 1% FP: `1e9 × 9.6 bits ≈ 1.2 GB` — matching the page's headline number, and now you can *derive* it. The point seniors make: **accuracy is logarithmic in space** — going from 1% to 0.0001% only ~4×s the memory, not 10000×.
+
+## The two failure modes of getting it wrong
+
+- **Undersized (too small m for actual n):** the bit array saturates, FP rate climbs toward 100%, and the filter becomes useless (says "probably yes" to everything → no queries saved). You must size for *peak* n or use a scalable variant.
+- **Wrong k:** too few hashes → collisions; too many → array fills faster. Use the `k = 0.693·m/n` formula, don't guess.
+
+## Variants — know when to reach for each
+
+| Variant | Adds | Use when |
+|---|---|---|
+| **Counting Bloom Filter** | Small counters instead of bits | You need **deletions** (cost: ~4× memory) |
+| **Scalable Bloom Filter** | Chain of filters, grows on demand | **n is unknown/unbounded** up front |
+| **Cuckoo Filter** | Stores fingerprints in a cuckoo hash | Deletions **and** better space at low FP; also supports lookup of *count* |
+| **Quotient Filter** | Cache-friendly, mergeable | Disk-resident / SSD; supports merges and resizes |
+
+**Cuckoo filter is the modern default** when you need deletions — it beats counting Bloom filters on space below ~3% FP and supports removal cleanly.
+
+## Where the FP cost actually lands
+
+Frame the trade in system terms: a false positive doesn't corrupt data — it just triggers the **fallback path** (the slow DB check). So you tune FP against the *cost of that fallback*. Cassandra/RocksDB use per-SSTable Bloom filters to skip disk reads; a 1% FP means 1% of "not-present" keys pay one wasted disk seek — a great trade against the 99% of seeks eliminated. Tune tighter (lower FP) only if the fallback is expensive.
+
+## Interview probes you should survive
+
+- *"How big a Bloom filter for 1B items at 0.1% FP?"* → ~14.4 bits/item → ~1.8 GB. Derive from `m/n = −ln p / (ln2)²`.
+- *"FP rate is climbing over time — why?"* → You inserted more than the sized n; the array saturated. Use a scalable Bloom filter or resize/rebuild periodically.
+- *"You need deletions — now what?"* → Counting Bloom filter (4× space) or, better, a **Cuckoo filter** (deletions + tighter space at low FP).
+- *"Why does Cassandra put a Bloom filter in front of each SSTable?"* → To skip disk reads for keys that definitely aren't in that file; a small FP just costs an occasional wasted seek, hugely cheaper than reading every SSTable.
+
+---
+
 ## Applied In
 
 This concept is used by **5 problems** in this repo:

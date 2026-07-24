@@ -89,6 +89,44 @@ When a user clicks "Save Profile", the Primary database saves it. But when does 
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+The above covers the *topologies*. Senior questions are about **read-after-write consistency, failover safety, and how replication is actually implemented.**
+
+## The consistency guarantees you can offer readers
+
+Async replication creates a menu of *read consistency* levels — know their names:
+
+| Guarantee | Meaning | How to get it |
+|---|---|---|
+| **Read-your-writes** | A user always sees their *own* writes | Route that user's reads to the primary for N seconds after a write, or track the write's LSN and only read from a replica caught up past it |
+| **Monotonic reads** | A user never sees time go *backwards* (read fresh, then stale) | Pin a user to one replica (sticky sessions) |
+| **Consistent prefix** | You never see an effect before its cause | Order-preserving replication; matters for causally related writes |
+
+The classic bug: user posts a comment, page reloads reading from a lagging replica, comment is gone. That's a **read-your-writes** violation — the interview wants you to name it and fix it.
+
+## Failover: where replication gets dangerous
+
+- **Async failover loses data.** If the primary dies with writes not yet shipped, promoting a replica silently drops them. Bounded by replication lag — hence you monitor lag as a *durability* metric, not just performance.
+- **Split-brain:** a network partition can leave two nodes each thinking they're primary → both accept writes → divergent data. Prevented by **fencing** (STONITH), a **quorum/consensus** for promotion, or an external arbiter. Never auto-promote on a simple timeout without a quorum check.
+- **`semi-synchronous`** (MySQL) is the pragmatic middle: primary waits for *one* replica to acknowledge the write to its relay log (not to apply it), then returns. Bounds data loss to near-zero without the full latency/availability hit of sync-to-all.
+- **Quorum writes (Dynamo-style):** `W + R > N` gives strong consistency without a single primary. `N=3, W=2, R=2` tolerates one node down on each path. This is *leaderless* replication — ties into consistent hashing and read-repair/hinted-handoff.
+
+## How replication actually ships bytes
+
+- **Statement-based:** replay the SQL. Compact, but non-deterministic functions (`NOW()`, `RAND()`, auto-increment races) diverge. Mostly abandoned.
+- **WAL / physical (Postgres streaming):** ship the write-ahead-log byte-for-byte. Exact, but couples replica to the primary's storage format/version.
+- **Logical / row-based (binlog ROW, Postgres logical):** ship the resulting row changes. Version-independent, supports selective-table replication and feeds **CDC** — see [`../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md`](../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md).
+
+## Interview probes you should survive
+
+- *"User updates their avatar, refresh shows the old one — cause and fix?"* → Read hit a lagging replica; read-your-writes violation. Route post-write reads to primary or to a replica confirmed past that write's LSN.
+- *"Primary dies. Is it safe to promote a replica automatically?"* → Only with a quorum/consensus to avoid split-brain, and accept you may lose async-unshipped writes. Fence the old primary before promotion.
+- *"How do you get strong consistency with no single leader?"* → Quorum: `W + R > N` so read and write sets overlap. Pair with read-repair and hinted handoff for the failure cases.
+- *"Sync replication to 3 replicas — what's the risk?"* → One slow/dead replica stalls every write (availability + tail latency). Use semi-sync (ack from one) instead.
+
+---
+
 ## Applied In
 
 This concept is used by **3 problems** in this repo:

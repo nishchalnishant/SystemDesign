@@ -92,6 +92,54 @@ It makes your code 10x more complicated. Only use Sharding when you absolutely h
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+The above covers *why* and *how to split*. Senior questions are about **choosing the shard key, rebalancing without downtime, and the operations that break once you're sharded.**
+
+## Choosing a shard key — the decision that's hardest to undo
+
+A shard key is chosen on three axes; you rarely get all three:
+
+| Property | What you want | Failure if you get it wrong |
+|---|---|---|
+| **High cardinality** | Many distinct values | Low cardinality (e.g. `country`) caps your max shard count |
+| **Even distribution** | Uniform request + storage spread | Skew → hotspots (the celebrity problem) |
+| **Query alignment** | Common queries hit *one* shard | Misaligned key → **scatter-gather** across all shards |
+
+The tension: a key that distributes evenly (random hash of user_id) often *scatters* your queries; a key that co-locates related data (tenant_id) often *skews*. Senior answer names the trade and picks for the dominant access pattern. **Composite keys** (`tenant_id + hash(user_id)`) are the usual compromise — co-locate a tenant, spread users within it.
+
+## Partitioning strategies compared
+
+| Strategy | Rebalancing | Range scans | Hotspot risk |
+|---|---|---|---|
+| **Range** | Split/merge ranges — easy | ✅ efficient | High (monotonic keys like timestamps all hit the newest shard) |
+| **Hash** | Move ~1/N on resize (naive) | ❌ scatter-gather | Low, unless a single key is hot |
+| **Consistent hashing** | Move only ~1/N on resize | ❌ | Low; see [`03-consistent-hashing.md`](03-consistent-hashing.md) |
+| **Directory/lookup** | Move anything, per-entry | ✅ flexible | Low; lookup table is a SPOF/bottleneck |
+
+**Monotonic-key trap:** sharding by auto-increment ID or timestamp with *range* partitioning sends 100% of writes to the last shard. Fix: hash the key, or use a **hash + time** composite so writes spread.
+
+## Rebalancing without downtime
+
+- **Fixed partition count (Cassandra/Dynamo style):** create *many* more partitions than nodes up front (e.g. 256). Adding a node just reassigns whole partitions — no re-hashing, minimal data movement.
+- **Consistent hashing with virtual nodes:** each physical node owns many points on the ring, so adding a node steals a slice from *every* existing node evenly instead of one neighbor.
+- **The live migration dance:** dual-write to old+new shard → backfill historical rows → verify → flip reads → stop old writes. This is a multi-day operation at scale, done behind a feature flag with a rollback path.
+
+## What sharding costs you
+
+- **Cross-shard JOINs / aggregations** → application-side scatter-gather + merge. Denormalize instead.
+- **Cross-shard transactions** → no single-node ACID; you need **2PC** (slow, blocking) or a **saga** (eventual, compensating actions). Design to keep a transaction within one shard.
+- **Secondary indexes** → a global index is itself a distributed system. Choices: **local index** (per-shard, needs scatter-gather to query) vs **global index** (separate shard set, adds write latency).
+- **Re-sharding** is the hardest op you'll run — pick the key so you never have to.
+
+## Interview probes you should survive
+
+- *"Your shard key is `user_id` but your hottest query is 'all orders in region X' — problem?"* → That query scatter-gathers every shard. Either add a region-sharded read replica/secondary index, or reconsider the key. Name the read/write trade.
+- *"How do you add a 4th shard to a 3-shard hash setup without moving everything?"* → Don't use `hash % N`. Use consistent hashing or a fixed large partition count so only ~1/N of keys move.
+- *"A tenant grows to 10× everyone else — now what?"* → That tenant is a hotspot. Split it out to its own shard(s) (a dedicated "whale" shard), or sub-shard within the tenant. Uniform hashing alone won't save you from a single fat key.
+
+---
+
 ## Applied In
 
 This concept is used by **17 problems** in this repo — a representative selection:

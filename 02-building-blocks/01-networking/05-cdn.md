@@ -99,6 +99,48 @@ If you set the TTL of `logo.png` to 24 hours, the CDN will hold the image for ex
 
 ---
 
+# 🎯 SDE-3 Deep Dive
+
+The above covers *what* a CDN is. Seniors get asked **how a user is routed to the nearest edge, how CDNs help even dynamic content, invalidation at scale, and the security role.**
+
+## How does the request actually reach the nearest PoP?
+
+Two mechanisms — know both:
+
+- **Anycast:** the same IP is announced from every PoP via BGP; the internet's routing naturally sends the user to the topologically nearest one. Fast failover (a dead PoP just stops announcing), used by Cloudflare. Downside: routing is per-network-hop, not strictly geographic.
+- **DNS-based (GSLB):** the CDN's authoritative DNS returns a *different* edge IP based on the resolver's location/health/load. More control (can steer by load, do gradual rollouts) but bounded by DNS TTL — failover is as slow as the cached TTL. Used by Akamai historically.
+
+The senior line: **anycast for fast failover, DNS-GSLB for fine-grained traffic steering; large CDNs combine both.**
+
+## CDNs accelerate dynamic content too — not just static
+
+Don't stop at "CDN = static files." Modern CDNs speed up **uncacheable, personalized** responses via:
+
+- **TCP/TLS termination at the edge** — the expensive handshakes happen over the short user→edge hop; the edge holds a warm, pooled connection back to origin. Saves multiple RTTs on the slow long-haul leg.
+- **Optimized backbone routing** — the origin fetch travels the CDN's private, congestion-managed network instead of the public internet (AWS Global Accelerator, Cloudflare Argo).
+- **Edge compute** — Cloudflare Workers / Lambda@Edge run logic (auth, A/B routing, personalization) at the PoP, so even "dynamic" responses avoid a round trip to origin.
+
+## Cache invalidation at scale — the hard part
+
+- **Purge propagation isn't instant** across thousands of PoPs; a global purge takes seconds to minutes. For correctness-critical updates, **versioned URLs** (`app.a1b2c3.js`) are strictly better — a new URL can *never* serve stale content and needs no purge.
+- **Cache-key design:** by default the key is the URL, but you often must include `Vary` headers (Accept-Encoding, device type) or query params — and *exclude* tracking params (`utm_*`) or you shard your cache and tank the hit ratio.
+- **`stale-while-revalidate` / `stale-if-error`:** serve the stale copy instantly while fetching a fresh one in the background (or when origin is down). Keeps latency and availability high during revalidation.
+
+## The security / availability role
+
+- **DDoS absorption:** the CDN's massive edge capacity soaks up volumetric attacks far from your origin; the origin's real IP stays hidden (only the CDN talks to it).
+- **WAF / bot management** run at the edge, blocking malicious requests before they cost origin resources.
+- **Origin shield:** a designated mid-tier PoP that all edges pull through, so a cold global cache produces *one* origin fetch instead of one-per-PoP — protects origin from a **thundering herd** on cache expiry.
+
+## Interview probes you should survive
+
+- *"How does a user in Sydney get routed to the Sydney PoP?"* → Anycast (same IP announced everywhere, BGP picks nearest) or DNS-based GSLB (authoritative DNS returns a nearby edge IP by geo/load). Trade fast-failover vs fine-grained steering.
+- *"Can a CDN help with API responses that can't be cached?"* → Yes — edge TLS termination, warm pooled origin connections, private backbone routing, and edge compute cut RTTs even when the body isn't cacheable.
+- *"You pushed a bad JS bundle globally — how do you fix it fast?"* → Versioned URLs make it a non-issue (point HTML at the previous version). Otherwise issue a global purge and accept propagation lag; `stale-if-error` limits blast radius.
+- *"Cold cache after a deploy — how do you avoid hammering origin?"* → Origin shield (single mid-tier fetch) + `stale-while-revalidate` so edges serve stale during refill.
+
+---
+
 ## Applied In
 
 This concept is used by **6 problems** in this repo:
