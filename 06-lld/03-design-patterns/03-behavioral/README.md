@@ -3,14 +3,15 @@
 >
 > **What this covers:** Behavioral Design Patterns — algorithms and the assignment of responsibilities between objects, focusing on communication patterns.
 >
-> **The 9 Patterns (Key Ones):**
+> **The 11 Patterns (Key Ones):**
 > - Strategy: Swap algorithms at runtime (e.g., Payment processing with CreditCard/PayPal). The most important behavioral pattern.
 > - Observer: Publish-Subscribe mechanism. When subject changes state, all subscribers are notified (e.g., UI reacting to data changes).
 > - State: Object alters its behavior when its internal state changes (e.g., Vending Machine states like HAS_COIN, DISPENSING).
 > - Command: Encapsulate a request as an object to support queuing, logging, and undo/redo operations.
 > - Chain of Responsibility: Pass a request along a chain of handlers (e.g., Logger filtering `DEBUG` vs `ERROR`, or Middleware).
 > - Template Method: Define the skeleton of an algorithm in a base class, letting subclasses override specific steps.
-> - Mediator, Iterator, Visitor: Less commonly asked, but cover centralized communication, sequential traversal, and adding operations to object structures respectively.
+> - Memento: Capture and restore an object's state without breaking encapsulation (e.g., undo/redo, game save points).
+> - Mediator, Iterator, Visitor, Interpreter: Less commonly asked, but cover centralized communication, sequential traversal, adding operations to object structures, and evaluating a small grammar/DSL respectively.
 >
 > **Key takeaway:** Strategy, Observer, and State are the "Big Three" behavioral patterns for LLD interviews. Master them first. They handle 80% of communication logic in design problems.
 
@@ -112,6 +113,27 @@ Defines the skeleton of an algorithm, letting subclasses override specific steps
   * UI lifecycle methods (React/Android component lifecycles).
 * **Java Implementation:**
   * `abstract class` with a `final` template method and `abstract` primitive operation steps.
+
+### [Memento](./memento-pattern.md)
+Captures and restores an object's internal state without violating encapsulation.
+* **Interview Examples:**
+  * Undo/redo in text editors and drawing apps (snapshot the document state).
+  * Game save points and checkpoints (restore position, health, inventory).
+  * Transactional rollback — snapshot before a risky multi-step change, restore on failure.
+* **Java Implementation:**
+  * `Originator` with `save()` returning a `Memento` and `restore(Memento)`.
+  * `Memento` as an opaque snapshot (often a private nested class) and a `Caretaker` (undo stack) that stores mementos without reading them.
+
+### [Interpreter](./interpreter-pattern.md)
+Defines a grammar for a small language and evaluates sentences by modeling each rule as a class.
+* **Interview Examples:**
+  * Rules engines and filter DSLs (`age > 18 AND country == "US"`).
+  * Calculators / arithmetic expression evaluation.
+  * Feature-flag condition evaluation.
+* **Java Implementation:**
+  * `Expression` interface with `interpret(context)`.
+  * Terminal expressions (`Number`, `Variable`) and non-terminal expressions (`And`, `GreaterThan`) that compose sub-expressions into an AST.
+  * *Know when to stop:* for complex/evolving grammars, reach for ANTLR instead.
 
 
 ---
