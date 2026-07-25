@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook — block commits that would introduce a broken relative markdown link.
+#
+# Install (once, per clone):
+#   ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+# or run: ./scripts/install-hooks.sh
+#
+# Checks only the staged *.md files so it stays fast. Bypass with `git commit --no-verify`.
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+# Staged markdown files (Added/Copied/Modified/Renamed), as absolute paths.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.md' | sed "s#^#$ROOT/#")
+
+[ -n "$staged" ] || exit 0
+
+# shellcheck disable=SC2086
+"$ROOT/scripts/check-links.sh" $staged
