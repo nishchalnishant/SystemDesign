@@ -113,7 +113,7 @@ Commands/events + choreography/orchestration + event sourcing is the intro. Seni
 
 The intro's "Order Service saves to its DB *and* publishes to Kafka" hides the #1 EDA bug: those are **two separate systems with no shared transaction.** If the DB commit succeeds but the Kafka publish fails (or vice versa), state and events diverge — a lost order or a phantom event. You **cannot** wrap a DB and a broker in one atomic transaction.
 
-The fix is the **Transactional Outbox** ([`07-outbox-cdc-pattern.md`](07-outbox-cdc-pattern.md)): write the event to an `outbox` table **in the same DB transaction** as the state change; a separate relay (poller or CDC via [`03-change-data-capture.md`](03-change-data-capture.md)) reads the outbox and publishes to Kafka. Now the event is durable iff the state change committed — atomicity restored. This is the single most important senior EDA pattern.
+The fix is the **Transactional Outbox** ([`07-outbox-cdc-pattern.md`](07-outbox-cdc-pattern.md)): write the event to an `outbox` table **in the same DB transaction** as the state change; a separate relay (poller or CDC via [`03-change-data-capture.md`](../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md)) reads the outbox and publishes to Kafka. Now the event is durable iff the state change committed — atomicity restored. This is the single most important senior EDA pattern.
 
 ## Sagas — distributed transactions without 2PC
 

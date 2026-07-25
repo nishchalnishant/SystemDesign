@@ -107,7 +107,7 @@ Aggregations, joins, and windows are **stateful** — the operator must remember
 
 - **Lambda vs Kappa:** *Lambda* runs a batch layer (accurate, slow) alongside a speed layer (fast, approximate) and merges — but you maintain **two codebases**. *Kappa* says: just make the stream layer replayable (reprocess history from Kafka) and drop the batch layer. Kappa wins when your stream engine can reprocess; Lambda persists where batch tooling is entrenched.
 - **Flink vs Kafka Streams vs Spark Structured Streaming:** Flink is true event-at-a-time, lowest latency, richest windowing/state; Kafka Streams is a *library* (no cluster) tightly coupled to Kafka, great for simpler per-record apps; Spark Structured Streaming is micro-batch (slightly higher latency, unifies with batch/ML). Match the tool to latency + ops tolerance.
-- Feeds naturally from **CDC** ([`03-change-data-capture.md`](03-change-data-capture.md)) and pairs with the **outbox pattern** ([`07-outbox-cdc-pattern.md`](07-outbox-cdc-pattern.md)) as the event source.
+- Feeds naturally from **CDC** ([`03-change-data-capture.md`](../../01-foundations/05-advanced-distributed-theory/03-change-data-capture.md)) and pairs with the **outbox pattern** ([`07-outbox-cdc-pattern.md`](07-outbox-cdc-pattern.md)) as the event source.
 
 ## Interview probes you should survive
 

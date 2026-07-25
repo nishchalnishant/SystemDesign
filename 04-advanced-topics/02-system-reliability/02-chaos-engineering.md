@@ -107,7 +107,7 @@ Running this in prod is only responsible with guardrails. Name them:
 
 ## Where it fits: SLOs, error budgets, and GameDays
 
-- Chaos consumes **error budget** ([`01-reliability`](01-reliability.md) / SRE): if you're already burning budget, you *pause* chaos — it's a discretionary spend against your reliability target.
+- Chaos consumes **error budget** ([`01-observability`](01-observability.md) / SRE): if you're already burning budget, you *pause* chaos — it's a discretionary spend against your reliability target.
 - **GameDays** are scheduled, human-in-the-loop disaster rehearsals (e.g., "we fail over the primary region at 2pm") — the manual, higher-stakes cousin of automated continuous chaos. They validate **runbooks and human response**, not just code.
 - **Continuous verification** is the end state: chaos experiments run automatically in CI/CD as a resilience regression suite, so a newly introduced missing timeout or retry storm is caught before it reaches customers.
 
