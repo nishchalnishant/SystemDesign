@@ -18,6 +18,10 @@
 | Resource | File | Description |
 |----------|------|-------------|
 | **Numbers to Know** | [numbers-to-know.md](numbers-to-know.md) | Latency, throughput, and cost numbers (memory, disk, network) — essential for capacity estimation |
+| **Decision Trees** | [decision-trees.md](decision-trees.md) | "Which one do I pick?" selection trees — SQL vs NoSQL, consistency, caching, push/pull, sharding, rate limiting |
+| **Cloud Services Cheat Sheet** | [cloud-services-cheat-sheet.md](cloud-services-cheat-sheet.md) | AWS / GCP / Azure service mappings to generic architectural components |
+| **ML System Design** | [ml-system-design.md](ml-system-design.md) | Core concepts for machine-learning system-design questions |
+| **Glossary** | [system-design-glossary.md](system-design-glossary.md) | Definitions of common system-design terms |
 | **Book Summaries** | [book-summaries/](book-summaries/) | Notes from DDIA, Head First Java, Head First OOA&D |
 
 The main [SUMMARY](../SUMMARY.md) lists these under **6. Reference** (via the 6.-reference folder).
