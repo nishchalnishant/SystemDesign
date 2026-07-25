@@ -139,6 +139,8 @@ This ensures no domain gets more than its fair share of requests regardless of h
 
 **Politeness beyond robots.txt**: Use exponential backoff on 429 (Too Many Requests) and 503 responses. Detect soft rate limits (responses arriving slower than usual) and back off proactively.
 
+> 🎯 **Staff signal:** The insight is that politeness is a *per-domain* invariant that must survive a frontier sharded for *throughput* — and those two goals fight. The senior structure is the two-level frontier: per-domain queues enforce crawl-delay locally, feeding one fetcher queue that round-robins across domains, so a domain with a million pending URLs still gets exactly its rate-limited share. Name the failure of the naive single priority queue: it would let one large site monopolize your fetchers and get you IP-banned. Recognizing that fairness/politeness is a scheduling constraint you design the frontier *around*, not a check you bolt on, is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 2: Deduplication at Scale
@@ -159,6 +161,8 @@ This ensures no domain gets more than its fair share of requests regardless of h
 - Sort query params: `?b=2&a=1` → `?a=1&b=2`
 - Remove fragments: `#section` removed (same page)
 - Lowercase scheme and host
+
+> 🎯 **Staff signal:** The move is a *two-stage* dedup that plays each structure to its strength: a bloom filter as an O(1), 5 GB in-memory pre-filter that answers "definitely new / maybe seen" with zero false negatives — so it *never* lets a duplicate through — backed by an exact Redis SET check only for the maybes. Name why the false-positive direction is the safe one: a bloom false positive occasionally skips a genuinely new URL (a cheap miss), whereas a false negative would re-fetch and is the failure you can't tolerate at 1B pages. The deeper senior point is separating *URL* dedup from *content* dedup (SimHash for near-duplicates), because the same page is reachable by many URLs. Choosing the probabilistic structure *because its error mode is the acceptable one* is the E5→E6 line.
 
 ---
 
@@ -184,6 +188,8 @@ A page that changes daily: next crawl in 1 day. A page unchanged for 6 months: n
 - Member: URL
 
 Workers call `ZPOPMIN` to get the URL with the earliest scheduled crawl time. URLs not yet due sit in the frontier until their scheduled time.
+
+> 🎯 **Staff signal:** The senior reframe is that a full crawl takes ~11 days, so "crawl everything" is never the goal — *freshness allocation* is. The insight is making recrawl interval a function of measured `change_rate` (`next_crawl = last_crawl + freshness_target / change_rate`), so a news homepage that changes hourly is revisited constantly while a static docs page drifts to monthly — you spend your fixed 1,000 pages/sec budget where content actually moves. Implementing that as a Redis ZSET scored by `next_crawl_at` with `ZPOPMIN` turns "what should I crawl next" into a single O(log N) pop. Converting a fixed crawl budget into a demand-and-change-weighted schedule, rather than a flat round, is the E5→E6 framing.
 
 ---
 

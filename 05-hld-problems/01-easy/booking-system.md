@@ -158,6 +158,8 @@ Redis serves as a fast pre-filter. Only requests that pass Redis proceed to Post
 
 **Recommendation**: Optimistic locking for normal booking. Redis pre-filter + optimistic locking for flash sales.
 
+> 🎯 **Staff signal:** The senior framing is picking your concurrency control *by contention level*, not by reflex. Optimistic (version-CAS) wins under normal load because conflicts are rare and losers fail fast; the moment you hit flash-sale contention on one hot inventory row, `SELECT FOR UPDATE` serializes thousands of requests and the lock queue *becomes* the outage — the same failure mode as ticketmaster. The two-tier answer — Redis atomic DECR as a fast pre-filter to shed sold-out traffic before it ever reaches Postgres — is what shows you know optimistic locking alone still hammers the DB with doomed retries under a spike.
+
 ---
 
 ## Deep Dive 2: Search and Availability Queries
@@ -181,6 +183,8 @@ Index: `(property_id, check_in, check_out, available_count)`. For hotels with 36
 
 **Cache for popular date ranges**: Cache availability for popular weekends (Labor Day, New Year's) in Redis with a 30-second TTL. Invalidate on any booking or cancellation.
 
+> 🎯 **Staff signal:** The insight is *splitting the query across two stores by access pattern* — Elasticsearch for fuzzy/geo/full-text filtering (which SQL does badly) to narrow to candidate property_ids, then Postgres for the authoritative, real-time availability count (which ES's near-real-time index can't be trusted for). Name why the order matters: you let ES prune the search space cheaply, then pay for the precise transactional read only on the survivors. The failure to avoid is trusting the CDC-fed ES index for availability — it's seconds stale, and a stale "available" causes a double-book. Search vs. source-of-truth separation is the E5→E6 line.
+
 ---
 
 ## Deep Dive 3: Handling Cancellations and Refunds
@@ -202,6 +206,8 @@ Index: `(property_id, check_in, check_out, available_count)`. For hotels with 36
 **Partial refunds**: Cancellation policies vary (full refund > 7 days before check-in, 50% refund within 7 days, no refund < 24 hours). Store the policy on the booking at time of creation. Apply at cancellation time.
 
 **Inventory release timing**: When a booking is cancelled, should the room immediately become bookable again? Yes — release inventory atomically in the same transaction as the cancellation. Another user can book it immediately.
+
+> 🎯 **Staff signal:** The senior move is recognizing the cancellation spans two consistency domains — your DB (release inventory) and an external payment processor (issue refund) — that can't share a transaction, so a naive "cancel and refund" is a distributed-write with no atomicity. The right shape is a compensating-transaction saga: commit the booking-cancel + inventory-release in one local ACID transaction, then enqueue the refund as an idempotent, retried step whose failure never rolls back the cancellation. Name the specific correctness bug you're preventing: releasing inventory in the *same* transaction means the seat is instantly rebookable, but the refund being *eventually* consistent means you never let a failed bank call strand a cancelled-but-not-refunded booking. Separating the atomic local step from the retriable external step is the E5→E6 line.
 
 ---
 

@@ -171,6 +171,8 @@ class SnowflakeGenerator:
 - **Sequence overflow**: If 4,096 IDs are generated in the same millisecond, block until the next millisecond.
 - **Clock drift**: NTP can move the clock backward. Detect and raise an exception — never generate duplicate IDs.
 
+> 🎯 **Staff signal:** The senior insight is *why* the 64 bits are partitioned as timestamp-then-machine-then-sequence: putting the timestamp in the high bits makes the IDs k-sortable, so inserts hit the right edge of the B-tree index instead of scattering random page splits — the exact pathology UUIDv4 causes. The machine-ID bits are what let every node generate independently with zero coordination; the sequence bits cap you at 4,096 IDs/ms/node, and you *block until the next millisecond* rather than risk a collision. Explaining that Snowflake buys coordination-free generation *and* index-friendly ordering from one bit layout — and naming the 4,096/ms ceiling as the deliberate cost — is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 2: Alternative Approaches
@@ -195,6 +197,8 @@ class SnowflakeGenerator:
 
 **Recommendation**: Snowflake for high-throughput, sortable, 64-bit IDs without coordination. UUID v7 when cross-system sharing requires 128-bit. Auto-increment only for single-node small-scale systems.
 
+> 🎯 **Staff signal:** The judgment move is refusing to default to UUIDv4 "because it's coordination-free" — you name its real cost: 128 random bits fragment your primary index and double storage versus a 64-bit integer. The modern senior answer is that UUIDv7 (RFC 9562) exists precisely to fix v4's sort problem by putting a millisecond timestamp in the high bits, so the choice is now a clean axis: 64-bit Snowflake when you control the ID space and want the smallest sortable key, UUIDv7 when cross-system sharing forces 128-bit but you still want locality. Choosing along "do I need cross-system portability, and what does randomness cost my index?" rather than reciting UUID-vs-auto-increment is the E5→E6 line.
+
 ---
 
 ## Deep Dive 3: Clock Synchronization and Monotonicity
@@ -210,6 +214,8 @@ class SnowflakeGenerator:
 4. **Borrow from future**: Artificially advance the sequence counter by the drift amount. Guarantees uniqueness but reduces future throughput.
 
 **Modern systems**: Use a hardware clock with monotonic guarantees (`CLOCK_MONOTONIC`). NTP adjusts the rate of the monotonic clock (slewing) rather than jumping backward. Most cloud VMs provide `vDSO` monotonic clocks. Backward jumps only happen on virtualization pause/resume — handle via detection and wait.
+
+> 🎯 **Staff signal:** The insight that separates senior from correct is that Snowflake's uniqueness *rests entirely on the clock never going backward* — the timestamp bits are load-bearing, so a backward NTP jump doesn't cause a slowdown, it causes duplicate IDs, a silent correctness bug. Name the root fix, not just the patch: read from `CLOCK_MONOTONIC`, which NTP *slews* (adjusts rate) rather than steps, so it never moves backward except on VM pause/resume — and for that residual case you detect-and-refuse rather than emit a dup. Treating "the wall clock is not monotonic" as an architectural assumption to eliminate, not an edge case to catch, is the E5→E6 framing.
 
 ---
 

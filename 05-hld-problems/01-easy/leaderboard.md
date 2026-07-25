@@ -133,6 +133,8 @@ Higher integer score wins. Among ties, earlier timestamp wins (fractional part c
 
 Alternatively, use compound keys: `ZADD lb {score} {player_id}` and `ZADD lb_tiebreak {timestamp} {player_id}`. Query lb first; on ties, consult lb_tiebreak.
 
+> 🎯 **Staff signal:** The reason a sorted set is *the* answer — not a SQL `ORDER BY score LIMIT` — is the skip-list: it gives O(log N) rank/insert and O(log N + K) range reads in one structure, so "top 100" and "my rank" are both cheap on the write-heavy hot path a SQL index can't keep up with. The senior detail is *encoding the tiebreak into the score itself* (integer score + fractional inverse-timestamp) so ordering stays a single-key operation rather than a second query. Reaching for the skip-list's complexity guarantees, and folding the tiebreak into the sort key, is the signal.
+
 ---
 
 ## Deep Dive 2: Multiple Leaderboards and Segmentation
@@ -160,6 +162,8 @@ Score event → Kafka → Consumer group:
 **Weekly leaderboard reset**: Use Redis key expiry. Set `EXPIREAT leaderboard:weekly:2026-w26 <next_monday_unix>`. When the key expires, the leaderboard is automatically deleted. New entries for the next week go to a new key. No manual cleanup needed.
 
 **Memory management**: Keep only active leaderboards (current season, last season for historical reference). Archive old leaderboards by dumping to S3 before expiry.
+
+> 🎯 **Staff signal:** The move worth naming is letting *Redis key-expiry be your reset mechanism* — `EXPIREAT` on the weekly key means the leaderboard deletes itself with zero cron jobs, zero cleanup queries, and no risk of a half-deleted state. A single score event fans out to N leaderboards via one consumer group, so adding "regional weekly" is a new key, not new write-path code. Framing resets and retention as *properties of the key namespace* rather than application logic — the DB does the lifecycle work — is the E5→E6 framing.
 
 ---
 
@@ -189,6 +193,8 @@ def get_nearby(player_id, season_id):
 **Top-N caching**: The top 100 leaderboard is read 50K times/sec but changes infrequently (only when top players' scores change). Cache the top-100 list in Redis with a 1-second TTL (as a string, not a sorted set). On cache miss, recompute from the sorted set.
 
 **Score update rate limiting**: A player can submit many score updates rapidly (e.g., 10 updates/second from multiple game sessions). Rate limit to 1 update/second per player_id using a Redis token bucket. Buffer additional updates in a per-player queue, apply the highest score.
+
+> 🎯 **Staff signal:** The trap is the top-100 read: 50K reads/sec against a sorted set that changes rarely. The senior fix is caching the *materialized* top-100 as a plain string with a 1-second TTL — you trade ≤1s of staleness (invisible on a leaderboard) to turn 50K sorted-set range queries into 50K O(1) string GETs. Contrast with "my rank / nearby," which *must* hit the sorted set live because it's per-user. Recognizing that reads split into a cacheable hot-shared view and an uncacheable per-user view — and applying staleness only where it's free — is the signal.
 
 ---
 

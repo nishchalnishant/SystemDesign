@@ -136,6 +136,8 @@ Lookup is now O(prefix_length) — just traverse the trie to the prefix node and
 
 **Serialization**: Serialize the trie as a flat byte array (DFS pre-order) for fast loading. Stored in Redis as a blob or loaded from S3 on startup. Servers load a new trie snapshot every 5 minutes.
 
+> 🎯 **Staff signal:** The whole design turns on *pre-computing top-K at every node* — that's the move that converts an autocomplete lookup from "traverse the entire subtree under a prefix and rank" (O(subtree)) into O(prefix length). Say explicitly that you're trading write-time/build-time cost and extra memory for a bounded, sub-millisecond read, because reads outnumber trie rebuilds by millions to one. Candidates who describe a trie but still rank at query time have the data structure without the insight.
+
 ---
 
 ## Deep Dive 2: Freshness — Handling Trending Queries
@@ -162,6 +164,8 @@ score = frequency_last_1h × 4 + frequency_last_24h × 2 + frequency_last_week �
 ```
 Trending queries (spike in last 1h) rise fast; stale queries fall off naturally.
 
+> 🎯 **Staff signal:** The precomputed trie and freshness are in tension — a trie you rebuild every 15 min for efficiency can't reflect a query that started trending 90 seconds ago. The senior answer is the *hybrid*: keep the trie for the stable long tail, and overlay a 30-second Redis hot tier for the spikes, merging at read time. Framing it as "two data paths with different freshness/cost profiles, unioned on lookup" — rather than picking batch *or* streaming — is the E5→E6 line; picking only one loses either freshness or the O(prefix) read.
+
 ---
 
 ## Deep Dive 3: Scaling and Personalization
@@ -177,6 +181,8 @@ Trending queries (spike in last 1h) rise fast; stale queries fall off naturally.
 - Personalization runs on the autocomplete server after the base trie lookup. Adds < 1ms (in-memory user history lookup).
 
 **Prefix sharding** (if needed at very large scale): Shard autocomplete servers by prefix range. Server 1 handles "a-f", server 2 handles "g-m", etc. Load balancer routes by first character of the prefix. Each server holds only its shard of the trie. Reduces per-server memory to 1/26 of total.
+
+> 🎯 **Staff signal:** The scale insight is that the trie is *replicated, not sharded* by default — it's only ~1 GB, so every server holds the whole thing and you scale reads by adding identical replicas, no cross-shard fan-out. Only reach for prefix-range sharding when the trie outgrows RAM, and name its cost: first-character sharding hot-spots on popular initial letters ("s", "t") unless you shard on a hash of the prefix. Knowing that *replication is the right first answer and sharding is the reluctant second* — with the hot-spot caveat — is the judgment signal.
 
 ---
 

@@ -133,6 +133,8 @@ Kafka → Analytics Consumer → ClickHouse
 
 **Recommendation**: Ticket server with batch pre-allocation is simplest and sufficient. Snowflake if you need machine-autonomous generation.
 
+> 🎯 **Staff signal:** Don't reach for a distributed UUID scheme by reflex — at 40 writes/sec the interesting constraint is the *opposite* of scale. Batch-allocating 1,000 IDs per fetch turns ID generation from a per-write network round-trip into one every 1,000 writes, and a lost batch on server crash just burns a few thousand IDs from a 62⁷ space — cheaper than the coordination a gapless sequence would cost. Naming that you'd *trade ID contiguity for a 1,000× round-trip reduction*, and that gaps are harmless here, is the judgment signal over "use Snowflake."
+
 ---
 
 ## Deep Dive 2: Redirect Latency Optimization
@@ -146,6 +148,8 @@ Kafka → Analytics Consumer → ClickHouse
 **Layer 3 — Read replicas**: PostgreSQL read replicas in each region handle the 5% Redis misses. Reads are simple point lookups on the primary key index — O(log n), sub-millisecond at shard size.
 
 **Cache warming on write**: When a URL is created, immediately write to Redis. Avoids a cold miss on the first click (common for viral links shared seconds after creation).
+
+> 🎯 **Staff signal:** The move that separates E5 from E6 here is *warming the cache on write*, not the cache itself. A URL shortener's access pattern is bimodal — a link goes viral seconds after creation, so the very first read is a stampede on a cold key. Writing to Redis synchronously at creation-time collapses that cold-miss window to zero; without it, the CDN and read-replica layers exist only to survive the thundering herd you could have prevented. Voicing that the workload's create-then-immediately-spike shape is *why* write-through beats lazy population is the signal.
 
 ---
 
@@ -167,6 +171,8 @@ For generated codes:
 **Reservation system**: For high-value custom aliases (brand names), allow pre-reservation via admin API before a URL is created. Stored as a `reserved_aliases` table. Checked before INSERT.
 
 **Rate limiting custom aliases**: Limit to 10 custom aliases per user per day to prevent namespace squatting.
+
+> 🎯 **Staff signal:** The insight is that custom aliases and generated codes *share one namespace*, so the correctness boundary is a single `UNIQUE(short_code)` constraint — let the database be the arbiter rather than a read-check-then-write race in the app. "Check if taken, then insert" is a TOCTOU bug under concurrency; catching the constraint violation and returning 409 is atomic and free. Recognizing that the DB constraint *is* your concurrency control — no lock, no separate reservation check on the hot path — is the E5→E6 framing.
 
 ---
 

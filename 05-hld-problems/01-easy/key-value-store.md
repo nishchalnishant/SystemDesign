@@ -129,6 +129,8 @@ Ring: consistent hash ring maps keys → nodes
 
 **Data movement on rebalancing**: When node N joins, it claims vnodes from existing nodes. For each claimed vnode's key range, the previous owner streams that key range to the new node. Uses a background data copy, not a blocking migration.
 
+> 🎯 **Staff signal:** The number to voice is *1/N keys move* on a membership change vs. *nearly all* under `hash(key) % N` — that single property is why consistent hashing exists, and it's what makes elastic scaling operationally survivable. The vnode layer is the second insight: it decouples *load distribution* from *physical node count*, so a bigger node simply owns more vnodes and rebalancing spreads across many donors instead of dumping everything on one neighbor. Naming "minimize remapped keys" as the actual design goal — not "distribute evenly" — is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 2: Conflict Resolution with Vector Clocks
@@ -145,6 +147,8 @@ Ring: consistent hash ring maps keys → nodes
 
 **Read-repair**: During a quorum read, if different nodes return different versions, the coordinator sends the winning version back to lagging nodes. Keeps replicas in sync without a dedicated anti-entropy process.
 
+> 🎯 **Staff signal:** The honest answer is that LWW *silently discards a concurrent write* — with NTP clock skew, "last" is a lie, and you lose data you can't even detect losing. Vector clocks trade that silent loss for *surfaced conflict*: they can't magically merge, but they can tell you two writes were genuinely concurrent and hand both to the client. State the tradeoff explicitly — "LWW for a shopping-cart's `last_updated` where loss is tolerable; vector clocks when a lost write is a correctness bug and the client can merge." Choosing consciously, and naming what LWW throws away, is the signal.
+
 ---
 
 ## Deep Dive 3: Failure Detection and Recovery
@@ -158,6 +162,8 @@ Ring: consistent hash ring maps keys → nodes
 **Hinted handoff**: When node N is down, its coordinator writes the data to a "hint" on another available node. The hint says "this data belongs to N; forward it when N recovers." When N recovers, the hinting node transfers the hint. Provides write availability even when the target node is down.
 
 **Anti-entropy (Merkle trees)**: After recovery, nodes synchronize by comparing Merkle trees of their key ranges. Two nodes hash their data into a tree; mismatches identify exactly which keys need to be synced. Reduces network bandwidth — only divergent data is transferred.
+
+> 🎯 **Staff signal:** Two mechanisms carry the availability story, and the senior move is naming *why each exists separately*. Hinted handoff preserves **write availability** during a failure — the write lands somewhere and gets forwarded on recovery, so a downed node never causes a write to fail. Merkle-tree anti-entropy handles **convergence after** — it makes divergent-data detection O(log n) comparisons instead of shipping the whole key range, so repair cost scales with *how much drifted*, not how much data exists. Distinguishing "stay available during the failure" from "reconcile cheaply after it" is the E5→E6 line.
 
 ---
 

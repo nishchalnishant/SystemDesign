@@ -148,6 +148,8 @@ Redis
 
 **Content deduplication**: Hash the content (SHA256). If two users submit identical content, store only one S3 object. Track hash → s3_key in PostgreSQL. Saves storage for common snippets (standard boilerplate, license headers).
 
+> 🎯 **Staff signal:** The move is *keeping the blob out of the primary database entirely* — Postgres holds only metadata + a `content_url`, and the 10 MB body lives in S3. Name the failure you're avoiding: TEXT columns bloat every backup, inflate replication traffic on rows that never change, and vacuum grinds; the DB's job is fast metadata lookup, not blob serving. The senior extension is the presigned URL — for large pastes you hand the client a direct-to-S3 link so the paste body never traverses app-server bandwidth. Recognizing that content and metadata have different scaling axes and belong in different stores is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 2: Expiration and Cleanup
@@ -161,6 +163,8 @@ Redis
 **Index on expires_at**: `CREATE INDEX idx_pastes_expires_at ON pastes(expires_at) WHERE expires_at IS NOT NULL;` — partial index covering only expiring pastes. Sweeper query is O(expired pastes) not O(all pastes).
 
 **S3 Lifecycle rules**: Configure S3 object lifecycle rule to delete objects with `expires-at` tag after the TTL. Belt-and-suspenders: even if the sweeper misses a paste, S3 eventually cleans it up.
+
+> 🎯 **Staff signal:** The senior instinct is treating cleanup as *defense in depth across two independent systems*, because a single sweeper is a single point of storage-leak. The app-level sweeper gives you prompt, queryable deletion — and the partial index `WHERE expires_at IS NOT NULL` keeps it O(expiring pastes), not O(all pastes), so it stays cheap as the table grows. The S3 lifecycle rule is the backstop that reclaims cost even if the sweeper is down for a week. Naming *why* you don't trust one deletion path — a missed delete is silent, unbounded S3 spend — is the E5→E6 line.
 
 ---
 
@@ -179,6 +183,8 @@ Redis
 **Takedown API**: Legal compliance — provide a `POST /admin/takedown/{paste_id}` endpoint. Immediately soft-deletes the paste and logs the reason. DMCA and government requests handled here.
 
 **Spam detection**: ML classifier (logistic regression on content features) flags spammy pastes (gibberish, template credential dumps). Flagged pastes go to a review queue rather than being published immediately.
+
+> 🎯 **Staff signal:** The insight most candidates miss is that a public paste service is *inherently* a malware/phishing CDN unless abuse control is a first-class subsystem, not an afterthought. The layered answer matters: a local bloom filter seeded from known-malware hashes gives an O(1) in-memory reject before you ever store the blob, and Google Safe Browsing catches malicious URLs the content links to. Name the tradeoff of async-vs-sync — synchronous scanning on the write path adds latency but stops bad content from ever being reachable, whereas a review queue trades a window of exposure for throughput. Treating abuse as an architectural pillar with a latency budget is the E5→E6 framing.
 
 ---
 

@@ -167,6 +167,8 @@ end
 - Much cheaper than log — 2 integers per user. Accuracy within 1% of true sliding window.
 - Implementation: Two Redis keys per user per window. Fetch both, compute weighted sum.
 
+> 🎯 **Staff signal:** The senior framing is that the sliding-window *counter* is a deliberate approximation of the sliding-window *log* — it stores 2 integers and interpolates instead of storing every timestamp, accepting ~1% error to drop memory from O(requests) to O(1) per user. Name the failure it fixes over fixed-window: the boundary burst, where 100 requests at 11:59:59 and 100 at 12:00:01 sail through as "two windows" despite being 200 in two seconds. Choosing the counter because you can *quantify* the accuracy you're trading (≤1%) for the memory you're saving — rather than reaching for the exact log — is the E5→E6 line.
+
 ---
 
 ## Deep Dive 2: Distributed Rate Limiting
@@ -183,6 +185,8 @@ end
 - **Local fallback**: Fall back to in-process counter (per-server). Allows up to N× the limit (N servers), but better than total outage.
 
 For most APIs: fail open + alert on Redis failure. For high-value APIs (payment, auth): fail closed.
+
+> 🎯 **Staff signal:** The move is recognizing that a shared Redis counter makes the rate limiter itself a dependency on your hot path, so the *whole* design question is "what happens when Redis is down?" — and the answer isn't one policy, it's a per-endpoint decision. Fail open for a public read API (abuse is cheaper than an outage), fail closed for `/login` and `/charge` (a rate-limit bypass on auth is a security incident, not a revenue dip), and local per-server fallback as the middle ground that caps blast radius at N× instead of ∞×. Naming that the failure mode of the rate limiter must be chosen against the cost of the thing it protects is the E5→E6 framing.
 
 **Multi-region**: Users can hit any region. A user in EU and a VPN hop to US could split their requests across two Redis clusters.
 - Option 1: Route all requests for a user_id to a single region (sticky routing by hash). Adds latency for users far from their "home" region.
@@ -209,6 +213,8 @@ Rules are stored in a configuration service and cached locally on each app serve
 **Allowlist and denylist**: 
 - Allowlist: skip rate limit check for internal services, health check IPs.
 - Denylist: immediately reject requests from known bad actors without Redis round-trip. Stored in a local bloom filter updated every 60s.
+
+> 🎯 **Staff signal:** The insight is that a *shared* counter creates a single hot Redis key for exactly the users you most need to limit — the celebrity every server checks simultaneously — turning your rate limiter into its own bottleneck. The senior fix is sharding the key by `server_id` (`ratelimit:{user}:{server_id}:{window}`) so each server owns a local counter and you sum shards for the global view, trading ~1s of accounting lag for eliminating the hot key. Pair it with local rule caching so only the counter check — never rule lookup — touches Redis. Seeing that the naive shared-counter design concentrates load precisely where load is highest is the E5→E6 line.
 
 ---
 
