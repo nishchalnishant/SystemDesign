@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Iterator Pattern
 
+> 🔵 **Java idiom:** This is *built into the language*: implement `Iterable<T>` (returns an `Iterator<T>` with `hasNext()`/`next()`) and your object works in a for-each loop. **JDK equivalent:** the entire Collections framework; `Scanner`. **Interview gotcha:** know **fail-fast vs fail-safe** — most collection iterators throw `ConcurrentModificationException` if the collection is structurally modified mid-iteration (via a `modCount` check), while `CopyOnWriteArrayList` / `ConcurrentHashMap` iterators are weakly-consistent/fail-safe. Mention `Iterator.remove()` as the *only* safe way to delete during iteration, and that Java 8 `Stream`s are the functional alternative for internal iteration.
+
 ## Question
 
 You have a `VideoLibrary` that stores videos internally in an `ArrayList`. You need to let a client iterate through all videos. You also have a `PlaylistLibrary` that uses a `LinkedList`. The client code must work the same way for both. Write the traversal code.

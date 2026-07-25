@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Decorator Pattern
 
+> 🔵 **Java idiom:** The decorator `implements` the same interface as the wrapped object *and* holds a reference to it, forwarding calls plus added behavior. **The archetypal JDK example is `java.io`:** `new BufferedReader(new InputStreamReader(new FileInputStream(f)))` — each wrapper adds one capability (buffering, char-decoding) over the same `Reader`/`InputStream` contract. Also `Collections.synchronizedList()`/`unmodifiableList()`. **Interview gotcha:** contrast with inheritance — decorators compose at *runtime* and stack in any order/count, avoiding the subclass explosion (`BufferedGzipEncryptedStream…`). Distinguish from Proxy (same interface, but Proxy *controls access* rather than *adding features*) and Adapter (*changes* the interface).
+
 ## Question
 
 You have a `Pizza` class with a `getCost()` method. Pizzas can have toppings: cheese (+$1), mushrooms (+$1.50), olives (+$0.75). Any combination is valid. Model this using inheritance.

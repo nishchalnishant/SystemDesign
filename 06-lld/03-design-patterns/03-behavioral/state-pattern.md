@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # State Pattern
 
+> 🔵 **Java idiom:** A `State` interface with the context's operations; each concrete state handles the request *and* decides the next state, and the context delegates to its current `State` field. In Java, states are often **enums with abstract methods** (`enum OrderState { NEW { ... }, PAID { ... }; abstract OrderState next(); }`) — compact and exhaustive. **Interview gotcha:** State replaces sprawling `if (status == …)` conditionals scattered across methods; the transition table becomes explicit. Distinguish from Strategy (identical structure!) by *intent*: State objects **transition to each other automatically** based on internal events and know about sibling states; Strategy objects are **injected by the client**, are independent, and don't self-replace. Name where transitions live (in the states vs a central table) as a design choice.
+
 ## Question
 
 You are designing a `VendingMachine`. It has four states: `IDLE`, `HAS_COIN`, `DISPENSING`, `OUT_OF_STOCK`. Write `insertCoin()`, `selectProduct()`, and `dispense()` methods for the machine.

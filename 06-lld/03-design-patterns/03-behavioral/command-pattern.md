@@ -22,6 +22,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Command Pattern
 
+> 🔵 **Java idiom:** A `Command` interface with `execute()` (and often `undo()`), each concrete command capturing its receiver + args. Java 8 collapses trivial commands into lambdas/method references — `Runnable` *is* a command, which is why `ExecutorService.submit(Runnable)` and `Callable` are Command in the JDK. **Interview gotcha:** the payoff features are what to name — **undo/redo** (keep executed commands on a stack, call `undo()` to reverse), **queueing/logging** (commands are serializable requests you can persist or replay), and **decoupling** the invoker (button) from the receiver (business object). Contrast with Strategy: both wrap behavior, but Command represents *a request to do something later* (with a receiver and lifecycle), Strategy is *how to do one thing now*.
+
 ## Question
 
 You are building a `RemoteControl` that can operate a `Light` (on/off) and a `Fan` (on/off). Write the `pressButton(String device, String action)` method. Now add undo. Now support macros (press one button to run a sequence of actions).

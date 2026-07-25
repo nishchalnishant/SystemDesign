@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Flyweight Pattern
 
+> 🔵 **Java idiom:** Split intrinsic (shared, immutable) from extrinsic (context-supplied) state and pool the intrinsic objects, usually behind a factory with a `Map` cache. **JDK equivalent:** `Integer.valueOf()` caches −128..127 (why `Integer.valueOf(100) == Integer.valueOf(100)` but `valueOf(200) != valueOf(200)`); `String` interning in the string pool; `Boolean.valueOf()`. **Interview gotcha:** flyweights must be **immutable** (they're shared across contexts — a mutation leaks everywhere), and this is the classic reason `==` vs `.equals()` bites people on boxed `Integer`. Quantify the win: N glyphs/particles/tiles collapse to K distinct shared instances.
+
 ## Question
 
 You are building a 2D forest game. You create 1,000,000 `Tree` objects. Each tree has: `type` (Oak, Pine, Birch), `texture` (50KB image), `color`, `x`, `y`. How much memory does this use? What is wrong with creating a distinct object per tree?

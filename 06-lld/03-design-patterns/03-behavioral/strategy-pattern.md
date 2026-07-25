@@ -22,6 +22,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Strategy Pattern
 
+> 🔵 **Java idiom:** A `Strategy` interface injected into the context (constructor or setter). Since Java 8, most strategies are **lambdas / method references** against a functional interface — `Comparator` passed to `Collections.sort(list, comparator)` is the textbook JDK example, as are `Runnable`, `Predicate`, `Function`. **Interview gotcha:** this is the single most reusable LLD pattern — reach for it whenever a problem says "multiple ways to do X" (payment methods, pricing tiers, sort orders, rate-limiting algorithms). Prefer injecting the strategy (DI/Spring) over a `switch`. Distinguish from State (Strategy is client-chosen and stable for the task; State self-transitions internally) and Command (Command bundles a receiver + a deferred request; Strategy is a pure algorithm).
+
 ## Question
 
 You have a `PaymentProcessor` class. It currently handles Stripe payments. Now you need to add PayPal. Then crypto. Then bank transfer. Where do you put the fourth payment method?

@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Factory Pattern
 
+> 🔵 **Java idiom:** In Java the product is an `interface`/abstract class and the factory is often a `static` method (`static Shape create(String type)`) or a subclass overriding an abstract `createProduct()` (true Factory *Method*). **JDK equivalent:** `Calendar.getInstance()`, `NumberFormat.getInstance()`, `Collections.unmodifiableList()`, `EnumSet.of()` — all hide `new` behind a named static method. **Interview gotcha:** prefer replacing the `switch`/`if-else` type dispatch with a `Map<String, Supplier<Shape>>` registry so adding a product doesn't modify the factory (Open/Closed). Distinguish the *Simple Factory* (a static helper, not a GoF pattern) from the *Factory Method* (subclass-overridden, polymorphic).
+
 ## Question
 
 You are building a notification service. Currently it only sends emails. Write the code to send an email notification. Now a requirement comes in: also support SMS. Then push notifications. Where does the creation logic go?

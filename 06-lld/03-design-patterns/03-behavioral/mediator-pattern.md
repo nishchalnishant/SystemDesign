@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Mediator Pattern
 
+> 🔵 **Java idiom:** Colleagues talk to a central `Mediator` interface instead of each other; the mediator owns the interaction logic. **JDK/framework equivalent:** `java.util.concurrent.ExecutorService` mediates between task submitters and worker threads; Spring's `ApplicationEventPublisher`/`ApplicationEventMulticaster`; a chat-room server. **Interview gotcha:** the value is converting a many-to-many object graph (N colleagues each referencing many others → N² coupling) into many-to-one (each references only the mediator). The risk to name: the mediator can become a **god object** — if it grows unwieldy, that's the smell that logic should move back to colleagues. Contrast with Observer (Mediator centralizes *bidirectional* coordination logic; Observer is *one-way* broadcast with no shared coordinator).
+
 ## Question
 
 A collaborative document editor has users `Alice`, `Bob`, and `Charlie`. When Alice types, Bob and Charlie must see the change. When Bob types, Alice and Charlie must see it. Write the `User.type(String text)` method that propagates changes to all other users.

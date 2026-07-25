@@ -20,6 +20,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Memento Pattern
 
+> 🔵 **Java idiom:** The Memento is best a `private static` nested class of the Originator (or exposes only a narrow interface to the Caretaker) so its state stays encapsulated — the Caretaker holds mementos but can't read/mutate their internals. **Interview gotcha:** encapsulation is the *entire point* — the Caretaker (e.g. an undo stack, `Deque<Memento>`) stores opaque snapshots without knowing their structure, so `save()`/`restore()` don't leak the Originator's fields. Watch memory: deep snapshots are expensive, so real systems use command-based undo or copy-on-write deltas instead of full mementos. Java `Serializable` gives a quick-and-dirty deep memento but couples you to serialization gotchas.
+
 ## Question
 
 You are building a text editor. The user types, then presses **Ctrl+Z** repeatedly to undo. Design an undo mechanism that can restore the editor's previous states — **without exposing the editor's internal buffer/cursor fields to the undo manager**.

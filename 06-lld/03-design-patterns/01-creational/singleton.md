@@ -22,6 +22,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Singleton Pattern
 
+> 🔵 **Java idiom:** Python leans on module-level state or a metaclass; Java's interview-expected forms are (1) **double-checked locking** — `private static volatile Instance instance;` with a null-check outside and inside a `synchronized` block (`volatile` is mandatory to stop instruction-reordering handing out a half-constructed object), (2) the **enum singleton** (`enum Singleton { INSTANCE; }`) — Bloch's preferred form, thread-safe and serialization-proof for free, and (3) the **static holder idiom** (lazy init via a nested `static` class, no locking). **Interview gotcha:** be ready to explain *why* `volatile` is required and that plain `synchronized getInstance()` works but serializes every call. Note it's often an anti-pattern (global state, hard to test) — Spring-managed beans are the real-world substitute.
+
 ## Question
 
 You are building a connection pool for a database. Every component in the application needs connections. Write the first version of a `ConnectionPool` class that any component can instantiate and use.

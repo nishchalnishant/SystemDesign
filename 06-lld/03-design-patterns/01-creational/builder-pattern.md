@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Builder Pattern
 
+> 🔵 **Java idiom:** The canonical Java form is a static nested `Builder` class with a private constructor on the outer class and a fluent `.setX()` chain returning `this`, ending in `.build()` — Joshua Bloch's *Effective Java* Item 2. This is the idiomatic fix for the telescoping-constructor problem (many optional params). **JDK/library equivalent:** `StringBuilder`, `Stream.Builder`, Lombok's `@Builder`, `HttpRequest.newBuilder()`. **Interview gotcha:** enforce immutability — the outer object's fields are `final` and set only in the private constructor from the builder, so there are no setters on the product itself. Validate invariants inside `build()`, not in each setter.
+
 ## Question
 
 You are building a `User` object that has: `name` (required), `email` (required), `age` (optional), `address` (optional), `phoneNumber` (optional), `profilePicture` (optional). Write the constructor for this class.

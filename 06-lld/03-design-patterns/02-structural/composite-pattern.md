@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Composite Pattern
 
+> 🔵 **Java idiom:** A shared `Component` interface (`interface FileSystemNode { int size(); }`) implemented by both leaves (`File`) and composites (`Directory` holding `List<FileSystemNode>`), so clients treat one and many uniformly. **JDK equivalent:** the Swing/AWT container tree (`Component`/`Container`), `javax.swing.JComponent`, the DOM. **Interview gotcha:** the design tension is *transparency vs safety* — do you put `add(child)`/`remove(child)` on the base `Component` (transparent: uniform, but leaves must throw `UnsupportedOperationException`) or only on `Composite` (safe, but clients must type-check)? State the tradeoff explicitly; GoF favors transparency. Recursive traversal is naturally a `default` method or template.
+
 ## Question
 
 You are building a shopping cart. A cart can contain individual `Product` items. It can also contain `Bundle` (a gift set containing multiple products). `Bundle` can contain other `Bundle`s. You need `getPrice()` to work uniformly for both. Write the code.

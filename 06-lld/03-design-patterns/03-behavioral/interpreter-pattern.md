@@ -20,6 +20,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Interpreter Pattern
 
+> 🔵 **Java idiom:** An `Expression` interface with `interpret(Context)`, implemented by terminal expressions (literals/variables) and non-terminal expressions (`AndExpression`, `OrExpression`) that compose sub-expressions into an AST. **JDK equivalent:** `java.util.regex.Pattern` interprets a regex grammar; `java.text.Format`. **Interview gotcha:** this is the *least* used GoF pattern and only fits small, stable grammars (rule engines, simple DSLs, boolean filters) — for anything real you reach for a parser generator (ANTLR) instead, so say that. It pairs with Composite (the AST *is* a composite tree) and the Visitor pattern (to add operations over the tree without touching node classes).
+
 ## Question
 
 You are building a rules engine. Users define conditions like `age > 18 AND country == "US"` in a small text DSL, and your system must evaluate each rule against many records. Design a way to represent and evaluate these expressions.

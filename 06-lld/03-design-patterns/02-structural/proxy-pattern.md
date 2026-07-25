@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Proxy Pattern
 
+> 🔵 **Java idiom:** The proxy `implements` the subject interface and holds the real subject, interposing on each call. Java has first-class **dynamic proxies** (`java.lang.reflect.Proxy` + `InvocationHandler`) and CGLIB, which is exactly how **Spring AOP** implements `@Transactional`, `@Cacheable`, and security checks — the "bean" you inject is a generated proxy. **JDK equivalent:** RMI stubs, `Collections.unmodifiableXxx` (protection proxy), Hibernate lazy-loading proxies (virtual proxy). **Interview gotcha:** name the proxy *variant* — virtual (lazy/expensive init), protection (access control), remote (network stub), caching. Distinguish from Decorator: same structure, but Proxy *controls/manages access* to an object it may create itself, whereas Decorator *adds behavior* to an object handed in from outside.
+
 ## Question
 
 You have a `HeavyReportGenerator` that loads 500MB of data on construction and takes 3 seconds to initialize. Most users open the app but never actually run a report. Also, some users should not be allowed to run reports at all. How do you handle both problems without modifying `HeavyReportGenerator`?

@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Chain of Responsibility
 
+> 🔵 **Java idiom:** Each handler holds a `next` reference and either handles or delegates; often modeled as an abstract `Handler` with `setNext()` and a `handle(request)`. **The definitive real-world example is the Servlet `Filter` chain** (`doFilter(req, res, chain)` → `chain.doFilter(...)`), and Spring Security's filter chain / Spring MVC `HandlerInterceptor`s. **Interview gotcha:** decide the semantics up front — does the *first* matching handler stop the chain (classic CoR, e.g. logging levels), or does *every* handler run (a pipeline, e.g. servlet filters)? Also guard against an unhandled request falling off the end (add a default/terminal handler). Java 8+ lets you express the same idea as composed `Function`/`Predicate`s.
+
 ## Question
 
 A customer support system has three tiers: a bot handles FAQs, a junior agent handles simple billing, and a senior agent handles escalations. Write `handleRequest(Request r)` that routes the request to the right tier.

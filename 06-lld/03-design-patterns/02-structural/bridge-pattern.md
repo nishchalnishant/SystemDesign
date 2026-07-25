@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Bridge Pattern
 
+> 🔵 **Java idiom:** The abstraction holds a reference to an implementor `interface` (composition), and both hierarchies vary independently — `abstract class Shape { protected Renderer renderer; }` with `Renderer` implemented by `VectorRenderer`/`RasterRenderer`. **JDK equivalent:** JDBC — your code targets the `java.sql` interfaces (abstraction) while each vendor ships a `Driver` (implementor); AWT's peer architecture. **Interview gotcha:** the giveaway is a **Cartesian-product explosion** (`Shape × Renderer` → don't create `VectorCircle`, `RasterCircle`, `VectorSquare`…). Bridge = "prefer composition over inheritance" applied to two independent dimensions of change. Structurally similar to Strategy but Bridge is about *structure* (both sides are hierarchies) vs Strategy's swappable *behavior*.
+
 ## Question
 
 You are building a video player that must run on Web, Mobile, and SmartTV. It must support SD, HD, and 4K quality. Model this with inheritance: `WebSDPlayer`, `WebHDPlayer`, `Web4KPlayer`, `MobileSDPlayer`, `MobileHDPlayer`... How many classes do you need? What happens when you add a fourth platform?

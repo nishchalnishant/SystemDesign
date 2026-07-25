@@ -22,6 +22,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Visitor Pattern
 
+> 🔵 **Java idiom:** Elements expose `accept(Visitor v)` which calls back `v.visit(this)` — **double dispatch**, Java's workaround for lacking multiple dispatch (the concrete `visit` overload is chosen by the element's runtime type via the callback). **JDK equivalent:** `java.nio.file.FileVisitor` (`Files.walkFileTree`), the annotation-processing `ElementVisitor`. **Interview gotcha:** know the tradeoff sharply — Visitor makes **adding operations easy** (write one new visitor) but **adding element types hard** (must edit every visitor). So use it when the element hierarchy is *stable* but operations churn (AST traversals, tax/report/export over a fixed object model); avoid it when new element types appear often. This is the classic "expression problem" answer.
+
 ## Question
 
 You have a hierarchy: `Item` (interface), `Food`, `Electronics`, `Clothing`. You need to: (1) calculate tax for each type (different rates), (2) calculate shipping cost for each type (different logic). Where do you put these two operations?

@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Abstract Factory Pattern
 
+> 🔵 **Java idiom:** The Python example uses duck-typed factory classes; in Java each family is an `interface` (e.g. `GUIFactory` with `createButton()`, `createCheckbox()`) and each concrete factory an implementing class. **JDK equivalent:** `DocumentBuilderFactory`, `javax.xml.transform.TransformerFactory` — `newInstance()` returns a platform-specific family. **Interview gotcha:** don't confuse it with Factory Method — Abstract Factory produces a *family of related products* that must be used together; a single Factory Method produces *one* product. Name the "family consistency" constraint (a `WinButton` must never pair with a `MacCheckbox`) — that's the reason the pattern exists.
+
 ## Question
 
 Your e-commerce platform is launching in India and the US. India uses UPI and Rupee invoices; the US uses Credit Card and Dollar invoices. A `CheckoutService` needs to create a `PaymentProcessor` and an `InvoiceGenerator`. How do you write `CheckoutService` so it works correctly in both regions?

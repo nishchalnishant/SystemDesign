@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Adapter Pattern
 
+> 🔵 **Java idiom:** The target is an `interface`; the adapter `implements` it and wraps the adaptee (object adapter, via composition — preferred over the class-adapter/inheritance form since Java has no multiple inheritance). **JDK equivalent:** `java.io.InputStreamReader` adapts an `InputStream` (bytes) to a `Reader` (chars); `Arrays.asList()` adapts an array to a `List`; the legacy `Enumeration`↔`Iterator` bridge. **Interview gotcha:** distinguish Adapter (make an *existing incompatible* interface fit, retrofit) from Facade (simplify a *complex* subsystem) and Decorator (add behavior, *same* interface) — Adapter changes the interface, Decorator preserves it.
+
 ## Question
 
 Your `CheckoutService` calls `paymentGateway.charge(amount, currency)`. You just switched payment providers from an internal gateway to Razorpay. Razorpay's SDK exposes `razorpayClient.initiatePayment(RazorpayRequest request)`. You cannot change `CheckoutService`, and you cannot change Razorpay's SDK. How do you make them work together?

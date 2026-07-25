@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Facade Pattern
 
+> 🔵 **Java idiom:** A single class exposing coarse-grained methods that orchestrate several subsystem classes — often a Spring `@Service` layer coordinating repositories, mappers, and clients so controllers see one simple API. **JDK equivalent:** `javax.faces.context.FacesContext`, `java.net.URL.openConnection()` hiding sockets/streams, SLF4J over logging backends. **Interview gotcha:** a Facade *simplifies* but must not *forbid* — subsystem classes stay accessible for power users; it adds convenience, not a hard wall (that's a different concern). Contrast with Adapter (Facade defines a *new simpler* interface over many classes; Adapter matches *one existing* interface). It reduces coupling: clients depend on the facade, not the subsystem graph.
+
 ## Question
 
 To place an order, a client must: validate inventory, charge the payment, generate an invoice, send a shipping notification, and update the loyalty points. Each of these is a separate service. Write the client code that calls all five services to place one order.

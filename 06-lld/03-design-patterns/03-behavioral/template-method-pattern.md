@@ -22,6 +22,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Template Method Pattern
 
+> 🔵 **Java idiom:** An `abstract` class defines the invariant algorithm skeleton in a **`final` method** (so subclasses can't override the sequence) that calls `abstract` primitive steps plus optional `protected` **hooks** subclasses fill in. **JDK equivalent:** `AbstractList`/`AbstractMap` (you implement `get`/`size`, get the rest free), `java.io.InputStream.read(byte[])` calling `read()`, `HttpServlet.service()` dispatching to `doGet`/`doPost`, Spring's `JdbcTemplate`. **Interview gotcha:** it's the **Hollywood Principle** — "don't call us, we'll call you" (framework owns control flow, calls your overrides). Contrast with Strategy: Template Method varies steps via *inheritance* at compile time (one algorithm, pluggable steps); Strategy varies the *whole* algorithm via *composition* at runtime. Keep the template method `final`.
+
 ## Question
 
 You are building an order processing system. Every order goes through: validate → calculate price → notify customer. Email orders validate differently from SMS orders. The notification medium differs too. But the sequence never changes. Write `processOrder()` for both `EmailOrder` and `SMSOrder`.

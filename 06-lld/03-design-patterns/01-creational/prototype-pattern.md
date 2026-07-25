@@ -22,6 +22,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Prototype Pattern
 
+> 🔵 **Java idiom:** Python has `copy.copy()`/`copy.deepcopy()` built in; Java's native path is `Cloneable` + `Object.clone()`, which is **widely considered broken** — it's a marker interface, `clone()` is `protected` on `Object`, does a shallow copy, and bypasses constructors. **Prefer a copy constructor (`new Foo(other)`) or a static `copyOf` factory** instead. If you must use `clone()`, override it `public`, call `super.clone()`, then deep-copy mutable fields by hand. **Interview gotcha:** the shallow-vs-deep-copy distinction is the whole point — a shallow clone shares nested mutable references, so mutating the copy corrupts the original.
+
 ## Question
 
 Your system sends marketing emails. Each email has a fixed structure (HTML template, headers, sender info) but a different recipient and a small personalization block. You need to create 10,000 `EmailTemplate` objects per campaign. Write the construction code.

@@ -21,6 +21,8 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Observer Pattern
 
+> 🔵 **Java idiom:** A `Subject` maintains `List<Observer>` and calls `update()` on each; observers register/deregister. **Note the legacy `java.util.Observer`/`Observable` are deprecated since Java 9** (don't cite them) — the modern JDK equivalents are `PropertyChangeListener`, `java.util.concurrent.Flow` (reactive streams / back-pressure), and framework events (Spring `@EventListener`, Swing/AWT listeners). **Interview gotcha:** call out the failure modes — memory leaks if observers never deregister (use weak references or explicit removal), the risk of notification during iteration (copy the list or use `CopyOnWriteArrayList`), and *push vs pull* (send the changed data in `update()` vs let observers query the subject back). This is the backbone of event-driven and MVC architectures.
+
 ## Question
 
 A `StockMarket` class holds the current price of a stock. A `PriceAlert`, a `Chart`, and a `NewsFeed` all need to update when the stock price changes. Write the code inside `StockMarket.setPrice()` that tells all three components about the change.
