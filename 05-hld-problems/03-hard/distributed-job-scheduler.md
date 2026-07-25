@@ -141,6 +141,8 @@ Publish to Kafka with `execution_id` as the message key. Workers check Redis `SE
 
 **Missed job detection**: A sweeper job runs every minute. It finds executions where `status = 'executing' AND locked_until < now()` → timed out. These are reset to `status = 'active'` and re-queued. The sweeper must check that the worker truly died (no heartbeat) before re-queuing.
 
+> 🎯 **Staff signal:** The load-bearing statement is that **exactly-once execution is impossible, so the design is at-least-once dispatch + idempotent execution = effectively-once** — and every layer here exists to enforce that. The atomic claim (`UPDATE ... WHERE status='active' RETURNING`) wins the *dispatch* race via optimistic locking, but a crash between dispatch and status-update still double-dispatches, so a stable `execution_id` carried into Kafka and gated by worker-side `SETNX` is what makes the duplicate a no-op. The subtle E6 detail is the **lease** (`locked_until`): a claimed job isn't done, it's *leased for 5 minutes* — the sweeper can only reclaim it after the lease expires AND heartbeat is gone, because reclaiming a still-running-but-slow worker is exactly how you turn "at-least-once" into "run twice concurrently." Naming the lease-plus-heartbeat as the guard against premature reclaim, and pushing final idempotency to the callback target (it's the only place that can truly dedupe side effects), is the staff line. E5 says "use a lock"; E6 says the lock is a lease and the guarantee is effectively-once.
+
 ---
 
 ## Deep Dive 2: Scaling the Scheduler to 10M Jobs
@@ -164,6 +166,8 @@ Only the current-month partition is scanned for due jobs. Index on `(next_run_at
 **Time-bucketed dispatch**: Instead of polling every second, the scheduler reads jobs due in the next 60 seconds (60× fewer polls). Publishes them to a Kafka topic with partition = `scheduled_seconds % 60`. Separate consumer groups read from each partition 1 second before jobs are due.
 
 **Distributed scheduler** (HA): Run 3 scheduler instances. Each instance uses a distributed lock (`SELECT pg_try_advisory_lock(1)` or Redis Redlock) to become the leader. Only the leader polls and dispatches. Follower instances take over within 5 seconds if the leader fails.
+
+> 🎯 **Staff signal:** The scaling insight is converting a *per-second full-table scan* into a *bounded look-ahead window*: instead of polling "what's due now" against 10M rows every second, read "what's due in the next 60s" once a minute and hand those jobs to a time-bucketed queue (Kafka partition = `scheduled_seconds % 60`) that fires them at the right second. That's a 60× reduction in query load and moves the precise-timing burden off the database and onto the queue. Partitioning the table by `next_run_at` so only the current window's partition is ever scanned is the second half — it turns an index scan over all-time jobs into a scan over one small partition (and makes retiring old jobs a partition drop, not a mass delete). The E6 note is the honesty that *poll-based scheduling trades timing precision for throughput*: you accept up-to-1s dispatch jitter to avoid a coordination-heavy exact-timer-per-job design, and you keep dispatch single-leader (advisory lock) so 3 HA instances don't each fire the same window. E5 optimizes the query; E6 changes the *access pattern* from scan-now to windowed-lookahead and names the precision tradeoff.
 
 ---
 
@@ -190,6 +194,8 @@ Insert a new row in `job_executions` with `next_retry_at` as the `next_run_at`. 
 **Dead letter queue**: After `max_attempts` exhausted, write the job execution to a DLQ (Kafka topic). Ops team can inspect and manually replay if needed.
 
 **Alerting**: Prometheus counter `job_execution_failed{job_name, attempt_number}`. Alert when failure rate for a job exceeds 3 failures in 10 minutes.
+
+> 🎯 **Staff signal:** The elegant move is that retries are *not a separate mechanism* — a failed job simply re-inserts itself as a new due job with `next_run_at = now() + backoff`, so the scheduler's existing "pick up due jobs" loop handles retries with zero new machinery. That reuse is the design tell. The two E6 details: (1) **jitter is mandatory, not optional** — pure exponential backoff synchronizes every job that failed against a downed dependency to retry at the *same* instant, so the recovery attempt re-DDoSes the service just as it comes back; randomized jitter spreads the retry thundering herd, and it's the failure most candidates forget to name. (2) A bounded retry policy needs a **terminal state (DLQ)** — infinite retries silently pile up load and hide a persistently broken target, so after `max_attempts` the execution goes to a dead-letter topic for human inspection rather than looping forever. E5 says "retry with exponential backoff"; E6 adds jitter to protect the recovering dependency and a DLQ so failure is observable and bounded.
 
 ---
 

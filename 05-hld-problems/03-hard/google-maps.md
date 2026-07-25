@@ -136,6 +136,8 @@ Storage:
 
 **Traffic-weighted edges**: Each edge has weight = `length_m / current_speed`. Updated every 5 minutes from GPS ping aggregation. Pre-processing (CH shortcut computation) runs every 15 minutes on the latest traffic data.
 
+> 🎯 **Staff signal:** The real insight is that Contraction Hierarchies moves cost from query time to *pre-processing* time — and that only works because the graph topology is near-static while edge *weights* change constantly. So you separate the two: shortcut structure is recomputed every 15 min (expensive, topology-stable), but weights refresh every 5 min against that fixed structure (cheap). The rejected alternative is plain bidirectional Dijkstra or A\*-with-landmarks: correct, but O(√N) exploration on a 1B-node graph is hundreds of ms per query and can't hit interactive latency. E5 says "use Dijkstra with a good heuristic"; E6 says "CH, and here's why the static-topology/dynamic-weight split is what makes the precompute amortizable — the day road *geometry* changes you eat a full rebuild, but that's weekly, not per-query."
+
 ---
 
 ## Deep Dive 2: Real-Time Traffic from GPS Pings
@@ -162,6 +164,8 @@ sink: Redis HSET segment_speeds:{segment_id} speed:42 updated_at:1735689600
 
 **Segment speed database**: Redis hash `segment_speeds:{segment_id}` holds current speed and last-updated timestamp. Routing service reads speeds from Redis when computing routes. Speed data expires after 5 minutes if no new pings received (fallback to speed limit).
 
+> 🎯 **Staff signal:** The non-obvious hard part isn't the aggregation — it's map matching. A raw GPS ping is 5–10m noisy and a divided highway, its frontage road, and an overpass can all be within that error radius, so a naïve nearest-segment snap assigns cars to the wrong road and reports a jam that doesn't exist. The HMM fixes this by scoring the whole *sequence* — transition probabilities between segments make an impossible teleport (frontage → highway → frontage in 10s) low-likelihood — so you match on trajectory, not point. And you sink the median, not the mean: one parked-but-still-pinging car or a GPS spike is an outlier that a median absorbs and a mean doesn't. E5 says "aggregate pings per segment in a Flink window"; E6 says "map-match the sequence with an HMM before aggregation, and take the median — the accuracy of the whole system is gated by ping-to-segment assignment, not by the windowing."
+
 ---
 
 ## Deep Dive 3: ETA Prediction
@@ -183,6 +187,8 @@ predicted_speed = α × current_speed + β × historical_speed_at_ETA_time + γ 
 **Live ETA updates**: During navigation, the server recalculates ETA every 30 seconds using updated segment speeds. If ETA changes by > 2 minutes, push update to the client via WebSocket.
 
 **Rerouting**: If the user deviates from the route (GPS position > 50m off the expected path for 5 seconds), the routing service recomputes from the user's current position. Reroute results are pushed via WebSocket within 2 seconds.
+
+> 🎯 **Staff signal:** The ETA that beats competitors predicts traffic at the *time the user arrives at each segment*, not traffic now. A driver 20 minutes upstream of a bottleneck should be routed against the traffic that bottleneck will have in 20 minutes — which is why the model blends current speed with the historical speed-at-ETA-time (day-of-week × hour-of-day), and the two searches are coupled: ETA depends on the route, but the traffic-aware route depends on predicted ETA at each edge, so you iterate. The pushed-update policy is a deliberate signal-vs-noise tradeoff: recompute every 30s but only push when ETA moves >2 min, because a client whose ETA flickers ±30s every cycle reads as broken. E5 says "sum segment_length / current_speed"; E6 says "predict per-segment speed at *arrival time* using historical patterns, and gate client pushes on a change threshold so you don't ship jitter as information."
 
 ---
 

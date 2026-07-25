@@ -145,6 +145,8 @@ ZREVRANGE lb:global 8315 8364 WITHSCORES
 
 **Memory**: 2M players × ~100 bytes per ZSET entry = 200 MB — fits in a single Redis instance. For 20 leaderboards: 4 GB — use Redis Cluster or split across Redis instances by leaderboard_id.
 
+> 🎯 **Staff signal:** The reason a ZSET wins over `ORDER BY score DESC LIMIT ... OFFSET` isn't "Redis is fast" — it's that the two answer different questions. A SQL offset paginates in O(offset) because it must count past every skipped row, so `ORDER BY ... OFFSET 500000` scans half a million rows *per query*; the ZSET's skip list makes `ZREVRANK` and `ZREVRANGE` O(log N) and O(log N + K), so a player's exact rank and the window around it are both cheap regardless of depth. The tell-tale senior detail is *tie-breaking*: rank must be a total order or pagination is non-deterministic (players flicker between pages on refresh), so you pack score and inverse-timestamp into one float64 — higher score wins, earlier achievement breaks ties — turning two sort keys into one monotonic ZSET score. The tradeoff you name: this lives in RAM and is single-threaded, so a leaderboard bigger than one node's memory forces sharding by leaderboard_id, and cross-leaderboard global ranking then needs scatter-gather. E5 says "use a Redis sorted set"; E6 says "O(log N) rank vs O(offset) SQL pagination is the whole reason, and I encode score+time into one float so the ordering is *total* — otherwise deep pages are non-deterministic under ties."
+
 ---
 
 ## Deep Dive 2: Friends Leaderboard at Scale
@@ -158,6 +160,8 @@ ZREVRANGE lb:global 8315 8364 WITHSCORES
 **Hybrid**: Use pipeline approach (Approach 1) for friends leaderboard (reads are rare; latency is acceptable). Reserve per-player ZSETs for celebrity players with 10K+ followers only.
 
 **Cache**: Cache a player's friends leaderboard in Redis: `friends_lb:{player_id}` with TTL 30s. Valid for most use cases where friends lists don't change mid-session.
+
+> 🎯 **Staff signal:** This is a fan-out-on-write vs fan-out-on-read decision in disguise, and the senior answer refuses to pick one globally — it picks per-player based on follower count, exactly like Twitter's timeline. Materializing a per-player friends ZSET (write-fan-out) makes the read a single O(log N) range but multiplies every score update by the friend count; at 100K updates/sec × 200 friends that's 20M writes/sec, which is absurd for a feature that's read rarely. So the default flips to read-fan-out: a pipelined `ZSCORE` batch pulls the ~200 friend scores in one round-trip (~5ms) and sorts them app-side, paying the cost only when someone actually opens the friends tab. The hybrid exception is the *celebrity* case inverted — a player followed by 10K+ others is the one where read-fan-out gets expensive on their followers' reads, so those get precomputed. E5 says "just query each friend's score"; E6 says "read-fan-out via a pipelined ZSCORE batch by default because friends-leaderboard reads are rare and updates are hot, and I only precompute for high-in-degree players — the same asymmetry that governs feed fan-out."
 
 ---
 
@@ -189,6 +193,8 @@ Flink job: read from Kafka score-updates (filter tournament events)
 **Handling massive concurrent updates at tournament start**:
 - Tournament start triggers a flood of score submissions. Redis ZINCRBY is serialized (single-threaded Redis). At 100K writes/sec, Redis can handle this — Redis benchmarks at 1M simple ops/sec on modern hardware.
 - For extreme throughput: batch score updates with a 1-second tumbling window in the application layer before writing to Redis. `ZADD ... GT` (update only if greater) semantics can replace ZINCRBY if scores only go up.
+
+> 🎯 **Staff signal:** The lifecycle insight is that Redis is the *hot serving tier*, not the record of truth, and a tournament makes that split unavoidable: live ranking needs sub-millisecond ZSET ops, but prize distribution is a financial event that must survive a Redis eviction, a crash, or the 7-day TTL expiring. So the design snapshots final rankings to Postgres at tournament close and treats the durable store as authoritative for payouts — Redis is allowed to be ephemeral precisely because its output has been made durable at the one moment that matters. The subtle correctness point is idempotent aggregation under a flood: `ZADD ... GT` is chosen over `ZINCRBY` because a batched/replayed update must be safe to apply twice — "set if greater" is idempotent, "increment" double-counts on retry — which lets you coalesce the tournament-start thundering herd into 1-second windows without corrupting scores. E5 says "keep tournament scores in a Redis ZSET"; E6 says "Redis serves the live board but I snapshot to a durable store at close because prizes can't depend on a cache TTL, and I use idempotent GT-writes so batching and retries under the start flood can't double-count."
 
 ---
 

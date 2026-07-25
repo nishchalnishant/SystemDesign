@@ -150,6 +150,8 @@ Result: ~3.5 bytes per sample instead of 8 bytes
 
 **Chunk files**: TSDB stores data in 2-hour chunks per series, in a columnar format (all timestamps together, all values together). Each chunk is written atomically and immutable after sealing. Enables efficient range scans.
 
+> 🎯 **Staff signal:** The compression ratio isn't the point — the point is *why* Gorilla-style encoding works, and it works because monitoring data has two properties a general DB can't assume: timestamps arrive at a near-fixed scrape interval (delta-of-delta collapses to zero bits) and adjacent values change slowly (XOR leaves mostly zero bits). That domain assumption is also the design constraint: the columnar 2-hour immutable chunk is what makes it possible, because you can't delta-encode a column you're randomly updating. So the storage engine is co-designed with the write pattern — append-only, time-ordered, sealed-then-immutable — and that immutability is what lets old chunks ship to S3/Thanos and be memory-mapped instead of loaded. The rejected alternative, a row-store with per-point timestamps, is 5–8× larger and can't be mmap'd for range scans. E5 says "compress the time series"; E6 says "delta-of-delta + XOR exploit fixed-interval, slow-changing data, and they only work because chunks are columnar and immutable — which is also what enables cheap tiering to object storage."
+
 ---
 
 ## Deep Dive 2: Query Processing at Scale
@@ -176,6 +178,8 @@ rate(metric[5m]) = (last_value - first_value) / 5m per series
   expr: sum by (job) (rate(errors_total[5m]))
 ```
 Dashboard queries hit the pre-computed metric instead of re-aggregating 10,000 series each time.
+
+> 🎯 **Staff signal:** The move that scales query is recognizing that dashboard queries are *known in advance* — a Grafana panel runs the same `sum by (job) (rate(...))` every 30 seconds forever — so the expensive aggregation should be paid once at write time (recording rules), not re-derived on every refresh across thousands of viewers. That inverts the cost model from O(queries × series) to O(series), and it's the same materialized-view logic as any read-heavy system. The second-order insight is the series *index*: `rate(...[5m])` is only fast because the inverted index resolves label matchers to series IDs before touching any samples, so cardinality (Deep Dive 4) is what actually governs query latency — a high-cardinality metric slows every query that touches it, not just storage. E5 says "cache the query results"; E6 says "recording rules materialize the *predictable* aggregations at ingest so N dashboard viewers cost the same as one, and I watch cardinality because the index scan, not the sample read, is the query's floor."
 
 ---
 
@@ -222,6 +226,8 @@ routes:
 
 **Silencing**: On-call engineer creates a silence (start_time, end_time, label matchers) during planned maintenance. Matching alerts don't notify.
 
+> 🎯 **Staff signal:** A junior alerting system fires on a threshold; a senior one is engineered around the fact that *the failure that trips your alerts also trips a hundred correlated ones*, and a pager that fires 100 times at 3am is worse than no pager. So the real design is three noise-suppression layers, each solving a distinct failure mode: `for: 2m` kills *temporal* noise (a 5s spike isn't an incident), inhibition kills *causal* noise (if the datacenter is down, suppress every downstream alert it caused — one root-cause page, not the cascade), and silencing kills *known* noise (planned maintenance). The subtle correctness point is that inhibition must be evaluated on alert *state*, not raw metrics, so a resolved root cause automatically un-suppresses its dependents. E5 says "fire when the metric crosses the threshold, dedupe notifications"; E6 says "flapping, alert storms, and maintenance are three different noise sources — `for`, inhibition, and silencing each target one — because on-call trust dies the first time the system pages 50× for a single outage."
+
 ---
 
 ## Deep Dive 4: Cardinality Control with Sketches
@@ -250,6 +256,8 @@ CMS never undercounts, so a genuine top talker cannot hide; false positives are 
 **Enforcement**: at the ingest gateway, reject or drop samples for a metric name past its series budget, emit `metrics_dropped_total{reason="cardinality"}`, and notify the owning team. Dropping one team's runaway metric is strictly better than losing the whole TSDB — a bounded, attributable failure instead of a total one.
 
 **The line to say**: cardinality limits are only enforceable if you can measure cardinality cheaply, and you cannot measure it exactly without reproducing the very explosion you're guarding against. HLL for the count, CMS for the culprit.
+
+> 🎯 **Staff signal:** The reason to reach for probabilistic sketches here — rather than treating them as a party trick — is that the guard against cardinality explosion cannot itself have unbounded cost, or it becomes the very failure it was meant to prevent. An exact distinct-count keeps the full label set in memory; that's the explosion. HLL gives the count in fixed 12 KB regardless of true cardinality, and CMS gives the top offender in fixed 40 KB, both with bounded, *safe-direction* error (CMS never undercounts, so a real top talker can't hide). This is the general staff pattern: when the monitoring must survive the pathological case, trade exactness for a hard space bound whose error direction you can prove is harmless. E5 says "count distinct series per metric and alert on it"; E6 says "exact counting reproduces the explosion — HLL for a constant-space count, CMS for a constant-space culprit, and I picked CMS specifically because its one-sided error can't let a real offender slip through."
 
 ---
 

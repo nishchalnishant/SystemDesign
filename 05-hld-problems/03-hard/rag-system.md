@@ -151,6 +151,8 @@ Simple. `overlap=50` words prevents context loss at boundaries. Problem: splits 
 
 **Chunk metadata enrichment**: Prepend document title, section heading, and page number to each chunk text before embedding. Retrieval is more precise when the chunk contains its own context.
 
+> 🎯 **Staff signal:** Chunking is where retrieval quality is actually decided, and the reason is a tension a single embedding can't escape: an embedding is one fixed-length vector, so a chunk that's too large averages several topics into a mushy centroid that matches everything weakly, while a chunk that's too small is precise but lacks the surrounding context needed to be *useful* once retrieved. The senior recognition is that this is a retrieval-vs-generation split — you can retrieve on small precise units but hand the LLM a larger window around the hit (the "small-to-big" / parent-document pattern), decoupling the granularity you *search* at from the granularity you *read* at. Metadata prepending (title, heading) fixes the orphaned-chunk problem where "it increased 40%" is meaningless without knowing *what* increased. E5 says "split into 512-token chunks with overlap"; E6 says "chunk boundaries set the recall ceiling because one vector can't represent a multi-topic chunk — so I retrieve on small semantically-coherent units, expand to their parent context for generation, and enrich each chunk with its structural metadata so it's self-describing."
+
 ---
 
 ## Deep Dive 2: ANN Search with HNSW
@@ -183,6 +185,8 @@ For each new node:
 
 **Tenant isolation**: Each tenant gets a separate HNSW index namespace. Cross-tenant ANN search never occurs.
 
+> 🎯 **Staff signal:** The point to make about HNSW isn't how it works but *what you're trading* — it's approximate, so every parameter is a knob on a recall/latency/memory triangle, and the senior move is stating which corner your product sits in. `ef_search` trades recall for tail latency at query time (cheap to change per-query); `M` trades recall for RAM and is baked in at build time (expensive to change). The trap that separates levels: HNSW is a graph that lives in memory and is painful to *mutate* — deletes leave tombstones that degrade the graph, so a high-churn corpus needs periodic rebuilds, and metadata-filtered search ("only this tenant's docs") interacts badly with graph traversal because the filter can disconnect the navigable graph. That last point is why per-tenant *namespaces* beat a shared index with a tenant filter — isolation is both a security boundary and a way to keep each graph dense and navigable. E5 says "use HNSW for fast ANN"; E6 says "HNSW is approximate and mutation-hostile, so I tune `ef_search` per-query for the latency SLO, treat `M` as a build-time memory commitment, plan for rebuilds under churn, and shard by tenant because post-filtering a shared graph wrecks both recall and isolation."
+
 ---
 
 ## Deep Dive 3: Hybrid Retrieval and Re-ranking
@@ -212,6 +216,8 @@ No tuning of relative weights needed; ranks are combined directly.
 - Bi-encoder (used for retrieval): query and chunk embedded separately → fast but approximate
 - Cross-encoder (used for re-ranking): query and chunk concatenated as one input to a transformer → slow but accurate
 - Re-rank top-5 from 20 candidates: 20 cross-encoder calls × 50ms each = 1s (acceptable within 5s budget)
+
+> 🎯 **Staff signal:** The architecture insight is that retrieval is a *funnel* of progressively more expensive, more accurate stages, and each stage exists to shrink the candidate set for the next one that couldn't afford to run on everything. You can't cross-encode 100M chunks (each is a full transformer forward pass), so cheap bi-encoder ANN + BM25 generate ~hundreds of candidates, RRF fuses them, and only then does the expensive cross-encoder rescore the final ~20. Hybrid (dense + sparse) exists because the two retrievers fail on *disjoint* queries — dense misses exact tokens like error codes and product SKUs, sparse misses paraphrases — so fusing them covers both failure modes, and RRF is chosen over weighted score-blending precisely because raw BM25 and cosine scores aren't on comparable scales, whereas ranks are. E5 says "combine keyword and vector search and re-rank"; E6 says "it's a cost-ordered funnel — cheap high-recall retrieval to generate candidates, rank-based fusion because the score spaces don't align, then a cross-encoder only on the survivors because joint query-chunk attention is too expensive to run at corpus scale."
 
 ---
 

@@ -144,6 +144,8 @@ class ConsistentHashRing:
         return self.ring[self.sorted_keys[idx]]
 ```
 
+> 🎯 **Staff signal:** The reason to reach for consistent hashing isn't "even distribution" — it's *minimizing remap on membership change*. Under `hash(key) % N`, adding one node reshuffles ~all keys, and for a cache that means a near-total miss storm that stampedes the database — the failure that motivates the whole design. Consistent hashing bounds remap to ~1/N of keys (only the arc between the new node and its predecessor moves). The E6 detail is **virtual nodes**: without ~150 vnodes per physical node, one unlucky hash placement hands a single node a huge arc (load skew), and node removal dumps all its keys onto exactly one successor instead of spreading them — vnodes make both distribution *and* failure-redistribution smooth. State the second-order cost too: a departing node's keys scatter across many successors, so warming happens in parallel rather than crushing one neighbor. E5 knows the algorithm; E6 names that it's optimizing *churn cost* to protect the origin, and that vnodes are what make rebalancing graceful.
+
 ---
 
 ## Deep Dive 2: Replication and Consistency
@@ -166,6 +168,8 @@ class ConsistentHashRing:
 
 **Primary failure**: Gossip protocol detects primary failure within 1-2 seconds. The replica with the highest replication offset is promoted to primary. Client library reconnects to new primary. Keys written to the old primary but not yet replicated may be lost (RPO > 0 for async replication).
 
+> 🎯 **Staff signal:** The senior move is refusing to answer "consistency" in the abstract and instead tuning `W`, `R`, `N` to the *specific* durability the cache actually needs. For a cache — where the DB is the source of truth and a lost write just means a re-fetch — **async replication (W=1) is usually correct**: you take the low-latency path and accept a small at-risk window, because paying quorum latency to durably persist a value you can always recompute is a bad trade. The E6 framing is `W + R > N` as a *dial*, not a law: crank it to W=2/R=2 only for the keys where a stale read is expensive (e.g. rate-limit counters, session tokens), and name the cost — every write now blocks on a replica ACK. Add the honest failure statement most candidates skip: async replication means **RPO > 0** — a primary crash inside the replication window silently loses acknowledged writes, tolerable for a cache and catastrophic for a ledger, which is *why* this pattern belongs here and not in the payment system. E5 says "replicate for HA"; E6 sets the quorum to the recompute cost and states the RPO out loud.
+
 ---
 
 ## Deep Dive 3: Eviction and Memory Management
@@ -185,6 +189,8 @@ class ConsistentHashRing:
 **TTL expiry**:
 - **Lazy expiry**: Check if a key is expired on each access. Expired keys are deleted on read. Memory is freed gradually.
 - **Active expiry sweep**: Background task samples random keys every 100ms. If > 25% of sampled keys are expired, repeat until < 25%. This bounds the amount of expired memory wasted.
+
+> 🎯 **Staff signal:** The insight that separates E5 from E6 is that at 1M ops/sec, *perfect* LRU is itself the bottleneck — maintaining an exact recency list means a write-on-every-read (moving a node to the list head under a lock on the hot GET path), so real systems use **approximate LRU via random sampling**: store a 3-byte access clock per key, sample ~10 keys at eviction time, evict the oldest. You knowingly trade eviction *accuracy* for read-path throughput and 3 bytes of overhead — and that's the right trade because evicting a slightly-suboptimal key just costs one extra miss. The same sampling logic reappears in TTL expiry: you can't scan all keys, so lazy-delete-on-access plus a probabilistic active sweep (sample, if >25% expired repeat) bounds wasted memory without a full scan. Naming that both eviction and expiry are *sampled approximations chosen to keep the read path lock-light* — rather than reciting "use LRU" — is the staff signal.
 
 ---
 

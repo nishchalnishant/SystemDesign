@@ -156,6 +156,8 @@ Writes are sequential appends — optimal for HDD and SSD (no seek overhead). Re
 
 **Page cache optimization**: Kafka relies on the OS page cache. Writes go to page cache (not directly to disk) — the OS flushes asynchronously. This makes writes appear fast. Reads also hit the page cache for recent messages. A consumer reading messages produced seconds ago never hits disk.
 
+> 🎯 **Staff signal:** The performance unlock is that Kafka's log is **append-only and sequential**, which turns "durable 1M msg/sec" from a random-write problem (seek-bound, the thing that kills databases) into sequential I/O the OS page cache absorbs — writes hit page cache, recent reads are served from it, and zero-copy `sendfile` ships bytes disk→socket without a userspace copy. Naming *sequential-append + page-cache + zero-copy* as the reason a queue outruns a DB for this workload is the tell. The durability half is understanding **ISR (in-sync replicas) as a tunable, not a boolean**: `acks=all` + `min.insync.replicas=2` means an ACK guarantees the write survives any single broker loss, but the E6 subtlety is the *unclean-leader-election* fork — if all ISR members die, you choose between availability (promote an out-of-sync replica, lose data) and consistency (block until an ISR member returns). State that `acks`/`min.insync` is a per-topic durability-vs-latency dial and that page-cache reliance means an OS crash before flush can lose un-replicated writes — which is *why* replication, not fsync, is the durability story. E5 says "append-only log with replication"; E6 explains the I/O path and treats ISR as a dial with a named failure fork.
+
 ---
 
 ## Deep Dive 2: Consumer Groups and Rebalancing
@@ -177,6 +179,8 @@ Writes are sequential appends — optimal for HDD and SSD (no seek overhead). Re
 **Sticky partition assignment**: New assignment tries to keep partitions with the same consumer they had before. Minimizes state reload (consumers often maintain local state per partition).
 
 **Consumer lag monitoring**: `consumer_lag = partition_end_offset - consumer_committed_offset`. Kafka exposes lag via JMX metrics. Alert when lag > 10,000 messages (consumer is falling behind).
+
+> 🎯 **Staff signal:** The core insight is that **the partition is the unit of parallelism *and* the unit of ordering, and they're the same knob** — so partition count sets your max consumer parallelism forever (16 partitions ⇒ at most 16 useful consumers; a 17th sits idle), and it must be chosen up front because increasing it later breaks key→partition affinity and reshuffles ordering. That coupling is the tell. On rebalancing, the E6 detail is that classic rebalance is **stop-the-world**: a single consumer's missed heartbeat pauses the *whole group* while partitions are reassigned, so consumer lag spikes during every deploy or crash — which is why *sticky/cooperative* assignment matters (keep partitions on their existing owner to avoid reloading per-partition local state) and why `session.timeout` is a latency-vs-false-positive dial. And name consumer lag as *the* health signal: it's the derivative that tells you throughput can't keep up before the queue overflows. E5 says "consumer groups scale out"; E6 states that partitions cap parallelism, ordering is per-partition, and rebalance is a stop-the-world event to design deploys around.
 
 ---
 
@@ -206,6 +210,8 @@ except Exception:
 `send_offsets_to_transaction` atomically commits the consumer offset AND the produced output message. Either both happen or neither does. Consumer reading with `isolation.level=read_committed` only sees committed messages.
 
 **Downstream idempotency**: Even with Kafka exactly-once, the downstream system (database, API) must be idempotent. Include `message_id` in the payload; DB uses `ON CONFLICT DO NOTHING` on the message_id.
+
+> 🎯 **Staff signal:** The senior clarification is that **Kafka "exactly-once" only holds *inside Kafka***: idempotent-producer (dedup on `producer_id`+`sequence`) plus transactions (atomically commit the produced output *and* the consumer offset via `send_offsets_to_transaction`, read with `read_committed`) give you exactly-once for the read→process→write loop *when every hop is a Kafka topic*. The moment the side effect leaves that boundary — a bank transfer, an external API, a row in another DB — Kafka's guarantee evaporates, because Kafka can't make a third party's `POST /transfer` idempotent. So the real answer is layered: Kafka EOS for the internal pipeline, **plus** downstream idempotency keyed on `message_id` (`ON CONFLICT DO NOTHING`) for the external effect. Stating that boundary explicitly — "exactly-once is a property of the closed Kafka loop; cross-boundary you still need an idempotency key" — is exactly the trap this problem sets, and naming it is the E5→E6 line. E5 says "enable exactly-once"; E6 says where it stops and what pays for the last mile.
 
 ---
 

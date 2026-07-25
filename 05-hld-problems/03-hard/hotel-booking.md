@@ -160,6 +160,8 @@ All three statements run in one transaction. `FOR UPDATE` locks the rows; the co
 
 This prevents the room from being shown as available during payment, reducing failed payments.
 
+> 🎯 **Staff signal:** The double-booking guarantee must live in the database, not the application — and the choice between `SELECT ... FOR UPDATE` and a `UNIQUE(room_id, date)` constraint is a contention-vs-liveness call, not a style preference. Under a flash sale for one hot room, pessimistic `FOR UPDATE` serializes every attempt and the lock queue becomes the bottleneck; the unique constraint lets all attempts race optimistically and the DB rejects the losers with zero held locks. The real senior move is separating *inventory correctness* (DB-enforced, must be strong) from *booking UX* (the reserved/10-min-TTL soft lock, which is best-effort and can be sloppy). The soft lock is not what prevents double-booking — it just reduces the rate at which users pay and then discover a conflict. E5 says "lock the rows in a transaction"; E6 says "unique constraint for the correctness floor because it doesn't hold locks under contention, plus a TTL'd soft-reservation layer for UX — and I'll reconcile abandoned reservations with a sweeper, not a lock timeout."
+
 ---
 
 ## Deep Dive 2: Availability Search at Scale
@@ -178,6 +180,8 @@ This prevents the room from being shown as available during payment, reducing fa
 - 50K hotels in Paris → ES returns top 1,000 by rating/price → check availability for those 1,000 hotels in Redis pipeline → return 20 results
 
 **Stale data tolerance**: Availability cache can be slightly stale (up to 60 seconds). Users see a room as available, click book, and only then might see "sold out." This is acceptable — the actual double-booking prevention happens at the DB lock level.
+
+> 🎯 **Staff signal:** The key architectural decision is that search availability is *allowed to be wrong*. Because the DB is the authority on double-booking, the search-time availability index can be an eventually-consistent Redis counter that's up to 60s stale — a user occasionally hits "sold out" at checkout, which is annoying but never results in a double-booking. That single relaxation is what makes 50K-hotels-per-query tractable: you split the query into a cacheable geo/rating/price filter in Elasticsearch (candidate generation) and a cheap per-candidate availability check in a Redis pipeline (candidate filtering), so you check availability for ~1,000 hotels, not 50,000. Trying to make search availability strongly consistent would force a live DB read per hotel and collapse the design. E5 says "cache availability in Redis"; E6 says "two-stage retrieval — ES for the expensive filter, Redis counters for a *deliberately* stale availability pass — and I accept the rare checkout-time 'sold out' because correctness is enforced downstream at the lock, not here."
 
 ---
 
@@ -211,6 +215,8 @@ total = subtotal * (0.9 if nights >= 7 else 1.0)  # 10% weekly discount
 ```
 
 **Price update API** (for hotel managers): `PUT /api/v1/hotels/{hotel_id}/pricing` with a date range and price matrix. Updates the `room_pricing` table and invalidates availability/price caches.
+
+> 🎯 **Staff signal:** Price must be materialized *per (room, date)*, not computed from rules at read time — because a rate plan is a policy that changes, but a booking is a contract that must not. If you store rules ("+150% on holidays, −10% for 7-night stays") and evaluate them at booking, a mid-transaction rule edit produces a total the guest never agreed to, and re-deriving a six-month-old booking's price for a dispute becomes impossible. So you flatten policy into a `room_pricing(room_id, date, base_price)` row per night: the booking sums concrete per-night prices and snapshots them, and a manager's price update only affects *future* bookings. The min_stay taken as `max()` across the range is the subtle correctness point — a single holiday night with a 3-night minimum must gate the whole stay. E5 says "compute price from the rate rules at checkout"; E6 says "materialize price per night so the quote is a stable snapshot, decouple policy edits from existing contracts, and the price table doubles as the audit record for disputes."
 
 ---
 

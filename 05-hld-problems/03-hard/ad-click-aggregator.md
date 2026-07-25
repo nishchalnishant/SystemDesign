@@ -134,6 +134,8 @@ if not redis.SETNX(key, 1, EX=60):
 
 **Bloom filter pre-filter**: Before hitting Redis, check a per-minute Bloom filter `seen_clicks_{minute}`. If the click_id is definitely not in the filter (Bloom says no) → new click, skip Redis. This reduces Redis writes by ~40% (only confirmed-new clicks hit Redis).
 
+> 🎯 **Staff signal:** The framing that signals seniority is that "exactly-once" is impossible in this pipeline, so dedup is *layered defense-in-depth* where each layer is cheap-but-fuzzy and the final layer is exact-but-slow — you don't pick one, you stack them by cost. Client `click_id` catches retries for free; the per-user-per-ad Redis window catches double-clicks; and only the hourly Spark batch `GROUP BY (user, ad, minute-bucket)` produces *billing-grade* ground truth, which is why ClickHouse historical tables get overwritten by the batch result. The Bloom filter is the tell: it's used in its correct asymmetric direction — a "no" is definitive so you skip Redis entirely, a "maybe" falls through to the authoritative Redis check, so its false-positive rate costs a little extra work but never a wrong answer. E5 says "dedupe on click_id in Redis"; E6 says "the real-time path is best-effort dedup — Bloom to shed load in its safe 'definitely-new' direction, Redis windows for common cases — but the batch job is the exact source of truth because you can't bill from a probabilistic dedup, and exactly-once end-to-end isn't achievable anyway."
+
 ---
 
 ## Deep Dive 2: Real-Time Aggregation with Flink
@@ -161,6 +163,8 @@ ZRANGEBYSCORE clicks:a123 <from> <to> WITHSCORES
 ```
 Each window score = click count. Query for last N minutes = ZRANGEBYSCORE with timestamp range. TTL on the key: 7 days (older data served from ClickHouse).
 
+> 🎯 **Staff signal:** The distinction that separates a correct answer here is *event time vs processing time*, and it's not pedantry — it's a money bug. Aggregating by arrival time means a mobile client that buffers clicks offline and uploads an hour later lands its clicks in the wrong minute-bucket, so an advertiser's per-minute spend is wrong and un-auditable. Flink keys on the event's own `timestamp` and uses a *watermark* to bound how long a window waits for stragglers — the watermark is the explicit knob on the completeness-vs-latency tradeoff: wait longer and you catch more late events but delay the report; cut it short and stragglers spill to a side output for the batch job to reconcile. That side-output-plus-batch-reconciliation is the lambda-architecture seam: the streaming layer gives fast-approximate, the batch layer gives slow-exact, and they must agree on the same bucketing semantics or they can't be reconciled. E5 says "aggregate clicks in a Flink tumbling window"; E6 says "window on *event time* with a watermark, because processing-time buckets misattribute late/offline clicks and corrupt billing — and late events go to a side output that the batch job folds back into ground truth."
+
 ---
 
 ## Deep Dive 3: Fraud Detection
@@ -184,6 +188,8 @@ pattern = CEP.pattern()
 ```
 
 **Retrospective re-scoring**: Batch job re-scores clicks after the fact using ML model (logistic regression, features: click rate, conversion rate, IP reputation, UA). Mark suspicious clicks as `is_fraud=True` in ClickHouse. Advertiser reports exclude fraud-flagged clicks. Advertisers can appeal, triggering manual review.
+
+> 🎯 **Staff signal:** Fraud detection is a two-tier system with opposite optimization targets, and naming that split is the signal. The real-time tier (CEP rules, per-IP/per-user rate limits) must be cheap and low-latency because it runs on every click in the hot path — so it uses simple deterministic thresholds and bounded-memory sketches, accepting that it's coarse. The batch tier (ML re-scoring) can be expensive and use rich cross-event features (conversion rate, IP reputation, impossible-travel) precisely because it runs *after the fact*, so it optimizes for accuracy over latency. The crucial architectural decision is that fraud is a *retrospective correction*, not a blocking gate: you count the click now and subtract it later once the batch flags it, because blocking synchronously on a fraud verdict would add latency to every click and false-positive-block real users. This is why billing is eventually-consistent and advertisers get credited retroactively — and why the batch ground truth, not the real-time counter, is authoritative for spend. E5 says "rate-limit clicks per IP and block bots"; E6 says "coarse real-time rules on the hot path plus a rich offline ML re-scorer, with fraud handled as retrospective clawback rather than a synchronous block — so detection accuracy doesn't tax click latency and legitimate users aren't blocked on a fast guess."
 
 ---
 
@@ -225,6 +231,8 @@ Error is one-sided — CMS **never undercounts**, it can only overestimate (by a
 | Exact billable clicks | ClickHouse + batch | TBs | Exact |
 
 **The line to say**: approximate structures serve the real-time path where the requirement explicitly permits approximation; the hourly Spark batch job remains the exact ground truth for billing. Never bill an advertiser from an HLL estimate.
+
+> 🎯 **Staff signal:** The reason to reach for HLL and Count-Min here isn't cleverness — it's that exact counting has a memory cost that grows with the *data*, and at 10B clicks/day that's unbounded, whereas the sketch cost is *fixed regardless of cardinality*. The senior move is matching each problem to a sketch whose error direction is *safe for that specific use*: HLL's ±0.81% two-sided error is fine for a reach number nobody bills on, but you'd never use it for billing; CMS's one-sided never-undercount error is exactly right for fraud, because the failure mode you can tolerate is "flag an innocent IP for a cheap exact recheck," not "miss a real attacker." And the load-bearing property is *mergeability* — HLL unions are lossless, so arbitrary date-range reach queries compose from daily counters without re-scanning raw IDs, which is what makes the whole feature tractable. The universal caveat: approximate on the real-time path where the spec permits it, exact in the batch layer for anything that touches money. E5 says "count uniques with a HashSet"; E6 says "unbounded exact counters are the bug — HLL for reach because its error is tolerable and its unions are lossless for range queries, CMS for fraud because its one-sided error fails safe, and never let an estimate touch billing."
 
 ---
 

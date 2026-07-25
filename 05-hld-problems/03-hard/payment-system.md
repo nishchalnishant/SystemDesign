@@ -145,6 +145,8 @@ Vault (HashiCorp): encryption keys for sensitive data
 2. **Capture**: Charge the reserved funds (after confirming order)
 If the authorize succeeds but capture is never called (server crash), the authorization expires in 7 days — no charge.
 
+> 🎯 **Staff signal:** The differentiator is knowing that idempotency has to be *end-to-end*, and that your own dedup layer is worthless if the PSP call downstream isn't also idempotent. A merchant retry that your Redis `SETNX` catches means nothing if a partial failure *between* your API and Stripe caused the real double-charge — so the idempotency key must be threaded through to Stripe's own `Idempotency-Key`, making the whole chain idempotent, not just your edge. The second subtlety is what the key protects: not "same request" but "same *intent*", which is why the key is caller-supplied and stable across retries rather than generated per-attempt. And the auth/capture split exists because a crash between "money reserved" and "order confirmed" must fail *safe* — an expiring authorization means the default outcome of a lost server is "customer not charged," not "charged for nothing." E5 says "use an idempotency key in Redis"; E6 says "the key has to reach the PSP or the dedup is theater, and I structure auth-then-capture so the failure mode of every crash is a released hold, never an orphaned charge."
+
 ---
 
 ## Deep Dive 2: Ledger and Reconciliation
@@ -185,6 +187,8 @@ for psp_tx in psp_transactions:
 
 Discrepancies are investigated manually and corrected with adjustment entries.
 
+> 🎯 **Staff signal:** The senior instinct is that money state must be an *append-only, double-entry ledger*, never a mutable balance column — because a balance you can `UPDATE` has no history, can't be audited, and a lost update silently corrupts money. Double-entry gives you an invariant the system can continuously self-check: every entry sums to zero, so any single-sided corruption is detectable arithmetically. Corrections are new offsetting entries, never edits — the ledger is immutable, which is also what makes it the legal record. The reconciliation loop then treats your ledger and the PSP's as two independent replicas of the same truth and diffs them nightly, because *you will* drift — a webhook is dropped, a fee changes, a timeout leaves ambiguous state — and the only safe assumption is that discrepancies are normal and must be surfaced, not that they won't happen. E5 says "store balances and update them in a transaction"; E6 says "append-only double-entry so corruption is arithmetically detectable and every movement is auditable, plus nightly reconciliation against the PSP because divergence is a *when*, not an *if*."
+
 ---
 
 ## Deep Dive 3: PCI DSS Compliance
@@ -202,6 +206,8 @@ Discrepancies are investigated manually and corrected with adjustment entries.
 **Audit logging**: Every API call, DB write, and PSP interaction is logged to an append-only audit log (write-once S3 or WORM storage). Logs include: timestamp, user/service, action, resource, result. Retained for 7 years (PCI DSS requirement).
 
 **Encryption in transit and at rest**: TLS 1.3 for all external connections. Database encryption at rest (AWS RDS encryption). Application-level encryption for sensitive fields (customer email, address) using Vault-managed keys with automatic key rotation every 90 days.
+
+> 🎯 **Staff signal:** The framing that signals seniority is that PCI is fundamentally a *scope-reduction* problem, not an encryption problem — the winning move is to arrange the architecture so raw card data never touches your servers at all, which shrinks your PCI audit scope from "your entire fleet" to "almost nothing." Tokenization via a hosted iframe/Elements means the PAN goes browser→Stripe directly and you store only an opaque token; you can't leak data you never held. That's categorically stronger than "encrypt the card numbers well," because the best-encrypted database is still a breach target and still in-scope for the full PCI audit. Everything else — the isolated VPC, egress allowlists, WORM audit logs — is defense-in-depth around a scope you've already made tiny. E5 says "encrypt card data at rest and restrict access"; E6 says "the goal is to *never possess* the PAN — hosted tokenization takes cardholder data out of my scope entirely, so a breach of my systems exposes tokens that are worthless off my account, and the residual controls just harden a deliberately minimized blast radius."
 
 ---
 

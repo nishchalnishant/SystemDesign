@@ -151,6 +151,8 @@ Both lists are sorted by page_id, so merge is O(N) where N = min(len(list1), len
 
 **Skip pointers**: For "AND" queries, jump large runs of non-matching IDs using skip pointers embedded in the postings list. Reduces effective scan length by 10-100x.
 
+> 🎯 **Staff signal:** The decision that shapes everything is *term-partitioning vs document-partitioning* the index, and naming the tradeoff is the tell. Sharding by term (as here) means a single term's entire postings list lives on one server, so a one-word query hits one shard — but a multi-term `AND` must ship million-entry postings lists across the network to intersect them, and a hot term like "the" hotspots one server. Document-partitioning (each shard holds a slice of the corpus, all terms) is the opposite: every query fans out to all 5,000 shards but each does a small local intersection with no cross-shard postings transfer, and load is even — which is why web-scale engines actually shard by document. The compression and skip pointers matter because postings lists are so large that the intersection is I/O-bound, not CPU-bound: delta+VByte shrinks bytes-read 10× and skip pointers let `AND` leapfrog non-matches so you never decode the whole list. E5 says "build an inverted index and intersect postings"; E6 says "the real choice is document- vs term-partitioning — term-sharding wins single-term latency but forces cross-node postings shipping and hotspots on stopwords, so at web scale I document-partition and fan out, and I compress + skip-pointer because intersection is I/O-bound."
+
 ---
 
 ## Deep Dive 2: PageRank Algorithm
@@ -183,6 +185,8 @@ Converges in 50-100 iterations. For 50B pages, run on a Spark cluster (100 nodes
 
 **Personalized PageRank**: Bias the "random jump" toward the user's browsing history → more relevant results for that user's interests.
 
+> 🎯 **Staff signal:** The systems insight — more than the eigenvector math — is that PageRank is a *query-independent, precomputed* signal, and that's exactly what makes serving fast. PageRank depends only on the link graph, not the query, so you compute it offline in a batch Spark job (50–100 iterations, hours/week) and store one float per page; at query time it's a lookup, not a computation. That separation is the whole point: the expensive global graph analysis is amortized across every query, so the online path only does the cheap query-dependent scoring. The damping factor isn't a fudge — it's what guarantees convergence (it makes the transition matrix irreducible/aperiodic) and models the "random surfer" escaping rank sinks (pages with no outlinks that would otherwise hoard rank). E5 says "rank by number of inbound links"; E6 says "PageRank is recursive — authority flows from authoritative pages — but the key property for the *system* is that it's query-independent, so I precompute it in batch and reduce serving to a per-page lookup; the damping factor is what makes the iteration converge and drains rank sinks."
+
 ---
 
 ## Deep Dive 3: Query Processing and Ranking
@@ -209,6 +213,8 @@ score(d) = α × BM25(query, d) + β × PageRank(d) + γ × freshness(d) + δ ×
 **Early termination**: Postings lists are sorted by TF-IDF descending (best documents first). Stop scanning after accumulating 200 candidates — rarely need to go further for top-10 results.
 
 **Snippet generation**: After selecting top-10, extract a 2-sentence excerpt centered on the highest-density query term occurrence in the page. Highlight query terms.
+
+> 🎯 **Staff signal:** Ranking is a *multi-stage retrieval funnel*, and the senior framing is that you never fully score millions of candidates — you can't afford to. Cheap signals (BM25 from the postings scan, precomputed PageRank lookup) run over many candidates to cut millions to a few hundred; expensive signals (query-document CTR, freshness, and in a modern system a learned/ML re-ranker) run only on those survivors. Early termination is what makes stage one bounded: because postings are sorted by TF-IDF descending, the best documents appear first, so you stop after ~200 candidates knowing the top-10 almost certainly can't be beaten by the long tail — trading a sliver of recall for a hard latency bound. The linear `α·BM25 + β·PageRank + …` blend shown here is really the teaching stand-in for a learned ranker whose weights are trained on click data, which closes a feedback loop (CTR feeds ranking, ranking shapes CTR) that must be de-biased. E5 says "combine BM25 and PageRank into a score"; E6 says "it's a funnel — cheap signals prune millions to hundreds, expensive/learned signals rank the survivors, and early termination on TF-IDF-sorted postings gives a bounded-latency stage-one at a controlled recall cost."
 
 ---
 

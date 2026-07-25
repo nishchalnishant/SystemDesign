@@ -133,6 +133,8 @@ Control Plane:
 
 **PoP failure**: If a PoP's health monitor detects failure (uptime check fails 3× in 30s), the PoP withdraws its BGP announcement. BGP convergence takes 30-90 seconds — during this time some traffic hits the failed PoP and gets errors. Mitigation: secondary anycast tier with slightly longer BGP path as fallback.
 
+> 🎯 **Staff signal:** The senior insight is that Anycast pushes "route to nearest edge" *down into the network layer* — every PoP announces the same prefix over BGP, so failover is automatic (withdraw the announcement and traffic reroutes) with zero application logic. But the E6 move is naming the cost that buys: BGP is connectionless and convergence takes 30-90s, so a PoP death drops in-flight TCP/TLS sessions and errors a slice of traffic during reconvergence — Anycast is excellent for stateless HTTP GETs and *wrong* for long-lived stateful connections, which is why you don't Anycast a WebSocket tier. Contrast GeoDNS (the alternative): more routing control, but it resolves to the *resolver's* location not the user's, and DNS TTL caching means failover lags minutes. E5 says "use Anycast for low latency"; E6 states which failure mode each routing layer owns and why long-lived connections need a different answer.
+
 ---
 
 ## Deep Dive 2: Cache Hierarchy and Eviction
@@ -150,6 +152,8 @@ Control Plane:
 - L2: LRFU (Least Recently/Frequently Used) — popular but not recently accessed objects stay longer
 
 **Thundering herd on cache miss**: If L2 misses for a popular object, thousands of L1 requests may simultaneously try to fetch from origin. Use **request coalescing** (also called request collapsing): the first L2 miss sends one fetch to origin; all subsequent requests for the same object wait for the first fetch to complete, then all get the result from cache. Redis lock per cache key prevents parallel fetches.
+
+> 🎯 **Staff signal:** The differentiator is naming **request coalescing** as the real defense against origin overload, not the cache itself. The naive answer ("cache popular objects") silently assumes cache hits — but the dangerous moment is the *miss on a hot object*: one expired 4K segment can trigger 10,000 simultaneous origin fetches (a self-inflicted DDoS on your own origin) precisely because the object is popular. Collapsing all concurrent misses for the same key into a single origin fetch caps origin load at O(unique objects) instead of O(requests), independent of concurrency. The tradeoff to state: coalescing adds a per-key lock on the hot path and serializes the first-fetch latency onto all waiters — acceptable because origin protection dominates. The other E6 detail is the two-tier eviction being *policy-differentiated* (L1 LRU for raw recency speed, L2 LRFU so a nightly-popular object survives), because the tiers optimize different access distributions. E5 says "add a cache"; E6 defends the origin at the miss.
 
 ---
 
@@ -177,6 +181,8 @@ Purge request → Purge Coordinator
 **Soft purge vs hard purge**:
 - **Hard purge**: Delete object from cache immediately. Next request gets a cache miss, hits origin. Risk: thundering herd if the object is hot.
 - **Soft purge**: Mark as `stale` instead of deleting. Serve stale content while asynchronously revalidating from origin with `If-None-Match: etag`. If origin returns `304 Not Modified`, refresh TTL. If `200 OK`, replace content. No thundering herd.
+
+> 🎯 **Staff signal:** Invalidation across 250 PoPs is fundamentally a *fan-out with partial-failure* problem, and the senior framing is choosing the consistency model explicitly: purge is best-effort-eventual (Kafka fan-out, per-PoP ACK tracking, ~1s typical / 5-10s tail), because global synchronous invalidation would mean blocking a deploy on the slowest PoP on earth. The sharpest E6 detail is preferring **soft purge (stale-while-revalidate)** over hard delete: hard-deleting a hot object *creates* the thundering herd you just engineered coalescing to prevent, so you mark-stale, serve the old bytes, and revalidate with `If-None-Match` — turning a cache-consistency operation into a background `304` check that never exposes origin to a miss storm. The other tell is knowing invalidation-by-purge doesn't scale for versioned assets: the real answer is *content-addressed URLs* (`app.a1b2c3.js`) so a new deploy is a new key and old caches age out naturally — purge is the escape hatch, not the primary mechanism. E5 purges; E6 picks the invalidation strategy that avoids both the herd and the fan-out barrier.
 
 ---
 

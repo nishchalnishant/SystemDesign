@@ -150,6 +150,8 @@ SADD h3:8830e1c2b9fffff d456  # drivers in this hexagon
 
 **Why H3 over geohash**: H3 hexagons have uniform neighbors (6 neighbors all at equal distance); geohash squares have 8 neighbors with varying distances. H3 avoids the "edge artifact" where two nearby points are in cells that aren't adjacent.
 
+> 🎯 **Staff signal:** The precise reason to prefer H3 hexagons over a geohash grid is a correctness bug, not aesthetics: geohash cells have *non-uniform* neighbor distances — a square's diagonal neighbors are 1.4× farther than its edge neighbors, and adjacent points can straddle a boundary into cells that aren't even lexicographically near — so a naïve "same-prefix" proximity query silently misses drivers that are physically closest. Hexagons have exactly six equidistant neighbors, so a k-ring is a clean, distance-uniform radius. The deeper design point is that this whole scheme trades exactness for a bounded write path: driver locations churn at 5M × (1/4Hz) = ~1M writes/sec, so you can't afford a query-time spatial join — you *pre-bucket* each driver into a cell on write, turning a nearest-neighbor search into a set-union over ~57 precomputed cells. The 30s TTL is the safety valve: a crashed driver's app stops updating, and you must not dispatch a rider to a ghost. E5 says "use geohashing to find nearby drivers"; E6 says "H3 because uniform hex neighbors avoid geohash's boundary/diagonal artifacts that drop the closest driver, and I pre-bucket on write with a location TTL so matching is a set-union, never a scan, and never routes to a stale driver."
+
 ---
 
 ## Deep Dive 2: Driver Matching and Assignment
@@ -179,6 +181,8 @@ SET driver_state:d456 "offered:trip:t123" EX 15  # lock during offer window
 # On decline/timeout: DEL driver_state:d456 → driver available again
 ```
 
+> 🎯 **Staff signal:** Matching is a distributed-locking problem masquerading as a ranking problem, and the failure it must prevent is *double-dispatch* — the same driver offered to two riders concurrently. That's why the offer is a short-TTL lock (`SET driver_state EX 15`), not a flag: the TTL guarantees a crashed matcher or a driver who never responds auto-releases the driver instead of stranding them locked forever, so the lock is self-healing. The second insight is ranking by *ETA, not distance* — a driver 500m away across a river with no bridge is worse than one 2km away on the same road — which quietly makes matching depend on the routing service, so its ETA cache latency is on the critical path. And sequential-with-prefetch is the deliberate middle ground between broadcast-to-all (fast but causes multiple drivers to race-accept, needing rollback) and pure-sequential (clean but slow per decline); prefetching the next candidates' ETAs hides the re-offer latency. E5 says "offer to the nearest driver, then the next if they decline"; E6 says "the offer is a TTL'd lock so a crash can't leave a driver double-booked or stuck, I rank by routed ETA not straight-line distance, and I prefetch the fallback candidates so a decline doesn't cost the rider another round-trip."
+
 ---
 
 ## Deep Dive 3: Surge Pricing
@@ -204,6 +208,8 @@ def compute_surge(h3_cell, time_window=5):  # minutes
 **Driver incentive**: Higher surge attracts off-duty drivers. Push notification to nearby offline drivers: "Surge pricing active near you — go online to earn 2x!"
 
 **Price lock**: Once a rider confirms the surge price, lock it for their trip even if surge drops. Store `confirmed_surge_multiplier` in the trip record.
+
+> 🎯 **Staff signal:** Surge is a *control system*, not just a pricing formula — its real job is to keep supply and demand in equilibrium per cell, and the senior details are all about damping and honesty. The price must be *locked at quote time* (`confirmed_surge_multiplier` in the trip record), because a price that changes between "confirm" and "pickup" is both a UX betrayal and a legal problem — the quote is a contract. The multiplier is computed on a smoothed window (5-min demand vs current supply), not instantaneously, because raw supply/demand is spiky and an unfiltered signal makes prices oscillate wildly, which itself distorts behavior — a feedback loop where the measurement changes the thing measured. The per-cell granularity plus caps exist to prevent surge from being gamed or from teleporting demand across a boundary. E5 says "raise prices when demand exceeds supply"; E6 says "surge is a feedback controller — I lock the multiplier at quote time because the price is a contract, smooth the supply/demand signal over a window to damp oscillation, and cap it, because an un-damped controller whose output changes its own input will ring."
 
 ---
 

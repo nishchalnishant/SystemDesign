@@ -150,6 +150,8 @@ Storage:
 
 **Fan-out queue sharding**: Fan-out work is partitioned by `channel_id` across fan-out workers. All messages to the same channel are processed by the same worker (prevents out-of-order notification delivery for the same channel).
 
+> 🎯 **Staff signal:** The senior framing is that fan-out cost is O(online members), not O(members) — so the load-bearing optimization is **selective fan-out to online sockets only**, with offline members downgraded to an unread-counter increment they reconcile via REST on reconnect. That single choice cuts a 10K-member push to ~2-3K and, more importantly, decouples delivery cost from channel size for the (large) offline fraction. Two E6 details make it real: (1) partitioning fan-out work by `channel_id` so one worker owns a channel is what preserves *per-channel* order under concurrency — sharding by message would reorder; and (2) the batching insight that 10K individual Redis GETs (~1s) must become pipelined MGETs (~50ms), because at fan-out scale the *lookup* is the bottleneck, not the push. E5 says "fan out to members"; E6 makes the cost proportional to who's actually listening and pins ordering to the shard key.
+
 ---
 
 ## Deep Dive 2: Message Ordering and the Timestamp Problem
@@ -176,6 +178,8 @@ CREATE TABLE messages (
 ```
 Partition key: `channel_id` — all messages in a channel go to the same partition. Clustering key: `message_id` DESC — messages sorted newest-first within partition. One Cassandra query retrieves a page of messages in order.
 
+> 🎯 **Staff signal:** The key realization is that you only need a *total order per channel*, not a global one — and that lets you sidestep the unsolvable problem (synchronized wall clocks across data centers) entirely. A per-channel Redis atomic counter (`msg_seq:{channel_id}`) gives strict monotonic sequence numbers scoped to exactly the ordering domain that matters, and that sequence doubles as the Cassandra clustering key so storage is pre-sorted and a page is one partition read. Naming *why global ordering is both impossible and unnecessary* is the E6 line: cross-channel ordering has no observer (no user reads two channels as one stream), so paying for a global sequencer would be solving a problem nobody has. The tradeoff to acknowledge: the per-channel counter is a single point of serialization per channel — fine, because a channel is already a natural low-contention shard, and it's exactly the same `channel_id` partitioning the fan-out and storage layers use. E5 reaches for timestamps; E6 scopes ordering to the channel and reuses that scope as the shard key everywhere.
+
 ---
 
 ## Deep Dive 3: Message Search
@@ -193,6 +197,8 @@ Partition key: `channel_id` — all messages in a channel go to the same partiti
 **Indexing pipeline**: Messages flow from Cassandra → Kafka → Elasticsearch indexer. Indexing lag ~2 seconds. Messages become searchable within 2 seconds of being sent.
 
 **File attachment search**: File names and text content (from OCR/PDF parsing) are indexed alongside the message. Image OCR runs asynchronously after upload: S3 → Lambda (Tesseract OCR) → Elasticsearch update.
+
+> 🎯 **Staff signal:** The detail most candidates miss is that chat search is an *authorization-filtered* search, not a relevance problem — a user must never see a hit from a private channel they aren't in. So the ACL can't be a post-filter (that leaks result counts and paginates wrong); it has to be pushed *into the query* as a `terms: channel_id ∈ [user's channels]` filter clause, with the membership list cached in Redis. Getting that boundary right is the senior tell. The second E6 point is treating the index as a *derived, eventually-consistent view*: Cassandra is the source of truth, Elasticsearch is fed async via Kafka with ~2s lag, and you shard the index by `workspace_id` so a query fans out to one shard, not the cluster. Stating the ~2s searchability lag as an accepted tradeoff — search is not read-your-writes — rather than pretending it's synchronous, is the difference between E5 and E6.
 
 ---
 

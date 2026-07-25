@@ -141,6 +141,8 @@ Storage:
 
 **Forking**: When a repo is forked, GitHub does not copy the objects. The fork shares a "storage network" with the parent — both repos point to the same object store. `git push` to the fork writes only the new objects; shared objects are never duplicated. This is why GitHub forks are nearly instant regardless of repo size.
 
+> 🎯 **Staff signal:** The insight is that Git is *already* content-addressed (every blob/tree/commit keyed by SHA-1 of its content), so you don't build dedup — you *inherit* it, and the design work is exploiting it. A fork isn't a copy; it's a new ref namespace pointing into the *shared* object pool of the fork network, which is why forking the Linux kernel is instant regardless of size and a push writes only the genuinely-new objects. Naming "forks share an object store, not copy it" is the tell. The E6 depth is the sharp edges content-addressing creates: (1) **shared objects can't be naively deleted** — a private repo's commit made public in a fork means the object is reachable across the network, so GC and access-control must reason over the whole fork network, not one repo; and (2) delta-compressed pack files trade CPU (repacking, delta resolution on clone) for storage, so hot repos stay unpacked on fast storage while cold repos live as packs in S3 — a tiering decision driven by clone frequency. E5 says "Git dedupes by hash"; E6 turns that into instant forks and names the cross-repo GC/visibility hazard it introduces.
+
 ---
 
 ## Deep Dive 2: Code Search
@@ -162,6 +164,8 @@ Storage:
 - Store: trigram → list of (file_id, position)
 - Query `/def\s+connect/`: extract trigrams `def`, `ef `, `f c`, `con`, `onn`, `nne`, `nec`, `ect` → intersect file lists → verify regex on candidate files
 - Result: regex search on 50 TB code in < 2 seconds
+
+> 🎯 **Staff signal:** The senior realization is that **code search is not text search**, and naming *why the standard inverted index fails* is the tell. A word-based analyzer tokenizes on whitespace and drops punctuation — useless for code, where developers search for `def connect`, `->`, `x.y[i]`, or a regex, none of which are "words." The answer is a **trigram index**: every 3-character substring maps to the files containing it, so any query (including regex) decomposes into its trigrams, you intersect the (much smaller) candidate file lists, then run the exact regex only on those survivors. That's how you get regex over 50 TB in seconds — the trigram index is a *candidate filter*, not the final matcher, and stating that two-stage structure (cheap index narrows, expensive verify confirms) is the E6 line. The tradeoff: trigram indexes are large (every 3-gram of every file) and costly to update, which is why indexing is incremental per-push via Kafka, not a rebuild. E5 says "use Elasticsearch"; E6 explains that code needs substring/regex, hence trigrams as a candidate-generation layer.
 
 ---
 
@@ -196,6 +200,8 @@ RETURNING pr_id;
 - Notification: notify PR author + reviewers of merge
 - Issue close: if PR body contains "Fixes #456", close issue 456
 - Code search: reindex changed files
+
+> 🎯 **Staff signal:** The tell here is recognizing that "merge" hides *two different concurrency problems* and solving each at the right layer. First, the double-click race — two mergers, one merge — is a metadata compare-and-set (`UPDATE ... WHERE status='open' RETURNING`, 0 rows loses), the same optimistic-lock pattern used elsewhere, and it must own the transition so exactly one merge proceeds. Second, and more senior: **branch protection must be enforced in the `git-receive-pack` hook server-side, not in the UI**, because the UI is advisory — a developer can `git push --force` straight to the protected branch and bypass every review/CI gate unless the receiving server itself rejects the non-fast-forward push. Naming that the enforcement point is the receive hook, not the web app, is the E5→E6 line (it's an authorization-at-the-real-boundary insight, mirroring the search-ACL point in the chat system). The last detail is that post-merge fan-out (deploy, notify, reindex, close issues) is decoupled via a push-event stream so a slow downstream can't block the merge or lose work — merge commits the truth, consumers react eventually. E5 says "lock the PR row"; E6 puts protection in the git hook and makes side effects event-driven.
 
 ---
 

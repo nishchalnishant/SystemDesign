@@ -167,6 +167,8 @@ class OrderBook:
 
 **Why not a heap**: A heap supports O(1) peek but O(N) cancellation. SortedDict (balanced BST) supports O(log N) for all operations, enabling fast cancellation.
 
+> 🎯 **Staff signal:** The data-structure choice is driven by the *workload mix*, and naming why a heap loses is the signal. In real markets the vast majority of order events are cancels and modifies, not fills — HFT firms post and pull constantly — so cancellation, not matching, is the hot path. A heap gives O(1) best-price peek but O(N) cancel because you can't locate an arbitrary order; the winning structure is a price-level tree (sorted map price→FIFO-queue) *plus a side `order_map` from order_id to its position*, which makes cancel O(1) to find and O(log P) to clean up. The FIFO queue at each price level isn't incidental — it *is* the time-priority guarantee, and P (distinct price levels) stays small (<1000) while order count is huge, so keying the tree on price not order keeps it shallow. E5 says "use a heap for best bid/ask"; E6 says "cancels dominate the workload, so I optimize the cancel path — a price-level tree with a side index gives O(1) cancel lookup that a heap can't, and the per-level FIFO queue encodes time priority directly."
+
 ---
 
 ## Deep Dive 2: Matching Algorithm (Price-Time Priority)
@@ -209,6 +211,8 @@ def match(self, incoming_buy):
 - Fill 200 shares from $149.50 sell (10:00:03) → Trade at $149.50
 - Remaining: 0 shares. Fully filled.
 
+> 🎯 **Staff signal:** The correctness property that must be stated is *determinism*, and price-time priority is what provides it: given the same input sequence, the matching engine must produce byte-identical trades on every replica and every replay — because this is what makes the WAL-recovery and hot-standby of Deep Dive 3 even possible, and what makes the exchange auditable and fair. That forces the engine to be single-threaded (concurrency introduces nondeterministic ordering) and to derive *every* decision from the deterministic input order, never from wall-clock time read at match time. The non-obvious fairness detail is that the trade executes at the *resting (maker) order's price*, not the incoming (taker) price — so a buy limit at \$150 that hits a \$149.50 ask fills at \$149.50, giving price improvement to the taker; getting this backwards is a subtle but serious bug. E5 says "match best price, break ties by time"; E6 says "price-time priority exists to make matching *deterministic* so replicas and replay reconstruct identical state — which is why the engine is single-threaded and clock-free in its decisions — and fills print at the maker's resting price, not the taker's."
+
 ---
 
 ## Deep Dive 3: Durability and Recovery
@@ -232,6 +236,8 @@ def match(self, incoming_buy):
 3. Reduces recovery time from "replay full day" to "replay last 5 minutes"
 
 **Hot standby**: Run a replica matching engine that also consumes the WAL in real-time. If primary crashes, replica can take over in < 100ms with zero replay needed.
+
+> 🎯 **Staff signal:** The whole recovery architecture rests on one property established upstream — deterministic replay — and the senior move is making the durability boundary explicit: the engine must not acknowledge an order until its WAL write has fsync'd, because an ack the client trusts for money must survive a crash the microsecond later. That ordering (log-then-ack, never ack-then-log) is the non-negotiable, and it puts fsync latency directly on the critical path — which is exactly why group commit exists: batch 1,000 orders into one fsync to amortize the syscall while keeping the durability guarantee. Snapshot+WAL is the standard "bound the replay window" trick (load last snapshot, replay only the tail), and the hot standby upgrades recovery from *replay* to *failover* by keeping a second deterministic engine already caught up — turning minutes of replay into <100ms of promotion. The tradeoff to name: synchronous replication to the standby adds latency but guarantees zero data loss; async is faster but the standby can lag the primary at the instant of failure. E5 says "write a WAL and replay it on crash"; E6 says "log-then-ack is the invariant so fsync is on the hot path — I group-commit to amortize it, snapshot to bound replay, and keep a hot standby fed by the same deterministic stream so failover is promotion, not replay."
 
 ---
 

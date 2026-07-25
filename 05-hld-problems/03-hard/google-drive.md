@@ -145,6 +145,8 @@ Storage:
 
 **Content deduplication**: Before storing, compute SHA-256 of each chunk. If an identical chunk exists (same SHA-256), skip upload — reuse the existing GCS object. Effective for files with lots of padding or standard headers.
 
+> 🎯 **Staff signal:** The senior framing is that resumable upload works by making the upload **stateless and idempotent per chunk**: the *client-provided byte offset* (`Content-Range`) is the source of truth for progress, so a resume is just "ask the server how many bytes it has, continue from there" — no server-side session to lose, and re-sending an already-received chunk is a harmless no-op. That offset-as-state design is what survives a flaky mobile link, and naming it (versus a stateful streaming upload that dies with the connection) is the tell. The E6 details: chunk size is a real tradeoff — too small multiplies request overhead and metadata, too large wastes re-upload on each failure — and the final "compose chunks into one object" step must be **atomic server-side** so a reader never sees a half-assembled file. Add that upload and durable-commit are decoupled: the app tier only ever handles presigned/direct-to-blob transfers and metadata, never the 5 GB payload itself. E5 says "chunk the upload"; E6 makes the client offset the resumable state and names atomic composition + chunk-size tuning.
+
 ---
 
 ## Deep Dive 2: Real-Time Collaboration with OT
@@ -174,6 +176,8 @@ Server broadcasts seq=7 to all clients including B
 ```
 
 **Client-side**: Each client maintains a local copy. Operations are applied immediately locally for responsiveness (optimistic). Server reconciliation arrives within 100ms and may reorder operations. Client transforms buffered local ops against server ops.
+
+> 🎯 **Staff signal:** The core insight is that concurrent editing can't ship *edits* (last-write-wins on the whole doc loses data); it must ship **intent-preserving operations** and *transform* them against each other so both survive — Alice's insert-at-10 and Bob's delete-at-10 both apply, with positions adjusted (OT). Naming that the transform preserves *intent under reordering* — the same two ops applied in different orders on different clients must converge to the identical document — is the E6 line; that convergence property is the entire correctness bar. The pattern's shape is optimistic local apply for zero-latency typing, then server reconciliation (global sequence + transform) that may rewrite your buffered ops, which the client re-transforms. State the honest tradeoff: **OT needs a central server** to assign the sequence and is notoriously hard to get correct across every op-pair, which is exactly why newer systems reach for **CRDTs** — they converge without a central sequencer (each character gets a unique, ordered ID) at the cost of metadata overhead and tombstones. E5 says "merge edits"; E6 frames it as intent-preserving transforms that must converge, and knows the OT-vs-CRDT tradeoff (central authority vs. metadata cost).
 
 ---
 
@@ -206,6 +210,8 @@ CREATE TABLE permissions (
 **Caching**: Cache user's effective permission per file in Redis (`perm:{user_id}:{file_id}` → role, TTL 5 min). Invalidated when any permission on the file or ancestor folder changes.
 
 **Sharing links**: Generate `share_token` (256-bit random). Store in permissions table as `principal_type=link, principal_id=sha256(token)`. Anyone with the link makes requests with `?token=...`; server looks up permission by token hash.
+
+> 🎯 **Staff signal:** The senior tension to name is **inheritance vs. check-latency**: permissions inherit down the folder tree (so a share is one write, not a rewrite of every descendant), but that makes the *read* — "can this user open this file?" — a walk up N ancestor folders through group memberships on the hot path of every open. The design choice is to keep the write cheap and *cache the resolved effective permission* (`perm:{user}:{file}` in Redis, TTL'd), accepting that the hard part moves to **invalidation**: changing a permission high in the tree must invalidate every cached descendant entry, and getting that fan-out wrong means stale grants — i.e. a security bug (someone retains access after removal), not just a stale read. Naming that permission-cache invalidation is a *correctness/security* problem, not a performance nicety, is the E5→E6 line. The other tell is storing share links as `sha256(token)` so a DB leak can't reconstruct live links, and modeling "anyone with link" as just another principal type in the same table — one uniform check path. E5 says "cache permissions"; E6 frames inheritance-vs-lookup as the tradeoff and treats invalidation as a security boundary.
 
 ---
 

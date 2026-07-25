@@ -140,6 +140,8 @@ After completion:
 
 **Backpressure**: If the client's connection is slow (mobile on poor network), the buffer fills. The SSE writer applies backpressure: pauses accepting new tokens from the GPU. The GPU's KV cache (key-value cache for attention layers) holds the state. When the client catches up, streaming resumes.
 
+> 🎯 **Staff signal:** SSE-over-WebSocket is the easy half of this answer; the differentiator is naming what backpressure *costs*. A slow mobile client that stalls the SSE writer pins that request's KV cache on the GPU — the most expensive and scarcest resource in the system — for the entire duration the client is slow, so one bad network connection is effectively holding hostage GPU memory that could serve other users. That reframes the design: you can't naively pause the generator, you decouple generation from delivery by draining tokens into a cheap CPU-side buffer and letting the GPU free its slot, or you cap how long a stalled stream may hold GPU state before you evict and require a resume. The rejected alternative — block the generator on the socket — is simplest and turns tail-latency clients into a GPU-utilization tax. E5 says "SSE with a buffer and backpressure"; E6 says "backpressure that stalls the generator ties up KV-cache on the GPU, so I move buffering off the GPU and bound how long a slow client can occupy inference state."
+
 ---
 
 ## Deep Dive 2: Context Window Management
@@ -171,6 +173,8 @@ Better coherence for long conversations. Costs an extra LLM call, adds ~500ms.
 
 **Strategy 3: RAG** — Store all messages in a vector DB (embeddings). On each turn, retrieve the top-K most relevant past messages using semantic search and inject them into the context.
 
+> 🎯 **Staff signal:** The subtle constraint is that anything you drop or reorder from the *front* of the prompt destroys prefix-cache reuse. Providers cache the KV tensors of a stable prompt prefix (system prompt + early turns) so repeat turns skip re-encoding it — a sliding window that pops `messages[1]` every turn shifts the prefix and forces a full re-prefill each time, silently multiplying cost and latency. So the strategy choice is really a cost curve: sliding-window is cheapest per turn but sheds early context and can thrash the cache; hierarchical summarization keeps a stable, cacheable prefix (the summary rarely changes) at the price of one extra LLM call; RAG keeps unbounded history but makes the prompt non-deterministic turn-to-turn, which also defeats prefix caching. E5 says "use a sliding window, summarize if it's too long"; E6 says "pick the compaction strategy by its effect on prefix-cache stability — I'd summarize into a *fixed* prefix so repeat turns stay cache-warm, and reserve RAG for when relevance beats the cache-reuse loss."
+
 ---
 
 ## Deep Dive 3: GPU Inference Routing and Batching
@@ -188,6 +192,8 @@ Better coherence for long conversations. Costs an extra LLM call, adds ~500ms.
 **Routing**: The LLM Inference Router uses consistent hashing by `conversation_id` to send the same conversation to the same GPU server when possible (warm KV cache). On server failure, reroute to another server (cold start — small latency hit).
 
 **Auto-scaling**: Queue depth metric triggers GPU server scaling. If average queue depth > 5 requests → launch new GPU instances (30-second warmup). If queue depth < 1 for 10 minutes → terminate idle instances.
+
+> 🎯 **Staff signal:** The insight that separates this from a generic "shard by ID" answer is that LLM inference has *two* competing scheduling objectives that pull opposite directions, and continuous batching plus PagedAttention exist to reconcile them. Static batching wastes the GPU because one 10s request holds the whole batch while short ones finish and idle; continuous batching lets finished sequences leave and new ones join mid-flight, but that only works if KV-cache memory can be allocated and freed at token granularity — which is exactly what PagedAttention's virtual-memory-style paging provides, and it's what lets many users share one physical copy of a common system-prompt prefix. The routing tension: consistent-hashing by `conversation_id` maximizes KV-cache warmth (cheap) but fights load-balancing (a hot conversation can hotspot a GPU), so hash-affinity must be a *preference* that yields to queue depth, not a hard binding. E5 says "batch requests and autoscale on queue depth"; E6 says "continuous batching + PagedAttention so a long request doesn't stall short ones and prefixes are shared, with cache-affinity routing that degrades to load-based routing under hotspots."
 
 ---
 

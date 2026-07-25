@@ -156,6 +156,8 @@ Problem: inserting bytes at the beginning shifts all block boundaries → all bl
 
 For the 100-byte change in a 1 GB video: only 1-2 chunks are new → upload < 32 MB (2 chunks × max 16 MB).
 
+> 🎯 **Staff signal:** The differentiator is knowing *why fixed-size chunking fails and content-defined chunking (CDC) fixes it* — the boundary-shift problem. Insert one byte at the front of a fixed-4MB-block file and every subsequent block boundary shifts, so every block gets a new hash and dedup collapses to zero. CDC sets boundaries by *content* (a rolling Rabin hash hitting a bit-pattern), so an insert only disturbs the one or two chunks around it and every downstream boundary stays put — that's what makes a 100-byte edit in a 1 GB file a ~sub-32 MB upload instead of 1 GB. Naming the boundary-shift as the exact reason fixed chunking is wrong is the E5→E6 line. The tradeoff to state: CDC costs CPU to roll the hash over every byte and yields variable-size chunks (harder to index), which is why average/min/max chunk sizes are tuned — too small explodes metadata, too large kills dedup granularity. E5 says "chunk and hash"; E6 explains the insertion failure mode and that chunk-size is a metadata-vs-dedup tuning knob.
+
 ---
 
 ## Deep Dive 2: Conflict Detection and Resolution
@@ -186,6 +188,8 @@ RETURNING version;
 
 **Offline sync**: Device tracks a `sync_cursor` (last event ID seen). When reconnecting, sends all pending changes (with their `parent_version` at time of offline edit). Server processes each change; conflicts are detected per file.
 
+> 🎯 **Staff signal:** The senior judgment is choosing to **detect conflicts but *not* auto-resolve them** — and defending that as correct, not lazy. Because Dropbox is file-format-agnostic, it cannot safely merge two divergent `.docx` or binary edits; a wrong auto-merge silently corrupts data, which is worse than a visible conflict. So it uses optimistic concurrency (commit carries `parent_version`; the `UPDATE ... WHERE version = parent_version` returns 0 rows on a stale base → conflict) and, on conflict, *preserves both* as a "conflicted copy" rather than picking a loser. The E6 contrast is naming *when the opposite choice is right*: Google Docs auto-merges via OT/CRDT precisely because it constrains the data model to text operations, buying automatic merge at the cost of format-agnosticism. State the tradeoff explicitly — last-write-wins loses data, auto-merge risks corruption on arbitrary formats, preserve-both keeps a human in the loop — and that the version check must be an *atomic* compare-and-set or two syncs race past each other. E5 says "use versioning"; E6 explains why no-auto-merge is the safe default and where CRDTs earn their complexity.
+
 ---
 
 ## Deep Dive 3: Storage Deduplication
@@ -203,6 +207,8 @@ RETURNING version;
 **Block reference counting**: Each block's S3 object is kept alive as long as any file references it. A background GC job scans all file metadata, builds a set of all referenced block SHA-256s, then deletes any S3 objects not in the reference set. GC runs weekly.
 
 **Metadata dedup**: Beyond blocks, entire files can be deduped. If a user copies a folder, the new file records point to the same blocks — no S3 data is copied. Only metadata (file path, permissions) is duplicated.
+
+> 🎯 **Staff signal:** The unlock is **content-addressed storage**: keying each block by the SHA-256 of its bytes makes dedup *automatic and global* — identical content produces an identical key, so 500M copies of the same meme converge to one S3 object with no dedup pass needed, and the same property makes a folder-copy a pure metadata operation (new file record, same block pointers, zero bytes moved). Naming content-addressing as the mechanism that gives dedup, integrity verification (the key *is* the checksum), and cheap copies from one idea is the tell. The E6 detail most miss is the **garbage-collection hazard**: blocks are now shared across users, so deletion can't be immediate — a block stays alive while *any* file references it, requiring reference counting or a mark-and-sweep GC over all metadata, and getting that wrong either leaks storage forever or deletes a block another user still needs (data loss). Add the security note: dedup across tenants can leak existence (an upload that returns instantly reveals someone else already has that file), so client-side dedup is sometimes disabled for privacy. E5 says "hash blocks to dedupe"; E6 names content-addressing as the unifying idea and shared-block GC as the sharp edge.
 
 ---
 
