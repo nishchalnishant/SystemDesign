@@ -575,6 +575,7 @@ def garbage_collect(self):
 
 - [Composite Pattern](../../03-design-patterns/02-structural/composite-pattern.md)
 - [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
+- [Memento Pattern](../../03-design-patterns/03-behavioral/memento-pattern.md) — commit snapshots as restorable working-tree state
 
 **SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
 

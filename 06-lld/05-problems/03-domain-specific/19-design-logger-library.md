@@ -465,6 +465,7 @@ JSONFormatter reads `record.extras` and merges into the output payload.
 - [Decorator Pattern](../../03-design-patterns/02-structural/decorator-pattern.md)
 - [Chain of Responsibility Pattern](../../03-design-patterns/03-behavioral/chain-of-responsibility.md)
 - [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+- [Interpreter Pattern](../../03-design-patterns/03-behavioral/interpreter-pattern.md) — parse log-filter / pattern-layout mini-language
 
 **SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
 

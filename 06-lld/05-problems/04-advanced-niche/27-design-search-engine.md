@@ -396,6 +396,7 @@ Shard the inverted index by term across multiple nodes (hash(term) % num_shards)
 
 - [Iterator Pattern](../../03-design-patterns/03-behavioral/iterator-pattern.md)
 - [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+- [Interpreter Pattern](../../03-design-patterns/03-behavioral/interpreter-pattern.md) — parse boolean query grammar (`term AND (a OR b)`) into an evaluable tree
 
 **SOLID focus**: [Interface Segregation](../../02-solid-principles/04-interface-segregation.md) · [Dependency Inversion](../../02-solid-principles/05-dependency-inversion.md)
 

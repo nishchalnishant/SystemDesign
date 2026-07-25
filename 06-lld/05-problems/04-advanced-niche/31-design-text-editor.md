@@ -467,6 +467,7 @@ Each InsertCommand stores the inserted text (typically 1-N chars) and position (
 
 - [Command Pattern](../../03-design-patterns/03-behavioral/command-pattern.md)
 - [Iterator Pattern](../../03-design-patterns/03-behavioral/iterator-pattern.md)
+- [Memento Pattern](../../03-design-patterns/03-behavioral/memento-pattern.md) — checkpoint document state for undo / redo stack
 
 **SOLID focus**: [Single Responsibility](../../02-solid-principles/01-single-responsibility.md) · [Open/Closed](../../02-solid-principles/02-open-closed.md)
 

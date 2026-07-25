@@ -450,6 +450,7 @@ class Game:
 
 - [Factory Pattern](../../03-design-patterns/01-creational/factory-pattern.md)
 - [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+- [Memento Pattern](../../03-design-patterns/03-behavioral/memento-pattern.md) — capture move history to support undo / takeback
 
 **SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Liskov Substitution](../../02-solid-principles/03-liskov-substitution.md)
 

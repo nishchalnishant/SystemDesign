@@ -405,6 +405,7 @@ Or use Redis INCR and compare against limit — atomic, no race condition.
 - [Composite Pattern](../../03-design-patterns/02-structural/composite-pattern.md)
 - [Chain of Responsibility Pattern](../../03-design-patterns/03-behavioral/chain-of-responsibility.md)
 - [Strategy Pattern](../../03-design-patterns/03-behavioral/strategy-pattern.md)
+- [Interpreter Pattern](../../03-design-patterns/03-behavioral/interpreter-pattern.md) — evaluate coupon rule expressions (`CART_TOTAL > 500 AND FIRST_ORDER`)
 
 **SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md) · [Liskov Substitution](../../02-solid-principles/03-liskov-substitution.md)
 

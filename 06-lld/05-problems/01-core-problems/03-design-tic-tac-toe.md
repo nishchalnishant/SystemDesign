@@ -392,6 +392,7 @@ In Game, `undo_move()` pops the move stack, reverts the board, and switches `cur
 **Patterns applied here**
 
 - [State Pattern](../../03-design-patterns/03-behavioral/state-pattern.md)
+- [Memento Pattern](../../03-design-patterns/03-behavioral/memento-pattern.md) — snapshot board state for undo / replay
 
 **SOLID focus**: [Open/Closed](../../02-solid-principles/02-open-closed.md)
 
