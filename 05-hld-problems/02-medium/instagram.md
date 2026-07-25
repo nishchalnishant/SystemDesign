@@ -139,6 +139,8 @@ Fan-out on read: for celebrity accounts (>1M followers), skip fan-out; pull on r
 
 **Redis feed structure**: Sorted set per user, keyed `feed:{user_id}`, score = `post_timestamp`, member = `post_id`. `ZREVRANGE feed:u456 0 19` returns the 20 most recent post IDs.
 
+> 🎯 **Staff signal:** The senior framing is that push and pull aren't a choice — they're each a *failure mode you route around per-user*. Fan-out-on-write gives O(1) reads but its cost is O(followers) per post, which detonates on a 500M-follower celebrity (hours to fan out one post); fan-out-on-read is O(follows) per feed load, which detonates on users who follow thousands. The hybrid picks the cheaper failure for each account: push for the many normal users, pull for the few celebrities, merged at read time. Name the crossover — you switch strategies at a follower-count threshold because that's where write-amplification overtakes read-amplification. Choosing the fan-out direction by *which cost blows up for this specific account* is the E5→E6 line.
+
 ---
 
 ## Deep Dive 2: Media Upload and Processing
@@ -161,6 +163,8 @@ Fan-out on read: for celebrity accounts (>1M followers), skip fan-out; pull on r
 
 **Storage cost**: 100M posts/day × 1 MB avg × 3 resolutions ≈ 300 TB/day. S3 Intelligent-Tiering automatically moves infrequently accessed media (posts > 6 months old) to cheaper storage tiers (Glacier).
 
+> 🎯 **Staff signal:** The move is keeping bytes off the app tier on both the write and read paths. On write, a presigned S3 URL lets the client PUT the raw 1 MB directly to S3 — your servers never touch the 100M-uploads/day of media bandwidth, only the metadata. Processing is *asynchronous and event-driven* (S3 event → Kafka → transcode worker → post becomes visible), so upload latency isn't hostage to transcoding a video into HLS ladders. On read, CDN edge caching turns the origin fetch into a one-time cost per PoP. Naming that the architecture's job is to make the app servers handle *only metadata* while S3+CDN+workers move and transform the bytes is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 3: Follow Graph and Social Graph Queries
@@ -176,6 +180,8 @@ Fan-out on read: for celebrity accounts (>1M followers), skip fan-out; pull on r
 **Mutual follow (DM eligibility)**: Instagram restricts DMs to mutual follows (bidirectional). Check: `EXISTS(SELECT 1 FROM follow WHERE follower_id=A AND followee_id=B) AND EXISTS(SELECT 1 FROM follow WHERE follower_id=B AND followee_id=A)`. Cached in Redis as a Bloom filter for fast O(1) check.
 
 **Graph database**: For "suggested accounts" (friends of friends), queries require graph traversal. A graph DB (Neo4j, Amazon Neptune) can answer "who has the most mutual follows with user A?" efficiently. The core follow table remains in PostgreSQL; the graph DB is a read-only replica for recommendations.
+
+> 🎯 **Staff signal:** The senior insight is that "follow" is one relation queried in *three* access patterns that no single store serves well, so you fan it into purpose-built projections rather than forcing one. The authoritative edge lives in Postgres with indexes on *both* directions (`follower_id` and `followee_id`) because "who I follow" and "who follows me" are different queries; hot following-lists are cached as Redis SETs for the fan-out worker; and friends-of-friends traversal goes to a graph DB *read replica* because a 2-hop join is where SQL falls over. Name the discipline: keep one source of truth, derive read-optimized replicas per query shape, never let the recommendation graph become a second writable copy. Projecting one relation into multiple stores by query pattern is the E5→E6 line.
 
 ---
 

@@ -148,6 +148,8 @@ Search logs → Kafka → Flink (sliding 5min window count per query)
 
 **Trie compression**: Patricia trie (Radix trie) — compress chains of single-child nodes. "sys→y→s→t→e→m" with no branches becomes "system" in one node. Reduces node count 3-5× for typical vocabularies.
 
+> 🎯 **Staff signal:** The real design decision isn't "trie vs. Elasticsearch" — it's *precomputing top-K at every node* so lookup is O(prefix_length) instead of O(subtree_size). A plain trie still requires a DFS of the entire subtree under the prefix to find the best K completions; caching top-K at each node collapses that to a single array read at the traversal endpoint. The tradeoff that names the mechanism: you trade write amplification (a frequency update must propagate top-K up the ancestor chain) for read latency — correct because reads outnumber writes ~10,000:1 and the latency budget is < 50ms. That same asymmetry is why Elasticsearch (edge-ngram, ~20ms + network) can't own the hot path but is the right home for fuzzy/typo correction, where the trie's exact-prefix model simply can't answer. E5 picks the data structure; E6 justifies it by the read/write ratio and puts each engine where its cost model fits.
+
 ---
 
 ## Deep Dive 2: Ranking and Personalization
@@ -171,6 +173,8 @@ A query the user searched yesterday gets a higher boost than one searched 6 mont
 
 **Position bias correction**: The top suggestion position has a massive clickthrough advantage. A suggestion in position 1 gets 3× more clicks than position 3, regardless of quality. To train the ranking model correctly, log the suggestion rank at the time of click, then correct for position bias in the model training pipeline (propensity weighting).
 
+> 🎯 **Staff signal:** Naming *position bias* unprompted is the strongest senior tell in this problem. The naive feedback loop is fatal: rank by CTR → the #1 suggestion gets 3× the clicks purely from being #1 → it looks "better" → it stays #1 forever, and a genuinely superior suggestion at position 3 can never earn the clicks to overtake it. The fix is to log the *served rank* alongside each click and divide observed clicks by the position's propensity (inverse-propensity weighting) so the model learns click-given-seen, not click-given-position. The E5→E6 jump is recognizing that a ranking system trained on its own logged clicks is a closed loop that reinforces its current ordering, and that recency-weighting the base score (α·1h + β·24h + γ·7d) is the *other* half — it prevents a chronically popular query from permanently outranking a fast-rising one.
+
 ---
 
 ## Deep Dive 3: Freshness — Trending Queries in < 5 Minutes
@@ -191,6 +195,8 @@ Flink job: 5-minute sliding window
 **Cooldown**: A query promoted to trending gets a minimum TTL in the trending tier of 10 minutes, even if velocity drops. Prevents flickering.
 
 **Flash suppression**: Filter out potentially harmful trending queries (breaking news that's offensive, misinformation) via a blocklist of patterns. Manual override endpoint for the ops team to suppress specific queries within 60 seconds.
+
+> 🎯 **Staff signal:** Freshness is served by a *separate tier layered over the trie*, not by rebuilding the trie faster. The trie is rebuilt hourly (expensive, global); trending is a short-TTL Redis ZSET per prefix, populated by a Flink streaming job in ~5 min and merged in at query time. This is the read-path equivalent of a write-back cache: the slow, authoritative structure stays slow, and a fast volatile overlay absorbs the "what changed in the last 5 minutes" delta. Two details separate E5 from E6: (1) trending is a *velocity* signal (count_this_window / count_prev_window > 5), not a raw count, so a brand-new spike beats an already-large query — same derivative-vs-total insight as Twitter trends; and (2) once you promote user-generated queries in near-real-time, you've opened an abuse surface, so a suppression blocklist + 60s manual override isn't a nice-to-have, it's a required part of the freshness path. Naming the cooldown TTL (10 min minimum) to stop badge flicker is the polish that shows you've operated one of these.
 
 ---
 

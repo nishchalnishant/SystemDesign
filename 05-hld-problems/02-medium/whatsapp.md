@@ -144,6 +144,8 @@ user:{user_id}:online = 1                  # TTL = 30s, refreshed via heartbeat
 
 **Chat server scalability**: Each chat server holds ~100K WebSocket connections (Go goroutines or Node.js event loop handle this efficiently). 2B users × 30% concurrently active = 600M connections → 6,000 chat servers.
 
+> 🎯 **Staff signal:** The insight is that the connection is *stateful and pinned* — User B's live socket lives on exactly one of 6,000 servers — so the system decomposes into a durable store (Cassandra, always written first) plus a volatile routing layer (Redis) that only answers "which server holds B right now." The ordering that matters is *persist-then-route*: write to Cassandra **before** publishing to Redis pub/sub, so an offline recipient or a crashed chat server never loses the message — it's already durable, and reconnect replays from `last_read_message_id`. The naive design routes server-to-server directly and loses the message when B's server isn't found; the E6 framing is that pub/sub is a *best-effort delivery accelerator layered over a durable log*, not the delivery guarantee itself. That separation is also why online/offline is a 30s-TTL heartbeat key, not a connection callback — the routing layer must tolerate the socket vanishing without notice.
+
 ---
 
 ## Deep Dive 2: Message Ordering and Exactly-Once Delivery
@@ -161,6 +163,8 @@ user:{user_id}:online = 1                  # TTL = 30s, refreshed via heartbeat
 
 **Read receipt ordering**: "Read" status for a conversation is stored as `last_read_message_id` per user. When A opens the chat and reads up to M99, A sends `{ "conversation_id": ..., "last_read_message_id": "M99" }`. Server updates Cassandra and notifies B's client to show double blue checkmarks up to M99.
 
+> 🎯 **Staff signal:** "Exactly-once" over a network is impossible, so the design deliberately splits the problem: **server-assigned Snowflake `message_id` gives a total order** (used as the Cassandra clustering key, so storage is already sorted), while **client-generated `client_msg_id` (UUID) plus `SETNX dedup:{id}` gives idempotency** on retries. Two different IDs doing two different jobs is the tell — conflating them is the SDE-2 mistake. Ordering is then *client-reconstructed*: the client buffers an out-of-order arrival and renders only when the sequence gap fills, because the network reorders and enforcing order server-side would mean head-of-line blocking across 6,000 routing servers. And read receipts are modeled as a single monotonic *watermark* (`last_read_message_id`), not a per-message flag — one write covers "read up to here," which is O(1) instead of O(messages). E6 names *at-least-once transport + idempotent apply = effectively-once*, and points out where each guarantee actually lives.
+
 ---
 
 ## Deep Dive 3: End-to-End Encryption (Signal Protocol)
@@ -177,6 +181,8 @@ user:{user_id}:online = 1                  # TTL = 30s, refreshed via heartbeat
 **Multi-device challenge**: User B has iPhone + laptop. Both need the same messages. Each device has its own key pair. When A sends a message to B, the client encrypts separately for each of B's devices and sends multiple ciphertexts to the server. Server delivers each ciphertext to the appropriate device.
 
 **Key transparency**: WhatsApp provides a "Security Code" (fingerprint of the shared key pair) that users can verify out-of-band. Mismatched code = man-in-the-middle attack.
+
+> 🎯 **Staff signal:** E2E encryption isn't a feature bolted on — it *inverts* what the server is allowed to do, and the senior move is stating that inversion explicitly: the server becomes a blind relay of ciphertext blobs that can never decrypt, so *every server-side feature that assumed plaintext must be re-derived*. Search must move client-side, spam/abuse detection loses message content and falls back to metadata (frequency, graph shape), and multi-device fans out **N ciphertexts per message** (one per recipient device, each with its own key) because there's no server-side key to share. The mechanism to name is the Double Ratchet giving *forward secrecy* (a stolen current key doesn't decrypt past messages) via a fresh per-message key, seeded by X3DH which derives a shared secret without ever transmitting it. The residual attack the design still has to answer is key-substitution MITM at exchange time — hence the out-of-band Security Code fingerprint. E5 says "use Signal"; E6 traces which server capabilities E2E *takes away* and what each replacement costs.
 
 ---
 

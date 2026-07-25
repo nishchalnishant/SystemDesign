@@ -148,6 +148,8 @@ idempotency_key = f"{source_service}:{event_type}:{event_id}"
 ```
 Before sending, check Redis: `SETNX idempotency:{key} "sent" EX 86400`. If key exists → already delivered → skip. Prevents duplicate delivery on Kafka re-delivery.
 
+> 🎯 **Staff signal:** The senior point is that exactly-once *delivery* to a third party (FCM/SES/Twilio) is impossible — the network can fail between "provider sent it" and "we recorded it" — so you engineer at-least-once and make duplicates harmless. The mechanism is deferring the Kafka offset commit until *after* the provider confirms, which guarantees no lost notification but admits re-delivery on a crash-before-commit; a Redis `SETNX` idempotency key on `{source}:{event}:{id}` then absorbs the duplicate. Name the pairing explicitly: at-least-once transport + idempotent consumer = effectively-once, and that's the only honest design when a leg of the system is an external service you can't transact with. Knowing exactly-once is a consumer-side property, not a delivery guarantee, is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 2: User Preference and Quiet Hours
@@ -173,6 +175,8 @@ for channel in requested_channels:
 
 **Digest mode**: Some notification types (marketing, social) support digest mode — aggregate multiple notifications into one daily summary email. A batching worker groups notifications by user and template, waits until 8 AM in the user's timezone, and sends one digest.
 
+> 🎯 **Staff signal:** The insight is that quiet hours turn notifications into a *scheduling* problem, and the senior move is refusing to drop or busy-wait — you park delayed notifications in a Redis sorted set scored by `delivery_timestamp` and a scheduler `ZRANGEBYSCORE`-polls only what's now due, so millions of deferred sends cost O(due) per tick, not O(all pending). The subtlety that separates senior from correct is that priority overrides the schedule: a critical security alert bypasses quiet hours while a marketing email defers — so "respect quiet hours" is a policy *parameterized by notification class*, not a global gate. Modeling deferral as a time-ordered queue with per-class override, rather than a sleep or a discard, is the E5→E6 line.
+
 ---
 
 ## Deep Dive 3: Device Token Management and Push Delivery
@@ -192,6 +196,8 @@ for channel in requested_channels:
 - Nightly job: delete tokens not refreshed in 90 days.
 
 **Fanout to multi-device**: A user with 3 registered devices receives the push notification on all active devices. Worker queries all valid device tokens for the user and sends one FCM/APNs request per token. FCM batch send API allows up to 500 tokens per request.
+
+> 🎯 **Staff signal:** The senior insight is that the delivery-failure signal is *also* your token-hygiene signal — a `410 Gone` / `NOT_REGISTERED` isn't just a failed send to retry, it's the provider telling you the token is dead, and treating it as such (immediately mark invalid, stop sending) is what keeps your throughput real. Naive systems keep hammering stale tokens, wasting quota and masking their true delivery rate behind phantom sends. Pair the reactive invalidation (on the failure response) with a proactive 90-day sweep for tokens that silently went dark. Recognizing that the error response is a feedback loop that keeps the token store clean — not just an exception to catch — is the E5→E6 framing.
 
 ---
 

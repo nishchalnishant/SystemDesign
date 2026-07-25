@@ -142,6 +142,8 @@ score: tweet_timestamp (Unix ms)
 
 **Celebrity identification**: A background job periodically marks accounts with > 100K followers as `is_celebrity = true`. Followed on follow/unfollow event: if a user follows a celebrity, add the celebrity to `celebrity_follows:{user_id}` Redis set. Timeline service reads this set to know which celebrities to fetch on read.
 
+> 🎯 **Staff signal:** Beyond "hybrid fan-out," the detail that shows depth is the `celebrity_follows:{user_id}` set maintained *at follow time* — it's the index that makes the read-side merge bounded. Without it, mixing in celebrity tweets at read means scanning all of a user's follows to find which are celebrities; with it, the timeline service reads a small precomputed set and does exactly N direct fetches (capped at ~top-10 celebrities), then merges into the precomputed sorted set. Name the invariant: fan-out-on-write is amortized into the follow event, not the tweet event or the read. Recognizing that the celebrity read path needs its *own* maintained index to stay O(celebrities-followed) rather than O(follows) is the E5→E6 line.
+
 ---
 
 ## Deep Dive 2: Tweet Storage and Sharding
@@ -155,6 +157,8 @@ score: tweet_timestamp (Unix ms)
 **Timeline read for home page**: The timeline service retrieves tweet_ids from Redis, then fetches tweet content from the tweet service via batch lookup. The tweet service resolves tweet_ids to tweet objects and caches frequently read tweets in Redis (TTL = 1 hour).
 
 **Cassandra as alternative**: Cassandra is better for append-only, time-series tweet data. Partition key: `user_id`, clustering key: `tweet_id DESC`. Each partition holds all tweets from one user, ordered newest-first. No sharding config needed — Cassandra handles distribution automatically.
+
+> 🎯 **Staff signal:** The load-bearing choice is that Snowflake makes `tweet_id` monotonic-in-time, so it doubles as the pagination cursor *and* the clustering order — one column serves identity, chronological sort, and cursor with zero secondary indexes. Contrast the naive answer (auto-increment PK + a separate `created_at` index): that needs a global sequence generator (a coordination bottleneck) and an extra index to sort by time. The tradeoff to name: Snowflake buys coordination-free, k-sorted IDs at the cost of ~1ms clock dependence and 41-bit timestamp exhaustion (~69 years) — acceptable because the alternative is a distributed counter on the write path. Shard-by-`user_id` then makes profile reads single-partition; the cost is that a home-timeline read must scatter-gather across shards, which is *why* fan-out precomputes the timeline instead of querying tweets live.
 
 ---
 
@@ -182,6 +186,8 @@ Tweet posted → Kafka `tweets` topic
 - Supports: keyword search, hashtag filter, user filter, date range, media filter
 - "Latest" tweets: `SORT_BY: created_at DESC` — Elasticsearch can sort by time efficiently with index ordering
 - "Top" tweets: Sort by engagement score (composite of likes, retweets, replies — precomputed and stored in ES document)
+
+> 🎯 **Staff signal:** Trending is a *velocity* problem, not a *volume* problem — the differentiator is ranking by the derivative (100→10,000 in 5 min) over the raw count (steady 5,000). A pure top-N-by-count list is dominated by evergreen tags (#love) and never surfaces breaking events; you need a rate-of-change signal computed in bounded windows. That forces the whole downstream: 5-minute *sliding* windows (not tumbling — tumbling drops a spike straddling a boundary), Flink for windowed stateful aggregation, and *per-region* counts because a single global count buries local trends. The failure mode to preempt is gaming — a bot burst spikes velocity, so real systems dampen with unique-author counts and log-scaling, not raw event counts. The E5→E6 line is stating that "trending" is under-specified until you decide *rate vs. total*, then deriving windowing + Flink + geo-segmentation from that one choice.
 
 ---
 

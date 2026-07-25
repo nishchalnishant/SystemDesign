@@ -157,6 +157,8 @@ return 0
 
 **Redis → DB consistency**: Redis count is authoritative during the flash sale. After the sale window, a reconciliation job syncs Redis count with the PostgreSQL ground truth.
 
+> 🎯 **Staff signal:** The senior insight is separating the *reservation* from the *commit* — a soft `reserved_quantity` hold on add-to-cart, with a TTL that auto-restores on abandonment, so a full cart never permanently strands inventory the way a naive decrement-at-checkout does. The flash-sale extension is temporarily *moving the source of truth into Redis*: an atomic Lua check-and-decrement sheds 99% of doomed requests before they reach Postgres, and you reconcile back to the DB after the window. Name what you're trading — during the sale Redis is authoritative and the DB is eventually reconciled, which is only safe because oversell-by-one is recoverable and DB write-contention on one hot row is not. Consciously relocating the consistency boundary for the duration of the spike is the E5→E6 framing.
+
 ---
 
 ## Deep Dive 2: Product Search and Catalog
@@ -177,6 +179,8 @@ return 0
 **Image storage**: Product images in S3. CDN (CloudFront) serves images. Images are resized server-side to multiple resolutions (thumbnail, detail, zoom) via Lambda@Edge on upload.
 
 **Price updates**: Price changes are frequent. Store price separately from product attributes. Elasticsearch price field updated in real-time (not batched). Price updates bypass the 5-second CDC pipeline via a direct Elasticsearch PATCH call.
+
+> 🎯 **Staff signal:** The move is treating CDC (Postgres WAL → Debezium → Kafka → ES indexer) as the *default* sync path but then recognizing where its ~5s lag is unacceptable and cutting a fast lane around it. A stale product description for 5 seconds is invisible; a stale *price* is a legal and trust problem — you'd honor a price you no longer offer — so price updates get a direct ES PATCH that bypasses the pipeline. Name the general principle: the source-of-truth stays Postgres, but you tier your propagation latency by the *business cost of staleness per field*, not one SLA for the whole document. Splitting one entity's fields across two freshness paths by consequence-of-staleness is the E5→E6 line.
 
 ---
 
@@ -210,6 +214,8 @@ PENDING → CONFIRMED → PROCESSING → SHIPPED → DELIVERED
               ↘ RETURN_REQUESTED → RETURNED
 ```
 State transitions are events in Kafka. Each service listens to relevant events and updates its own state accordingly.
+
+> 🎯 **Staff signal:** The senior answer is naming *why not 2PC*: an order spans Inventory, Payment, and Order services, and a two-phase commit would hold locks across a payment call (300ms+) and turn the payment processor into a participant in your transaction — unacceptable coupling and latency. The saga replaces atomicity with *compensations*: each step commits locally and, on downstream failure, an orchestrator runs the inverse (release inventory, refund payment). The load-bearing detail is that every step must be idempotent — the payment `idempotency_key` enforced by a `UNIQUE` constraint is what makes a double-click or a retry safe. Choosing eventual consistency with compensations over distributed locking, and knowing idempotency is the price of admission, is the E5→E6 framing.
 
 ---
 

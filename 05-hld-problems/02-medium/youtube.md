@@ -153,6 +153,8 @@ v123/
     ...
 ```
 
+> 🎯 **Staff signal:** The unlock is that transcoding is *embarrassingly parallel once you split on GOP boundaries* — because each 2-minute segment starts on a keyframe, it's independently decodable, so 150 segment×resolution jobs run as stateless FFmpeg tasks and a 1-hour video is ready in ~30s instead of ~50 minutes serial. Name why the split must be GOP-aligned: cut mid-GOP and a segment references frames it no longer contains, so it can't decode standalone — the keyframe boundary is what makes both parallel transcode *and* per-segment ABR switching possible from the same decomposition. The scheduling consequence is that this is a queue-depth problem, not a request/response one: Kafka `transcode-jobs` + workers autoscaled on consumer lag, because upload load is spiky (500 hrs/min) and you size for throughput and cost, not p99 latency. E5 says "transcode to 5 resolutions"; E6 explains that the keyframe-aligned segment is the atomic unit that simultaneously enables fan-out transcoding, CDN caching, and adaptive bitrate — one decomposition paying off three times.
+
 ---
 
 ## Deep Dive 2: Adaptive Bitrate Streaming (ABR)
@@ -170,6 +172,8 @@ v123/
 **Bandwidth estimation**: ABR player uses EWMA (Exponentially Weighted Moving Average) of recent download speeds to predict available bandwidth. `estimated_bw = 0.8 × prev_bw + 0.2 × current_bw`. Selects the highest rendition where `rendition_bitrate ≤ 0.8 × estimated_bw` (safety margin).
 
 **Pre-buffering**: Player downloads 30 seconds of video ahead of the playback position. Large buffer = tolerates 30 seconds of network disruption without stutter. Trade-off: uses more mobile data.
+
+> 🎯 **Staff signal:** The senior framing is that ABR pushes the quality decision to the *client*, and that this is deliberate: only the player knows its real-time buffer level and measured throughput, and it's already fetching plain HTTP segments — so the server stays a dumb static-file origin and the CDN can cache every segment because nothing is personalized. That's the payoff of HLS-over-HTTP versus a stateful streaming protocol: `1080p/seg042.ts` is the same bytes for every viewer, so a viral video's segments live at the edge and origin load stays flat regardless of concurrency. The control-loop details are where E6 shows: EWMA-smoothed bandwidth (not last-sample, which oscillates on a single slow fetch) with a 0.8 safety margin, and a buffer that trades data cost for stutter tolerance. Naming the failure both extremes cause — too-aggressive switching thrashes quality, too-conservative wastes a fast link — and that the buffer is the shock absorber between them, is the E5→E6 line.
 
 ---
 
@@ -189,6 +193,8 @@ This reduces write rate from 1M/sec to 1 update per video per 5 seconds.
 **Like/dislike counts**: Same buffered approach. Like event → Kafka → aggregator → batch update. For real-time display, show an approximate count from Redis.
 
 **Comment system**: Comments stored in Cassandra (append-only, high-write). `partition_key = video_id`, `clustering_key = created_at DESC`. Top-level comments + replies (nested). Likes on comments: same buffered pattern.
+
+> 🎯 **Staff signal:** The core move is recognizing view count as a *lossy-tolerant approximate counter*, which lets you swap synchronous DB writes for aggregation. 1M viewers × 1 write each is impossible on a single row (write-hotspot on one PK); buffering into Kafka + a 5-second Flink window collapses 1M/sec into one `+= 50000` UPDATE per video per 5s — a ~million-fold write reduction. The unlock is a *consistency downgrade justified by the domain*: nobody notices if the counter lags 5 seconds or is off by 0.1%, so you trade exactness for throughput — the same reasoning that makes Redis `INCR` (fast, non-durable) acceptable for the live display while Postgres holds the eventually-reconciled truth. The E6 discipline is stating that this pattern applies *only* where staleness is invisible: views/likes yes, watch-time-for-monetization no — that path needs the exact, deduplicated, fraud-checked count, which is why it runs a separate slower pipeline. Choosing where approximate counting is legitimate, and where it's a revenue bug, is the senior line.
 
 ---
 
