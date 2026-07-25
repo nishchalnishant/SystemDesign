@@ -191,6 +191,8 @@ end
 return 0
 ```
 
+> 🎯 **Staff signal:** Don't just say "use a lock." Quantify *why* optimistic beats pessimistic here — under flash-sale contention, `SELECT FOR UPDATE` serializes thousands of requests on one row and the block queue *becomes* the outage. CAS lets losers fail fast (409) instead of piling up. Naming that the blocking approach's failure mode is a self-inflicted thundering herd is the E5→E6 line.
+
 ---
 
 ## Deep Dive 2: Flash Sale Handling
@@ -240,6 +242,8 @@ EXPIRE holds:{event_id}:{user_id} 600
 ```
 
 **Seat map read scalability**: The seating chart SVG and seat metadata are static per event. Serve via CDN (CloudFront). Only seat statuses are dynamic — served from Redis as a bitfield (1 bit per seat: 0=available, 1=held/booked). For 50K seats: 50K bits = 6.25 KB per event — trivially small, updated with SETBIT.
+
+> 🎯 **Staff signal:** The waiting room isn't a feature — it's the load-shedding boundary that makes everything downstream tractable. The insight to voice: you convert an *unbounded* 5M-concurrent spike into a *bounded* 1k/min admission rate, so every capacity number after this is a constant you control, not a function of demand. Separating the static seat-map (CDN) from the dynamic bitfield (Redis) is the same move applied to reads — shrink the dynamic surface to 6 KB so it fits in one cache. Candidates who "add a queue" without framing it as demand→rate conversion miss the point.
 
 ---
 
@@ -318,6 +322,8 @@ def on_token_expired(token):
 **SKIP LOCKED**: PostgreSQL's `FOR UPDATE SKIP LOCKED` prevents multiple Kafka consumer workers from selecting the same waitlist entry simultaneously — essential for correctness when running multiple notification service replicas.
 
 **Fairness guarantee**: Position is assigned at join time via monotonic counter. Notification always goes to the lowest-position `waiting` user. If they don't respond, the seat cascades to the next — no user can be skipped arbitrarily.
+
+> 🎯 **Staff signal:** `FOR UPDATE SKIP LOCKED` is the whole answer to "how do multiple notification workers not offer the same released seat to two people?" — name it explicitly. The senior framing: the waitlist is a *distributed work queue built on your existing DB*, and SKIP LOCKED is what gives you competing consumers without a separate queue system or a distributed lock. Recognizing you can get concurrent-safe fan-out from Postgres you already run — rather than reaching for another moving part — is the judgment signal.
 
 ---
 
