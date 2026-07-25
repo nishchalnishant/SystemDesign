@@ -314,3 +314,14 @@ AWS ALB, GCP Load Balancing, Azure Load Balancer are natively HA — they run as
 
 5. **"A backend server is responding slowly but not returning errors. How does the LB handle it?"**
    *Standard health checks only detect down servers (no response or 5xx). A slow server that returns 200 stays in rotation. Fix: (1) Set connection/request timeouts — if a backend doesn't respond within Xms, fail the request and retry on another backend. (2) Use least-connections algorithm — slow servers accumulate connections faster and stop receiving new ones naturally. (3) Passive health checks with error-rate thresholds — if p99 latency from a backend exceeds threshold, reduce its weight or remove it.*
+
+---
+
+## Applied In
+
+**High-Level Design** — where the LB tier is a deep-dive topic, not just a box:
+
+- [Design a Stock Exchange](../../05-hld-problems/03-hard/stock-exchange.md) — least-outstanding-requests to shed slow matching-engine replicas
+- [Design a Chat System](../../05-hld-problems/03-hard/chat-system.md) — L4 for sticky WebSocket connections vs L7 for HTTP APIs
+- [Design Ride Sharing](../../05-hld-problems/03-hard/ride-sharing.md) — GSLB to route drivers to the nearest regional cluster
+- [Design a URL Shortener](../../05-hld-problems/01-easy/url-shortener.md) — the simplest place to reason about active-active LB HA

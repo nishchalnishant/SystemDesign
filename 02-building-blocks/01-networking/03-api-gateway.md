@@ -253,3 +253,13 @@ def is_allowed(client_id, limit_per_minute):
 
 5. **"What is the BFF pattern and when would you avoid it?"**
    *BFF (Backend for Frontend) creates a dedicated API gateway per client type (mobile, web, partner). Each BFF has its own team, its own composition logic, and its own data shaping. Use it when clients have genuinely different data needs or are owned by different teams. Avoid it when clients need essentially the same data — a single gateway with optional query params is simpler and avoids duplicating routing, auth, and rate-limiting logic across multiple BFF instances.*
+
+---
+
+## Applied In
+
+**High-Level Design** — where the gateway (auth, composition, rate-limit fan-in) is a design decision:
+
+- [Design an E-Commerce Platform](../../05-hld-problems/02-medium/e-commerce-platform.md) — gateway composes product/inventory/pricing services per page
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md) — centralized auth + idempotency-key enforcement at the edge
+- [Design a Notification Service](../../05-hld-problems/02-medium/notification-service.md) — per-client rate limiting and request shaping at the gateway

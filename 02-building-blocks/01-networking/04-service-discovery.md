@@ -132,3 +132,13 @@ State the current best-practice explicitly: **a sidecar proxy (Envoy) per pod** 
 - *"A registered instance died 2 seconds ago and is still in the list — is that broken?"* → No, it's expected. Discovery is eventually consistent; clients retry another instance and circuit-break the dead one. Deregistration is inherently lagging.
 - *"How does a service mesh change this?"* → Discovery, LB, retries, and mTLS move into a per-pod Envoy sidecar programmed by a control plane. The app is oblivious; it just calls localhost.
 - *"Liveness vs readiness check — why both?"* → Readiness gates *traffic* (warming up, overloaded); liveness gates *restart* (hung process). Using liveness for load makes overloaded services crash-loop.
+
+---
+
+## Applied In
+
+**High-Level Design** — microservices-heavy designs where discovery is load-bearing:
+
+- [Design an E-Commerce Platform](../../05-hld-problems/02-medium/e-commerce-platform.md) — dozens of services locating each other as instances scale in/out
+- [Design Ride Sharing](../../05-hld-problems/03-hard/ride-sharing.md) — regional service fleets registering/deregistering under autoscale
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md) — CP registry when membership drives leader election, not just routing

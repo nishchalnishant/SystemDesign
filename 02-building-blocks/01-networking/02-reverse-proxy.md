@@ -122,3 +122,13 @@ A reverse proxy is the **L7** box. "Load balancer" and "reverse proxy" overlap b
 - *"CDN, reverse proxy, load balancer, API gateway — draw the order."* → Client → CDN → L4 LB → L7 reverse proxy / API gateway → services. Each layer sheds a different concern.
 - *"Where do you terminate TLS and why?"* → At the L7 edge for CPU offload and routing; re-encrypt to the backend if the internal network isn't trusted (zero-trust/PCI).
 - *"Your reverse proxy is a SPOF — fix it."* → Fleet of proxies behind an L4 LB or anycast VIP; health-check and auto-replace. State is externalized so any proxy can serve any request.
+
+---
+
+## Applied In
+
+**High-Level Design** — where the edge/reverse-proxy layer carries real design weight:
+
+- [Design a CDN](../../05-hld-problems/03-hard/cdn-design.md) — edge PoPs are reverse proxies doing TLS termination + caching
+- [Design YouTube](../../05-hld-problems/02-medium/youtube.md) — static/segment caching and compression at the edge
+- [Design a URL Shortener](../../05-hld-problems/01-easy/url-shortener.md) — TLS termination and redirect handling at the proxy tier

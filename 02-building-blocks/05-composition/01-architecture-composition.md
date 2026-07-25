@@ -123,3 +123,14 @@ The reason this composition scales horizontally: **application/logic-tier servic
 - *"Where does your p99 latency actually come from?"* → Cache-miss + DB path and service fan-out (slowest-of-N). Raise hit-rate, cut fan-out, hedge — don't chase the median.
 - *"How does a write propagate to search, cache, and analytics without dual-write bugs?"* → Write to the primary in one transaction, then fan out asynchronously via CDC/outbox → broker → consumers. Each derived store is eventually consistent and independently retriable.
 - *"What breaks horizontal scaling of the logic tier?"* → Local state. Keep services stateless and push all state to the data tier so any instance serves any request.
+
+---
+
+## Applied In
+
+**High-Level Design** — full designs that compose these building blocks end to end; read them as worked examples of everything above:
+
+- [Design Instagram](../../05-hld-problems/02-medium/instagram.md) — CDN + gateway + cache + fan-out + object store in one flow
+- [Design an E-Commerce Platform](../../05-hld-problems/02-medium/e-commerce-platform.md) — gateway composition across many services
+- [Design a Payment System](../../05-hld-problems/03-hard/payment-system.md) — the read/write-path split and CDN-free strong-consistency core
+- [Design a Chat System](../../05-hld-problems/03-hard/chat-system.md) — stateful edge (WebSockets) fronting a stateless logic tier
