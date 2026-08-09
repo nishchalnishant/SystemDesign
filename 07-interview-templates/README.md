@@ -33,6 +33,9 @@ Templates and cheat sheets for **system design** and **low-level design** interv
 | **Worked Examples** | [worked-examples.md](04-practice-and-prep/04-worked-examples.md) | Concrete annotated design examples |
 | **Concept → Problem Map** | [concept-to-problem-map.md](02-cheat-sheets/05-concept-to-problem-map.md) | Building block / pattern / algorithm → which HLD problems use it |
 | **Prep Toolkit** | [prep-toolkit.md](04-practice-and-prep/01-prep-toolkit.md) | Study schedule, self-assessment rubric, concept dependency map, company-specific guide (Meta/Google/Amazon/Apple), security & compliance checklist |
+| **Staff Signal Convention** | [staff-signal-convention.md](01-frameworks/05-staff-signal-convention.md) | What separates E5 from E6 answers, and the `🎯 Staff signal` framing pattern used across the repo |
+| **SDE-3 Rapid-Recall Bank** | [sde3-rapid-recall-bank.md](04-practice-and-prep/05-sde3-rapid-recall-bank.md) | Staff-level flashcard deck — quantified tradeoffs and failure modes, for daily pre-onsite drilling |
+| **The 45-Minute Walkthrough** | [45-minute-walkthrough.md](04-practice-and-prep/06-45-minute-walkthrough.md) | Minute-by-minute pacing rubric for reaching the deep dive that decides your level |
 
 See also **[SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md](../SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md)** at the repo root for the seven-phase interview approach.
 

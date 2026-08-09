@@ -6,4 +6,4 @@ How to build systems that stay up, recover from failures, and can be debugged wh
 |---|---|---|
 | 01 | [Observability](01-observability.md) | SLIs, SLOs, SLAs, dashboards, alerting |
 | 02 | [Chaos Engineering](02-chaos-engineering.md) | Chaos Monkey, fault injection, gameday exercises |
-| 03 | [Distributed Tracing & Telemetry](03-telemetry-tracing.md) | OpenTelemetry, Jaeger, Prometheus, debugging P0s |
+| 03 | [Distributed Tracing & Telemetry](03-telemetry-tracing.md) | Logs/metrics/traces (the three pillars), OpenTelemetry, debugging a P0 with traces |

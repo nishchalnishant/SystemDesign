@@ -96,7 +96,8 @@ SystemDesign/
 │   │   ├── 02-frequent-problems/         # 12 (Tier 2): bookmyshow, chess, elevator, LRU cache, ATM, ...
 │   │   ├── 03-domain-specific/           # 7: mentorship, logger, library, order-mgmt, ride-sharing, pub-sub, inventory
 │   │   └── 04-advanced-niche/            # 12: minesweeper, S3, search engine, version control, lock-free queue, ...
-│   └── uml-diagrams.md
+│   ├── uml-diagrams.md
+│   └── glossary.md                       # LLD/OOP/SOLID/GoF-pattern/UML term reference
 │
 ├── 07-interview-templates/               # 15 files
 │   ├── 01-frameworks/                    # hld-template, lld-template, api-design-template, monitoring-slo-template
@@ -109,7 +110,7 @@ SystemDesign/
 │   ├── numbers-to-know.md                # Latency, throughput, cost estimates
 │   ├── ml-system-design.md               # Feature stores, training pipelines, model monitoring
 │   ├── cloud-services-cheat-sheet.md
-│   ├── system-design-glossary.md
+│   ├── system-design-glossary.md         # HLD/distributed-systems term reference
 │   └── book-summaries/                   # ddia.md, Head First Java, Head First OOA&D
 │
 ├── 09-patterns/                          # 7 cross-cutting patterns
@@ -132,6 +133,10 @@ This repo has two parallel tracks — HLD and LLD — that build on each other. 
 ---
 
 ### HLD Track
+
+**Phase 0 — Methodology (start here if you know the material but can't originate a design from a fresh prompt)**
+- `05-hld-problems/00-methodology/README.md` — the 5-step derivation process (requirements & scope → capacity estimation → API & data model → deriving the architecture → identifying the bottleneck), a full worked example, a 45-60 min interview playbook, and timed practice drills
+- `08-reference/system-design-glossary.md` — HLD/distributed-systems term reference; use it to quickly look up any term you recognize but can't yet define crisply
 
 **Phase 1 — Mental models (read once, then reference constantly)**
 1. `SYSTEM_DESIGN_INTERVIEW_FRAMEWORK.md` — the 7-phase interview structure; know this cold
@@ -203,6 +208,10 @@ This repo has two parallel tracks — HLD and LLD — that build on each other. 
 ### LLD Track
 
 The LLD track has a strict dependency order. Each layer depends on the previous one.
+
+**Layer 0 — Methodology (start here if you know the material but can't originate a design from a fresh prompt)**
+- `06-lld/00-methodology/README.md` — the 5-step derivation process (decompose → nouns to classes → relationships/UML → verbs to methods/interfaces → spot the pattern), a full worked example, a 45-min interview playbook, and timed practice drills
+- `06-lld/glossary.md` — OOP/SOLID/GoF-pattern/UML/concurrency term reference; use it to quickly look up any term you recognize but can't yet define crisply
 
 **Layer 1 — OOP fundamentals (2–3 days)**
 - `06-lld/01-oop-fundamentals/four-pillars.md` — encapsulation, inheritance, polymorphism, abstraction; start here
@@ -359,6 +368,8 @@ Drive through the phases. Don't wait for the interviewer to ask — ask yourself
 | `07-interview-templates/02-cheat-sheets/02-capacity-estimation.md` | Practice until estimation is automatic |
 | `07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md` | Decision matrices for SQL vs NoSQL, sync vs async |
 | `08-reference/numbers-to-know.md` | Latency numbers — memorize the orders of magnitude |
+| `08-reference/system-design-glossary.md` | HLD term reference — look up any term you recognize but can't define crisply |
+| `06-lld/glossary.md` | LLD/OOP/pattern term reference — the LLD-track counterpart |
 | `04-advanced-topics/01-distributed-architecture/01-distributed-systems.md` | Consistency models, consensus — senior-level differentiators |
 | `04-advanced-topics/01-distributed-architecture/03-microservices.md` | When to use microservices and the operational cost |
 | `04-advanced-topics/01-distributed-architecture/04-event-driven-architecture.md` | Kafka, event sourcing, CQRS — appears in many hard problems |

@@ -24,6 +24,12 @@ This directory contains deep-dive guides into the internals of popular distribut
 
 ## Available Internals
 
+### Cross-Cutting Concepts
+- **[Index Structures](./01-index-structures.md)** - How databases search billions of rows instantly (B-tree vs LSM-tree)
+- **[Consensus Protocols](./02-consensus-protocols.md)** - The math behind agreement despite failures
+- **[Raft & Paxos (Conceptual)](./11-raft-paxos-conceptual.md)** - Leader election, log replication, quorums — the two dominant consensus algorithms
+- **[Stream vs Batch Processing](./12-stream-vs-batch.md)** - Continuous vs discrete-chunk data processing paradigms
+
 ### Message Queues & Streaming
 - **[Kafka](./03-kafka-internals.md)** - Distributed streaming platform
   - Partitions, ISR, Zero-Copy, Log Compaction
@@ -35,11 +41,15 @@ This directory contains deep-dive guides into the internals of popular distribut
 - **[Cassandra](./05-cassandra-internals.md)** - Wide-column distributed database
   - Ring architecture, Consistent hashing, LSM-tree
   - Compaction strategies, Tunable consistency
+- **[DynamoDB](./08-dynamodb-internals.md)** - Amazon's managed NoSQL database
+  - Partition keys, sort keys, RCU/WCU provisioned capacity, GSI
 
 #### SQL
 - **[PostgreSQL](./06-postgresql-internals.md)** - Advanced relational database
   - MVCC, WAL, VACUUM, Transaction isolation
   - Query planner, Indexes (B-tree, GIN, BRIN)
+- **[MySQL / InnoDB](./07-mysql-internals.md)** - The most popular open-source relational database
+  - Clustered index (data sorted by PK), secondary index double-lookup, redo/undo logs
 
 ### Caching & In-Memory Stores
 - **[Redis](./04-redis-internals.md)** - In-memory data structure store

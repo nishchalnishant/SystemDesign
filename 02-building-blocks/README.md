@@ -34,6 +34,9 @@
 | [Sharding](03-data-partitioning/01-sharding.md) | Partition data across multiple databases | Write scale, storage scale |
 | [Replication](03-data-partitioning/02-replication.md) | Copy data across nodes for availability and read scale | HA, read scaling |
 | [Bloom Filter](02-performance/04-bloom-filter.md) | Probabilistic set membership; space-efficient dedup | Web crawlers, cache miss reduction, dedup at scale |
+| [WebSockets, SSE & Long Polling](01-networking/06-websockets-sse.md) | Real-time, bidirectional or server-push protocols | Chat, live notifications, streaming updates |
+| [Circuit Breaker](02-performance/03-circuit-breaker.md) | Fail fast and stop cascading failure to a struggling dependency | Protecting callers from a slow/unhealthy downstream service |
+| [Consistent Hashing](03-data-partitioning/03-consistent-hashing.md) | Minimal reshuffling of keys when nodes are added/removed | Sharded caches, distributed hash tables |
 | [Architecture Composition](05-composition/01-architecture-composition.md) | Patterns for combining building blocks into coherent systems | System design synthesis, component interaction patterns |
 
 ## How to Use

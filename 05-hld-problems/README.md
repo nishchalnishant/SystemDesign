@@ -10,13 +10,16 @@
 >
 > **How to practice:** Use hld-template.md for structure, capacity-estimation.md for math, trade-offs-cheat-sheet.md for decisions — time yourself at 45 min (easy) or 60 min (hard)
 >
-> **Key takeaway:** Complete Easy in order (concepts build sequentially), then Medium, then Hard; each problem file has a 5-minute summary at the top so you can quick-review before practicing.
+> **Key takeaway:** If you already recognize these problems but can't originate a design from an unfamiliar prompt, start with Step 0 — Methodology below, not the problem list. Otherwise, complete Easy in order (concepts build sequentially), then Medium, then Hard; each problem file has a 5-minute summary at the top so you can quick-review before practicing.
 
 ---
 
 # HLD Interview Problems Catalog
 
 27 curated system design problems with files, organized by difficulty and recommended study order.
+
+**Step 0 — Methodology** (read first if you already know the reference material but can't originate a design from scratch)
+- [00-methodology/README.md](00-methodology/README.md) — the 5-step derivation process (requirements & scope → capacity estimation → API & data model → deriving the architecture → identifying the bottleneck), a full worked example not found elsewhere in this repo, a 45-60 minute interview playbook, and timed practice drills against the problems below
 
 **For each problem:** use [hld-template.md](../07-interview-templates/01-frameworks/01-hld-template.md) for structure, [capacity-estimation.md](../07-interview-templates/02-cheat-sheets/02-capacity-estimation.md) for math, and [trade-offs-cheat-sheet.md](../07-interview-templates/02-cheat-sheets/01-trade-offs-cheat-sheet.md) for decision points.
 

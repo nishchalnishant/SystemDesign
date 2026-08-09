@@ -11,7 +11,9 @@
 > - ML System Design: Core concepts for machine learning system design questions.
 > - Book Summaries: Condensed notes from foundational texts like *Designing Data-Intensive Applications (DDIA)* and the *Head First* series.
 >
-> **Key takeaway:** Use this section as a lookup table when you need a specific number (like SSD read latency) or a quick refresher on a specific cloud service or book chapter.Quick reference material for system design and interviews.
+> **Key takeaway:** Use this section as a lookup table when you need a specific number (like SSD read latency) or a quick refresher on a specific cloud service or book chapter.
+
+Quick reference material for system design and interviews.
 
 ## Contents
 

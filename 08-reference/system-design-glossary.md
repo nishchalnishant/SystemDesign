@@ -401,6 +401,140 @@ Error Budget:
 
 ---
 
+## Resilience & Scaling Patterns
+
+### Idempotency
+
+A property where performing the same operation multiple times produces the same result as performing it once — critical for safe retries over unreliable networks.
+
+**Key property**: An idempotency key (client-generated UUID sent with the request) lets the server recognize and deduplicate a retried request instead of double-processing it.
+
+**Real example**: Payment APIs (Stripe) require an `Idempotency-Key` header — retrying a charge request after a timeout doesn't charge the card twice.
+
+---
+
+### Backpressure
+
+A mechanism for a consumer to signal to a producer that it's overwhelmed, so the producer slows down instead of the consumer's queue growing unbounded and crashing.
+
+**Real example**: Reactive Streams (`request(n)`) — a subscriber pulls only as many items as it can handle; TCP flow control is backpressure at the transport layer.
+
+**Without it**: Unbounded queue growth → OOM, or the consumer falls further and further behind (unbounded lag).
+
+---
+
+### Circuit Breaker
+
+A pattern that stops calling a failing downstream dependency after a failure threshold, failing fast instead of piling up latency/threads on a doomed call.
+
+```
+States: Closed (calls flow normally) → Open (calls fail immediately, no network call)
+        → Half-Open (a trial call checks if the dependency recovered) → Closed or Open
+```
+
+**Real example**: Netflix Hystrix / resilience4j — protects a service from cascading failure when one downstream dependency is slow or down.
+
+---
+
+### Fan-out (Push vs. Pull)
+
+Distributing one event to many consumers. Fan-out-on-write (push) does the distribution work at write time; fan-out-on-read (pull) defers it to read time.
+
+**Real example**: Twitter's feed — for most users, fan-out-on-write pushes a new tweet into every follower's feed cache immediately; for celebrity accounts with millions of followers, fan-out-on-read is used instead to avoid a write storm (the "celebrity problem").
+
+---
+
+### Geohashing / Quadtree
+
+Techniques for indexing 2D location data so "find nearby points" is an efficient range query instead of a full scan.
+
+**Geohash**: Encodes lat/long into a base32 string where shared prefixes mean spatial proximity — nearby locations share a longer prefix, enabling a simple string-prefix range query.
+
+**Quadtree**: Recursively subdivides 2D space into 4 quadrants until each leaf holds few enough points — denser areas get subdivided more, giving natural load balancing for uneven point density.
+
+**Real example**: Uber (H3 hexagonal grid, a geohash variant), Google Maps.
+
+---
+
+### Consumer Group / Offset
+
+In a partitioned log (Kafka), a consumer group is a set of consumers that split a topic's partitions among themselves so each message is processed once per group; the offset is the position of the last-consumed message per partition.
+
+**Key property**: Committing an offset after processing (not before) gives at-least-once delivery; committing before gives at-most-once.
+
+---
+
+### Rate Limiting Algorithms
+
+```
+Token Bucket:   bucket refills at fixed rate; each request consumes a token; allows bursts up to bucket size
+Leaky Bucket:   requests queue and drain at fixed rate; smooths bursts, no burst allowance
+Fixed Window:   counter resets every N seconds; simple but allows 2x burst at window boundary
+Sliding Window: weights current + previous window by time elapsed; avoids the boundary burst problem
+```
+
+**Interview angle**: Naming "token bucket" vs. just "rate limiter" is the difference between an SDE-2 and SDE-3 answer — know the boundary-burst flaw of fixed window and why sliding window fixes it.
+
+---
+
+### Saga Pattern
+
+Manages a distributed transaction across multiple services as a sequence of local transactions, each with a compensating action to undo it if a later step fails.
+
+**Key property**: Avoids distributed locks/2PC's availability cost by trading atomicity for eventual consistency plus explicit rollback logic.
+
+**Real example**: An order-placement saga: reserve inventory → charge payment → schedule shipping; if shipping fails, a compensating transaction refunds the payment and releases inventory.
+
+---
+
+### Two-Phase Commit (2PC)
+
+A protocol for atomic commit across multiple nodes: a coordinator asks all participants to "prepare" (vote), then commits only if all voted yes, else aborts all.
+
+**Cost**: Blocking — if the coordinator crashes after prepare but before commit, participants hold locks indefinitely. This is why Saga is often preferred for long-lived distributed transactions.
+
+---
+
+### Gossip Protocol
+
+A peer-to-peer communication style where nodes periodically exchange state with a few random peers, spreading information across the cluster in O(log N) rounds without a central coordinator.
+
+**Real example**: Cassandra and Riak use gossip for cluster membership and failure detection.
+
+---
+
+### Cache Stampede (Thundering Herd)
+
+When a popular cache key expires, many concurrent requests simultaneously miss the cache and hit the database at once, potentially overwhelming it.
+
+**Fix**: Request coalescing (only one request recomputes, others wait), probabilistic early expiration, or locking around the recompute.
+
+---
+
+### Hot Key / Hot Partition
+
+A single key or shard receiving disproportionate traffic relative to others, becoming a bottleneck even though the system is horizontally scaled overall.
+
+**Real example**: A celebrity's user ID in a sharded social graph, or a viral URL in a URL shortener's cache — consistent hashing distributes keys evenly but can't fix uneven *access* to one key.
+
+**Fix**: Key-level replication/caching, splitting a hot key into sub-keys with a suffix (`key#1`, `key#2`, ...) and merging on read.
+
+---
+
+### Snowflake ID
+
+A 64-bit unique ID scheme combining a timestamp, a machine/worker ID, and a per-millisecond sequence number, generated locally with no coordination between nodes.
+
+```
+| 1 bit unused | 41 bits timestamp | 10 bits worker ID | 12 bits sequence |
+```
+
+**Key property**: Roughly time-sortable (higher timestamp → higher ID) and collision-free across machines without a central counter.
+
+**Real example**: Originated at Twitter; used in most "unique ID generator" HLD answers.
+
+---
+
 ## Idiomatic Interview Phrasings
 
 | Term | Use This Instead of... |

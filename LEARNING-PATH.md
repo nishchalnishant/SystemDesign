@@ -62,6 +62,10 @@ Goal: demonstrate production depth in system design interviews — not just "wha
 
 **Prerequisites:** Track 2 complete, or equivalent production experience.
 
+**If you recognize the material but freeze on a fresh prompt:** that's a derivation gap, not a knowledge gap — start with the methodology folders before anything else below:
+- `05-hld-problems/00-methodology/README.md` — 5-step HLD derivation process, worked example, timed drills
+- `06-lld/00-methodology/README.md` — 5-step LLD derivation process, worked example, timed drills
+
 **Advanced distributed theory:**
 1. `01-foundations/05-advanced-distributed-theory/01-consistency-and-conflicts.md` — linearizability, CRDTs, vector clocks, PACELC
 2. `03-scaling/02-database-internals.md` — storage engine internals

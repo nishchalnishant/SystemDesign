@@ -247,6 +247,7 @@ tags: [root, system-design, summary]
       * [Design Concurrent LRU Cache](06-lld/05-problems/04-advanced-niche/35-design-concurrent-lru-cache.md)
       * [Design High-Contention Counter](06-lld/05-problems/04-advanced-niche/36-design-high-contention-counter.md)
   * [UML Diagrams](06-lld/uml-diagrams.md)
+  * [LLD Glossary](06-lld/glossary.md)
 * [Reference](08-reference/README.md)
     * [Designing Data-Intensive Applications (DDIA) - Summary](08-reference/book-summaries/ddia.md)
     * [Head First Java - Second Edition: Chapter Notes](08-reference/book-summaries/head-first-java/README.md)

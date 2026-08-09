@@ -28,4 +28,4 @@ Object-oriented programming concepts for low-level design and coding interviews.
 | **Java OOPs** | [java-oops.md](java-oops.md) |
 | **Python OOPs** | [python-oops.md](python-oops.md) |
 
-See also [../SOLID-principles/](../02-solid-principles/) and [../design-patterns/](../03-design-patterns/).
+See also [../02-solid-principles/](../02-solid-principles/) and [../03-design-patterns/](../03-design-patterns/).

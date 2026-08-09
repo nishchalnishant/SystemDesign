@@ -4,6 +4,7 @@
 > **What this covers:** Complete Low-Level Design (LLD) interview preparation — OOP fundamentals, SOLID principles, 16 design patterns, concurrency, and 36 LLD problems with full class diagrams and code.
 >
 > **Learning path (follow this order):**
+> - Step 0 — Methodology (start here if you know the reference material but can't originate a design): the process for turning a fresh prompt into classes, UML, and pattern choices
 > - Step 1 — OOP Fundamentals (2–3 days): four-pillars.md, principles.md, introduction.md; choose Java or Python for code examples
 > - Step 2 — SOLID Principles (1 week): SRP → OCP → LSP → ISP → DIP in order; each builds on the previous
 > - Step 3 — Design Patterns (pair with problems): 16 patterns across Creational, Structural, Behavioral; read pattern when problem needs it
@@ -20,13 +21,16 @@
 
 ## Learning Path (follow this order)
 
+**Step 0 — Methodology** (read first if you already know the reference material but can't originate a design from scratch)
+- [00-methodology/README.md](00-methodology/README.md) — the 5-step process (decompose → nouns to classes → relationships/UML → verbs to methods/interfaces → spot the pattern), a full worked example not found elsewhere in this repo, a 45-minute interview playbook, and timed practice drills
+
 **Step 1 — OOP fundamentals** (2–3 days, read before anything else)
 - [four-pillars.md](01-oop-fundamentals/four-pillars.md) — Encapsulation, Inheritance, Polymorphism, Abstraction with the restaurant kitchen analogy
 - [principles.md](01-oop-fundamentals/principles.md) — IS-A vs. HAS-A, composition vs. inheritance; this determines when to subclass vs. delegate
 - [introduction.md](01-oop-fundamentals/introduction.md) — Why OOP exists and the problems it solves
 
 **Step 2 — SOLID Principles** (1 week, read in order — each builds on the previous)
-- [Single Responsibility](02-solid-principles/01-single-responsibility.md) → [Open/Closed](02-solid-principles/02-open-closed.md) → [Liskov Substitution](02-solid-principles/03-liskov-substitution.md) → [Interface Segregation](02-solid-principles/04-interface-segregation.md) → [Dependency Inversion](02-solid-principles/05-dependency-inversion.md)
+- [02-solid-principles/README.md](02-solid-principles/README.md) — SRP → OCP → LSP → ISP → DIP, each with the rule, the code smell, and the fix
 
 SRP tells you when a class is doing too much. OCP tells you how to extend it without breaking it. LSP tells you how inheritance must behave. ISP tells you how to split interfaces. DIP tells you how to wire them together. Each one solves a failure mode the previous one doesn't address.
 
