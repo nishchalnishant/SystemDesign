@@ -1,7 +1,7 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** Design a Search Engine (Inverted Index) — tests text processing, efficient data structures (`Map<String, List<Document>>`), and ranking algorithms.
+> **What this covers:** Design a Search Engine (Inverted Index) — tests text processing, efficient data structures (`Map<String, List<Posting>>`), and ranking algorithms.
 >
 > **Key concepts:**
 > - Core Entities: `Document`, `SearchEngine`, `InvertedIndex`, `Tokenizer`, `Ranker`.
@@ -148,41 +148,54 @@ class SearchEngine:
 - Re-indexing existing doc: remove old postings first
 - Empty content → index with no terms (still stored)
 
-```python
-def index_document(self, doc):
-    if doc.doc_id in self.documents:
-        self.index.remove_doc(doc.doc_id)
+```java
+public void indexDocument(Document doc) {
+    if (documents.containsKey(doc.getDocId())) {
+        index.removeDoc(doc.getDocId());
+    }
 
-    tokens = self.tokenizer.tokenize(doc.content)
-    doc.word_count = len(tokens)
+    List<String> tokens = tokenizer.tokenize(doc.getContent());
+    doc.setWordCount(tokens.size());
 
-    term_positions = defaultdict(list)
-    for pos, token in enumerate(tokens):
-        term_positions[token].append(pos)
+    Map<String, List<Integer>> termPositions = new HashMap<>();
+    for (int pos = 0; pos < tokens.size(); pos++) {
+        termPositions.computeIfAbsent(tokens.get(pos), k -> new ArrayList<>()).add(pos);
+    }
 
-    for term, positions in term_positions.items():
-        posting = Posting(
-            doc_id=doc.doc_id,
-            term_frequency=len(positions),
-            positions=positions
-        )
-        self.index.add_posting(term, posting)
+    for (Map.Entry<String, List<Integer>> entry : termPositions.entrySet()) {
+        String term = entry.getKey();
+        List<Integer> positions = entry.getValue();
+        Posting posting = new Posting(doc.getDocId(), positions.size(), positions);
+        index.addPosting(term, posting);
+    }
 
-    self.documents[doc.doc_id] = doc
-    self.index.doc_count = len(self.documents)
+    documents.put(doc.getDocId(), doc);
+    index.setDocCount(documents.size());
+}
 ```
 
 ### Tokenizer
 
-```python
-class Tokenizer:
-    STOP_WORDS = {'the', 'is', 'a', 'an', 'in', 'of', 'and', 'or', 'to', 'for'}
+```java
+public class Tokenizer {
+    private static final Set<String> STOP_WORDS = Set.of(
+        "the", "is", "a", "an", "in", "of", "and", "or", "to", "for"
+    );
 
-    def tokenize(self, text):
-        text = text.lower()
-        text = re.sub(r'[^\w\s]', '', text)
-        tokens = text.split()
-        return [t for t in tokens if t not in self.STOP_WORDS]
+    public List<String> tokenize(String text) {
+        String lower = text.toLowerCase();
+        String stripped = lower.replaceAll("[^\\w\\s]", "");
+        String[] tokens = stripped.trim().split("\\s+");
+
+        List<String> result = new ArrayList<>();
+        for (String t : tokens) {
+            if (!t.isEmpty() && !STOP_WORDS.contains(t)) {
+                result.add(t);
+            }
+        }
+        return result;
+    }
+}
 ```
 
 ### Core Method: `search` with TF-IDF
@@ -199,64 +212,89 @@ class Tokenizer:
 - `IDF(t)` = log((N + 1) / (df + 1)) + 1  (smoothed)
 - `score(d, q)` = sum of TF × IDF for each query term in d
 
-```python
-def search(self, query, top_k=10):
-    query_terms = self.tokenizer.tokenize(query)
-    if not query_terms:
-        return []
+```java
+public List<SearchResult> search(String query, int topK) {
+    List<String> queryTerms = tokenizer.tokenize(query);
+    if (queryTerms.isEmpty()) {
+        return Collections.emptyList();
+    }
 
-    scores = defaultdict(float)
-    N = len(self.documents)
+    Map<String, Double> scores = new HashMap<>();
+    int N = documents.size();
 
-    for term in query_terms:
-        postings = self.index.get_postings(term)
-        if not postings:
-            continue
-        df = len(postings)
-        idf = math.log((N + 1) / (df + 1)) + 1
+    for (String term : queryTerms) {
+        List<Posting> postings = index.getPostings(term);
+        if (postings.isEmpty()) {
+            continue;
+        }
+        int df = postings.size();
+        double idf = Math.log((double) (N + 1) / (df + 1)) + 1;
 
-        for posting in postings:
-            doc = self.documents[posting.doc_id]
-            tf = posting.term_frequency / doc.word_count
-            scores[posting.doc_id] += tf * idf
+        for (Posting posting : postings) {
+            Document doc = documents.get(posting.getDocId());
+            double tf = (double) posting.getTermFrequency() / doc.getWordCount();
+            scores.merge(posting.getDocId(), tf * idf, Double::sum);
+        }
+    }
 
-    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    results = []
-    for doc_id, score in ranked[:top_k]:
-        doc = self.documents[doc_id]
-        results.append(SearchResult(
-            doc_id=doc_id,
-            title=doc.title,
-            score=round(score, 4),
-            snippet=self._generate_snippet(doc, query_terms)
-        ))
-    return results
+    List<Map.Entry<String, Double>> ranked = new ArrayList<>(scores.entrySet());
+    ranked.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+
+    List<SearchResult> results = new ArrayList<>();
+    for (Map.Entry<String, Double> entry : ranked.subList(0, Math.min(topK, ranked.size()))) {
+        String docId = entry.getKey();
+        double score = entry.getValue();
+        Document doc = documents.get(docId);
+        double rounded = Math.round(score * 10000.0) / 10000.0;
+        results.add(new SearchResult(
+            docId,
+            doc.getTitle(),
+            rounded,
+            generateSnippet(doc, queryTerms)
+        ));
+    }
+    return results;
+}
 ```
 
 ### InvertedIndex internals
 
-```python
-class InvertedIndex:
-    def __init__(self):
-        self.index = defaultdict(list)
-        self.doc_count = 0
+```java
+public class InvertedIndex {
+    private final Map<String, List<Posting>> index = new HashMap<>();
+    private int docCount = 0;
 
-    def add_posting(self, term, posting):
-        self.index[term].append(posting)
+    public void addPosting(String term, Posting posting) {
+        index.computeIfAbsent(term, k -> new ArrayList<>()).add(posting);
+    }
 
-    def get_postings(self, term):
-        return self.index.get(term, [])
+    public List<Posting> getPostings(String term) {
+        return index.getOrDefault(term, Collections.emptyList());
+    }
 
-    def remove_doc(self, doc_id):
-        for term in list(self.index.keys()):
-            self.index[term] = [
-                p for p in self.index[term] if p.doc_id != doc_id
-            ]
-            if not self.index[term]:
-                del self.index[term]
+    public void removeDoc(String docId) {
+        Iterator<Map.Entry<String, List<Posting>>> it = index.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, List<Posting>> entry = it.next();
+            entry.getValue().removeIf(p -> p.getDocId().equals(docId));
+            if (entry.getValue().isEmpty()) {
+                it.remove();
+            }
+        }
+    }
 
-    def document_frequency(self, term):
-        return len(self.index.get(term, []))
+    public int documentFrequency(String term) {
+        return index.getOrDefault(term, Collections.emptyList()).size();
+    }
+
+    public int getDocCount() {
+        return docCount;
+    }
+
+    public void setDocCount(int docCount) {
+        this.docCount = docCount;
+    }
+}
 ```
 
 ---
@@ -299,19 +337,47 @@ Ranking: D2(1.29) > D1(0.96) > D3(0)
 
 Add a `Stemmer` stage to the Tokenizer pipeline (Strategy):
 
-```python
-class Tokenizer:
-    def __init__(self, stemmer=None):
-        self.stemmer = stemmer or NullStemmer()
+```java
+public interface Stemmer {
+    String stem(String word);
+}
 
-    def tokenize(self, text):
-        tokens = self._basic_tokenize(text)
-        return [self.stemmer.stem(t) for t in tokens]
+public class NullStemmer implements Stemmer {
+    @Override
+    public String stem(String word) {
+        return word;
+    }
+}
 
-class PorterStemmer:
-    def stem(self, word):
-        # Porter algorithm strips suffixes: "running" → "run"
-        return stemmed_word
+public class Tokenizer {
+    private final Stemmer stemmer;
+
+    public Tokenizer(Stemmer stemmer) {
+        this.stemmer = stemmer != null ? stemmer : new NullStemmer();
+    }
+
+    public List<String> tokenize(String text) {
+        List<String> tokens = basicTokenize(text);
+        List<String> stemmed = new ArrayList<>();
+        for (String t : tokens) {
+            stemmed.add(stemmer.stem(t));
+        }
+        return stemmed;
+    }
+
+    private List<String> basicTokenize(String text) {
+        // lowercase, strip punctuation, split on whitespace
+        return Arrays.asList(text.toLowerCase().replaceAll("[^\\w\\s]", "").trim().split("\\s+"));
+    }
+}
+
+public class PorterStemmer implements Stemmer {
+    @Override
+    public String stem(String word) {
+        // Porter algorithm strips suffixes: "running" -> "run"
+        return stemmedWord;
+    }
+}
 ```
 
 Index and query use the same stemmer — "running" and "run" map to the same posting.
@@ -320,17 +386,29 @@ Index and query use the same stemmer — "running" and "run" map to the same pos
 
 Parse query into terms, then intersect postings lists:
 
-```python
-def search_and(self, query):
-    terms = self.tokenizer.tokenize(query)
-    if not terms:
-        return []
-    postings = [set(p.doc_id for p in self.index.get_postings(t)) for t in terms]
-    postings.sort(key=len)  # intersect smallest first
-    result_docs = postings[0]
-    for p in postings[1:]:
-        result_docs &= p
-    return self._rank_and_return(result_docs, terms)
+```java
+public List<SearchResult> searchAnd(String query) {
+    List<String> terms = tokenizer.tokenize(query);
+    if (terms.isEmpty()) {
+        return Collections.emptyList();
+    }
+
+    List<Set<String>> postingSets = new ArrayList<>();
+    for (String t : terms) {
+        Set<String> docIds = new HashSet<>();
+        for (Posting p : index.getPostings(t)) {
+            docIds.add(p.getDocId());
+        }
+        postingSets.add(docIds);
+    }
+    postingSets.sort(Comparator.comparingInt(Set::size)); // intersect smallest first
+
+    Set<String> resultDocs = new HashSet<>(postingSets.get(0));
+    for (Set<String> s : postingSets.subList(1, postingSets.size())) {
+        resultDocs.retainAll(s);
+    }
+    return rankAndReturn(resultDocs, terms);
+}
 ```
 
 Intersecting from the shortest list minimizes the work.
@@ -339,16 +417,24 @@ Intersecting from the shortest list minimizes the work.
 
 Find the text window around the first query term occurrence:
 
-```python
-def _generate_snippet(self, doc, query_terms, window=50):
-    content = doc.content.lower()
-    for term in query_terms:
-        idx = content.find(term)
-        if idx != -1:
-            start = max(0, idx - window)
-            end = min(len(content), idx + len(term) + window)
-            return f"...{doc.content[start:end]}..."
-    return doc.content[:100] + "..."
+```java
+private String generateSnippet(Document doc, List<String> queryTerms) {
+    return generateSnippet(doc, queryTerms, 50);
+}
+
+private String generateSnippet(Document doc, List<String> queryTerms, int window) {
+    String content = doc.getContent().toLowerCase();
+    for (String term : queryTerms) {
+        int idx = content.indexOf(term);
+        if (idx != -1) {
+            int start = Math.max(0, idx - window);
+            int end = Math.min(doc.getContent().length(), idx + term.length() + window);
+            return "..." + doc.getContent().substring(start, end) + "...";
+        }
+    }
+    int end = Math.min(100, doc.getContent().length());
+    return doc.getContent().substring(0, end) + "...";
+}
 ```
 
 ### 4. "How would you handle document updates efficiently?"

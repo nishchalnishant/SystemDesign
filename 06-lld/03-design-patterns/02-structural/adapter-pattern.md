@@ -75,15 +75,17 @@ Try it before reading on.
 
 The instinct is to modify the call site:
 
-```python
-class CheckoutService:
-    # Old code: payment_gateway.charge(amount, currency)
-    # New code — now we must know Razorpay's API:
-    def checkout(self, order):
-        req = RazorpayRequest()
-        req.set_amount(order.get_amount() * 100)  # Razorpay wants paise, not rupees
-        req.set_currency_code(order.get_currency().upper())
-        self._razorpay_client.initiate_payment(req)
+```java
+class CheckoutService {
+    // Old code: paymentGateway.charge(amount, currency)
+    // New code — now we must know Razorpay's API:
+    public void checkout(Order order) {
+        RazorpayRequest req = new RazorpayRequest();
+        req.setAmount(order.getAmount() * 100);  // Razorpay wants paise, not rupees
+        req.setCurrencyCode(order.getCurrency().toUpperCase());
+        razorpayClient.initiatePayment(req);
+    }
+}
 ```
 
 **What breaks**:
@@ -98,40 +100,48 @@ class CheckoutService:
 The constraint: **`CheckoutService` must call the interface it already knows; translation is someone else's problem**.
 
 Step 1 — define (or keep) the interface `CheckoutService` expects:
-```python
-from abc import ABC, abstractmethod
-
-class PaymentGateway(ABC):
-    @abstractmethod
-    def charge(self, amount: float, currency: str):
-        pass
+```java
+public interface PaymentGateway {
+    void charge(double amount, String currency);
+}
 ```
 
 Step 2 — write an adapter that implements the expected interface but internally calls the incompatible library:
-```python
-class RazorpayAdapter(PaymentGateway):
-    def __init__(self, client):
-        self._razorpay_client = client
+```java
+public class RazorpayAdapter implements PaymentGateway {
+    private final RazorpayClient razorpayClient;
 
-    def charge(self, amount: float, currency: str):
-        # Translation happens here, not in CheckoutService
-        req = RazorpayRequest()
-        req.set_amount(int(amount * 100))  # rupees → paise
-        req.set_currency_code(currency.upper())
-        self._razorpay_client.initiate_payment(req)
+    public RazorpayAdapter(RazorpayClient client) {
+        this.razorpayClient = client;
+    }
+
+    @Override
+    public void charge(double amount, String currency) {
+        // Translation happens here, not in CheckoutService
+        RazorpayRequest req = new RazorpayRequest();
+        req.setAmount((int) (amount * 100));  // rupees → paise
+        req.setCurrencyCode(currency.toUpperCase());
+        razorpayClient.initiatePayment(req);
+    }
+}
 ```
 
 Step 3 — `CheckoutService` receives `PaymentGateway` via injection; it never knows Razorpay exists:
-```python
-class CheckoutService:
-    def __init__(self, gateway: PaymentGateway):
-        self._gateway = gateway
+```java
+public class CheckoutService {
+    private final PaymentGateway gateway;
 
-    def checkout(self, order):
-        self._gateway.charge(order.get_amount(), order.get_currency())  # unchanged
+    public CheckoutService(PaymentGateway gateway) {
+        this.gateway = gateway;
+    }
 
-# Wiring:
-service = CheckoutService(RazorpayAdapter(RazorpayClient()))
+    public void checkout(Order order) {
+        gateway.charge(order.getAmount(), order.getCurrency());  // unchanged
+    }
+}
+
+// Wiring:
+CheckoutService service = new CheckoutService(new RazorpayAdapter(new RazorpayClient()));
 ```
 
 Switching to Stripe is now: write `StripeAdapter(PaymentGateway)`. `CheckoutService` is untouched.
@@ -166,41 +176,53 @@ Modifying Razorpay's API or your core `CheckoutService` is not an option.
 
 ## Implementation
 
-```python
-from abc import ABC, abstractmethod
+```java
+// 1. Target Interface — what your system expects
+interface PaymentGateway {
+    void pay(String orderId, double amount);
+}
 
-# 1. Target Interface — what your system expects
-class PaymentGateway(ABC):
-    @abstractmethod
-    def pay(self, order_id: str, amount: float):
-        pass
+// 2. Existing valid implementation of Target
+class PayUGateway implements PaymentGateway {
+    @Override
+    public void pay(String orderId, double amount) {
+        System.out.println("Paid " + amount + " using PayU for Order " + orderId);
+    }
+}
 
-# 2. Existing valid implementation of Target
-class PayUGateway(PaymentGateway):
-    def pay(self, order_id: str, amount: float):
-        print(f"Paid {amount} using PayU for Order {order_id}")
+// 3. Adaptee — third-party/legacy code with incompatible interface
+class RazorpayAPI {
+    public void makePayment(String invoiceId, double amount) {
+        System.out.println("Paid " + amount + " using Razorpay for Invoice " + invoiceId);
+    }
+}
 
-# 3. Adaptee — third-party/legacy code with incompatible interface
-class RazorpayAPI:
-    def make_payment(self, invoice_id: str, amount: float):
-        print(f"Paid {amount} using Razorpay for Invoice {invoice_id}")
+// 4. Adapter — wraps Adaptee, implements Target
+class RazorpayAdapter implements PaymentGateway {
+    private final RazorpayAPI api;
 
-# 4. Adapter — wraps Adaptee, implements Target
-class RazorpayAdapter(PaymentGateway):
-    def __init__(self):
-        self._api = RazorpayAPI()
+    public RazorpayAdapter() {
+        this.api = new RazorpayAPI();
+    }
 
-    def pay(self, order_id: str, amount: float):
-        # Translation: 'order_id' maps to Razorpay's 'invoice_id' concept
-        self._api.make_payment(order_id, amount)
+    @Override
+    public void pay(String orderId, double amount) {
+        // Translation: 'orderId' maps to Razorpay's 'invoiceId' concept
+        api.makePayment(orderId, amount);
+    }
+}
 
-# 5. Client — only knows about PaymentGateway, unaware of Razorpay's API
-def process_payment(gateway: PaymentGateway):
-    gateway.pay("ORD-123", 500)
+// 5. Client — only knows about PaymentGateway, unaware of Razorpay's API
+class Main {
+    static void processPayment(PaymentGateway gateway) {
+        gateway.pay("ORD-123", 500);
+    }
 
-if __name__ == "__main__":
-    process_payment(PayUGateway())       # Direct implementation
-    process_payment(RazorpayAdapter())  # Via Adapter — client code unchanged
+    public static void main(String[] args) {
+        processPayment(new PayUGateway());      // Direct implementation
+        processPayment(new RazorpayAdapter());  // Via Adapter — client code unchanged
+    }
+}
 ```
 
 ### Class Diagram
@@ -240,28 +262,33 @@ classDiagram
 
 ## Another Example: Legacy Logging System
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Your system's logging interface
+interface Logger {
+    void log(String level, String message);
+}
 
-# Your system's logging interface
-class Logger(ABC):
-    @abstractmethod
-    def log(self, level: str, message: str):
-        pass
+// Third-party legacy logger with different signature
+class LegacyLogger {
+    public void writeLog(int severity, String msg) {
+        System.out.println("[" + severity + "] " + msg);
+    }
+}
 
-# Third-party legacy logger with different signature
-class LegacyLogger:
-    def write_log(self, severity: int, msg: str):
-        print(f"[{severity}] {msg}")
+// Adapter bridges the two
+class LegacyLoggerAdapter implements Logger {
+    private final LegacyLogger legacy;
 
-# Adapter bridges the two
-class LegacyLoggerAdapter(Logger):
-    def __init__(self):
-        self._legacy = LegacyLogger()
+    public LegacyLoggerAdapter() {
+        this.legacy = new LegacyLogger();
+    }
 
-    def log(self, level: str, message: str):
-        severity = 1 if level == "ERROR" else 2 if level == "WARN" else 3
-        self._legacy.write_log(severity, message)
+    @Override
+    public void log(String level, String message) {
+        int severity = level.equals("ERROR") ? 1 : level.equals("WARN") ? 2 : 3;
+        legacy.writeLog(severity, message);
+    }
+}
 ```
 
 ---

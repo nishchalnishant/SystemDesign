@@ -56,16 +56,18 @@ An SDE-3 level cheat sheet for the SOLID principles — the rule, the intuition,
 **Example:**
 
 Bad:
-```python
-def export_data(data, format):
-    if format == "csv": # Logic
-    elif format == "json": # Logic
+```java
+void exportData(Data data, String format) {
+    if (format.equals("csv")) { /* Logic */ }
+    else if (format.equals("json")) { /* Logic */ }
+}
 ```
 
 Good:
-```python
-def export_data(data, exporter: DataExporter):
-    exporter.export(data) # Just pass in a CsvExporter or JsonExporter
+```java
+void exportData(Data data, DataExporter exporter) {
+    exporter.export(data); // Just pass in a CsvExporter or JsonExporter
+}
 ```
 
 ---
@@ -94,9 +96,9 @@ def export_data(data, exporter: DataExporter):
 **The Intuition:** Don't create massive, bloated contracts ("Fat Interfaces"). Break them down into smaller, role-specific contracts.
 
 **The "Smell":**
-- You implement an interface, but leave half the methods empty with `pass`.
+- You implement an interface, but leave half the methods empty or throwing `UnsupportedOperationException`.
 
-**The Implementation Technique:** Create smaller, highly focused Abstract Base Classes. A single class can implement *multiple* small interfaces if it needs to.
+**The Implementation Technique:** Create smaller, highly focused interfaces. A single class can implement *multiple* small interfaces if it needs to.
 
 **Example:**
 - **Bad:** `IMachine` has `print()`, `scan()`, `fax()`. A `BasicPrinter` implements it, but has to leave `scan()` and `fax()` empty.
@@ -110,13 +112,13 @@ def export_data(data, exporter: DataExporter):
 **The Intuition:** Your core business logic (High-Level) shouldn't care about the specific database, API, or framework (Low-Level) being used.
 
 **The "Smell":**
-- You are using the `ClassName()` constructor directly inside another class's `__init__` method.
+- You are using the `new ClassName()` constructor directly inside another class's constructor.
 
 **The Implementation Technique:** Dependency Injection (passing dependencies via constructor arguments) combined with Interfaces.
 
 **Example:**
-- **Bad:** `TradingAgent` creates a `ZerodhaBroker()` directly inside itself.
-- **Good:** `TradingAgent` accepts a `broker: BrokerInterface` in its `__init__`. The `main.py` file creates the `ZerodhaBroker` and passes it in.
+- **Bad:** `TradingAgent` creates a `new ZerodhaBroker()` directly inside itself.
+- **Good:** `TradingAgent` accepts a `BrokerInterface broker` in its constructor. The `Main` class creates the `ZerodhaBroker` and passes it in.
 
 ---
 
@@ -135,25 +137,34 @@ Here is the problem from earlier.
 
 We have a `StockTicker`. When the price changes, it needs to alert an Email Service, a Push Notification Service, and a UI Dashboard.
 
-```python
-class StockTicker:
-    def __init__(self, ticker, email_service, push_service, dashboard):
-        self.ticker = ticker
-        self.price = 0
-        self.email_service = email_service
-        self.push_service = push_service
-        self.dashboard = dashboard
+```java
+class StockTicker {
+    private String ticker;
+    private double price;
+    private EmailService emailService;
+    private PushService pushService;
+    private Dashboard dashboard;
 
-    def update_price(self, new_price):
-        self.price = new_price
-        self.email_service.send_email(f"New price: {new_price}")
-        self.push_service.send_push(f"New price: {new_price}")
-        self.dashboard.refresh(new_price)
+    public StockTicker(String ticker, EmailService emailService, PushService pushService, Dashboard dashboard) {
+        this.ticker = ticker;
+        this.price = 0;
+        this.emailService = emailService;
+        this.pushService = pushService;
+        this.dashboard = dashboard;
+    }
+
+    public void updatePrice(double newPrice) {
+        this.price = newPrice;
+        emailService.sendEmail("New price: " + newPrice);
+        pushService.sendPush("New price: " + newPrice);
+        dashboard.refresh(newPrice);
+    }
+}
 ```
 
 **The Design Pressure:** We want to add SMS notifications tomorrow, an automated Trading Bot next week, and the ability for users to turn off emails at will.
 
-If we keep passing services into the `__init__`, this class will violate the Open/Closed Principle heavily.
+If we keep passing services into the constructor, this class will violate the Open/Closed Principle heavily.
 
 **Your Challenge:**
 How do we redesign `StockTicker` so that it doesn't need to know *who* it is alerting? How can it alert 0, 5, or 100 different services dynamically without its code ever changing?

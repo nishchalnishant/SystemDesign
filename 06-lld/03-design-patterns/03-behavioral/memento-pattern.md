@@ -71,23 +71,27 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```python
-class Editor:
-    def __init__(self):
-        self.content = ""
-        self.cursor = 0
+```java
+class Editor {
+    public String content = "";
+    public int cursor = 0;
+}
 
 
-class UndoManager:
-    def __init__(self):
-        self._history = []
+class UndoManager {
+    private final Deque<Object[]> history = new ArrayDeque<>();
 
-    def backup(self, editor):
-        # Reaches directly into the editor's private fields
-        self._history.append((editor.content, editor.cursor))
+    public void backup(Editor editor) {
+        // Reaches directly into the editor's private fields
+        history.push(new Object[] { editor.content, editor.cursor });
+    }
 
-    def undo(self, editor):
-        editor.content, editor.cursor = self._history.pop()
+    public void undo(Editor editor) {
+        Object[] snapshot = history.pop();
+        editor.content = (String) snapshot[0];
+        editor.cursor = (int) snapshot[1];
+    }
+}
 ```
 
 **What breaks**:
@@ -103,40 +107,49 @@ class UndoManager:
 The constraint: **only the object itself should be able to read/write its own saved state; the history holder must treat snapshots as opaque.**
 
 Step 1 — the snapshot (Memento) is an opaque, immutable value the Originator produces and consumes:
-```python
-class EditorMemento:
-    # Opaque to everyone except the Editor that created it.
-    def __init__(self, content, cursor):
-        self._content = content
-        self._cursor = cursor
+```java
+class EditorMemento {
+    // Opaque to everyone except the Editor that created it (package-private access).
+    final String content;
+    final int cursor;
+
+    EditorMemento(String content, int cursor) {
+        this.content = content;
+        this.cursor = cursor;
+    }
+}
 ```
 
 Step 2 — the Originator owns `save()` and `restore()`; it deep-copies to avoid aliasing:
-```python
-class Editor:
-    def __init__(self):
-        self.content = ""
-        self.cursor = 0
+```java
+class Editor {
+    private String content = "";
+    private int cursor = 0;
 
-    def save(self):
-        return EditorMemento(self.content, self.cursor)   # snapshot my own state
+    public EditorMemento save() {
+        return new EditorMemento(content, cursor);   // snapshot my own state
+    }
 
-    def restore(self, memento):
-        self.content = memento._content                    # only I read the memento
-        self.cursor = memento._cursor
+    public void restore(EditorMemento memento) {
+        this.content = memento.content;               // only I read the memento
+        this.cursor = memento.cursor;
+    }
+}
 ```
 
 Step 3 — the Caretaker just holds mementos; it never opens them:
-```python
-class History:
-    def __init__(self):
-        self._stack = []
+```java
+class History {
+    private final Deque<EditorMemento> stack = new ArrayDeque<>();
 
-    def push(self, memento):
-        self._stack.append(memento)
+    public void push(EditorMemento memento) {
+        stack.push(memento);
+    }
 
-    def pop(self):
-        return self._stack.pop() if self._stack else None
+    public EditorMemento pop() {
+        return stack.isEmpty() ? null : stack.pop();
+    }
+}
 ```
 
 Now adding a `selection` field changes only `Editor` and `EditorMemento`. `History` is untouched — it never knew the internals.
@@ -173,14 +186,14 @@ When you reach a checkpoint, you hit "Save". The game writes a **save file** tha
 
 Bad code — the caretaker reaches into private state and aliases mutable data:
 
-```python
-class Canvas:
-    def __init__(self):
-        self.shapes = []          # mutable list
+```java
+class Canvas {
+    List<Shape> shapes = new ArrayList<>();   // mutable list
+}
 
-# elsewhere:
-history.append(canvas.shapes)     # stores a REFERENCE, not a copy
-canvas.shapes.append(circle)      # oops — also mutated the "saved" snapshot
+// elsewhere:
+history.add(canvas.shapes);       // stores a REFERENCE, not a copy
+canvas.shapes.add(circle);        // oops — also mutated the "saved" snapshot
 ```
 
 **Problems**: The history now shares the live list, so "undo" restores a list that kept changing. And any code holding the reference can corrupt past states. Encapsulation and integrity are both gone.
@@ -189,73 +202,91 @@ canvas.shapes.append(circle)      # oops — also mutated the "saved" snapshot
 
 ## Solution: Memento Pattern
 
-```python
-from abc import ABC
-from copy import deepcopy
+```java
+import java.util.*;
 
 
-# 1. Memento — opaque snapshot. Only the Originator interprets its contents.
-class Memento:
-    def __init__(self, state):
-        self._state = deepcopy(state)   # defensive deep copy — no aliasing
+// 1. Memento — opaque snapshot. Only the Originator interprets its contents.
+class Memento {
+    private final List<String> content;   // defensive copy — no aliasing
+    private final int cursor;
 
-    def _get_state(self):               # "package-private" — for the Originator only
-        return deepcopy(self._state)
+    Memento(List<String> content, int cursor) {
+        this.content = new ArrayList<>(content);   // defensive deep copy — no aliasing
+        this.cursor = cursor;
+    }
 
+    private List<String> getContent() {    // package-private-style — for the Originator only
+        return new ArrayList<>(content);
+    }
 
-# 2. Originator — the object whose state we snapshot and restore
-class TextDocument:
-    def __init__(self):
-        self._content = []
-        self._cursor = 0
-
-    def type(self, text):
-        self._content.append(text)
-        self._cursor += len(text)
-
-    def render(self):
-        return "".join(self._content)
-
-    def save(self):
-        return Memento({"content": self._content, "cursor": self._cursor})
-
-    def restore(self, memento):
-        state = memento._get_state()
-        self._content = state["content"]
-        self._cursor = state["cursor"]
+    private int getCursor() {
+        return cursor;
+    }
+}
 
 
-# 3. Caretaker — holds mementos (undo stack). Never inspects them.
-class History:
-    def __init__(self):
-        self._undo_stack = []
+// 2. Originator — the object whose state we snapshot and restore
+class TextDocument {
+    private List<String> content = new ArrayList<>();
+    private int cursor = 0;
 
-    def backup(self, memento):
-        self._undo_stack.append(memento)
+    public void type(String text) {
+        content.add(text);
+        cursor += text.length();
+    }
 
-    def undo(self):
-        return self._undo_stack.pop() if self._undo_stack else None
+    public String render() {
+        return String.join("", content);
+    }
+
+    public Memento save() {
+        return new Memento(content, cursor);
+    }
+
+    public void restore(Memento memento) {
+        this.content = memento.getContent();
+        this.cursor = memento.getCursor();
+    }
+}
 
 
-# Client
-if __name__ == "__main__":
-    doc = TextDocument()
-    history = History()
+// 3. Caretaker — holds mementos (undo stack). Never inspects them.
+class History {
+    private final Deque<Memento> undoStack = new ArrayDeque<>();
 
-    doc.type("Hello ")
-    history.backup(doc.save())      # checkpoint 1
+    public void backup(Memento memento) {
+        undoStack.push(memento);
+    }
 
-    doc.type("World")
-    history.backup(doc.save())      # checkpoint 2
+    public Memento undo() {
+        return undoStack.isEmpty() ? null : undoStack.pop();
+    }
+}
 
-    doc.type("!!!")
-    print(doc.render())             # "Hello World!!!"
 
-    doc.restore(history.undo())     # back to checkpoint 2
-    print(doc.render())             # "Hello World"
+// Client
+public class Main {
+    public static void main(String[] args) {
+        TextDocument doc = new TextDocument();
+        History history = new History();
 
-    doc.restore(history.undo())     # back to checkpoint 1
-    print(doc.render())             # "Hello "
+        doc.type("Hello ");
+        history.backup(doc.save());      // checkpoint 1
+
+        doc.type("World");
+        history.backup(doc.save());      // checkpoint 2
+
+        doc.type("!!!");
+        System.out.println(doc.render());   // "Hello World!!!"
+
+        doc.restore(history.undo());     // back to checkpoint 2
+        System.out.println(doc.render());   // "Hello World"
+
+        doc.restore(history.undo());     // back to checkpoint 1
+        System.out.println(doc.render());   // "Hello "
+    }
+}
 ```
 
 ### Class Diagram
@@ -263,33 +294,35 @@ if __name__ == "__main__":
 ```mermaid
 classDiagram
     class TextDocument {
-        -list content
+        -List~String~ content
         -int cursor
-        +type(text)
-        +render() str
+        +type(String text)
+        +render() String
         +save() Memento
         +restore(Memento)
     }
 
     class Memento {
-        -dict state
-        +_get_state() dict
+        -List~String~ content
+        -int cursor
+        -getContent() List~String~
+        -getCursor() int
     }
 
     class History {
-        -list~Memento~ undoStack
+        -Deque~Memento~ undoStack
         +backup(Memento)
         +undo() Memento
     }
 
-    class Client {
-        +main()
+    class Main {
+        +main(String[] args)
     }
 
     TextDocument ..> Memento : creates & reads
     History o-- Memento : stores (opaque)
-    Client ..> TextDocument : uses
-    Client ..> History : uses
+    Main ..> TextDocument : uses
+    Main ..> History : uses
 ```
 
 ---

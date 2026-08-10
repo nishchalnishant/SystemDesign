@@ -78,22 +78,33 @@ Try it before reading on.
 
 The client knows and orchestrates every subsystem:
 
-```python
-# In the client (e.g., an HTTP controller):
-def place_order(self, order, user):
-    if not self._inventory_service.is_available(order.get_product_id(), order.get_qty()):
-        raise OutOfStockException()
-    self._inventory_service.reserve(order.get_product_id(), order.get_qty())
+```java
+// In the client (e.g., an HTTP controller):
+public class OrderController {
+    private final InventoryService inventoryService;
+    private final PaymentService paymentService;
+    private final InvoiceService invoiceService;
+    private final ShippingService shippingService;
+    private final LoyaltyService loyaltyService;
 
-    result = self._payment_service.charge(user.get_payment_method(), order.get_total())
-    if not result.is_success():
-        raise PaymentFailedException()
+    public void placeOrder(Order order, User user) {
+        if (!inventoryService.isAvailable(order.getProductId(), order.getQty())) {
+            throw new OutOfStockException();
+        }
+        inventoryService.reserve(order.getProductId(), order.getQty());
 
-    invoice_id = self._invoice_service.generate(order, user)
+        PaymentResult result = paymentService.charge(user.getPaymentMethod(), order.getTotal());
+        if (!result.isSuccess()) {
+            throw new PaymentFailedException();
+        }
 
-    self._shipping_service.schedule_delivery(order, user.get_address())
+        String invoiceId = invoiceService.generate(order, user);
 
-    self._loyalty_service.add_points(user.get_id(), order.get_total())
+        shippingService.scheduleDelivery(order, user.getAddress());
+
+        loyaltyService.addPoints(user.getId(), order.getTotal());
+    }
+}
 ```
 
 **What breaks**:
@@ -109,29 +120,39 @@ def place_order(self, order, user):
 The constraint: **the client should call one method; the orchestration sequence lives behind a single entry point**.
 
 Step 1 — create a `Facade` class that knows all the subsystems and the correct sequence:
-```python
-class OrderFacade:
-    def __init__(self, inventory_service, payment_service,
-                 invoice_service, shipping_service, loyalty_service):
-        self._inventory_service = inventory_service
-        self._payment_service = payment_service
-        self._invoice_service = invoice_service
-        self._shipping_service = shipping_service
-        self._loyalty_service = loyalty_service
+```java
+public class OrderFacade {
+    private final InventoryService inventoryService;
+    private final PaymentService paymentService;
+    private final InvoiceService invoiceService;
+    private final ShippingService shippingService;
+    private final LoyaltyService loyaltyService;
 
-    def place_order(self, order, user):
-        # full orchestration lives here, not in the controller
-        self._inventory_service.reserve(order.get_product_id(), order.get_qty())
-        self._payment_service.charge(user.get_payment_method(), order.get_total())
-        self._invoice_service.generate(order, user)
-        self._shipping_service.schedule_delivery(order, user.get_address())
-        self._loyalty_service.add_points(user.get_id(), order.get_total())
+    public OrderFacade(InventoryService inventoryService, PaymentService paymentService,
+                        InvoiceService invoiceService, ShippingService shippingService,
+                        LoyaltyService loyaltyService) {
+        this.inventoryService = inventoryService;
+        this.paymentService = paymentService;
+        this.invoiceService = invoiceService;
+        this.shippingService = shippingService;
+        this.loyaltyService = loyaltyService;
+    }
+
+    public void placeOrder(Order order, User user) {
+        // full orchestration lives here, not in the controller
+        inventoryService.reserve(order.getProductId(), order.getQty());
+        paymentService.charge(user.getPaymentMethod(), order.getTotal());
+        invoiceService.generate(order, user);
+        shippingService.scheduleDelivery(order, user.getAddress());
+        loyaltyService.addPoints(user.getId(), order.getTotal());
+    }
+}
 ```
 
 Step 2 — the client calls one method:
-```python
-# In the HTTP controller (and the mobile controller, and the batch job):
-order_facade.place_order(order, user)
+```java
+// In the HTTP controller (and the mobile controller, and the batch job):
+orderFacade.placeOrder(order, user);
 ```
 
 The controller now imports only `OrderFacade`. The subsystems are hidden. Changing the sequence means editing one class.
@@ -162,68 +183,84 @@ A `HomeTheater` system requires:
 4. Turning on the amplifier
 5. Setting the volume
 
-The client just wants `watch_movie()`. They shouldn't need to know the correct sequence of 5 subsystem calls.
+The client just wants `watchMovie()`. They shouldn't need to know the correct sequence of 5 subsystem calls.
 
 ---
 
 ## Implementation
 
-```python
-# Subsystem Components — each has its own complex interface
-class Amplifier:
-    def on(self):                   print("Amp ON")
-    def off(self):                  print("Amp OFF")
-    def set_volume(self, level: int): print(f"Amp Volume: {level}")
+```java
+// Subsystem Components — each has its own complex interface
+class Amplifier {
+    public void on()                    { System.out.println("Amp ON"); }
+    public void off()                   { System.out.println("Amp OFF"); }
+    public void setVolume(int level)    { System.out.println("Amp Volume: " + level); }
+}
 
-class Projector:
-    def on(self):                   print("Projector ON")
-    def off(self):                  print("Projector OFF")
-    def set_input(self, src: str):  print(f"Projector Input: {src}")
-    def set_resolution(self, r: str): print(f"Projector Resolution: {r}")
+class Projector {
+    public void on()                        { System.out.println("Projector ON"); }
+    public void off()                       { System.out.println("Projector OFF"); }
+    public void setInput(String src)        { System.out.println("Projector Input: " + src); }
+    public void setResolution(String r)     { System.out.println("Projector Resolution: " + r); }
+}
 
-class Lights:
-    def on(self):                   print("Lights ON")
-    def dim(self, level: int):      print(f"Lights dimmed to {level}%")
+class Lights {
+    public void on()             { System.out.println("Lights ON"); }
+    public void dim(int level)   { System.out.println("Lights dimmed to " + level + "%"); }
+}
 
-class StreamingService:
-    def connect(self):              print("Streaming service connected")
-    def play(self, movie: str):     print(f"Playing: {movie}")
-    def stop(self):                 print("Streaming stopped")
+class StreamingService {
+    public void connect()             { System.out.println("Streaming service connected"); }
+    public void play(String movie)    { System.out.println("Playing: " + movie); }
+    public void stop()                { System.out.println("Streaming stopped"); }
+}
 
-# Facade — one entry point, hides all the complexity
-class HomeTheaterFacade:
-    def __init__(self):
-        self._amp = Amplifier()
-        self._proj = Projector()
-        self._lights = Lights()
-        self._streaming = StreamingService()
+// Facade — one entry point, hides all the complexity
+class HomeTheaterFacade {
+    private final Amplifier amp;
+    private final Projector proj;
+    private final Lights lights;
+    private final StreamingService streaming;
 
-    # Simple interface for a complex sequence
-    def watch_movie(self, movie: str):
-        print(f"--- Preparing to watch {movie} ---")
-        self._lights.dim(10)
-        self._proj.on()
-        self._proj.set_input("HDMI-1")
-        self._proj.set_resolution("4K")
-        self._amp.on()
-        self._amp.set_volume(5)
-        self._streaming.connect()
-        self._streaming.play(movie)
+    public HomeTheaterFacade() {
+        this.amp = new Amplifier();
+        this.proj = new Projector();
+        this.lights = new Lights();
+        this.streaming = new StreamingService();
+    }
 
-    def end_movie(self):
-        print("--- Shutting down theater ---")
-        self._streaming.stop()
-        self._amp.off()
-        self._proj.off()
-        self._lights.on()
+    // Simple interface for a complex sequence
+    public void watchMovie(String movie) {
+        System.out.println("--- Preparing to watch " + movie + " ---");
+        lights.dim(10);
+        proj.on();
+        proj.setInput("HDMI-1");
+        proj.setResolution("4K");
+        amp.on();
+        amp.setVolume(5);
+        streaming.connect();
+        streaming.play(movie);
+    }
 
-# Client — calls ONE method, knows nothing about subsystems
-if __name__ == "__main__":
-    home_theater = HomeTheaterFacade()
+    public void endMovie() {
+        System.out.println("--- Shutting down theater ---");
+        streaming.stop();
+        amp.off();
+        proj.off();
+        lights.on();
+    }
+}
 
-    home_theater.watch_movie("Inception")
-    # ... movie plays ...
-    home_theater.end_movie()
+// Client — calls ONE method, knows nothing about subsystems
+public class Main {
+    public static void main(String[] args) {
+        HomeTheaterFacade homeTheater = new HomeTheaterFacade();
+
+        homeTheater.watchMovie("Inception");
+        // ... movie plays ...
+        homeTheater.endMovie();
+    }
+}
 ```
 
 ### Class Diagram
@@ -278,34 +315,43 @@ classDiagram
 
 ## Real-World Example: Order Fulfillment
 
-```python
-# Without Facade — client knows too much
-class OrderController:
-    def place_order(self, order):
-        self._inventory_service.check_stock(order)
-        self._payment_service.charge(order.get_customer(), order.get_total())
-        self._warehouse_service.pick_and_pack(order)
-        self._shipping_service.schedule_pickup(order)
-        self._notification_service.send_confirmation(order)
-        self._loyalty_service.add_points(order.get_customer(), order.get_total())
+```java
+// Without Facade — client knows too much
+class OrderController {
+    public void placeOrder(Order order) {
+        inventoryService.checkStock(order);
+        paymentService.charge(order.getCustomer(), order.getTotal());
+        warehouseService.pickAndPack(order);
+        shippingService.schedulePickup(order);
+        notificationService.sendConfirmation(order);
+        loyaltyService.addPoints(order.getCustomer(), order.getTotal());
+    }
+}
 
-# With Facade — controller stays thin
-class OrderFacade:
-    # Orchestrates all subsystems internally
-    def place_order(self, order):
-        self._inventory_service.check_stock(order)
-        self._payment_service.charge(order.get_customer(), order.get_total())
-        self._warehouse_service.pick_and_pack(order)
-        self._shipping_service.schedule_pickup(order)
-        self._notification_service.send_confirmation(order)
-        self._loyalty_service.add_points(order.get_customer(), order.get_total())
+// With Facade — controller stays thin
+class OrderFacade {
+    // Orchestrates all subsystems internally
+    public void placeOrder(Order order) {
+        inventoryService.checkStock(order);
+        paymentService.charge(order.getCustomer(), order.getTotal());
+        warehouseService.pickAndPack(order);
+        shippingService.schedulePickup(order);
+        notificationService.sendConfirmation(order);
+        loyaltyService.addPoints(order.getCustomer(), order.getTotal());
+    }
+}
 
-class OrderController:
-    def __init__(self, order_facade: OrderFacade):
-        self._order_facade = order_facade
+class OrderController {
+    private final OrderFacade orderFacade;
 
-    def place_order(self, order):
-        self._order_facade.place_order(order)  # One call
+    public OrderController(OrderFacade orderFacade) {
+        this.orderFacade = orderFacade;
+    }
+
+    public void placeOrder(Order order) {
+        orderFacade.placeOrder(order);  // One call
+    }
+}
 ```
 
 ---

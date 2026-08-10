@@ -147,80 +147,107 @@ class LRUCache:
 - capacity = 0 → never store anything; get always returns -1
 - Updating existing key → must not double-count in size; move to front only
 
-```python
-from typing import Optional, Dict
+```java
+import java.util.HashMap;
+import java.util.Map;
 
+class Node {
+    int key;
+    int value;
+    Node prev;
+    Node next;
 
-class Node:
-    def __init__(self, key: int, value: int):
-        self.key = key
-        self.value = value
-        self.prev: Optional['Node'] = None
-        self.next: Optional['Node'] = None
+    Node(int key, int value) {
+        this.key = key;
+        this.value = value;
+        this.prev = null;
+        this.next = null;
+    }
+}
 
+class DoublyLinkedList {
+    private final Node head; // MRU sentinel
+    private final Node tail; // LRU sentinel
 
-class DoublyLinkedList:
-    def __init__(self):
-        # Sentinels eliminate null checks at boundaries
-        self.head = Node(0, 0)  # MRU sentinel
-        self.tail = Node(0, 0)  # LRU sentinel
-        self.head.next = self.tail
-        self.tail.prev = self.head
+    DoublyLinkedList() {
+        // Sentinels eliminate null checks at boundaries
+        head = new Node(0, 0);
+        tail = new Node(0, 0);
+        head.next = tail;
+        tail.prev = head;
+    }
 
-    def add_to_front(self, node: Node) -> None:
-        """Insert node right after head (MRU position)."""
-        node.prev = self.head
-        node.next = self.head.next
-        self.head.next.prev = node
-        self.head.next = node
+    /** Insert node right after head (MRU position). */
+    void addToFront(Node node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
 
-    def remove(self, node: Node) -> None:
-        """Remove node from its current position in O(1)."""
-        node.prev.next = node.next
-        node.next.prev = node.prev
-        node.prev = None
-        node.next = None
+    /** Remove node from its current position in O(1). */
+    void remove(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+        node.prev = null;
+        node.next = null;
+    }
 
-    def remove_last(self) -> Node:
-        """Remove and return the LRU node (just before tail)."""
-        if self.tail.prev is self.head:
-            raise IndexError("List is empty")
-        lru = self.tail.prev
-        self.remove(lru)
-        return lru
+    /** Remove and return the LRU node (just before tail). */
+    Node removeLast() {
+        if (tail.prev == head) {
+            throw new IllegalStateException("List is empty");
+        }
+        Node lru = tail.prev;
+        remove(lru);
+        return lru;
+    }
+}
 
+class LRUCache {
+    protected final int capacity;
+    protected final Map<Integer, Node> cache;
+    protected final DoublyLinkedList list;
 
-class LRUCache:
-    def __init__(self, capacity: int):
-        if capacity <= 0:
-            raise ValueError("Capacity must be positive")
-        self.capacity = capacity
-        self.cache: Dict[int, Node] = {}
-        self.list = DoublyLinkedList()
+    LRUCache(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("Capacity must be positive");
+        }
+        this.capacity = capacity;
+        this.cache = new HashMap<>();
+        this.list = new DoublyLinkedList();
+    }
 
-    def get(self, key: int) -> int:
-        if key not in self.cache:
-            return -1
-        node = self.cache[key]
-        self._move_to_front(node)
-        return node.value
+    public int get(int key) {
+        if (!cache.containsKey(key)) {
+            return -1;
+        }
+        Node node = cache.get(key);
+        moveToFront(node);
+        return node.value;
+    }
 
-    def put(self, key: int, value: int) -> None:
-        if key in self.cache:
-            node = self.cache[key]
-            node.value = value
-            self._move_to_front(node)
-        else:
-            node = Node(key, value)
-            self.cache[key] = node
-            self.list.add_to_front(node)
-            if len(self.cache) > self.capacity:
-                evicted = self.list.remove_last()
-                del self.cache[evicted.key]
+    public void put(int key, int value) {
+        if (cache.containsKey(key)) {
+            Node node = cache.get(key);
+            node.value = value;
+            moveToFront(node);
+        } else {
+            Node node = new Node(key, value);
+            cache.put(key, node);
+            list.addToFront(node);
+            if (cache.size() > capacity) {
+                Node evicted = list.removeLast();
+                cache.remove(evicted.key);
+            }
+        }
+    }
 
-    def _move_to_front(self, node: Node) -> None:
-        self.list.remove(node)
-        self.list.add_to_front(node)
+    protected void moveToFront(Node node) {
+        list.remove(node);
+        list.addToFront(node);
+    }
+}
 ```
 
 ---
@@ -255,21 +282,36 @@ Singly linked list fails because removing a node requires knowing the previous n
 
 **Option 1 — synchronized (coarse-grained)**: Wrap both get and put with a single lock. Simple, correct, but a bottleneck under high concurrency.
 
-```python
-import threading
+```java
+import java.util.concurrent.locks.ReentrantLock;
 
-class ThreadSafeLRUCache(LRUCache):
-    def __init__(self, capacity: int):
-        super().__init__(capacity)
-        self._lock = threading.Lock()
+class ThreadSafeLRUCache extends LRUCache {
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def get(self, key: int) -> int:
-        with self._lock:
-            return super().get(key)
+    ThreadSafeLRUCache(int capacity) {
+        super(capacity);
+    }
 
-    def put(self, key: int, value: int) -> None:
-        with self._lock:
-            super().put(key, value)
+    @Override
+    public int get(int key) {
+        lock.lock();
+        try {
+            return super.get(key);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public void put(int key, int value) {
+        lock.lock();
+        try {
+            super.put(key, value);
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 ```
 
 **Option 2 — read/write lock**: Multiple readers can proceed concurrently; writers take exclusive lock. `get` acquires read lock, `put` acquires write lock. But get also mutates (moves node to front) so it needs a write lock too. True read/write separation only works if reads don't update recency.
@@ -306,28 +348,40 @@ Core challenge: ordering across nodes. Options:
 
 Add an `expires_at: Optional[float]` field to Node. On get, check if the node has expired before returning it.
 
-```python
-import time
+```java
+class TTLNode extends Node {
+    Long expiresAt; // null means no expiry
 
-class TTLNode(Node):
-    def __init__(self, key: int, value: int, ttl: Optional[float] = None):
-        super().__init__(key, value)
-        self.expires_at = time.time() + ttl if ttl else None
+    TTLNode(int key, int value, Long ttlMillis) {
+        super(key, value);
+        this.expiresAt = (ttlMillis != null) ? System.currentTimeMillis() + ttlMillis : null;
+    }
 
-    def is_expired(self) -> bool:
-        return self.expires_at is not None and time.time() > self.expires_at
+    boolean isExpired() {
+        return expiresAt != null && System.currentTimeMillis() > expiresAt;
+    }
+}
 
-class TTLLRUCache(LRUCache):
-    def get(self, key: int) -> int:
-        if key not in self.cache:
-            return -1
-        node = self.cache[key]
-        if node.is_expired():
-            self.list.remove(node)
-            del self.cache[key]
-            return -1
-        self._move_to_front(node)
-        return node.value
+class TTLLRUCache extends LRUCache {
+    TTLLRUCache(int capacity) {
+        super(capacity);
+    }
+
+    @Override
+    public int get(int key) {
+        if (!cache.containsKey(key)) {
+            return -1;
+        }
+        TTLNode node = (TTLNode) cache.get(key);
+        if (node.isExpired()) {
+            list.remove(node);
+            cache.remove(key);
+            return -1;
+        }
+        moveToFront(node);
+        return node.value;
+    }
+}
 ```
 
 For proactive expiry (lazy expiry can accumulate stale entries), run a background sweeper that scans the tail of the list (oldest entries are most likely expired).
@@ -373,194 +427,266 @@ For proactive expiry (lazy expiry can accumulate stale entries), run a backgroun
 
 Runnable tests that verify thread-safety of a reader-writer LRU cache. No external deps — stdlib only.
 
-```python
-import threading
-import random
+```java
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Random;
 
-# ── Minimal thread-safe LRU implementation (self-contained) ──
+// ── Minimal thread-safe LRU implementation (self-contained) ──
 
-class Node:
-    def __init__(self, key=0, value=0):
-        self.key = key
-        self.value = value
-        self.prev = None
-        self.next = None
+class Node {
+    int key;
+    int value;
+    Node prev;
+    Node next;
 
-class LRUCache:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.cache = {}
-        self._lock = threading.Lock()
-        self._head = Node()   # sentinel MRU
-        self._tail = Node()   # sentinel LRU
-        self._head.next = self._tail
-        self._tail.prev = self._head
+    Node() {
+        this(0, 0);
+    }
 
-    def _remove(self, node):
-        node.prev.next = node.next
-        node.next.prev = node.prev
+    Node(int key, int value) {
+        this.key = key;
+        this.value = value;
+        this.prev = null;
+        this.next = null;
+    }
+}
 
-    def _add_to_front(self, node):
-        node.next = self._head.next
-        node.prev = self._head
-        self._head.next.prev = node
-        self._head.next = node
+class LRUCache {
+    private final int capacity;
+    final Map<Integer, Node> cache;
+    final ReentrantLock lock = new ReentrantLock();
+    final Node head; // sentinel MRU
+    final Node tail; // sentinel LRU
 
-    def get(self, key):
-        with self._lock:
-            if key not in self.cache:
-                return -1
-            node = self.cache[key]
-            self._remove(node)
-            self._add_to_front(node)
-            return node.value
+    LRUCache(int capacity) {
+        this.capacity = capacity;
+        this.cache = new HashMap<>();
+        this.head = new Node();
+        this.tail = new Node();
+        head.next = tail;
+        tail.prev = head;
+    }
 
-    def put(self, key, value):
-        with self._lock:
-            if key in self.cache:
-                node = self.cache[key]
-                node.value = value
-                self._remove(node)
-                self._add_to_front(node)
-            else:
-                if len(self.cache) == self.capacity:
-                    lru = self._tail.prev
-                    self._remove(lru)
-                    del self.cache[lru.key]
-                node = Node(key, value)
-                self.cache[key] = node
-                self._add_to_front(node)
+    private void remove(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
 
-    def size(self):
-        with self._lock:
-            return len(self.cache)
+    private void addToFront(Node node) {
+        node.next = head.next;
+        node.prev = head;
+        head.next.prev = node;
+        head.next = node;
+    }
 
+    public int get(int key) {
+        lock.lock();
+        try {
+            if (!cache.containsKey(key)) {
+                return -1;
+            }
+            Node node = cache.get(key);
+            remove(node);
+            addToFront(node);
+            return node.value;
+        } finally {
+            lock.unlock();
+        }
+    }
 
-# ─────────────────────────────────────────────────────────────
-# TEST 1: Capacity never exceeded under concurrent writes
-# 500 threads each put a unique key. Cache capacity is 100.
-# At all times, len(cache) must not exceed capacity.
-# ─────────────────────────────────────────────────────────────
-def test_capacity_never_exceeded():
-    cache = LRUCache(100)
-    errors = []
+    public void put(int key, int value) {
+        lock.lock();
+        try {
+            if (cache.containsKey(key)) {
+                Node node = cache.get(key);
+                node.value = value;
+                remove(node);
+                addToFront(node);
+            } else {
+                if (cache.size() == capacity) {
+                    Node lru = tail.prev;
+                    remove(lru);
+                    cache.remove(lru.key);
+                }
+                Node node = new Node(key, value);
+                cache.put(key, node);
+                addToFront(node);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def writer(i):
-        cache.put(i, i * 10)
-        sz = cache.size()
-        if sz > 100:
-            errors.append(f"Capacity exceeded: {sz}")
+    public int size() {
+        lock.lock();
+        try {
+            return cache.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 
-    threads = [threading.Thread(target=writer, args=(i,)) for i in range(500)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+public class LRUCacheConcurrencyTest {
 
-    assert not errors, f"Invariant violated: {errors}"
-    assert cache.size() <= 100
-    print("PASS: test_capacity_never_exceeded")
+    // ─────────────────────────────────────────────────────────────
+    // TEST 1: Capacity never exceeded under concurrent writes
+    // 500 threads each put a unique key. Cache capacity is 100.
+    // At all times, cache.size() must not exceed capacity.
+    // ─────────────────────────────────────────────────────────────
+    static void testCapacityNeverExceeded() throws InterruptedException {
+        LRUCache cache = new LRUCache(100);
+        CopyOnWriteArrayList<String> errors = new CopyOnWriteArrayList<>();
 
+        Thread[] threads = new Thread[500];
+        for (int i = 0; i < 500; i++) {
+            final int key = i;
+            threads[i] = new Thread(() -> {
+                cache.put(key, key * 10);
+                int sz = cache.size();
+                if (sz > 100) {
+                    errors.add("Capacity exceeded: " + sz);
+                }
+            });
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
-# ─────────────────────────────────────────────────────────────
-# TEST 2: No structural corruption under concurrent reads + writes
-# Mixed threads do random get/put on overlapping keys.
-# The doubly linked list must remain intact (no cycles, no None ptr deref).
-# ─────────────────────────────────────────────────────────────
-def test_no_structural_corruption():
-    cache = LRUCache(20)
-    errors = []
+        assert errors.isEmpty() : "Invariant violated: " + errors;
+        assert cache.size() <= 100;
+        System.out.println("PASS: testCapacityNeverExceeded");
+    }
 
-    def worker():
-        for _ in range(200):
-            key = random.randint(0, 29)
-            if random.random() < 0.5:
-                cache.put(key, key)
-            else:
-                cache.get(key)
+    // ─────────────────────────────────────────────────────────────
+    // TEST 2: No structural corruption under concurrent reads + writes
+    // Mixed threads do random get/put on overlapping keys.
+    // The doubly linked list must remain intact (no cycles, no null ptr deref).
+    // ─────────────────────────────────────────────────────────────
+    static void testNoStructuralCorruption() throws InterruptedException {
+        LRUCache cache = new LRUCache(20);
+        Random random = new Random();
 
-    threads = [threading.Thread(target=worker) for _ in range(20)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+        Runnable worker = () -> {
+            Random r = new Random();
+            for (int i = 0; i < 200; i++) {
+                int key = r.nextInt(30);
+                if (r.nextDouble() < 0.5) {
+                    cache.put(key, key);
+                } else {
+                    cache.get(key);
+                }
+            }
+        };
 
-    # Validate list structure under the lock
-    with cache._lock:
-        visited = set()
-        node = cache._head.next
-        count = 0
-        while node is not cache._tail:
-            assert node.key not in visited, "Cycle detected in LRU list"
-            visited.add(node.key)
-            assert node.key in cache.cache, f"Node key {node.key} not in cache dict"
-            node = node.next
-            count += 1
-        assert count == len(cache.cache), "List length != dict length"
+        Thread[] threads = new Thread[20];
+        for (int i = 0; i < 20; i++) {
+            threads[i] = new Thread(worker);
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
-    print("PASS: test_no_structural_corruption")
+        // Validate list structure under the lock
+        cache.lock.lock();
+        try {
+            Set<Integer> visited = new HashSet<>();
+            Node node = cache.head.next;
+            int count = 0;
+            while (node != cache.tail) {
+                assert !visited.contains(node.key) : "Cycle detected in LRU list";
+                visited.add(node.key);
+                assert cache.cache.containsKey(node.key) : "Node key " + node.key + " not in cache dict";
+                node = node.next;
+                count++;
+            }
+            assert count == cache.cache.size() : "List length != dict length";
+        } finally {
+            cache.lock.unlock();
+        }
 
+        System.out.println("PASS: testNoStructuralCorruption");
+    }
 
-# ─────────────────────────────────────────────────────────────
-# TEST 3: LRU eviction order — most recently used survives
-# Fill cache to capacity with keys 0..N-1.
-# Access keys 0..49 to make them MRU.
-# Put 50 new keys — keys 50..99 (the LRU ones) should be evicted.
-# ─────────────────────────────────────────────────────────────
-def test_lru_eviction_order():
-    cache = LRUCache(100)
-    for i in range(100):
-        cache.put(i, i)
+    // ─────────────────────────────────────────────────────────────
+    // TEST 3: LRU eviction order — most recently used survives
+    // Fill cache to capacity with keys 0..N-1.
+    // Access keys 0..49 to make them MRU.
+    // Put 50 new keys — keys 50..99 (the LRU ones) should be evicted.
+    // ─────────────────────────────────────────────────────────────
+    static void testLruEvictionOrder() {
+        LRUCache cache = new LRUCache(100);
+        for (int i = 0; i < 100; i++) {
+            cache.put(i, i);
+        }
 
-    # Access keys 0-49 to make them MRU
-    for i in range(50):
-        cache.get(i)
+        // Access keys 0-49 to make them MRU
+        for (int i = 0; i < 50; i++) {
+            cache.get(i);
+        }
 
-    # Insert 50 new keys — should evict keys 50-99 (LRU)
-    for i in range(100, 150):
-        cache.put(i, i)
+        // Insert 50 new keys — should evict keys 50-99 (LRU)
+        for (int i = 100; i < 150; i++) {
+            cache.put(i, i);
+        }
 
-    # Keys 0-49 should still be present (MRU)
-    for i in range(50):
-        assert cache.get(i) == i, f"Key {i} was evicted but should be MRU"
+        // Keys 0-49 should still be present (MRU)
+        for (int i = 0; i < 50; i++) {
+            assert cache.get(i) == i : "Key " + i + " was evicted but should be MRU";
+        }
 
-    # Keys 50-99 should be gone (were LRU when new keys inserted)
-    for i in range(50, 100):
-        assert cache.get(i) == -1, f"Key {i} should have been evicted"
+        // Keys 50-99 should be gone (were LRU when new keys inserted)
+        for (int i = 50; i < 100; i++) {
+            assert cache.get(i) == -1 : "Key " + i + " should have been evicted";
+        }
 
-    print("PASS: test_lru_eviction_order")
+        System.out.println("PASS: testLruEvictionOrder");
+    }
 
+    // ─────────────────────────────────────────────────────────────
+    // TEST 4: Concurrent readers see consistent values
+    // Pre-load keys. 100 reader threads concurrently get the same keys.
+    // All must return the correct value (not -1, not corrupted).
+    // ─────────────────────────────────────────────────────────────
+    static void testConcurrentReadsConsistent() throws InterruptedException {
+        LRUCache cache = new LRUCache(50);
+        for (int i = 0; i < 50; i++) {
+            cache.put(i, i * 100);
+        }
 
-# ─────────────────────────────────────────────────────────────
-# TEST 4: Concurrent readers see consistent values
-# Pre-load keys. 100 reader threads concurrently get the same keys.
-# All must return the correct value (not -1, not corrupted).
-# ─────────────────────────────────────────────────────────────
-def test_concurrent_reads_consistent():
-    cache = LRUCache(50)
-    for i in range(50):
-        cache.put(i, i * 100)
+        CopyOnWriteArrayList<int[]> badReads = new CopyOnWriteArrayList<>();
 
-    bad_reads = []
-    lock = threading.Lock()
+        Runnable reader = () -> {
+            for (int key = 0; key < 50; key++) {
+                int val = cache.get(key);
+                if (val != key * 100) {
+                    badReads.add(new int[] { key, val });
+                }
+            }
+        };
 
-    def reader():
-        for key in range(50):
-            val = cache.get(key)
-            if val != key * 100:
-                with lock:
-                    bad_reads.append((key, val))
+        Thread[] threads = new Thread[100];
+        for (int i = 0; i < 100; i++) {
+            threads[i] = new Thread(reader);
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
-    threads = [threading.Thread(target=reader) for _ in range(100)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+        assert badReads.isEmpty() : "Inconsistent reads found: " + badReads.size();
+        System.out.println("PASS: testConcurrentReadsConsistent");
+    }
 
-    assert not bad_reads, f"Inconsistent reads: {bad_reads[:5]}"
-    print("PASS: test_concurrent_reads_consistent")
-
-
-if __name__ == "__main__":
-    test_capacity_never_exceeded()
-    test_no_structural_corruption()
-    test_lru_eviction_order()
-    test_concurrent_reads_consistent()
-    print("All concurrency tests passed.")
+    public static void main(String[] args) throws InterruptedException {
+        testCapacityNeverExceeded();
+        testNoStructuralCorruption();
+        testLruEvictionOrder();
+        testConcurrentReadsConsistent();
+        System.out.println("All concurrency tests passed.");
+    }
+}
 ```
 
 **What each test verifies:**

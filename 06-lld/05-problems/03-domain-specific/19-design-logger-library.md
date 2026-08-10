@@ -154,7 +154,7 @@ abstract class LogHandler:
 class Logger:
 - _instance: Logger         # class-level
 - level: LogLevel
-- handlers: list[LogHandler]
+- handlers: List<LogHandler>
 - _lock: threading.Lock
 + get_instance() -> Logger  # class method
 + set_level(level: LogLevel)
@@ -183,155 +183,239 @@ class Logger:
 - Handler raises during emit — catch and print to stderr, never propagate to caller.
 - Logger level set to ERROR — DEBUG/INFO/WARN records dropped before handler dispatch.
 
-```python
-import threading
-from datetime import datetime
-from enum import IntEnum
-from abc import ABC, abstractmethod
+```java
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.locks.ReentrantLock;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.file.*;
 
+enum LogLevel {
+    DEBUG(10), INFO(20), WARN(30), ERROR(40);
 
-class LogLevel(IntEnum):
-    DEBUG = 10
-    INFO  = 20
-    WARN  = 30
-    ERROR = 40
+    private final int severity;
 
+    LogLevel(int severity) { this.severity = severity; }
 
-class LogRecord:
-    def __init__(self, level: LogLevel, message: str, logger_name: str = "root"):
-        self.level = level
-        self.message = message
-        self.timestamp = datetime.utcnow()
-        self.logger_name = logger_name
-        self.thread_id = threading.get_ident()
+    public int getSeverity() { return severity; }
+}
 
+class LogRecord {
+    private final LogLevel level;
+    private final String message;
+    private final Instant timestamp;
+    private final String loggerName;
+    private final long threadId;
 
-class Formatter(ABC):
-    @abstractmethod
-    def format(self, record: LogRecord) -> str:
-        pass
+    public LogRecord(LogLevel level, String message) {
+        this(level, message, "root");
+    }
 
+    public LogRecord(LogLevel level, String message, String loggerName) {
+        this.level = level;
+        this.message = message;
+        this.timestamp = Instant.now();
+        this.loggerName = loggerName;
+        this.threadId = Thread.currentThread().getId();
+    }
 
-class TextFormatter(Formatter):
-    def format(self, record: LogRecord) -> str:
-        ts = record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        return f"[{record.level.name}] {ts} ({record.thread_id}) — {record.message}"
+    public LogLevel getLevel() { return level; }
+    public String getMessage() { return message; }
+    public Instant getTimestamp() { return timestamp; }
+    public String getLoggerName() { return loggerName; }
+    public long getThreadId() { return threadId; }
+}
 
+interface Formatter {
+    String format(LogRecord record);
+}
 
-class JSONFormatter(Formatter):
-    def format(self, record: LogRecord) -> str:
-        import json
-        return json.dumps({
-            "level": record.level.name,
-            "timestamp": record.timestamp.isoformat(),
-            "thread": record.thread_id,
-            "message": record.message,
-        })
+class TextFormatter implements Formatter {
+    private static final DateTimeFormatter TS_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
 
+    @Override
+    public String format(LogRecord record) {
+        String ts = TS_FORMAT.format(record.getTimestamp());
+        return String.format("[%s] %s (%d) — %s",
+                record.getLevel().name(), ts, record.getThreadId(), record.getMessage());
+    }
+}
 
-class LogHandler(ABC):
-    def __init__(self, level: LogLevel = LogLevel.DEBUG):
-        self.level = level
-        self.formatter: Formatter = TextFormatter()
+class JSONFormatter implements Formatter {
+    @Override
+    public String format(LogRecord record) {
+        return String.format(
+                "{\"level\":\"%s\",\"timestamp\":\"%s\",\"thread\":%d,\"message\":\"%s\"}",
+                record.getLevel().name(), record.getTimestamp(), record.getThreadId(),
+                record.getMessage());
+    }
+}
 
-    def set_level(self, level: LogLevel):
-        self.level = level
+abstract class LogHandler {
+    protected LogLevel level;
+    protected Formatter formatter = new TextFormatter();
 
-    def set_formatter(self, formatter: Formatter):
-        self.formatter = formatter
+    protected LogHandler(LogLevel level) {
+        this.level = level;
+    }
 
-    def handle(self, record: LogRecord):
-        if record.level >= self.level:
-            try:
-                self.emit(record)
-            except Exception as e:
-                import sys
-                print(f"Handler error: {e}", file=sys.stderr)
+    public void setLevel(LogLevel level) { this.level = level; }
 
-    @abstractmethod
-    def emit(self, record: LogRecord):
-        pass
+    public void setFormatter(Formatter formatter) { this.formatter = formatter; }
 
+    public void handle(LogRecord record) {
+        if (record.getLevel().getSeverity() >= level.getSeverity()) {
+            try {
+                emit(record);
+            } catch (Exception e) {
+                System.err.println("Handler error: " + e.getMessage());
+            }
+        }
+    }
 
-class ConsoleHandler(LogHandler):
-    def emit(self, record: LogRecord):
-        print(self.formatter.format(record))
+    protected abstract void emit(LogRecord record) throws Exception;
+}
 
+class ConsoleHandler extends LogHandler {
+    public ConsoleHandler(LogLevel level) { super(level); }
 
-class FileHandler(LogHandler):
-    def __init__(self, filepath: str, max_bytes: int = 10 * 1024 * 1024,
-                 level: LogLevel = LogLevel.DEBUG):
-        super().__init__(level)
-        self.filepath = filepath
-        self.max_bytes = max_bytes
-        self._lock = threading.Lock()
+    @Override
+    protected void emit(LogRecord record) {
+        System.out.println(formatter.format(record));
+    }
+}
 
-    def emit(self, record: LogRecord):
-        line = self.formatter.format(record) + "\n"
-        with self._lock:
-            import os
-            if os.path.exists(self.filepath) and os.path.getsize(self.filepath) >= self.max_bytes:
-                self._rotate()
-            with open(self.filepath, "a") as f:
-                f.write(line)
+class FileHandler extends LogHandler {
+    private final String filepath;
+    private final long maxBytes;
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def _rotate(self):
-        import os
-        ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-        os.rename(self.filepath, f"{self.filepath}.{ts}")
+    public FileHandler(String filepath, long maxBytes, LogLevel level) {
+        super(level);
+        this.filepath = filepath;
+        this.maxBytes = maxBytes;
+    }
 
+    @Override
+    protected void emit(LogRecord record) throws IOException {
+        String line = formatter.format(record) + "\n";
+        lock.lock();
+        try {
+            File file = new File(filepath);
+            if (file.exists() && file.length() >= maxBytes) {
+                rotate();
+            }
+            try (FileWriter writer = new FileWriter(file, true)) {
+                writer.write(line);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
 
-class RemoteHandler(LogHandler):
-    def __init__(self, endpoint: str, level: LogLevel = LogLevel.ERROR):
-        super().__init__(level)
-        self.endpoint = endpoint
-        self.set_formatter(JSONFormatter())
+    private void rotate() throws IOException {
+        String ts = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+                .withZone(ZoneOffset.UTC).format(Instant.now());
+        Files.move(Paths.get(filepath), Paths.get(filepath + "." + ts));
+    }
+}
 
-    def emit(self, record: LogRecord):
-        import urllib.request
-        payload = self.formatter.format(record).encode()
-        req = urllib.request.Request(self.endpoint, data=payload,
-                                     headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=2)
+class RemoteHandler extends LogHandler {
+    private final String endpoint;
 
+    public RemoteHandler(String endpoint, LogLevel level) {
+        super(level);
+        this.endpoint = endpoint;
+        setFormatter(new JSONFormatter());
+    }
 
-class Logger:
-    _instance = None
-    _init_lock = threading.Lock()
+    @Override
+    protected void emit(LogRecord record) throws IOException {
+        byte[] payload = formatter.format(record).getBytes();
+        HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setConnectTimeout(2000);
+        conn.setReadTimeout(2000);
+        conn.setDoOutput(true);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(payload);
+        }
+        conn.getResponseCode();
+    }
+}
 
-    def __init__(self):
-        self.level = LogLevel.DEBUG
-        self.handlers: list[LogHandler] = []
-        self._lock = threading.Lock()
+class Logger {
+    private static volatile Logger instance;
+    private static final Object initLock = new Object();
 
-    @classmethod
-    def get_instance(cls) -> "Logger":
-        if cls._instance is None:
-            with cls._init_lock:
-                if cls._instance is None:
-                    cls._instance = Logger()
-        return cls._instance
+    private volatile LogLevel level = LogLevel.DEBUG;
+    private final List<LogHandler> handlers = new ArrayList<>();
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def set_level(self, level: LogLevel):
-        self.level = level
+    protected Logger() { }
 
-    def add_handler(self, handler: LogHandler):
-        with self._lock:
-            self.handlers.append(handler)
+    protected LogLevel getLevel() { return level; }
 
-    def log(self, level: LogLevel, message: str):
-        if level < self.level:
-            return
-        record = LogRecord(level, message)
-        with self._lock:
-            handlers_snapshot = list(self.handlers)
-        for handler in handlers_snapshot:
-            handler.handle(record)
+    protected List<LogHandler> getHandlers() {
+        lock.lock();
+        try {
+            return new ArrayList<>(handlers);
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def debug(self, msg: str): self.log(LogLevel.DEBUG, msg)
-    def info(self, msg: str):  self.log(LogLevel.INFO,  msg)
-    def warn(self, msg: str):  self.log(LogLevel.WARN,  msg)
-    def error(self, msg: str): self.log(LogLevel.ERROR, msg)
+    public static Logger getInstance() {
+        if (instance == null) {
+            synchronized (initLock) {
+                if (instance == null) {
+                    instance = new Logger();
+                }
+            }
+        }
+        return instance;
+    }
+
+    public void setLevel(LogLevel level) { this.level = level; }
+
+    public void addHandler(LogHandler handler) {
+        lock.lock();
+        try {
+            handlers.add(handler);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void log(LogLevel level, String message) {
+        if (level.getSeverity() < this.level.getSeverity()) {
+            return;
+        }
+        LogRecord record = new LogRecord(level, message);
+        List<LogHandler> snapshot;
+        lock.lock();
+        try {
+            snapshot = new ArrayList<>(handlers);
+        } finally {
+            lock.unlock();
+        }
+        for (LogHandler handler : snapshot) {
+            handler.handle(record);
+        }
+    }
+
+    public void debug(String msg) { log(LogLevel.DEBUG, msg); }
+    public void info(String msg)  { log(LogLevel.INFO, msg); }
+    public void warn(String msg)  { log(LogLevel.WARN, msg); }
+    public void error(String msg) { log(LogLevel.ERROR, msg); }
+}
 ```
 
 ---
@@ -352,14 +436,27 @@ Scenario: Logger at INFO level, ConsoleHandler at DEBUG, FileHandler at WARN.
 
 Each handler independently decides whether to process a record. Adding a new handler requires zero changes to Logger or other handlers — open/closed principle. The alternative (a giant if-else in Logger) breaks when adding new output targets.
 
-```python
-# Adding a SlackHandler requires no Logger changes
-class SlackHandler(LogHandler):
-    def emit(self, record: LogRecord):
-        import requests
-        requests.post(SLACK_WEBHOOK, json={"text": self.formatter.format(record)}, timeout=3)
+```java
+// Adding a SlackHandler requires no Logger changes
+class SlackHandler extends LogHandler {
+    public SlackHandler(LogLevel level) { super(level); }
 
-logger.add_handler(SlackHandler(level=LogLevel.ERROR))
+    @Override
+    protected void emit(LogRecord record) throws IOException {
+        String payload = String.format("{\"text\":\"%s\"}", formatter.format(record));
+        HttpURLConnection conn = (HttpURLConnection) new URL(SLACK_WEBHOOK).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setConnectTimeout(3000);
+        conn.setDoOutput(true);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(payload.getBytes());
+        }
+        conn.getResponseCode();
+    }
+}
+
+logger.addHandler(new SlackHandler(LogLevel.ERROR));
 ```
 
 ### 2. "How do you make logging thread-safe?"
@@ -374,30 +471,45 @@ Key insight: snapshot the handler list before iterating so `add_handler` during 
 
 Move the emit path off the caller's thread using a bounded queue and a background writer thread. Callers enqueue `LogRecord`s without blocking.
 
-```python
-import queue
+```java
+import java.util.concurrent.ArrayBlockingQueue;
 
-class AsyncLogger(Logger):
-    def __init__(self):
-        super().__init__()
-        self._queue: queue.Queue = queue.Queue(maxsize=10_000)
-        self._worker = threading.Thread(target=self._drain, daemon=True)
-        self._worker.start()
+class AsyncLogger extends Logger {
+    private final ArrayBlockingQueue<LogRecord> queue = new ArrayBlockingQueue<>(10_000);
+    private final Thread worker;
 
-    def log(self, level: LogLevel, message: str):
-        if level < self.level:
-            return
-        record = LogRecord(level, message)
-        try:
-            self._queue.put_nowait(record)
-        except queue.Full:
-            pass  # drop on backpressure; or block, or sample
+    public AsyncLogger() {
+        super();
+        worker = new Thread(this::drain);
+        worker.setDaemon(true);
+        worker.start();
+    }
 
-    def _drain(self):
-        while True:
-            record = self._queue.get()
-            for handler in self.handlers:
-                handler.handle(record)
+    @Override
+    public void log(LogLevel level, String message) {
+        if (level.getSeverity() < getLevel().getSeverity()) {
+            return;
+        }
+        LogRecord record = new LogRecord(level, message);
+        if (!queue.offer(record)) {
+            // drop on backpressure; or block, or sample
+        }
+    }
+
+    private void drain() {
+        while (true) {
+            try {
+                LogRecord record = queue.take();
+                for (LogHandler handler : getHandlers()) {
+                    handler.handle(record);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+}
 ```
 
 Trade-off: lower caller latency, but records in queue are lost on crash.
@@ -406,30 +518,40 @@ Trade-off: lower caller latency, but records in queue are lost on crash.
 
 Size-based: before each write, check `os.path.getsize`. If it exceeds `max_bytes`, rename the current file to `filename.YYYYMMDDHHMMSS` and open a fresh file. Prune older rotated files by keeping only the last N.
 
-```python
-def _rotate(self):
-    import os, glob
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    os.rename(self.filepath, f"{self.filepath}.{ts}")
-    archives = sorted(glob.glob(f"{self.filepath}.*"))
-    for old in archives[:-5]:   # keep last 5
-        os.remove(old)
+```java
+private void rotate() throws IOException {
+    String ts = DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
+            .withZone(ZoneOffset.UTC).format(Instant.now());
+    Files.move(Paths.get(filepath), Paths.get(filepath + "." + ts));
+
+    File dir = new File(filepath).getAbsoluteFile().getParentFile();
+    File[] archives = dir.listFiles((d, name) -> name.startsWith(new File(filepath).getName() + "."));
+    if (archives != null) {
+        Arrays.sort(archives, Comparator.comparing(File::getName));
+        int keep = 5;
+        for (int i = 0; i < archives.length - keep; i++) {
+            archives[i].delete();   // keep last 5
+        }
+    }
+}
 ```
 
 ### 5. "How would you add structured / JSON logging?"
 
 Swap the Formatter on a handler to `JSONFormatter`. For richer context (request_id, user_id), extend `LogRecord` to carry an `extras: dict` field.
 
-```python
-def log(self, level: LogLevel, message: str, **extras):
-    if level < self.level:
-        return
-    record = LogRecord(level, message)
-    record.extras = extras
-    ...
+```java
+public void log(LogLevel level, String message, Map<String, Object> extras) {
+    if (level.getSeverity() < this.level.getSeverity()) {
+        return;
+    }
+    LogRecord record = new LogRecord(level, message);
+    record.setExtras(extras);
+    // ...
+}
 
-# Caller:
-logger.info("request handled", req_id="abc123", user_id=42)
+// Caller:
+logger.info("request handled", Map.of("req_id", "abc123", "user_id", 42));
 ```
 
 JSONFormatter reads `record.extras` and merges into the output payload.

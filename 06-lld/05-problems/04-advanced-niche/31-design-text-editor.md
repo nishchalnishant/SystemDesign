@@ -6,8 +6,8 @@
 > **Key concepts:**
 > - Core Entities: `Editor`, `Document` (Gap Buffer), `CommandManager`, `Command` (Insert/Delete).
 > - The Gap Buffer: Storing text as a single `String` or `ArrayList` is too slow for insertions ($O(N)$). A Gap Buffer allocates a large empty "gap" at the cursor position. Insertions into the gap are $O(1)$. Moving the cursor shifts the gap.
-> - Undo/Redo (Command Pattern): Every action (type 'a', hit backspace) is encapsulated in an `ICommand` object with `execute()` and `undo()` methods.
-> - Two Stacks: Maintain an `UndoStack` and a `RedoStack`. When you type, push to `UndoStack` and clear `RedoStack`. When you hit Ctrl+Z, pop from `UndoStack`, call `undo()`, and push to `RedoStack`.
+> - Undo/Redo (Command Pattern): Every action (type 'a', hit backspace) is encapsulated in a `Command` object with `execute()` and `undo()` methods.
+> - Two Stacks: Maintain an `undoStack` and a `redoStack` (`java.util.Deque<Command>`, used via `push`/`pop`). When you type, push to `undoStack` and clear `redoStack`. When you hit Ctrl+Z, pop from `undoStack`, call `undo()`, and push to `redoStack`.
 >
 > **Key takeaway:** The Command pattern with two stacks is the standard, expected answer for any Undo/Redo mechanism. Mentioning the Gap Buffer (or a Rope data structure) for the underlying text storage shows deep domain knowledge.
 
@@ -158,157 +158,229 @@ Move cursor left by 1 (pos 2 → 1):
   buffer = [w, _, _, o, h, e, l, l, o], gap=[1,4)
 ```
 
-```python
-class GapBuffer:
-    GAP_SIZE = 128
+```java
+public class GapBuffer {
+    private static final int GAP_SIZE = 128;
 
-    def __init__(self):
-        self.buffer = [''] * self.GAP_SIZE
-        self.gap_start = 0
-        self.gap_end = self.GAP_SIZE
+    private char[] buffer;
+    private int gapStart;
+    private int gapEnd;
 
-    def insert(self, char):
-        if self.gap_start == self.gap_end:
-            self._grow_gap()
-        self.buffer[self.gap_start] = char
-        self.gap_start += 1
+    public GapBuffer() {
+        this.buffer = new char[GAP_SIZE];
+        this.gapStart = 0;
+        this.gapEnd = GAP_SIZE;
+    }
 
-    def delete(self):
-        if self.gap_start == 0:
-            return None
-        self.gap_start -= 1
-        deleted = self.buffer[self.gap_start]
-        self.buffer[self.gap_start] = ''
-        return deleted
+    public void insert(char c) {
+        if (gapStart == gapEnd) {
+            growGap();
+        }
+        buffer[gapStart] = c;
+        gapStart++;
+    }
 
-    def move_cursor(self, new_pos):
-        current_pos = self.gap_start
-        if new_pos < current_pos:
-            # Move gap left: shift chars from left of gap to right
-            steps = current_pos - new_pos
-            for _ in range(steps):
-                self.gap_end -= 1
-                self.gap_start -= 1
-                self.buffer[self.gap_end] = self.buffer[self.gap_start]
-                self.buffer[self.gap_start] = ''
-        elif new_pos > current_pos:
-            # Move gap right: shift chars from right of gap to left
-            steps = new_pos - current_pos
-            for _ in range(steps):
-                self.buffer[self.gap_start] = self.buffer[self.gap_end]
-                self.buffer[self.gap_end] = ''
-                self.gap_start += 1
-                self.gap_end += 1
+    // Removes char before cursor; returns null if nothing to delete
+    public Character delete() {
+        if (gapStart == 0) {
+            return null;
+        }
+        gapStart--;
+        char deleted = buffer[gapStart];
+        buffer[gapStart] = '\0';
+        return deleted;
+    }
 
-    def to_string(self):
-        return ''.join(
-            c for i, c in enumerate(self.buffer)
-            if not (self.gap_start <= i < self.gap_end)
-        )
+    // Moves gap to absolute position
+    public void moveCursor(int newPos) {
+        int currentPos = gapStart;
+        if (newPos < currentPos) {
+            // Move gap left: shift chars from left of gap to right
+            int steps = currentPos - newPos;
+            for (int i = 0; i < steps; i++) {
+                gapEnd--;
+                gapStart--;
+                buffer[gapEnd] = buffer[gapStart];
+                buffer[gapStart] = '\0';
+            }
+        } else if (newPos > currentPos) {
+            // Move gap right: shift chars from right of gap to left
+            int steps = newPos - currentPos;
+            for (int i = 0; i < steps; i++) {
+                buffer[gapStart] = buffer[gapEnd];
+                buffer[gapEnd] = '\0';
+                gapStart++;
+                gapEnd++;
+            }
+        }
+    }
 
-    def content_length(self):
-        return len(self.buffer) - (self.gap_end - self.gap_start)
+    public String toText() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < buffer.length; i++) {
+            if (i < gapStart || i >= gapEnd) {
+                sb.append(buffer[i]);
+            }
+        }
+        return sb.toString();
+    }
 
-    def _grow_gap(self):
-        content = self.to_string()
-        pos = self.gap_start
-        new_buf = (
-            list(content[:pos]) +
-            [''] * self.GAP_SIZE +
-            list(content[pos:])
-        )
-        self.buffer = new_buf
-        self.gap_end = pos + self.GAP_SIZE
+    // Excludes gap
+    public int contentLength() {
+        return buffer.length - (gapEnd - gapStart);
+    }
+
+    private void growGap() {
+        String content = toText();
+        int pos = gapStart;
+        char[] newBuf = new char[content.length() + GAP_SIZE];
+        content.getChars(0, pos, newBuf, 0);
+        content.getChars(pos, content.length(), newBuf, pos + GAP_SIZE);
+        this.buffer = newBuf;
+        this.gapEnd = pos + GAP_SIZE;
+    }
+}
 ```
 
 ### Command Pattern: Insert / Delete
 
-```python
-class InsertCommand:
-    def __init__(self, text, position):
-        self.text = text
-        self.position = position
+```java
+public interface Command {
+    void execute(GapBuffer buffer, Cursor cursor);
+    void undo(GapBuffer buffer, Cursor cursor);
+}
 
-    def execute(self, buffer, cursor):
-        buffer.move_cursor(self.position)
-        for char in self.text:
-            buffer.insert(char)
-        cursor.position = self.position + len(self.text)
+public class InsertCommand implements Command {
+    private final String text;
+    private final int position;
 
-    def undo(self, buffer, cursor):
-        buffer.move_cursor(self.position + len(self.text))
-        for _ in self.text:
-            buffer.delete()
-        cursor.position = self.position
+    public InsertCommand(String text, int position) {
+        this.text = text;
+        this.position = position;
+    }
 
-class DeleteCommand:
-    def __init__(self, position):
-        self.position = position
-        self.deleted_char = None
+    @Override
+    public void execute(GapBuffer buffer, Cursor cursor) {
+        buffer.moveCursor(position);
+        for (char c : text.toCharArray()) {
+            buffer.insert(c);
+        }
+        cursor.setPosition(position + text.length());
+    }
 
-    def execute(self, buffer, cursor):
-        buffer.move_cursor(self.position)
-        self.deleted_char = buffer.delete()
-        cursor.position = self.position - 1
+    @Override
+    public void undo(GapBuffer buffer, Cursor cursor) {
+        buffer.moveCursor(position + text.length());
+        for (int i = 0; i < text.length(); i++) {
+            buffer.delete();
+        }
+        cursor.setPosition(position);
+    }
+}
 
-    def undo(self, buffer, cursor):
-        buffer.move_cursor(self.position - 1)
-        buffer.insert(self.deleted_char)
-        cursor.position = self.position
+public class DeleteCommand implements Command {
+    private final int position;
+    private Character deletedChar;   // set during execute
+
+    public DeleteCommand(int position) {
+        this.position = position;
+    }
+
+    @Override
+    public void execute(GapBuffer buffer, Cursor cursor) {
+        buffer.moveCursor(position);
+        this.deletedChar = buffer.delete();
+        cursor.setPosition(position - 1);
+    }
+
+    @Override
+    public void undo(GapBuffer buffer, Cursor cursor) {
+        buffer.moveCursor(position - 1);
+        buffer.insert(deletedChar);
+        cursor.setPosition(position);
+    }
+}
 ```
 
 ### Editor: undo/redo orchestration
 
-```python
-class Editor:
-    MAX_UNDO = 100
+```java
+public class Editor {
+    private static final int MAX_UNDO = 100;
 
-    def __init__(self):
-        self.buffer = GapBuffer()
-        self.cursor = Cursor(position=0)
-        self.undo_stack = deque(maxlen=self.MAX_UNDO)
-        self.redo_stack = deque()
+    private final GapBuffer buffer;
+    private final Cursor cursor;
+    private final Deque<Command> undoStack;   // bounded to MAX_UNDO
+    private final Deque<Command> redoStack;
 
-    def insert(self, text):
-        cmd = InsertCommand(text, self.cursor.position)
-        cmd.execute(self.buffer, self.cursor)
-        self.undo_stack.append(cmd)
-        self.redo_stack.clear()
+    public Editor() {
+        this.buffer = new GapBuffer();
+        this.cursor = new Cursor(0);
+        this.undoStack = new ArrayDeque<>();
+        this.redoStack = new ArrayDeque<>();
+    }
 
-    def delete(self):
-        if self.cursor.position == 0:
-            return
-        cmd = DeleteCommand(self.cursor.position)
-        cmd.execute(self.buffer, self.cursor)
-        self.undo_stack.append(cmd)
-        self.redo_stack.clear()
+    public void insert(String text) {
+        Command cmd = new InsertCommand(text, cursor.getPosition());
+        cmd.execute(buffer, cursor);
+        pushUndo(cmd);
+        redoStack.clear();
+    }
 
-    def move_left(self):
-        if self.cursor.position > 0:
-            self.cursor.position -= 1
-            self.buffer.move_cursor(self.cursor.position)
+    public void delete() {
+        if (cursor.getPosition() == 0) {
+            return;
+        }
+        Command cmd = new DeleteCommand(cursor.getPosition());
+        cmd.execute(buffer, cursor);
+        pushUndo(cmd);
+        redoStack.clear();
+    }
 
-    def move_right(self):
-        if self.cursor.position < self.buffer.content_length():
-            self.cursor.position += 1
-            self.buffer.move_cursor(self.cursor.position)
+    public void moveLeft() {
+        if (cursor.getPosition() > 0) {
+            cursor.setPosition(cursor.getPosition() - 1);
+            buffer.moveCursor(cursor.getPosition());
+        }
+    }
 
-    def undo(self):
-        if not self.undo_stack:
-            return
-        cmd = self.undo_stack.pop()
-        cmd.undo(self.buffer, self.cursor)
-        self.redo_stack.append(cmd)
+    public void moveRight() {
+        if (cursor.getPosition() < buffer.contentLength()) {
+            cursor.setPosition(cursor.getPosition() + 1);
+            buffer.moveCursor(cursor.getPosition());
+        }
+    }
 
-    def redo(self):
-        if not self.redo_stack:
-            return
-        cmd = self.redo_stack.pop()
-        cmd.execute(self.buffer, self.cursor)
-        self.undo_stack.append(cmd)
+    public void undo() {
+        if (undoStack.isEmpty()) {
+            return;
+        }
+        Command cmd = undoStack.pop();
+        cmd.undo(buffer, cursor);
+        redoStack.push(cmd);
+    }
 
-    def get_content(self):
-        return self.buffer.to_string()
+    public void redo() {
+        if (redoStack.isEmpty()) {
+            return;
+        }
+        Command cmd = redoStack.pop();
+        cmd.execute(buffer, cursor);
+        pushUndo(cmd);
+    }
+
+    public String getContent() {
+        return buffer.toText();
+    }
+
+    // Deque has no built-in maxlen like Python's deque; evict oldest manually
+    private void pushUndo(Command cmd) {
+        if (undoStack.size() == MAX_UNDO) {
+            undoStack.removeLast();
+        }
+        undoStack.push(cmd);
+    }
+}
 ```
 
 ---
@@ -359,48 +431,72 @@ For an interview, Gap Buffer is the right choice: simpler, optimal for typical u
 
 ### 2. "How would you add find/replace?"
 
-```python
-def find(self, query):
-    content = self.buffer.to_string()
-    positions = []
-    idx = 0
-    while True:
-        idx = content.find(query, idx)
-        if idx == -1:
-            break
-        positions.append(idx)
-        idx += 1
-    return positions
+```java
+public List<Integer> find(String query) {
+    String content = buffer.toText();
+    List<Integer> positions = new ArrayList<>();
+    int idx = 0;
+    while (true) {
+        idx = content.indexOf(query, idx);
+        if (idx == -1) {
+            break;
+        }
+        positions.add(idx);
+        idx += 1;
+    }
+    return positions;
+}
 
-def replace_all(self, query, replacement):
-    positions = self.find(query)
-    # Replace right-to-left to preserve earlier positions
-    for pos in reversed(positions):
-        for _ in range(len(query)):
-            self.buffer.move_cursor(pos + len(query))
-            self.buffer.delete()
-        self.buffer.move_cursor(pos)
-        for char in replacement:
-            self.buffer.insert(char)
+public void replaceAll(String query, String replacement) {
+    List<Integer> positions = find(query);
+    // Replace right-to-left to preserve earlier positions
+    for (int i = positions.size() - 1; i >= 0; i--) {
+        int pos = positions.get(i);
+        for (int j = 0; j < query.length(); j++) {
+            buffer.moveCursor(pos + query.length());
+            buffer.delete();
+        }
+        buffer.moveCursor(pos);
+        for (char c : replacement.toCharArray()) {
+            buffer.insert(c);
+        }
+    }
+}
 ```
 
 ### 3. "How would you add clipboard (copy/paste)?"
 
-```python
-class Clipboard:
-    content: str = ""
+```java
+public class Clipboard {
+    private String content = "";
 
-class CopyCommand(Command):
-    def __init__(self, start, end):
-        self.start = start
-        self.end = end
+    public String getContent() {
+        return content;
+    }
 
-    def execute(self, buffer, cursor, clipboard):
-        content = buffer.to_string()
-        clipboard.content = content[self.start:self.end]
+    public void setContent(String content) {
+        this.content = content;
+    }
+}
 
-    def undo(self, buffer, cursor, clipboard):
-        pass   # copy is non-destructive — nothing to undo
+public class CopyCommand {
+    private final int start;
+    private final int end;
+
+    public CopyCommand(int start, int end) {
+        this.start = start;
+        this.end = end;
+    }
+
+    public void execute(GapBuffer buffer, Cursor cursor, Clipboard clipboard) {
+        String content = buffer.toText();
+        clipboard.setContent(content.substring(start, end));
+    }
+
+    public void undo(GapBuffer buffer, Cursor cursor, Clipboard clipboard) {
+        // copy is non-destructive — nothing to undo
+    }
+}
 ```
 
 Paste = `InsertCommand(clipboard.content, cursor.position)`.
@@ -409,21 +505,47 @@ Paste = `InsertCommand(clipboard.content, cursor.position)`.
 
 Maintain a `LineIndex` — a sorted list of newline positions. `(line, col)` ↔ absolute offset via binary search:
 
-```python
-class LineIndex:
-    def __init__(self):
-        self.newlines = []   # sorted absolute positions of '\n'
+```java
+public class LineIndex {
+    private final List<Integer> newlines = new ArrayList<>();   // sorted absolute positions of '\n'
 
-    def on_insert(self, pos, char):
-        if char == '\n':
-            bisect.insort(self.newlines, pos)
-        self.newlines = [n + 1 if n >= pos else n for n in self.newlines]
+    public void onInsert(int pos, char c) {
+        // Shift existing newline positions at/after pos before inserting the new one
+        for (int i = 0; i < newlines.size(); i++) {
+            if (newlines.get(i) >= pos) {
+                newlines.set(i, newlines.get(i) + 1);
+            }
+        }
+        if (c == '\n') {
+            int insertAt = Collections.binarySearch(newlines, pos);
+            if (insertAt < 0) {
+                insertAt = -(insertAt + 1);
+            }
+            newlines.add(insertAt, pos);
+        }
+    }
 
-    def line_col(self, offset):
-        line = bisect.bisect_left(self.newlines, offset)
-        prev_newline = self.newlines[line - 1] if line > 0 else -1
-        col = offset - prev_newline - 1
-        return line, col
+    public int[] lineCol(int offset) {
+        int line = lowerBound(newlines, offset);
+        int prevNewline = line > 0 ? newlines.get(line - 1) : -1;
+        int col = offset - prevNewline - 1;
+        return new int[] { line, col };
+    }
+
+    // Equivalent of bisect.bisect_left
+    private int lowerBound(List<Integer> sorted, int target) {
+        int lo = 0, hi = sorted.size();
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (sorted.get(mid) < target) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        return lo;
+    }
+}
 ```
 
 ### 5. "What's the memory cost of storing 100 undo commands?"
@@ -436,7 +558,7 @@ Each InsertCommand stores the inserted text (typically 1-N chars) and position (
 
 **Junior**: Array-based text buffer. Insert/delete characters. Move cursor. Get content as string.
 
-**Mid-level**: Gap Buffer for O(1) insert/delete at cursor. Command pattern for undo/redo. Bounded undo stack via deque maxlen. Redo clears on new edit.
+**Mid-level**: Gap Buffer for O(1) insert/delete at cursor. Command pattern for undo/redo. Bounded undo stack via a size-capped `Deque`. Redo clears on new edit.
 
 **Senior**: Gap Buffer growth strategy. Rope vs Gap Buffer trade-off. Line index for O(log n) line/col lookup. Clipboard extension. Replace right-to-left to preserve earlier positions.
 
@@ -453,11 +575,11 @@ Each InsertCommand stores the inserted text (typically 1-N chars) and position (
 - **Q**: What happens to the redo stack when the user makes a new edit?
   **A**: It's cleared. Redo only applies to commands undone from the current branch. A new edit starts a new branch — the undone commands are no longer reachable.
 
-- **Q**: What is the time complexity of `to_string()` on a gap buffer?
-  **A**: O(n) — must iterate all non-gap positions and join them. This is acceptable because `to_string()` is called infrequently (save/display), while insert/delete (O(1)) are called constantly during editing.
+- **Q**: What is the time complexity of `toText()` on a gap buffer?
+  **A**: O(n) — must iterate all non-gap positions and join them. This is acceptable because `toText()` is called infrequently (save/display), while insert/delete (O(1)) are called constantly during editing.
 
 - **Q**: How would you limit memory usage for undo history?
-  **A**: `deque(maxlen=100)` — when full, appending a new command evicts the oldest one automatically in O(1). No manual management needed.
+  **A**: A `Deque<Command>` with a manual size check on push — when the stack reaches `MAX_UNDO`, evict the oldest entry (`removeLast()`) in O(1) before pushing the new one. Java's `Deque` has no built-in bounded/`maxlen` variant, so the cap is enforced by hand, as shown in `Editor.pushUndo`.
 
 ---
 

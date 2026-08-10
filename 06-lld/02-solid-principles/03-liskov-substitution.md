@@ -81,89 +81,116 @@ If class `B` extends class `A`, then wherever you use an `A`, you should be able
 
 ## Bad Design (Violates LSP)
 
-```python
-class Rectangle:
-    def __init__(self, width: int, height: int):
-        self._width = width
-        self._height = height
+```java
+class Rectangle {
+    protected int width;
+    protected int height;
 
-    def set_width(self, width: int):
-        self._width = width
+    public Rectangle(int width, int height) {
+        this.width = width;
+        this.height = height;
+    }
 
-    def set_height(self, height: int):
-        self._height = height
+    public void setWidth(int width) {
+        this.width = width;
+    }
 
-    def get_area(self) -> int:
-        return self._width * self._height
+    public void setHeight(int height) {
+        this.height = height;
+    }
+
+    public int getArea() {
+        return width * height;
+    }
+}
 
 
-class Square(Rectangle):
-    def __init__(self, side: int):
-        super().__init__(side, side)
+class Square extends Rectangle {
+    public Square(int side) {
+        super(side, side);
+    }
 
-    def set_width(self, width: int):
-        self._width = width
-        self._height = width  # Violates LSP: set_width changes height too
+    @Override
+    public void setWidth(int width) {
+        this.width = width;
+        this.height = width; // Violates LSP: setWidth changes height too
+    }
 
-    def set_height(self, height: int):
-        self._width = height
-        self._height = height  # Violates LSP: set_height changes width too
+    @Override
+    public void setHeight(int height) {
+        this.width = height;
+        this.height = height; // Violates LSP: setHeight changes width too
+    }
+}
 ```
 
 **Why this breaks:**
 
-```python
-# This test passes for Rectangle but FAILS for Square
-def test_rectangle(r: Rectangle):
-    r.set_width(5)
-    r.set_height(10)
-    assert r.get_area() == 50  # Passes for Rectangle, FAILS for Square (returns 100)
+```java
+// This test passes for Rectangle but FAILS for Square
+void testRectangle(Rectangle r) {
+    r.setWidth(5);
+    r.setHeight(10);
+    assert r.getArea() == 50; // Passes for Rectangle, FAILS for Square (returns 100)
+}
 
-r = Square(4)
-test_rectangle(r)  # Square breaks the caller's valid assumption
+Rectangle r = new Square(4);
+testRectangle(r); // Square breaks the caller's valid assumption
 ```
 
-The caller expected `set_width` and `set_height` to be independent. Square violates this contract silently.
+The caller expected `setWidth` and `setHeight` to be independent. Square violates this contract silently.
 
 ---
 
 ## Good Design (Follows LSP)
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Abstract Shape — no conflicting contract
+interface Shape {
+    int getArea();
+}
 
 
-# Abstract Shape — no conflicting contract
-class Shape(ABC):
-    @abstractmethod
-    def get_area(self) -> int:
-        pass
+class Rectangle implements Shape {
+    private int width;
+    private int height;
+
+    public Rectangle(int width, int height) {
+        this.width = width;
+        this.height = height;
+    }
+
+    public void setWidth(int width) {
+        this.width = width;
+    }
+
+    public void setHeight(int height) {
+        this.height = height;
+    }
+
+    @Override
+    public int getArea() {
+        return width * height;
+    }
+}
 
 
-class Rectangle(Shape):
-    def __init__(self, width: int, height: int):
-        self._width = width
-        self._height = height
+class Square implements Shape {
+    private int side;
 
-    def set_width(self, width: int):
-        self._width = width
+    public Square(int side) {
+        this.side = side;
+    }
 
-    def set_height(self, height: int):
-        self._height = height
+    public void setSide(int side) {
+        this.side = side;
+    }
 
-    def get_area(self) -> int:
-        return self._width * self._height
-
-
-class Square(Shape):
-    def __init__(self, side: int):
-        self._side = side
-
-    def set_side(self, side: int):
-        self._side = side
-
-    def get_area(self) -> int:
-        return self._side * self._side
+    @Override
+    public int getArea() {
+        return side * side;
+    }
+}
 ```
 
 Now `Rectangle` and `Square` implement the same `Shape` contract without inheriting incompatible behavior from each other. Both can be used interchangeably where a `Shape` is expected.
@@ -172,106 +199,121 @@ Now `Rectangle` and `Square` implement the same `Shape` contract without inherit
 
 ## Another Classic Violation: The "Do Nothing" or "Exception" Override
 
-```python
-class Bird:
-    def fly(self):
-        print("Flying...")
+```java
+class Bird {
+    public void fly() {
+        System.out.println("Flying...");
+    }
+}
 
 
-class Penguin(Bird):
-    def fly(self):
-        raise NotImplementedError("Penguins can't fly!")
-        # LSP violated — caller expected Bird to fly, Penguin breaks that
+class Penguin extends Bird {
+    @Override
+    public void fly() {
+        throw new UnsupportedOperationException("Penguins can't fly!");
+        // LSP violated — caller expected Bird to fly, Penguin breaks that
+    }
+}
 ```
 
 **Fix**: Separate the `Flyable` behavior into an interface.
 
-```python
-from abc import ABC, abstractmethod
+```java
+interface Flyable {
+    void fly();
+}
 
 
-class Flyable(ABC):
-    @abstractmethod
-    def fly(self):
-        pass
+class Sparrow implements Flyable {
+    @Override
+    public void fly() {
+        System.out.println("Sparrow flying...");
+    }
+}
 
 
-class Sparrow(Flyable):
-    def fly(self):
-        print("Sparrow flying...")
-
-
-class Penguin:
-    # No fly() — Penguin never claimed to fly
-    def swim(self):
-        print("Penguin swimming...")
+class Penguin {
+    // No fly() — Penguin never claimed to fly
+    public void swim() {
+        System.out.println("Penguin swimming...");
+    }
+}
 ```
 
 ---
 
 ## LSP in Practice: Payment Processors
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Base type
+interface PaymentProcessor {
+    boolean processPayment(double amount);
+    boolean refund(String transactionId);
+}
 
 
-# Base type
-class PaymentProcessor(ABC):
-    @abstractmethod
-    def process_payment(self, amount: float) -> bool:
-        pass
+// This is fine
+class StripeProcessor implements PaymentProcessor {
+    @Override
+    public boolean processPayment(double amount) {
+        // Stripe API
+        return true;
+    }
 
-    @abstractmethod
-    def refund(self, transaction_id: str) -> bool:
-        pass
-
-
-# This is fine
-class StripeProcessor(PaymentProcessor):
-    def process_payment(self, amount: float) -> bool:
-        pass  # Stripe API
-        return True
-
-    def refund(self, transaction_id: str) -> bool:
-        pass  # Stripe refund
-        return True
+    @Override
+    public boolean refund(String transactionId) {
+        // Stripe refund
+        return true;
+    }
+}
 
 
-# LSP VIOLATION: GiftCardProcessor can't refund
-class GiftCardProcessor(PaymentProcessor):
-    def process_payment(self, amount: float) -> bool:
-        pass  # Deduct from card
-        return True
+// LSP VIOLATION: GiftCardProcessor can't refund
+class GiftCardProcessor implements PaymentProcessor {
+    @Override
+    public boolean processPayment(double amount) {
+        // Deduct from card
+        return true;
+    }
 
-    def refund(self, transaction_id: str) -> bool:
-        raise NotImplementedError("Gift cards are non-refundable")
-        # Breaks substitutability — any code using PaymentProcessor expects refund to work
-
-
-# Fix: Separate the contract
-class Refundable(ABC):
-    @abstractmethod
-    def refund(self, transaction_id: str) -> bool:
-        pass
+    @Override
+    public boolean refund(String transactionId) {
+        throw new UnsupportedOperationException("Gift cards are non-refundable");
+        // Breaks substitutability — any code using PaymentProcessor expects refund to work
+    }
+}
 
 
-class PaymentProcessor(ABC):
-    @abstractmethod
-    def process_payment(self, amount: float) -> bool:
-        pass
+// Fix: Separate the contract
+interface Refundable {
+    boolean refund(String transactionId);
+}
 
 
-class StripeProcessor(PaymentProcessor, Refundable):
-    def process_payment(self, amount: float) -> bool:
-        pass
-
-    def refund(self, transaction_id: str) -> bool:
-        pass
+interface PaymentProcessor {
+    boolean processPayment(double amount);
+}
 
 
-class GiftCardProcessor(PaymentProcessor):
-    def process_payment(self, amount: float) -> bool:
-        pass  # No refund
+class StripeProcessor implements PaymentProcessor, Refundable {
+    @Override
+    public boolean processPayment(double amount) {
+        return true;
+    }
+
+    @Override
+    public boolean refund(String transactionId) {
+        return true;
+    }
+}
+
+
+class GiftCardProcessor implements PaymentProcessor {
+    @Override
+    public boolean processPayment(double amount) {
+        return true; // No refund
+    }
+}
 ```
 
 ---

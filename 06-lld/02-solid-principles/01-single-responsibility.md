@@ -77,30 +77,35 @@ When a class has multiple responsibilities, changes to one responsibility can br
 
 ### Bad Example (Violates SRP)
 
-```python
-class Employee:
-    def __init__(self):
-        self._name = None
-        self._salary = 0.0
+```java
+class Employee {
+    private String name;
+    private double salary;
 
-    # Responsibility 1: Employee data management
-    def set_name(self, name: str):
-        self._name = name
+    // Responsibility 1: Employee data management
+    public void setName(String name) {
+        this.name = name;
+    }
 
-    def set_salary(self, salary: float):
-        self._salary = salary
+    public void setSalary(double salary) {
+        this.salary = salary;
+    }
 
-    # Responsibility 2: Salary calculation (business logic)
-    def calculate_bonus(self) -> float:
-        return self._salary * 0.1
+    // Responsibility 2: Salary calculation (business logic)
+    public double calculateBonus() {
+        return salary * 0.1;
+    }
 
-    # Responsibility 3: Database operations
-    def save(self):
-        Database.execute("INSERT INTO employees VALUES (?, ?)", self._name, self._salary)
+    // Responsibility 3: Database operations
+    public void save() {
+        Database.execute("INSERT INTO employees VALUES (?, ?)", name, salary);
+    }
 
-    # Responsibility 4: Report generation
-    def generate_report(self) -> str:
-        return f"Employee: {self._name}, Salary: ${self._salary}"
+    // Responsibility 4: Report generation
+    public String generateReport() {
+        return "Employee: " + name + ", Salary: $" + salary;
+    }
+}
 ```
 
 **Problems:**
@@ -113,45 +118,61 @@ class Employee:
 
 ### Good Example (Follows SRP)
 
-```python
-# Responsibility 1: Employee data (just data, no logic)
-class Employee:
-    def __init__(self, name: str, salary: float):
-        self.name = name
-        self.salary = salary
+```java
+// Responsibility 1: Employee data (just data, no logic)
+class Employee {
+    private final String name;
+    private final double salary;
+
+    public Employee(String name, double salary) {
+        this.name = name;
+        this.salary = salary;
+    }
+
+    public String getName() { return name; }
+    public double getSalary() { return salary; }
+}
 
 
-# Responsibility 2: Salary calculation
-class SalaryCalculator:
-    def calculate_bonus(self, employee: Employee) -> float:
-        return employee.salary * 0.1
+// Responsibility 2: Salary calculation
+class SalaryCalculator {
+    public double calculateBonus(Employee employee) {
+        return employee.getSalary() * 0.1;
+    }
 
-    def calculate_tax(self, employee: Employee) -> float:
-        return employee.salary * 0.2
+    public double calculateTax(Employee employee) {
+        return employee.getSalary() * 0.2;
+    }
+}
 
 
-# Responsibility 3: Database operations
-class EmployeeRepository:
-    def save(self, employee: Employee):
+// Responsibility 3: Database operations
+class EmployeeRepository {
+    public void save(Employee employee) {
         Database.execute(
             "INSERT INTO employees VALUES (?, ?)",
-            employee.name,
-            employee.salary,
-        )
+            employee.getName(),
+            employee.getSalary()
+        );
+    }
 
-    def find_by_id(self, id: int) -> Employee:
-        # Query database and return Employee
-        pass
+    public Employee findById(int id) {
+        // Query database and return Employee
+        return null;
+    }
+}
 
 
-# Responsibility 4: Report generation
-class EmployeeReportGenerator:
-    def generate_report(self, employee: Employee) -> str:
-        return f"Employee: {employee.name}, Salary: ${employee.salary}"
+// Responsibility 4: Report generation
+class EmployeeReportGenerator {
+    public String generateReport(Employee employee) {
+        return "Employee: " + employee.getName() + ", Salary: $" + employee.getSalary();
+    }
 
-    def generate_pdf(self, employee: Employee):
-        # Generate PDF report
-        pass
+    public void generatePdf(Employee employee) {
+        // Generate PDF report
+    }
+}
 ```
 
 **Benefits:**
@@ -166,93 +187,128 @@ class EmployeeReportGenerator:
 
 ### Bad (God Class)
 
-```python
-class User:
-    def __init__(self, username: str, password: str):
-        self.username = username
-        self._password = password
+```java
+class User {
+    private String username;
+    private String password;
 
-    def set_password(self, password: str):
-        self._password = password
+    public User(String username, String password) {
+        this.username = username;
+        this.password = password;
+    }
 
-    # Authentication logic
-    def login(self, input_password: str) -> bool:
-        return BCrypt.checkpw(input_password, self._password)
+    public void setPassword(String password) {
+        this.password = password;
+    }
 
-    # Session management
-    def create_session(self):
-        SessionManager.create(self.username)
+    // Authentication logic
+    public boolean login(String inputPassword) {
+        return BCrypt.checkpw(inputPassword, password);
+    }
 
-    # Logging
-    def log_login(self):
-        Logger.info(f"User {self.username} logged in")
+    // Session management
+    public void createSession() {
+        SessionManager.create(username);
+    }
 
-    # Email notification
-    def send_login_email(self):
-        EmailService.send(f"{self.username}@example.com", "Login detected")
+    // Logging
+    public void logLogin() {
+        Logger.info("User " + username + " logged in");
+    }
+
+    // Email notification
+    public void sendLoginEmail() {
+        EmailService.send(username + "@example.com", "Login detected");
+    }
+}
 ```
 
 ### Good (Separated Responsibilities)
 
-```python
-# 1. Data model
-class User:
-    def __init__(self, username: str, hashed_password: str):
-        self.username = username
-        self.hashed_password = hashed_password
+```java
+// 1. Data model
+class User {
+    private final String username;
+    private final String hashedPassword;
+
+    public User(String username, String hashedPassword) {
+        this.username = username;
+        this.hashedPassword = hashedPassword;
+    }
+
+    public String getUsername() { return username; }
+    public String getHashedPassword() { return hashedPassword; }
+}
 
 
-# 2. Authentication logic
-class AuthenticationService:
-    def authenticate(self, user: User, input_password: str) -> bool:
-        return BCrypt.checkpw(input_password, user.hashed_password)
+// 2. Authentication logic
+class AuthenticationService {
+    public boolean authenticate(User user, String inputPassword) {
+        return BCrypt.checkpw(inputPassword, user.getHashedPassword());
+    }
+}
 
 
-# 3. Session management
-class SessionManager:
-    def create_session(self, user: User):
-        pass  # Create session
+// 3. Session management
+class SessionManager {
+    public void createSession(User user) {
+        // Create session
+    }
 
-    def invalidate_session(self, session_id: str):
-        pass  # Remove session
-
-
-# 4. Audit logging
-class AuditLogger:
-    def log_login_attempt(self, user: User, success: bool):
-        status = "successful" if success else "failed"
-        Logger.info(f"Login {status} for user: {user.username}")
+    public void invalidateSession(String sessionId) {
+        // Remove session
+    }
+}
 
 
-# 5. Notification service
-class NotificationService:
-    def send_login_notification(self, user: User):
-        EmailService.send(f"{user.username}@example.com", "New login detected")
+// 4. Audit logging
+class AuditLogger {
+    public void logLoginAttempt(User user, boolean success) {
+        String status = success ? "successful" : "failed";
+        Logger.info("Login " + status + " for user: " + user.getUsername());
+    }
+}
 
 
-# 6. Orchestration in a controller (one coordinator, not one God)
-class LoginController:
-    def __init__(
-        self,
-        auth_service: AuthenticationService,
-        session_manager: SessionManager,
-        audit_logger: AuditLogger,
-        notification_service: NotificationService,
-    ):
-        self._auth_service = auth_service
-        self._session_manager = session_manager
-        self._audit_logger = audit_logger
-        self._notification_service = notification_service
+// 5. Notification service
+class NotificationService {
+    public void sendLoginNotification(User user) {
+        EmailService.send(user.getUsername() + "@example.com", "New login detected");
+    }
+}
 
-    def login(self, username: str, password: str):
-        user = user_repository.find_by_username(username)
 
-        if self._auth_service.authenticate(user, password):
-            self._session_manager.create_session(user)
-            self._audit_logger.log_login_attempt(user, True)
-            self._notification_service.send_login_notification(user)
-        else:
-            self._audit_logger.log_login_attempt(user, False)
+// 6. Orchestration in a controller (one coordinator, not one God)
+class LoginController {
+    private final AuthenticationService authService;
+    private final SessionManager sessionManager;
+    private final AuditLogger auditLogger;
+    private final NotificationService notificationService;
+
+    public LoginController(
+        AuthenticationService authService,
+        SessionManager sessionManager,
+        AuditLogger auditLogger,
+        NotificationService notificationService
+    ) {
+        this.authService = authService;
+        this.sessionManager = sessionManager;
+        this.auditLogger = auditLogger;
+        this.notificationService = notificationService;
+    }
+
+    public void login(String username, String password) {
+        User user = userRepository.findByUsername(username);
+
+        if (authService.authenticate(user, password)) {
+            sessionManager.createSession(user);
+            auditLogger.logLoginAttempt(user, true);
+            notificationService.sendLoginNotification(user);
+        } else {
+            auditLogger.logLoginAttempt(user, false);
+        }
+    }
+}
 ```
 
 ---

@@ -6,8 +6,8 @@
 > **Key concepts:**
 > - Core Entities: `PatternValidator`, `Grid` (3x3).
 > - The Rules: You can connect any two dots, *unless* there is a dot directly between them. If there is a dot in between, you can only make the jump if the intermediate dot has *already been visited*.
-> - The Jump Table: Precompute a 2D array (or Map) `jumps[start][end]` which stores the intermediate node. E.g., `jumps[1][3] = 2`.
-> - Backtracking (DFS): To find all valid patterns of length $N$, use DFS. Keep a `visited` boolean array. Before visiting `next`, check if `jumps[current][next]` is non-zero. If it is, ensure `visited[jumps[current][next]]` is true.
+> - The Jump Table: Precompute a `Map<Integer, Integer>` `jumps[start][end]` which stores the intermediate node. E.g., `jumps[1][3] = 2`.
+> - Backtracking (DFS): To find all valid patterns of length $N$, use DFS. Keep a `visited` `Set<Integer>` (or boolean array). Before visiting `next`, check if `jumps[current][next]` is non-null. If it is, ensure `visited.contains(jumps[current][next])` is true.
 >
 > **Key takeaway:** This is a classic LeetCode algorithm problem (Number of Valid Words for Each Puzzle / Android Unlock Patterns) wrapped in an object-oriented shell. Memorize the "Jump Table" concept to handle the "intermediate dot" rule elegantly.
 
@@ -83,10 +83,10 @@ The core logic is DFS backtracking constrained by the skip map. The skip map is 
 
 ```
 class UnlockPatternGrid:
-- skip: dict[tuple, int]   # (a, b) → c, or empty if no skip
+- skip: Map<Integer, Integer>   # (a, b) encoded key → c, or absent if no skip
 
-+ __init__()   # precompute skip map
-+ get_skip(a, b) -> Optional[int]   # 0-indexed dot numbers
++ UnlockPatternGrid()   # precompute skip map
++ getSkip(a: int, b: int) -> Integer   # 0-indexed dot numbers; null if no skip
 ```
 
 ### PatternValidator
@@ -95,7 +95,7 @@ class UnlockPatternGrid:
 class PatternValidator:
 - grid: UnlockPatternGrid
 
-+ is_valid(pattern: list[int]) -> bool
++ isValid(pattern: List<Integer>) -> boolean
 ```
 
 ### PatternCounter
@@ -104,8 +104,8 @@ class PatternValidator:
 class PatternCounter:
 - grid: UnlockPatternGrid
 
-+ count_patterns(min_len: int, max_len: int) -> int
-+ _dfs(current: int, visited: set[int], remaining: int) -> int
++ countPatterns(minLen: int, maxLen: int) -> int
+- dfs(current: int, visited: Set<Integer>, remaining: int) -> int
 ```
 
 ---
@@ -123,39 +123,51 @@ Dots are numbered 1–9, arranged in a 3×3 grid:
 
 For each pair (a, b), check if the segment passes through a midpoint. A midpoint c exists when a and b are symmetric around c (i.e., `c = (a + b) / 2` is an integer) AND a, b, c share the same row, column, or diagonal.
 
-```python
-class UnlockPatternGrid:
-    def __init__(self):
-        # Dots 1-9, row/col as (row, col) 0-indexed
-        self.pos = {
-            1: (0,0), 2: (0,1), 3: (0,2),
-            4: (1,0), 5: (1,1), 6: (1,2),
-            7: (2,0), 8: (2,1), 9: (2,2)
+```java
+import java.util.*;
+
+public class UnlockPatternGrid {
+    // Dots 1-9, row/col as int[]{row, col}, 0-indexed
+    private final Map<Integer, int[]> pos = new HashMap<>();
+    // (a, b) encoded as a * 10 + b -> skip dot c
+    private final Map<Integer, Integer> skip = new HashMap<>();
+
+    public UnlockPatternGrid() {
+        pos.put(1, new int[]{0, 0}); pos.put(2, new int[]{0, 1}); pos.put(3, new int[]{0, 2});
+        pos.put(4, new int[]{1, 0}); pos.put(5, new int[]{1, 1}); pos.put(6, new int[]{1, 2});
+        pos.put(7, new int[]{2, 0}); pos.put(8, new int[]{2, 1}); pos.put(9, new int[]{2, 2});
+        precomputeSkips();
+    }
+
+    private void precomputeSkips() {
+        for (int a : pos.keySet()) {
+            for (int b : pos.keySet()) {
+                if (a == b) continue;
+                int[] posA = pos.get(a);
+                int[] posB = pos.get(b);
+                // midpoint is an integer only when a+b is even and they are collinear
+                int midR = posA[0] + posB[0];
+                int midC = posA[1] + posB[1];
+                if (midR % 2 == 0 && midC % 2 == 0) {
+                    int[] mid = new int[]{midR / 2, midC / 2};
+                    // find dot at mid position
+                    for (Map.Entry<Integer, int[]> entry : pos.entrySet()) {
+                        int c = entry.getKey();
+                        int[] p = entry.getValue();
+                        if (p[0] == mid[0] && p[1] == mid[1] && c != a && c != b) {
+                            skip.put(a * 10 + b, c);
+                            break;
+                        }
+                    }
+                }
+            }
         }
-        self.skip = {}
-        self._precompute_skips()
+    }
 
-    def _precompute_skips(self):
-        dots = list(self.pos.keys())
-        for a in dots:
-            for b in dots:
-                if a == b:
-                    continue
-                ra, ca = self.pos[a]
-                rb, cb = self.pos[b]
-                # midpoint is an integer only when a+b is even and they are collinear
-                mid_r = (ra + rb)
-                mid_c = (ca + cb)
-                if mid_r % 2 == 0 and mid_c % 2 == 0:
-                    mid = (mid_r // 2, mid_c // 2)
-                    # find dot at mid position
-                    for c, pos in self.pos.items():
-                        if pos == mid and c != a and c != b:
-                            self.skip[(a, b)] = c
-                            break
-
-    def get_skip(self, a, b):
-        return self.skip.get((a, b))
+    public Integer getSkip(int a, int b) {
+        return skip.get(a * 10 + b);
+    }
+}
 ```
 
 **Skip examples:**
@@ -174,69 +186,102 @@ class UnlockPatternGrid:
    b. If skip dot exists and is NOT visited → invalid move, skip
    c. Otherwise: mark next_dot visited, recurse, unmark (backtrack)
 
-```python
-class PatternCounter:
-    def __init__(self, grid):
-        self.grid = grid
+```java
+import java.util.*;
 
-    def count_patterns(self, min_len, max_len):
-        total = 0
-        for start in range(1, 10):
-            visited = {start}
-            for length in range(min_len - 1, max_len):
-                total += self._dfs(start, visited, length)
-            # Note: _dfs counts patterns where remaining more dots are needed
-        return total
+public class PatternCounter {
+    private final UnlockPatternGrid grid;
 
-    def _dfs(self, current, visited, remaining):
-        if remaining == 0:
-            return 1
-        count = 0
-        for next_dot in range(1, 10):
-            if next_dot in visited:
-                continue
-            skip = self.grid.get_skip(current, next_dot)
-            if skip and skip not in visited:
-                continue   # skip dot not yet visited — invalid move
-            visited.add(next_dot)
-            count += self._dfs(next_dot, visited, remaining - 1)
-            visited.remove(next_dot)
-        return count
+    public PatternCounter(UnlockPatternGrid grid) {
+        this.grid = grid;
+    }
 
-    def count_patterns_range(self, min_len, max_len):
-        total = 0
-        for start in range(1, 10):
-            for target_len in range(min_len, max_len + 1):
-                visited = {start}
-                total += self._dfs(start, visited, target_len - 1)
-        return total
+    public int countPatterns(int minLen, int maxLen) {
+        int total = 0;
+        for (int start = 1; start <= 9; start++) {
+            Set<Integer> visited = new HashSet<>(Set.of(start));
+            for (int length = minLen - 1; length < maxLen; length++) {
+                total += dfs(start, visited, length);
+            }
+            // Note: dfs counts patterns where remaining more dots are needed
+        }
+        return total;
+    }
+
+    private int dfs(int current, Set<Integer> visited, int remaining) {
+        if (remaining == 0) {
+            return 1;
+        }
+        int count = 0;
+        for (int nextDot = 1; nextDot <= 9; nextDot++) {
+            if (visited.contains(nextDot)) {
+                continue;
+            }
+            Integer skip = grid.getSkip(current, nextDot);
+            if (skip != null && !visited.contains(skip)) {
+                continue;   // skip dot not yet visited — invalid move
+            }
+            visited.add(nextDot);
+            count += dfs(nextDot, visited, remaining - 1);
+            visited.remove(nextDot);
+        }
+        return count;
+    }
+
+    public int countPatternsRange(int minLen, int maxLen) {
+        int total = 0;
+        for (int start = 1; start <= 9; start++) {
+            for (int targetLen = minLen; targetLen <= maxLen; targetLen++) {
+                Set<Integer> visited = new HashSet<>(Set.of(start));
+                total += dfs(start, visited, targetLen - 1);
+            }
+        }
+        return total;
+    }
+}
 ```
 
 ### Core Method: `PatternValidator.is_valid`
 
-```python
-class PatternValidator:
-    def __init__(self, grid):
-        self.grid = grid
+```java
+import java.util.*;
 
-    def is_valid(self, pattern):
-        if len(pattern) < 4 or len(pattern) > 9:
-            return False
-        if len(set(pattern)) != len(pattern):
-            return False  # duplicate dots
-        if any(d < 1 or d > 9 for d in pattern):
-            return False
+public class PatternValidator {
+    private final UnlockPatternGrid grid;
 
-        visited = set()
-        for i, dot in enumerate(pattern):
-            if i > 0:
-                prev = pattern[i - 1]
-                skip = self.grid.get_skip(prev, dot)
-                if skip and skip not in visited:
-                    return False
-            visited.add(dot)
+    public PatternValidator(UnlockPatternGrid grid) {
+        this.grid = grid;
+    }
 
-        return True
+    public boolean isValid(List<Integer> pattern) {
+        if (pattern.size() < 4 || pattern.size() > 9) {
+            return false;
+        }
+        if (new HashSet<>(pattern).size() != pattern.size()) {
+            return false;  // duplicate dots
+        }
+        for (int d : pattern) {
+            if (d < 1 || d > 9) {
+                return false;
+            }
+        }
+
+        Set<Integer> visited = new HashSet<>();
+        for (int i = 0; i < pattern.size(); i++) {
+            int dot = pattern.get(i);
+            if (i > 0) {
+                int prev = pattern.get(i - 1);
+                Integer skip = grid.getSkip(prev, dot);
+                if (skip != null && !visited.contains(skip)) {
+                    return false;
+                }
+            }
+            visited.add(dot);
+        }
+
+        return true;
+    }
+}
 ```
 
 ---
@@ -281,20 +326,22 @@ Validate pattern [2, 1, 3, 9]:
 
 Yes. The 3×3 grid has 8 symmetries (4 rotations × 2 reflections). Corners (1,3,7,9) are symmetric, edge midpoints (2,4,6,8) are symmetric, and center (5) is unique. Count patterns starting from one corner, multiply by 4; one edge midpoint, multiply by 4; center, multiply by 1:
 
-```python
-def count_patterns_optimized(self, min_len, max_len):
-    total = 0
-    for target_len in range(min_len, max_len + 1):
-        # Corner: 4 symmetric corners (1, 3, 7, 9)
-        visited = {1}
-        total += 4 * self._dfs(1, visited, target_len - 1)
-        # Edge midpoint: 4 symmetric midpoints (2, 4, 6, 8)
-        visited = {2}
-        total += 4 * self._dfs(2, visited, target_len - 1)
-        # Center: unique
-        visited = {5}
-        total += self._dfs(5, visited, target_len - 1)
-    return total
+```java
+public int countPatternsOptimized(int minLen, int maxLen) {
+    int total = 0;
+    for (int targetLen = minLen; targetLen <= maxLen; targetLen++) {
+        // Corner: 4 symmetric corners (1, 3, 7, 9)
+        Set<Integer> visited = new HashSet<>(Set.of(1));
+        total += 4 * dfs(1, visited, targetLen - 1);
+        // Edge midpoint: 4 symmetric midpoints (2, 4, 6, 8)
+        visited = new HashSet<>(Set.of(2));
+        total += 4 * dfs(2, visited, targetLen - 1);
+        // Center: unique
+        visited = new HashSet<>(Set.of(5));
+        total += dfs(5, visited, targetLen - 1);
+    }
+    return total;
+}
 ```
 
 This reduces DFS calls from 9 starting points to 3.
@@ -303,31 +350,55 @@ This reduces DFS calls from 9 starting points to 3.
 
 Call the DFS for each starting dot, for each target length in [4, 9]:
 
-```python
-def count_range(self, min_len, max_len):
-    return sum(
-        self._dfs(start, {start}, length - 1)
-        for start in range(1, 10)
-        for length in range(min_len, max_len + 1)
-    )
+```java
+public int countRange(int minLen, int maxLen) {
+    int total = 0;
+    for (int start = 1; start <= 9; start++) {
+        for (int length = minLen; length <= maxLen; length++) {
+            total += dfs(start, new HashSet<>(Set.of(start)), length - 1);
+        }
+    }
+    return total;
+}
 ```
 
 ### 3. "What if the grid is n × n instead of 3 × 3?"
 
-Generalize: dots are numbered 1 to n², positions computed from `(i // n, i % n)`. Skip detection still uses midpoint arithmetic. DFS structure is unchanged — only the dot count and position map change.
+Generalize: dots are numbered 1 to n², positions computed from `(i / n, i % n)`. Skip detection still uses midpoint arithmetic. DFS structure is unchanged — only the dot count and position map change.
 
 ### 4. "How would you store and verify a user's unlock pattern?"
 
 Store the hashed pattern (SHA256 of the dot sequence as a string) — never the raw sequence:
 
-```python
-def store_pattern(self, pattern):
-    self.pattern_hash = hashlib.sha256(str(pattern).encode()).hexdigest()
+```java
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.List;
 
-def verify_pattern(self, input_pattern):
-    if not PatternValidator(self.grid).is_valid(input_pattern):
-        return False
-    return hashlib.sha256(str(input_pattern).encode()).hexdigest() == self.pattern_hash
+public void storePattern(List<Integer> pattern) {
+    this.patternHash = sha256(pattern.toString());
+}
+
+public boolean verifyPattern(List<Integer> inputPattern) {
+    if (!new PatternValidator(grid).isValid(inputPattern)) {
+        return false;
+    }
+    return sha256(inputPattern.toString()).equals(this.patternHash);
+}
+
+private String sha256(String input) {
+    try {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(input.getBytes());
+        StringBuilder hex = new StringBuilder();
+        for (byte b : hash) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    } catch (NoSuchAlgorithmException e) {
+        throw new RuntimeException(e);
+    }
+}
 ```
 
 ---

@@ -71,20 +71,27 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```python
-def evaluate(expr, context):
-    # One monolithic evaluator that re-parses and branches on every call
-    if expr["op"] == "num":
-        return expr["value"]
-    elif expr["op"] == "var":
-        return context[expr["name"]]
-    elif expr["op"] == "add":
-        return evaluate(expr["left"], context) + evaluate(expr["right"], context)
-    elif expr["op"] == "and":
-        return evaluate(expr["left"], context) and evaluate(expr["right"], context)
-    elif expr["op"] == "gt":
-        return evaluate(expr["left"], context) > evaluate(expr["right"], context)
-    # ... one more branch for every operator, forever
+```java
+Object evaluate(Map<String, Object> expr, Map<String, Object> context) {
+    // One monolithic evaluator that re-parses and branches on every call
+    String op = (String) expr.get("op");
+    if (op.equals("num")) {
+        return expr.get("value");
+    } else if (op.equals("var")) {
+        return context.get(expr.get("name"));
+    } else if (op.equals("add")) {
+        return (int) evaluate((Map<String, Object>) expr.get("left"), context)
+                + (int) evaluate((Map<String, Object>) expr.get("right"), context);
+    } else if (op.equals("and")) {
+        return (boolean) evaluate((Map<String, Object>) expr.get("left"), context)
+                && (boolean) evaluate((Map<String, Object>) expr.get("right"), context);
+    } else if (op.equals("gt")) {
+        return (int) evaluate((Map<String, Object>) expr.get("left"), context)
+                > (int) evaluate((Map<String, Object>) expr.get("right"), context);
+    }
+    // ... one more branch for every operator, forever
+    throw new IllegalArgumentException("Unknown op");
+}
 ```
 
 **What breaks**:
@@ -100,46 +107,69 @@ def evaluate(expr, context):
 The constraint: **each grammar rule should be its own object that knows how to interpret itself.**
 
 Step 1 — one interface: every expression can `interpret(context)`:
-```python
-from abc import ABC, abstractmethod
-
-class Expression(ABC):
-    @abstractmethod
-    def interpret(self, context):
-        pass
+```java
+interface Expression {
+    Object interpret(Map<String, Object> context);
+}
 ```
 
 Step 2 — terminal expressions are the leaves (no children):
-```python
-class Number(Expression):
-    def __init__(self, value):
-        self._value = value
-    def interpret(self, context):
-        return self._value
+```java
+class Number implements Expression {
+    private final int value;
 
-class Variable(Expression):
-    def __init__(self, name):
-        self._name = name
-    def interpret(self, context):
-        return context[self._name]
+    Number(int value) {
+        this.value = value;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return value;
+    }
+}
+
+class Variable implements Expression {
+    private final String name;
+
+    Variable(String name) {
+        this.name = name;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return context.get(name);
+    }
+}
 ```
 
 Step 3 — non-terminal expressions compose sub-expressions:
-```python
-class GreaterThan(Expression):
-    def __init__(self, left, right):
-        self._left, self._right = left, right
-    def interpret(self, context):
-        return self._left.interpret(context) > self._right.interpret(context)
+```java
+class GreaterThan implements Expression {
+    private final Expression left, right;
 
-class And(Expression):
-    def __init__(self, left, right):
-        self._left, self._right = left, right
-    def interpret(self, context):
-        return self._left.interpret(context) and self._right.interpret(context)
+    GreaterThan(Expression left, Expression right) {
+        this.left = left;
+        this.right = right;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return (int) left.interpret(context) > (int) right.interpret(context);
+    }
+}
+
+class And implements Expression {
+    private final Expression left, right;
+
+    And(Expression left, Expression right) {
+        this.left = left;
+        this.right = right;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return (boolean) left.interpret(context) && (boolean) right.interpret(context);
+    }
+}
 ```
 
-Adding `Or` is now one new class. Nothing existing changes. And the *same* expression tree can later get a `pretty_print()` method — the structure is reusable.
+Adding `Or` is now one new class. Nothing existing changes. And the *same* expression tree can later get a `prettyPrint()` method — the structure is reusable.
 
 ---
 
@@ -176,7 +206,7 @@ The full expression is a **tree** of these rules. To evaluate the whole thing, y
 
 Consider a filter DSL: `age > 18 AND country == "US"`. You want to run this filter over a million user records.
 
-If you hard-code the filter in Python, changing the rule means a code deploy. If you evaluate it with a giant switch (above), every new operator edits the same function and you can't reuse the parsed rule for anything but evaluation.
+If you hard-code the filter in Java, changing the rule means a code deploy. If you evaluate it with a giant switch (above), every new operator edits the same function and you can't reuse the parsed rule for anything but evaluation.
 
 What you want: **parse the rule once into a tree of small rule-objects**, then evaluate that tree against each record's context — and be able to add new operators without touching existing ones.
 
@@ -184,70 +214,96 @@ What you want: **parse the rule once into a tree of small rule-objects**, then e
 
 ## Solution: Interpreter Pattern
 
-```python
-from abc import ABC, abstractmethod
+```java
+// 1. Abstract Expression
+interface Expression {
+    Object interpret(Map<String, Object> context);
+}
 
 
-# 1. Abstract Expression
-class Expression(ABC):
-    @abstractmethod
-    def interpret(self, context: dict):
-        pass
+// 2. Terminal Expressions (leaves — no sub-expressions)
+class Literal implements Expression {
+    private final Object value;
+
+    Literal(Object value) {
+        this.value = value;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return value;
+    }
+}
 
 
-# 2. Terminal Expressions (leaves — no sub-expressions)
-class Literal(Expression):
-    def __init__(self, value):
-        self._value = value
+class Variable implements Expression {
+    private final String name;
 
-    def interpret(self, context):
-        return self._value
+    Variable(String name) {
+        this.name = name;
+    }
 
-
-class Variable(Expression):
-    def __init__(self, name):
-        self._name = name
-
-    def interpret(self, context):
-        return context[self._name]
+    public Object interpret(Map<String, Object> context) {
+        return context.get(name);
+    }
+}
 
 
-# 3. Non-Terminal Expressions (compose other expressions)
-class GreaterThan(Expression):
-    def __init__(self, left, right):
-        self._left, self._right = left, right
+// 3. Non-Terminal Expressions (compose other expressions)
+class GreaterThan implements Expression {
+    private final Expression left, right;
 
-    def interpret(self, context):
-        return self._left.interpret(context) > self._right.interpret(context)
+    GreaterThan(Expression left, Expression right) {
+        this.left = left;
+        this.right = right;
+    }
 
-
-class Equals(Expression):
-    def __init__(self, left, right):
-        self._left, self._right = left, right
-
-    def interpret(self, context):
-        return self._left.interpret(context) == self._right.interpret(context)
+    public Object interpret(Map<String, Object> context) {
+        return (int) left.interpret(context) > (int) right.interpret(context);
+    }
+}
 
 
-class And(Expression):
-    def __init__(self, left, right):
-        self._left, self._right = left, right
+class Equals implements Expression {
+    private final Expression left, right;
 
-    def interpret(self, context):
-        return self._left.interpret(context) and self._right.interpret(context)
+    Equals(Expression left, Expression right) {
+        this.left = left;
+        this.right = right;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return left.interpret(context).equals(right.interpret(context));
+    }
+}
 
 
-# Client — build the AST for: age > 18 AND country == "US"
-if __name__ == "__main__":
-    rule = And(
-        GreaterThan(Variable("age"), Literal(18)),
-        Equals(Variable("country"), Literal("US")),
-    )
+class And implements Expression {
+    private final Expression left, right;
 
-    # The SAME rule tree is reused across many contexts (inputs)
-    print(rule.interpret({"age": 25, "country": "US"}))   # True
-    print(rule.interpret({"age": 15, "country": "US"}))   # False (age fails)
-    print(rule.interpret({"age": 30, "country": "IN"}))   # False (country fails)
+    And(Expression left, Expression right) {
+        this.left = left;
+        this.right = right;
+    }
+
+    public Object interpret(Map<String, Object> context) {
+        return (boolean) left.interpret(context) && (boolean) right.interpret(context);
+    }
+}
+
+
+// Client — build the AST for: age > 18 AND country == "US"
+public class Main {
+    public static void main(String[] args) {
+        Expression rule = new And(
+                new GreaterThan(new Variable("age"), new Literal(18)),
+                new Equals(new Variable("country"), new Literal("US")));
+
+        // The SAME rule tree is reused across many contexts (inputs)
+        System.out.println(rule.interpret(Map.of("age", 25, "country", "US")));  // true
+        System.out.println(rule.interpret(Map.of("age", 15, "country", "US")));  // false (age fails)
+        System.out.println(rule.interpret(Map.of("age", 30, "country", "IN")));  // false (country fails)
+    }
+}
 ```
 
 > Note: building the AST from raw text (`"age > 18 AND ..."`) is the job of a **parser**, which is a separate concern. The Interpreter pattern is about *representing and evaluating* the grammar, not tokenizing it. In practice you write a small parser (or use ANTLR) that outputs this expression tree.

@@ -1,18 +1,18 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** Python OOP syntax reference for LLD interviews — classes, dataclasses, ABC, properties, dunder methods, and Python-specific patterns.
+> **What this covers:** Java OOP syntax reference for LLD interviews — classes, records, interfaces, abstract classes, getters/setters, `equals()`/`hashCode()`, and Java-specific patterns.
 >
 > **Key topics:**
-> - Class structure: `__init__` constructor; `self` is explicit; `_private` convention (not enforced); `__private` name mangling (double underscore)
-> - Properties: `@property` for getters; `@prop.setter` for setters with validation; Pythonic alternative to Java getters/setters
-> - Class methods / static: `@classmethod` (receives cls, factory methods); `@staticmethod` (no cls/self, utility functions); useful for alternative constructors
-> - ABC (Abstract Base Class): `from abc import ABC, abstractmethod`; `class Shape(ABC): @abstractmethod def area()`; enforces interface implementation
-> - Dunder methods: `__str__`/`__repr__` (string representation), `__eq__`/`__hash__` (equality), `__lt__` (comparison/sorting), `__len__`, `__iter__` (iteration protocol)
-> - Dataclasses: `@dataclass` auto-generates `__init__`, `__repr__`, `__eq__`; `frozen=True` for immutability; great for value objects
-> - Multiple inheritance: Python supports it; MRO (Method Resolution Order) via C3 linearization; prefer mixins over complex hierarchies
+> - Class structure: explicit constructors; `this` refers to the current instance; `private`/`protected`/`public` access modifiers enforced by the compiler
+> - Encapsulation: private fields with public getters/setters; validation logic lives in the setter — the Java equivalent of Python's `@property`
+> - Static vs instance members: `static` methods/fields belong to the class; instance methods/fields belong to each object; static factory methods as alternative constructors
+> - Interfaces & abstract classes: `interface Shape { double area(); }` or `abstract class Shape { abstract double area(); }`; enforce a contract that concrete subclasses must implement
+> - Object methods: `toString()` (string representation), `equals()`/`hashCode()` (equality contract), `compareTo()` (ordering via `Comparable`), iteration via `Iterable`/`Iterator`
+> - Records: `record Point(int x, int y) {}` auto-generates constructor, accessors, `equals()`, `hashCode()`, `toString()`; great for immutable value objects
+> - Multiple inheritance: Java disallows multiple class inheritance; a class can implement multiple interfaces instead; prefer composition over deep hierarchies
 >
-> **Key takeaway:** Python's ABC + `@abstractmethod` replaces Java interfaces for LLD; use dataclasses for value objects and DTOs; `@property` gives Java-style encapsulation without explicit getter/setter boilerplate.
+> **Key takeaway:** Java interfaces + abstract classes define contracts for LLD; use `record` for immutable value objects and DTOs; private fields with public getters/setters give controlled encapsulation without exposing internal state.
 
 ---
 module: 06-lld
@@ -20,42 +20,42 @@ topic: Oop Fundamentals
 status: unread
 tags: [06-lld, system-design, oop-fundamentals]
 ---
-# Python OOPs
+# Java OOPs
 
-Here is a Python OOPs Revision Guide focused on the absolute fundamentals: Syntax, Classes, and Objects. Use this as your cheat sheet to understand how a Python OOP file is structured and how to bring your LLD code to life.
+Here is a Java OOPs Revision Guide focused on the absolute fundamentals: Syntax, Classes, and Objects. Use this as your cheat sheet to understand how a Java OOP file is structured and how to bring your LLD code to life.
 
 ---
 
 ## Topic Mindmap
 
 ```
-[Python OOPs — Syntax Reference]
+[Java OOPs — Syntax Reference]
 ├── Part 1: Class and Object
 │   ├── Class: blueprint; Object: instance
-│   ├── __init__ method: constructor, initializes state
-│   ├── self parameter: refers to current object instance
-│   └── class vs static members: classmethod, staticmethod, or instancemethod
+│   ├── Constructor: initializes state, same name as the class
+│   ├── this keyword: refers to current object instance
+│   └── class vs static members: static, instance, or constructor
 ├── Part 2: Collections and Strings
-│   ├── Lists: dynamic arrays, list comprehensions
-│   ├── Dictionaries: key-value hash maps, fast O(1) lookups
-│   ├── Sets: unique collections, O(1) membership check
-│   └── Strings: immutable; formatting with f-strings
+│   ├── Lists: ArrayList (dynamic arrays), streams for functional-style transforms
+│   ├── Maps: HashMap key-value store, fast O(1) lookups
+│   ├── Sets: HashSet unique collections, O(1) membership check
+│   └── Strings: immutable; formatting with String.format / text blocks
 ├── Part 3: Methods and Control Flow
-│   ├── Method signature: def name(self, param: type) -> return_type
-│   ├── Variable arguments: *args, **kwargs
-│   └── Control flow: if/elif/else, for/while, dict lookups (switch alternative)
+│   ├── Method signature: returnType name(paramType param)
+│   ├── Variable arguments: varargs (Type... args)
+│   └── Control flow: if/else if/else, for/while, switch expressions
 ├── Part 4: Access Modifiers & Key Mechanics
-│   ├── public / _protected / __private (name mangling)
-│   ├── Pass-by-object-reference: mutable vs immutable
-│   └── Magic methods: __str__, __repr__, __len__
+│   ├── public / protected / private (compiler-enforced)
+│   ├── Pass-by-value: object references are passed by value
+│   └── Object methods: toString(), equals(), hashCode()
 └── Part 5: Inheritance & Relationships
     ├── IS-A (inheritance): subclass extends parent
     ├── HAS-A — two forms:
     │   ├── Composition (strong): owner creates the part; part dies with the owner
     │   └── Aggregation (weak): owner receives the part; part lives independently
-    ├── Abstract class + abstract method (abc.ABC, @abstractmethod)
+    ├── Abstract class + abstract method / interface
     ├── Method overriding: subclass replaces parent's implementation
-    └── Method overloading: Python does it via default args / *args / @overload
+    └── Method overloading: same name, different parameter signatures (compile-time)
 ```
 
 ## Part 1: Class and Object
@@ -65,191 +65,234 @@ Here is a Python OOPs Revision Guide focused on the absolute fundamentals: Synta
 * **Class (The Blueprint)**: A logical template defining fields and actions.
 * **Object (The Instance)**: A physical instantiation of the class occupying memory and containing state.
 
-```python
-class Student:
-    # Class attribute (shared by all instances)
-    school_name = "Tech University"
+```java
+class Student {
+    // Class (static) attribute (shared by all instances)
+    static String schoolName = "Tech University";
 
-    # Constructor (Initializer)
-    def __init__(self, name, age):
-        self.name = name  # Instance attribute (unique to each instance)
-        self.age = age
+    // Instance attributes (unique to each instance)
+    String name;
+    int age;
 
-    # Instance method
-    def study(self):
-        print(f"{self.name} is studying.")
+    // Constructor
+    Student(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }
 
-# Creating objects (instances)
-student1 = Student("Alice", 20)
-student2 = Student("Bob", 22)
+    // Instance method
+    void study() {
+        System.out.println(name + " is studying.");
+    }
+}
 
-student1.study()  # Alice is studying.
+// Creating objects (instances)
+Student student1 = new Student("Alice", 20);
+Student student2 = new Student("Bob", 22);
+
+student1.study();  // Alice is studying.
 ```
 
 ***
 
-### 2. The `self` Keyword
+### 2. The `this` Keyword
 
-The `self` parameter represents the specific instance of the class you are calling. In Python, you must explicitly include `self` as the first argument of any instance method, although Python passes it automatically when the method is invoked.
+The `this` keyword refers to the specific instance of the class you are calling. Java resolves `this` implicitly inside instance methods — you only need it explicitly when a parameter name shadows a field.
 
-```python
-class Car:
-    def __init__(self, model):
-        self.model = model  # self.model binds the value to this instance
+```java
+class Car {
+    private String model;
 
-    def get_model(self):
-        return self.model
+    Car(String model) {
+        this.model = model;  // this.model binds the value to this instance
+    }
+
+    String getModel() {
+        return this.model;
+    }
+}
 ```
 
 ***
 
-### 3. Static and Class Methods
+### 3. Static and Instance Methods
 
-* **Instance Methods**: Access and modify instance state via `self`.
-* **Class Methods (`@classmethod`)**: Access and modify class state via `cls`. Often used for factory methods.
-* **Static Methods (`@staticmethod`)**: Access neither instance nor class state. behave like normal utility functions inside the class namespace.
+* **Instance Methods**: Access and modify instance state via the implicit `this`.
+* **Static Methods**: Access class-level state, called on the class itself without an instance. Often used for factory or utility methods.
 
-```python
-class Calculator:
-    name = "Standard Calculator"
+```java
+class Calculator {
+    static String name = "Standard Calculator";
 
-    def __init__(self, brand):
-        self.brand = brand
+    private String brand;
 
-    # Instance method
-    def get_brand(self):
-        return self.brand
+    Calculator(String brand) {
+        this.brand = brand;
+    }
 
-    # Class method
-    @classmethod
-    def get_calculator_name(cls):
-        return cls.name
+    // Instance method
+    String getBrand() {
+        return brand;
+    }
 
-    # Static method
-    @staticmethod
-    def add(a, b):
-        return a + b
+    // Static "class-level" accessor
+    static String getCalculatorName() {
+        return name;
+    }
+
+    // Static method
+    static int add(int a, int b) {
+        return a + b;
+    }
+}
 ```
 
 ---
 
 ## Part 2: Collections and Strings
 
-Python offers clean, built-in dynamic collections instead of separate array objects.
+Java's Collections Framework provides typed, generic collection classes.
 
-### 1. Lists, Dictionaries, and Sets
+### 1. Lists, Maps, and Sets
 
-```python
-# Lists (Dynamic Arrays)
-fruits = ["apple", "banana"]
-fruits.append("cherry")
+```java
+// Lists (Dynamic Arrays)
+List<String> fruits = new ArrayList<>(List.of("apple", "banana"));
+fruits.add("cherry");
 
-# Dictionaries (Hash Maps)
-user_ages = {"alice": 25, "bob": 30}
-user_ages["charlie"] = 35
+// Maps (Hash Maps)
+Map<String, Integer> userAges = new HashMap<>();
+userAges.put("alice", 25);
+userAges.put("bob", 30);
+userAges.put("charlie", 35);
 
-# Sets (Hash Sets, Unique items)
-unique_ids = {101, 102, 103}
-unique_ids.add(101)  # Duplicate, ignored
+// Sets (Hash Sets, Unique items)
+Set<Integer> uniqueIds = new HashSet<>(Set.of(101, 102, 103));
+uniqueIds.add(101);  // Duplicate, ignored
 ```
 
 ### 2. String Manipulation and Formatting
 
-Python strings are immutable. For text building, f-strings are preferred over concatenation.
+Java strings are immutable. For building text with variables, `String.format` or text blocks are preferred over concatenation.
 
-```python
-name = "Alice"
-greeting = f"Hello, {name}!"  # Preferred f-string interpolation
+```java
+String name = "Alice";
+String greeting = String.format("Hello, %s!", name);  // Preferred formatted interpolation
 ```
 
 ---
 
 ## Part 3: Methods and Control Flow
 
-### 1. Flexible Method Arguments
+### 1. Overloaded and Variable Method Arguments
 
-Python handles variable arguments and default parameters naturally.
+Java has no default parameters — the idiomatic equivalents are method overloading and varargs.
 
-```python
-class Logger:
-    # Default parameters
-    def log(self, message, level="INFO"):
-        print(f"[{level}] {message}")
+```java
+class Logger {
+    // Overload to simulate a "default parameter"
+    void log(String message) {
+        log(message, "INFO");
+    }
 
-    # *args (variable positional arguments) and **kwargs (variable keyword arguments)
-    def log_multiple(self, *messages, **metadata):
-        for msg in messages:
-            print(f"{msg} | Metadata: {metadata}")
+    void log(String message, String level) {
+        System.out.println("[" + level + "] " + message);
+    }
+
+    // Varargs (variable number of arguments)
+    void logMultiple(String... messages) {
+        for (String msg : messages) {
+            System.out.println(msg);
+        }
+    }
+}
 ```
 
-### 2. Control Flow and Switch Alternatives
+### 2. Control Flow and Switch Expressions
 
-Python supports standard loops and dictionary-based lookups (the common pythonic alternative to switch statements).
+Java supports standard loops and switch expressions (a modern, cleaner alternative to chained if/else).
 
-```python
-def get_http_status(status_code):
-    # Dictionary lookup is a common pythonic alternative to switch/match-case
-    statuses = {
-        200: "OK",
-        404: "Not Found",
-        500: "Internal Server Error"
-    }
-    return statuses.get(status_code, "Unknown Status")
+```java
+static String getHttpStatus(int statusCode) {
+    // Switch expression — Java's built-in alternative to a lookup map
+    return switch (statusCode) {
+        case 200 -> "OK";
+        case 404 -> "Not Found";
+        case 500 -> "Internal Server Error";
+        default -> "Unknown Status";
+    };
+}
 ```
 
 ---
 
 ## Part 4: Access Modifiers & Key Mechanics
 
-### 1. Access Modifiers (Convention & Mangling)
+### 1. Access Modifiers (Compiler-Enforced)
 
 * **Public**: accessible from anywhere.
-* **Protected** (prefixed with `_`): acts as a warning to callers that the member is private, but is still physically accessible.
-* **Private** (prefixed with `__`): invokes Python's name mangling mechanism, changing `__variable` to `_ClassName__variable` to prevent accidental access/overrides.
+* **Protected**: accessible within the same package and by subclasses.
+* **Private**: accessible only within the declaring class; enforced by the compiler, not just convention.
 
-```python
-class Account:
-    def __init__(self, holder, balance):
-        self.holder = holder      # Public
-        self._id = "ACC123"       # Protected
-        self.__balance = balance  # Private
+```java
+class Account {
+    public String holder;      // Public
+    protected String id;       // Protected
+    private double balance;    // Private
 
-    def get_balance(self):
-        return self.__balance
+    Account(String holder, double balance) {
+        this.holder = holder;
+        this.id = "ACC123";
+        this.balance = balance;
+    }
+
+    public double getBalance() {
+        return balance;
+    }
+}
 ```
 
-### 2. Pass-by-Object-Reference
+### 2. Pass-by-Value (of the Reference)
 
-In Python, all arguments are passed by object reference.
-* If you pass a **mutable** object (like a list or dict), modifications inside the method affect the caller.
-* If you pass an **immutable** object (like a string, tuple, or integer), rebinding the variable inside the method does not affect the caller.
+In Java, all arguments are passed by value. For objects, the *value* being passed is the reference itself.
+* Modifications made **through** the reference (like mutating a list's contents) affect the caller.
+* Reassigning the parameter itself inside the method does not affect the caller's variable.
 
-```python
-def modify(lst, val):
-    lst.append(val)  # Mutates the original list
+```java
+static void modify(List<Integer> list, int val) {
+    list.add(val);  // Mutates the original list's contents
+}
 
-my_list = [1, 2]
-modify(my_list, 3)
-print(my_list)  # [1, 2, 3]
+List<Integer> myList = new ArrayList<>(List.of(1, 2));
+modify(myList, 3);
+System.out.println(myList);  // [1, 2, 3]
 ```
 
-### 3. Magic (Dunder) Methods
+### 3. Object Methods (`toString`, `equals`, `hashCode`)
 
-Python uses double underscore (dunder) methods to override built-in operations.
+Java uses well-known methods inherited from `Object` to override built-in operations — the equivalent of Python's dunder methods.
 
-```python
-class Book:
-    def __init__(self, title, pages):
-        self.title = title
-        self.pages = pages
+```java
+class Book {
+    private final String title;
+    private final int pages;
 
-    # String representation (analogous to toString() in Java)
-    def __str__(self):
-        return f"'{self.title}' ({self.pages} pages)"
+    Book(String title, int pages) {
+        this.title = title;
+        this.pages = pages;
+    }
 
-    # Length operator override
-    def __len__(self):
-        return self.pages
+    // String representation (equivalent of Python's __str__)
+    @Override
+    public String toString() {
+        return "'" + title + "' (" + pages + " pages)";
+    }
+
+    // "Length" equivalent — Java has no operator overloading, so expose a method
+    public int length() {
+        return pages;
+    }
+}
 ```
 
 ---
@@ -264,54 +307,73 @@ All examples in this section use the same `Vehicle / PetrolCar / ElectricCar / T
 
 `PetrolCar IS-A Vehicle`. The child class `extends` the parent — it inherits all fields and methods, and can add or override behaviour.
 
-```python
-class Vehicle:
-    def __init__(self, make, model):
-        self.make = make
-        self.model = model
-        self._speed = 0          # _speed: protected, accessible in subclasses
+```java
+class Vehicle {
+    protected String make;
+    protected String model;
+    protected int speed = 0;          // protected: accessible in subclasses
 
-    def brake(self, kmh):
-        self._speed = max(0, self._speed - kmh)
-        return f"{self.make} {self.model} slowed to {self._speed} km/h"
+    Vehicle(String make, String model) {
+        this.make = make;
+        this.model = model;
+    }
 
-    def get_speed(self):
-        return self._speed
+    String brake(int kmh) {
+        speed = Math.max(0, speed - kmh);
+        return make + " " + model + " slowed to " + speed + " km/h";
+    }
 
-
-class PetrolCar(Vehicle):                # PetrolCar IS-A Vehicle
-    def __init__(self, make, model, fuel):
-        super().__init__(make, model)    # delegate to Vehicle.__init__
-        self.__fuel = fuel               # __fuel: private, only PetrolCar can touch it
-
-    def accelerate(self, kmh):
-        if self.__fuel <= 0:
-            return "Out of fuel"
-        self._speed += kmh
-        self.__fuel -= kmh * 0.05
-        return f"{self.make} {self.model} now at {self._speed} km/h"
+    int getSpeed() {
+        return speed;
+    }
+}
 
 
-class ElectricCar(Vehicle):             # ElectricCar IS-A Vehicle
-    def __init__(self, make, model, battery_kwh):
-        super().__init__(make, model)
-        self.__battery = battery_kwh
+class PetrolCar extends Vehicle {                // PetrolCar IS-A Vehicle
+    private double fuel;                         // private: only PetrolCar can touch it
 
-    def accelerate(self, kmh):
-        if self.__battery <= 0:
-            return "Battery dead"
-        self._speed += kmh
-        self.__battery -= kmh * 0.02    # EVs are more efficient
-        return f"{self.make} {self.model} now at {self._speed} km/h (silent)"
+    PetrolCar(String make, String model, double fuel) {
+        super(make, model);                      // delegate to Vehicle's constructor
+        this.fuel = fuel;
+    }
+
+    String accelerate(int kmh) {
+        if (fuel <= 0) {
+            return "Out of fuel";
+        }
+        speed += kmh;
+        fuel -= kmh * 0.05;
+        return make + " " + model + " now at " + speed + " km/h";
+    }
+}
 
 
-# isinstance() confirms IS-A at runtime
-tesla = ElectricCar("Tesla", "Model 3", 75)
-print(isinstance(tesla, ElectricCar))   # True
-print(isinstance(tesla, Vehicle))       # True  — IS-A relationship confirmed
+class ElectricCar extends Vehicle {              // ElectricCar IS-A Vehicle
+    private double battery;
+
+    ElectricCar(String make, String model, double batteryKwh) {
+        super(make, model);
+        this.battery = batteryKwh;
+    }
+
+    String accelerate(int kmh) {
+        if (battery <= 0) {
+            return "Battery dead";
+        }
+        speed += kmh;
+        battery -= kmh * 0.02;    // EVs are more efficient
+        return make + " " + model + " now at " + speed + " km/h (silent)";
+    }
+}
+
+
+// instanceof confirms IS-A at runtime
+ElectricCar tesla = new ElectricCar("Tesla", "Model 3", 75);
+System.out.println(tesla instanceof ElectricCar);   // true
+System.out.println(tesla instanceof Vehicle);       // true — IS-A relationship confirmed
 ```
 
-**Rule of thumb**: use `isinstance(obj, ParentClass)` to verify an IS-A relationship at runtime. `issubclass(ElectricCar, Vehicle)` checks at the class level.
+**Rule of thumb**: use `obj instanceof ParentClass` to verify an IS-A relationship at runtime.
 
 ---
 
@@ -321,10 +383,10 @@ HAS-A has two forms that differ on **who owns the lifetime** of the inner object
 
 | | Composition (strong HAS-A) | Aggregation (weak HAS-A) |
 |---|---|---|
-| Part created by | The owner (`self` creates it in `__init__`) | An external caller (passed in via constructor) |
+| Part created by | The owner (created with `new` inside the constructor) | An external caller (passed in via constructor) |
 | Part lifetime | Dies when the owner dies | Lives independently; can be shared |
 | Dependency direction | Owner is fully responsible | Owner uses but does not own |
-| Python signal | `self.__engine = Engine(...)` inside `__init__` | `self.__driver = driver` where `driver` is a parameter |
+| Java signal | `this.engine = new Engine(...)` inside the constructor | `this.driver = driver` where `driver` is a parameter |
 
 ---
 
@@ -332,36 +394,51 @@ HAS-A has two forms that differ on **who owns the lifetime** of the inner object
 
 A `Car` creates its own `Engine` internally. The `Engine` has no meaning outside that `Car` — when the `Car` is gone, so is the `Engine`.
 
-```python
-class Engine:
-    def __init__(self, horsepower, fuel_type):
-        self.horsepower = horsepower
-        self.fuel_type = fuel_type
+```java
+class Engine {
+    private final int horsepower;
+    private final String fuelType;
 
-    def start(self):
-        return f"{self.fuel_type} engine ({self.horsepower} hp) started"
+    Engine(int horsepower, String fuelType) {
+        this.horsepower = horsepower;
+        this.fuelType = fuelType;
+    }
 
-    def stop(self):
-        return f"{self.fuel_type} engine stopped"
+    String start() {
+        return fuelType + " engine (" + horsepower + " hp) started";
+    }
 
-
-class Car:                              # Car COMPOSES Engine (strong HAS-A)
-    def __init__(self, make, model, horsepower, fuel_type):
-        self.make = make
-        self.model = model
-        self.__engine = Engine(horsepower, fuel_type)   # Car creates Engine; caller never sees it
-
-    def start(self):
-        return f"{self.make} {self.model}: {self.__engine.start()}"
-
-    def stop(self):
-        return f"{self.make} {self.model}: {self.__engine.stop()}"
+    String stop() {
+        return fuelType + " engine stopped";
+    }
+}
 
 
-camry = Car("Toyota", "Camry", horsepower=150, fuel_type="petrol")
-print(camry.start())   # Toyota Camry: petrol engine (150 hp) started
-# The Engine object is hidden inside Car — no external reference to it exists.
-# When `camry` goes out of scope, the Engine is also garbage-collected.
+class Car {                              // Car COMPOSES Engine (strong HAS-A)
+    private final String make;
+    private final String model;
+    private final Engine engine;         // Car creates Engine; caller never sees it
+
+    Car(String make, String model, int horsepower, String fuelType) {
+        this.make = make;
+        this.model = model;
+        this.engine = new Engine(horsepower, fuelType);
+    }
+
+    String start() {
+        return make + " " + model + ": " + engine.start();
+    }
+
+    String stop() {
+        return make + " " + model + ": " + engine.stop();
+    }
+}
+
+
+Car camry = new Car("Toyota", "Camry", 150, "petrol");
+System.out.println(camry.start());   // Toyota Camry: petrol engine (150 hp) started
+// The Engine object is hidden inside Car — no external reference to it exists.
+// When `camry` becomes unreachable, the Engine is also garbage-collected.
 ```
 
 **Lifetime rule**: destroy the `Car` → its `Engine` is also destroyed. The `Engine` cannot exist without its owning `Car`.
@@ -372,48 +449,63 @@ print(camry.start())   # Toyota Camry: petrol engine (150 hp) started
 
 A `Fleet` aggregates `Driver` objects. Drivers exist independently — the same driver can be in multiple fleets, and drivers outlive any single fleet.
 
-```python
-class Driver:
-    def __init__(self, name, license_id):
-        self.name = name
-        self.license_id = license_id
+```java
+class Driver {
+    private final String name;
+    private final String licenseId;
 
-    def details(self):
-        return f"Driver({self.name}, license={self.license_id})"
+    public Driver(String name, String licenseId) {
+        this.name = name;
+        this.licenseId = licenseId;
+    }
 
+    public String details() {
+        return String.format("Driver(%s, license=%s)", name, licenseId);
+    }
+}
 
-class Fleet:                            # Fleet AGGREGATES Drivers (weak HAS-A)
-    def __init__(self, fleet_name):
-        self.fleet_name = fleet_name
-        self.__drivers = []   # list of Driver; holds references, not ownership
+class Fleet {                                  // Fleet AGGREGATES Drivers (weak HAS-A)
+    private final String fleetName;
+    private final List<Driver> drivers = new ArrayList<>();   // holds references, not ownership
 
-    def add_driver(self, driver):
-        self.__drivers.append(driver)       # Driver passed in from outside
+    public Fleet(String fleetName) {
+        this.fleetName = fleetName;
+    }
 
-    def remove_driver(self, driver):
-        self.__drivers.remove(driver)
+    public void addDriver(Driver driver) {
+        drivers.add(driver);                    // Driver passed in from outside
+    }
 
-    def list_drivers(self):
-        return [d.details() for d in self.__drivers]
+    public void removeDriver(Driver driver) {
+        drivers.remove(driver);
+    }
 
+    public List<String> listDrivers() {
+        List<String> result = new ArrayList<>();
+        for (Driver d : drivers) {
+            result.add(d.details());
+        }
+        return result;
+    }
+}
 
-# Drivers exist independently
-alice = Driver("Alice", "DL-001")
-bob   = Driver("Bob",   "DL-002")
+// Drivers exist independently
+Driver alice = new Driver("Alice", "DL-001");
+Driver bob   = new Driver("Bob",   "DL-002");
 
-amazon_fleet = Fleet("Amazon Delivery")
-amazon_fleet.add_driver(alice)
-amazon_fleet.add_driver(bob)
+Fleet amazonFleet = new Fleet("Amazon Delivery");
+amazonFleet.addDriver(alice);
+amazonFleet.addDriver(bob);
 
-uber_fleet = Fleet("Uber")
-uber_fleet.add_driver(alice)            # Alice is in BOTH fleets simultaneously
+Fleet uberFleet = new Fleet("Uber");
+uberFleet.addDriver(alice);              // Alice is in BOTH fleets simultaneously
 
-print(amazon_fleet.list_drivers())
-# ['Driver(Alice, license=DL-001)', 'Driver(Bob, license=DL-002)']
+System.out.println(amazonFleet.listDrivers());
+// [Driver(Alice, license=DL-001), Driver(Bob, license=DL-002)]
 
-# Dissolving the fleet does NOT delete the drivers
-del amazon_fleet
-print(alice.details())                  # Driver(Alice, license=DL-001) — still alive
+// Dissolving the fleet does NOT delete the drivers
+amazonFleet = null;                      // no more references from that fleet
+System.out.println(alice.details());     // Driver(Alice, license=DL-001) — still alive
 ```
 
 **Lifetime rule**: destroy the `Fleet` → the `Driver` objects continue to exist. Drivers can be shared across multiple fleets.
@@ -430,165 +522,186 @@ print(alice.details())                  # Driver(Alice, license=DL-001) — stil
 
 An abstract class defines a **contract** — it lists what subclasses must implement, but provides no concrete implementation for those methods. You cannot instantiate an abstract class directly.
 
-```python
-from abc import ABC, abstractmethod
+```java
+abstract class Vehicle {                // abstract class = cannot be instantiated
+    protected final String make;
+    protected final String model;
 
+    public Vehicle(String make, String model) {
+        this.make = make;
+        this.model = model;
+    }
 
-class Vehicle(ABC):                     # ABC = Abstract Base Class
-    def __init__(self, make, model):
-        self.make = make
-        self.model = model
+    public abstract String start();                     // subclass MUST implement this
+    public abstract String refuelOrCharge(double amount); // subclass MUST implement this
 
-    @abstractmethod
-    def start(self):                    # subclass MUST implement this
-        ...
+    public String describe() {              // concrete method — inherited as-is
+        return make + " " + model;
+    }
+}
 
-    @abstractmethod
-    def refuel_or_charge(self, amount):  # subclass MUST implement this
-        ...
+class PetrolCar extends Vehicle {
+    private double fuel;
 
-    def describe(self):                 # concrete method — inherited as-is
-        return f"{self.make} {self.model}"
+    public PetrolCar(String make, String model, double fuel) {
+        super(make, model);
+        this.fuel = fuel;
+    }
 
+    @Override
+    public String start() {                 // fulfils abstract contract
+        return describe() + " ignites combustion engine — vroom!";
+    }
 
-class PetrolCar(Vehicle):
-    def __init__(self, make, model, fuel):
-        super().__init__(make, model)
-        self.__fuel = fuel
+    @Override
+    public String refuelOrCharge(double litres) {
+        fuel += litres;
+        return String.format("Refuelled %.1fL. Tank: %.1fL", litres, fuel);
+    }
+}
 
-    def start(self):                    # fulfils abstract contract
-        return f"{self.describe()} ignites combustion engine — vroom!"
+class ElectricCar extends Vehicle {
+    private double battery;
 
-    def refuel_or_charge(self, litres):
-        self.__fuel += litres
-        return f"Refuelled {litres}L. Tank: {self.__fuel}L"
+    public ElectricCar(String make, String model, double batteryKwh) {
+        super(make, model);
+        this.battery = batteryKwh;
+    }
 
+    @Override
+    public String start() {
+        return describe() + " powers up electric motor — silent launch.";
+    }
 
-class ElectricCar(Vehicle):
-    def __init__(self, make, model, battery_kwh):
-        super().__init__(make, model)
-        self.__battery = battery_kwh
+    @Override
+    public String refuelOrCharge(double kwh) {
+        battery += kwh;
+        return String.format("Charged %.1f kWh. Battery: %.1f kWh", kwh, battery);
+    }
+}
 
-    def start(self):
-        return f"{self.describe()} powers up electric motor — silent launch."
-
-    def refuel_or_charge(self, kwh):
-        self.__battery += kwh
-        return f"Charged {kwh} kWh. Battery: {self.__battery} kWh"
-
-
-# Vehicle()                # TypeError: Can't instantiate abstract class Vehicle
-pc = PetrolCar("Toyota", "Camry", 50)
-print(pc.start())          # Toyota Camry ignites combustion engine — vroom!
+// new Vehicle("x","y")   // compile error: Vehicle is abstract; cannot be instantiated
+Vehicle pc = new PetrolCar("Toyota", "Camry", 50);
+System.out.println(pc.start());     // Toyota Camry ignites combustion engine — vroom!
 ```
 
-**Interview rule**: declare `@abstractmethod` on every method that varies per subclass. Leave shared logic (like `describe()`) as a concrete method on the base. If a subclass misses even one `@abstractmethod`, Python raises `TypeError` at instantiation.
+**Interview rule**: declare every method that varies per subclass as `abstract` on the base class. Leave shared logic (like `describe()`) as a concrete method on the base. If a subclass misses even one abstract method, the compiler refuses to compile it unless the subclass is also declared `abstract`.
 
 ---
 
 ### 4. Method Overriding
 
-A subclass **replaces** the parent's implementation of a method with the same signature. Python resolves to the subclass version at runtime (dynamic dispatch).
+A subclass **replaces** the parent's implementation of a method with the same signature. Java resolves to the subclass version at runtime (dynamic dispatch / virtual method invocation).
 
-```python
-class Vehicle:
-    def start(self):
-        return "Generic vehicle starting..."         # default behaviour
+```java
+class Vehicle {
+    public String start() {
+        return "Generic vehicle starting...";           // default behaviour
+    }
 
-    def describe(self):
-        return f"Vehicle({self.__class__.__name__})"
+    public String describe() {
+        return "Vehicle(" + getClass().getSimpleName() + ")";
+    }
+}
 
+class PetrolCar extends Vehicle {
+    @Override
+    public String start() {                              // overrides Vehicle.start
+        return "PetrolCar ignites combustion engine — vroom!";
+    }
+}
 
-class PetrolCar(Vehicle):
-    def start(self):                                 # overrides Vehicle.start
-        return "PetrolCar ignites combustion engine — vroom!"
+class ElectricCar extends Vehicle {
+    @Override
+    public String start() {                              // overrides Vehicle.start
+        return "ElectricCar powers up silently.";
+    }
+}
 
+class Truck extends Vehicle {
+    @Override
+    public String start() {                              // overrides Vehicle.start
+        return "Truck rumbles to life — heavy diesel ignition.";
+    }
 
-class ElectricCar(Vehicle):
-    def start(self):                                 # overrides Vehicle.start
-        return "ElectricCar powers up silently."
+    public String startWithChecklist() {
+        String parentResult = super.start();              // call parent's version if needed
+        return "[Pre-check done] " + parentResult;
+    }
+}
 
-
-class Truck(Vehicle):
-    def start(self):                                 # overrides Vehicle.start
-        return "Truck rumbles to life — heavy diesel ignition."
-
-    def start_with_checklist(self):
-        parent_result = super().start()              # call parent's version if needed
-        return f"[Pre-check done] {parent_result}"
-
-
-# Runtime dispatch — same call, different behaviour based on actual type
-fleet = [PetrolCar(), ElectricCar(), Truck()]  # list of Vehicle
-for v in fleet:
-    print(v.start())
-# PetrolCar ignites combustion engine — vroom!
-# ElectricCar powers up silently.
-# Truck rumbles to life — heavy diesel ignition.
+// Runtime dispatch — same call, different behaviour based on actual type
+List<Vehicle> fleet = List.of(new PetrolCar(), new ElectricCar(), new Truck());
+for (Vehicle v : fleet) {
+    System.out.println(v.start());
+}
+// PetrolCar ignites combustion engine — vroom!
+// ElectricCar powers up silently.
+// Truck rumbles to life — heavy diesel ignition.
 ```
 
-**Key point**: `super().start()` lets you extend the parent's behaviour rather than replace it entirely — useful when you want to add to the parent, not overwrite it.
+**Key point**: `super.start()` lets you extend the parent's behaviour rather than replace it entirely — useful when you want to add to the parent, not overwrite it.
 
 ---
 
-### 5. Method Overloading (Python-style)
+### 5. Method Overloading
 
-Python does **not** support true method overloading (same name, different parameter types) like Java. The last definition wins. Instead, use:
+Java **does** support true method overloading — multiple methods with the same name but different parameter lists (different count and/or types) can coexist in the same class. The compiler picks the matching overload at compile time based on the argument types (static/compile-time polymorphism).
 
-- **Default arguments** — same method, parameter is optional
-- **`*args` / `**kwargs`** — accept any number of arguments
-- **`@overload` from `typing`** — type-hint different signatures for IDE support (no runtime effect)
+```java
+class FuelStation {
 
-```python
-from typing import overload
+    // --- Approach 1: overload with fewer parameters (acts like a "default" argument) ---
+    public String refuel(double litres) {
+        return refuel(litres, "91");
+    }
 
+    public String refuel(double litres, String grade) {
+        return String.format("Dispensed %.0fL of grade-%s fuel", litres, grade);
+    }
 
-class FuelStation:
+    // Usage:
+    // station.refuel(40)          -> "Dispensed 40L of grade-91 fuel"
+    // station.refuel(40, "95")    -> "Dispensed 40L of grade-95 fuel"
 
-    # --- Approach 1: default argument ---
-    def refuel(self, litres, grade="91"):
-        return f"Dispensed {litres}L of grade-{grade} fuel"
+    // --- Approach 2: varargs for variable number of arguments ---
+    public String logVehicles(String... vehicleIds) {
+        return "Serviced: " + String.join(", ", vehicleIds);
+    }
 
-    # Usage:
-    # station.refuel(40)          -> "Dispensed 40L of grade-91 fuel"
-    # station.refuel(40, "95")    -> "Dispensed 40L of grade-95 fuel"
+    // Usage:
+    // station.logVehicles("V1")             -> "Serviced: V1"
+    // station.logVehicles("V1", "V2", "V3") -> "Serviced: V1, V2, V3"
 
-    # --- Approach 2: *args for variable positional arguments ---
-    def log_vehicles(self, *vehicle_ids):
-        return f"Serviced: {', '.join(vehicle_ids)}"
+    // --- Approach 3: true overloads with different parameter types/counts ---
+    public double calculateCost(double litres) {
+        return calculateCost(litres, 0.0);
+    }
 
-    # Usage:
-    # station.log_vehicles("V1")             -> "Serviced: V1"
-    # station.log_vehicles("V1", "V2", "V3") -> "Serviced: V1, V2, V3"
+    public double calculateCost(double litres, double discountPct) {
+        double base = litres * 1.5;                  // Rs 1.5 per litre
+        return base * (1 - discountPct / 100);
+    }
 
-    # --- Approach 3: @overload for type-safe signatures (IDE hint only) ---
-    @overload
-    def calculate_cost(self, litres): ...
-    @overload
-    def calculate_cost(self, litres, discount_pct): ...
-
-    def calculate_cost(self, litres, discount_pct=0.0):
-        base = litres * 1.5                  # Rs 1.5 per litre
-        return base * (1 - discount_pct / 100)
-
-    # Usage:
-    # station.calculate_cost(40)        -> 60.0
-    # station.calculate_cost(40, 10)    -> 54.0   (10% discount)
+    // Usage:
+    // station.calculateCost(40)        -> 60.0
+    // station.calculateCost(40, 10)    -> 54.0   (10% discount)
+}
 ```
 
-**Interview answer**: "Python doesn't support overloading natively — the last definition of a function with the same name replaces all prior ones. We achieve overload-like behaviour via default parameters or `*args`. `typing.overload` is a decorator that lets type checkers understand multiple signatures, but at runtime only one function body exists."
+**Interview answer**: "Java resolves overloads at compile time based on the number and types of arguments (static polymorphism) — this is distinct from overriding, which is resolved at runtime based on the actual object type (dynamic polymorphism). When no exact match exists, the compiler applies widening/boxing conversions before failing; ambiguous calls are a compile error, not a runtime one."
 
 ---
 
 ### 6. Quick Reference — IS-A vs HAS-A vs Abstract
 
-| Concept | Python syntax | Lifetime of the part | Example |
+| Concept | Java syntax | Lifetime of the part | Example |
 |---|---|---|---|
-| IS-A (inheritance) | `class PetrolCar(Vehicle)` | n/a | `PetrolCar IS-A Vehicle` |
-| Composition (strong HAS-A) | `self.__engine = Engine(...)` inside `__init__` | Part dies with owner | `Car` creates its own `Engine` |
-| Aggregation (weak HAS-A) | `self.__drivers: list[Driver] = []`, drivers passed in | Part outlives owner; can be shared | `Fleet` holds `Driver` refs; drivers exist independently |
-| Abstract class | `class Vehicle(ABC)` | n/a | Cannot instantiate; defines contract |
-| Abstract method | `@abstractmethod def start()` | n/a | Subclass must implement or `TypeError` at init |
+| IS-A (inheritance) | `class PetrolCar extends Vehicle` | n/a | `PetrolCar IS-A Vehicle` |
+| Composition (strong HAS-A) | `private final Engine engine = new Engine(...);` inside constructor | Part dies with owner | `Car` creates its own `Engine` |
+| Aggregation (weak HAS-A) | `private List<Driver> drivers = new ArrayList<>();`, drivers passed in | Part outlives owner; can be shared | `Fleet` holds `Driver` refs; drivers exist independently |
+| Abstract class | `abstract class Vehicle` | n/a | Cannot instantiate; defines contract |
+| Abstract method | `abstract String start();` | n/a | Subclass must implement or fails to compile (unless also `abstract`) |
 | Method overriding | Same signature in subclass | n/a | `ElectricCar.start()` replaces `Vehicle.start()` |
 | Method overloading | Default args / `*args` / `@overload` | n/a | `calculate_cost(litres)` vs `calculate_cost(litres, discount)` |
 | `super()` | `super().__init__(...)` | n/a | Delegate to parent; follows MRO |

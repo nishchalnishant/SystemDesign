@@ -165,109 +165,140 @@ class Game:
 - Move puts own king in check (illegal even if piece can physically go there)
 - Moving into checkmate end state
 
-```python
-def make_move(self, from_pos, to_pos):
-    if self.state != GameState.IN_PROGRESS:
-        return False
+```java
+public boolean makeMove(Position fromPos, Position toPos) {
+    if (state != GameState.IN_PROGRESS) {
+        return false;
+    }
 
-    piece = self.board.get_piece(from_pos)
-    if not piece or piece.get_color() != self.current_color:
-        return False
+    Piece piece = board.getPiece(fromPos);
+    if (piece == null || piece.getColor() != currentColor) {
+        return false;
+    }
 
-    valid_moves = piece.get_valid_moves(self.board)
-    if to_pos not in valid_moves:
-        return False
+    List<Position> validMoves = piece.getValidMoves(board);
+    if (!validMoves.contains(toPos)) {
+        return false;
+    }
 
-    # Simulate move; reject if own king ends up in check
-    test_board = self.board.clone()
-    test_board.move_piece(from_pos, to_pos)
-    if test_board.is_in_check(self.current_color):
-        return False
+    // Simulate move; reject if own king ends up in check
+    Board testBoard = board.clone();
+    testBoard.movePiece(fromPos, toPos);
+    if (testBoard.isInCheck(currentColor)) {
+        return false;
+    }
 
-    # Apply to real board
-    self.board.move_piece(from_pos, to_pos)
+    // Apply to real board
+    board.movePiece(fromPos, toPos);
 
-    opponent = Color.BLACK if self.current_color == Color.WHITE else Color.WHITE
-    if self.is_checkmate(opponent):
-        self.state = GameState.WHITE_WINS if self.current_color == Color.WHITE else GameState.BLACK_WINS
-    elif self.is_stalemate(opponent):
-        self.state = GameState.DRAW
-    else:
-        self.current_color = opponent
+    Color opponent = (currentColor == Color.WHITE) ? Color.BLACK : Color.WHITE;
+    if (isCheckmate(opponent)) {
+        state = (currentColor == Color.WHITE) ? GameState.WHITE_WINS : GameState.BLACK_WINS;
+    } else if (isStalemate(opponent)) {
+        state = GameState.DRAW;
+    } else {
+        currentColor = opponent;
+    }
 
-    return True
+    return true;
+}
 ```
 
 ### Core Method: `is_in_check`
 
-```python
-def is_in_check(self, color):
-    king_pos = self.find_king(color)
-    opponent = Color.BLACK if color == Color.WHITE else Color.WHITE
-    for piece in self.get_pieces(opponent):
-        # get_valid_moves without check-filter to avoid infinite recursion
-        if king_pos in piece.get_attack_squares(self):
-            return True
-    return False
+```java
+public boolean isInCheck(Color color) {
+    Position kingPos = findKing(color);
+    Color opponent = (color == Color.WHITE) ? Color.BLACK : Color.WHITE;
+    for (Piece piece : getPieces(opponent)) {
+        // getAttackSquares without check-filter to avoid infinite recursion
+        if (piece.getAttackSquares(this).contains(kingPos)) {
+            return true;
+        }
+    }
+    return false;
+}
 ```
 
 ### Core Method: `is_checkmate`
 
-```python
-def is_checkmate(self, color):
-    if not self.is_in_check(color):
-        return False
-    return self._has_no_legal_moves(color)
+```java
+public boolean isCheckmate(Color color) {
+    if (!isInCheck(color)) {
+        return false;
+    }
+    return hasNoLegalMoves(color);
+}
 
-def is_stalemate(self, color):
-    if self.is_in_check(color):
-        return False
-    return self._has_no_legal_moves(color)
+public boolean isStalemate(Color color) {
+    if (isInCheck(color)) {
+        return false;
+    }
+    return hasNoLegalMoves(color);
+}
 
-def _has_no_legal_moves(self, color):
-    for piece in self.get_pieces(color):
-        for move in piece.get_valid_moves(self):
-            test_board = self.clone()
-            test_board.move_piece(piece.get_position(), move)
-            if not test_board.is_in_check(color):
-                return False
-    return True
+private boolean hasNoLegalMoves(Color color) {
+    for (Piece piece : getPieces(color)) {
+        for (Position move : piece.getValidMoves(board)) {
+            Board testBoard = board.clone();
+            testBoard.movePiece(piece.getPosition(), move);
+            if (!testBoard.isInCheck(color)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 ```
 
 ### Piece: `Knight.get_valid_moves`
 
-```python
-def get_valid_moves(self, board):
-    offsets = [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]
-    moves = []
-    r, c = self.position.row, self.position.col
-    for dr, dc in offsets:
-        pos = Position(r + dr, c + dc)
-        if pos.is_valid():
-            occupant = board.get_piece(pos)
-            if not occupant or occupant.get_color() != self.color:
-                moves.append(pos)
-    return moves
+```java
+@Override
+public List<Position> getValidMoves(Board board) {
+    int[][] offsets = {{-2,-1},{-2,1},{-1,-2},{-1,2},{1,-2},{1,2},{2,-1},{2,1}};
+    List<Position> moves = new ArrayList<>();
+    int r = position.getRow();
+    int c = position.getCol();
+    for (int[] offset : offsets) {
+        Position pos = new Position(r + offset[0], c + offset[1]);
+        if (pos.isValid()) {
+            Piece occupant = board.getPiece(pos);
+            if (occupant == null || occupant.getColor() != color) {
+                moves.add(pos);
+            }
+        }
+    }
+    return moves;
+}
 ```
 
 ### Piece: Sliding pieces (Rook, Bishop, Queen)
 
-```python
-def get_sliding_moves(self, board, directions):
-    moves = []
-    for dr, dc in directions:
-        r, c = self.position.row + dr, self.position.col + dc
-        while 0 <= r < 8 and 0 <= c < 8:
-            pos = Position(r, c)
-            occupant = board.get_piece(pos)
-            if occupant:
-                if occupant.get_color() != self.color:
-                    moves.append(pos)  # capture
-                break  # blocked
-            moves.append(pos)
-            r += dr
-            c += dc
-    return moves
+```java
+protected List<Position> getSlidingMoves(Board board, int[][] directions) {
+    List<Position> moves = new ArrayList<>();
+    for (int[] direction : directions) {
+        int dr = direction[0];
+        int dc = direction[1];
+        int r = position.getRow() + dr;
+        int c = position.getCol() + dc;
+        while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+            Position pos = new Position(r, c);
+            Piece occupant = board.getPiece(pos);
+            if (occupant != null) {
+                if (occupant.getColor() != color) {
+                    moves.add(pos); // capture
+                }
+                break; // blocked
+            }
+            moves.add(pos);
+            r += dr;
+            c += dc;
+        }
+    }
+    return moves;
+}
 ```
 
 ---
@@ -303,64 +334,83 @@ Turn: White makes move Queen (6,4) → (1,4)
 
 The fix: `get_attack_squares` returns the squares a piece *threatens* (pure geometry + captures), with no legality filter. `get_valid_moves` calls `get_attack_squares` and then filters out moves that leave own king in check.
 
-```python
-# Pawn attacks diagonally but moves forward — different squares
-class Pawn:
-    def get_attack_squares(self, board):
-        direction = -1 if self.color == Color.WHITE else 1
-        attacks = []
-        for dc in [-1, 1]:
-            pos = Position(self.position.row + direction, self.position.col + dc)
-            if pos.is_valid():
-                attacks.append(pos)
-        return attacks
+```java
+// Pawn attacks diagonally but moves forward — different squares
+public class Pawn extends Piece {
 
-    def get_valid_moves(self, board):
-        moves = []
-        # forward move
-        direction = -1 if self.color == Color.WHITE else 1
-        forward = Position(self.position.row + direction, self.position.col)
-        if forward.is_valid() and not board.get_piece(forward):
-            moves.append(forward)
-        # diagonal captures
-        for attack in self.get_attack_squares(board):
-            occupant = board.get_piece(attack)
-            if occupant and occupant.get_color() != self.color:
-                moves.append(attack)
-        return moves
+    @Override
+    public List<Position> getAttackSquares(Board board) {
+        int direction = (color == Color.WHITE) ? -1 : 1;
+        List<Position> attacks = new ArrayList<>();
+        for (int dc : new int[] {-1, 1}) {
+            Position pos = new Position(position.getRow() + direction, position.getCol() + dc);
+            if (pos.isValid()) {
+                attacks.add(pos);
+            }
+        }
+        return attacks;
+    }
+
+    @Override
+    public List<Position> getValidMoves(Board board) {
+        List<Position> moves = new ArrayList<>();
+        // forward move
+        int direction = (color == Color.WHITE) ? -1 : 1;
+        Position forward = new Position(position.getRow() + direction, position.getCol());
+        if (forward.isValid() && board.getPiece(forward) == null) {
+            moves.add(forward);
+        }
+        // diagonal captures
+        for (Position attack : getAttackSquares(board)) {
+            Piece occupant = board.getPiece(attack);
+            if (occupant != null && occupant.getColor() != color) {
+                moves.add(attack);
+            }
+        }
+        return moves;
+    }
+}
 ```
 
 ### 2. "How would you add castling?"
 
 Castling has three preconditions: King and Rook have not moved, no pieces between them, King is not in check and does not pass through check.
 
-```python
-def get_castling_moves(self, board):
-    moves = []
-    if self.has_moved or board.is_in_check(self.color):
-        return moves
+```java
+public List<Position> getCastlingMoves(Board board) {
+    List<Position> moves = new ArrayList<>();
+    if (hasMoved || board.isInCheck(color)) {
+        return moves;
+    }
 
-    # Kingside
-    rook_pos = Position(self.position.row, 7)
-    rook = board.get_piece(rook_pos)
-    if rook and not rook.has_moved:
-        if self._path_clear_and_safe(board, [(0,5),(0,6)]):
-            moves.append(Position(self.position.row, 6))
+    // Kingside
+    Position rookPos = new Position(position.getRow(), 7);
+    Piece rook = board.getPiece(rookPos);
+    if (rook != null && !rook.hasMoved()) {
+        if (pathClearAndSafe(board, new int[][] {{0, 5}, {0, 6}})) {
+            moves.add(new Position(position.getRow(), 6));
+        }
+    }
 
-    # Queenside similar...
-    return moves
+    // Queenside similar...
+    return moves;
+}
 
-def _path_clear_and_safe(self, board, offsets):
-    for dr, dc in offsets:
-        pos = Position(self.position.row + dr, self.position.col + dc)
-        if board.get_piece(pos):
-            return False
-        # simulate king moving through square
-        test = board.clone()
-        test.move_piece(self.position, pos)
-        if test.is_in_check(self.color):
-            return False
-    return True
+private boolean pathClearAndSafe(Board board, int[][] offsets) {
+    for (int[] offset : offsets) {
+        Position pos = new Position(position.getRow() + offset[0], position.getCol() + offset[1]);
+        if (board.getPiece(pos) != null) {
+            return false;
+        }
+        // simulate king moving through square
+        Board test = board.clone();
+        test.movePiece(position, pos);
+        if (test.isInCheck(color)) {
+            return false;
+        }
+    }
+    return true;
+}
 ```
 
 Add `has_moved: bool` flag to `Piece`. Set it in `Board.move_piece`.
@@ -369,26 +419,36 @@ Add `has_moved: bool` flag to `Piece`. Set it in `Board.move_piece`.
 
 Keep `Game` and `Board` unchanged. Add a `ChessEngine` that picks a move given the game state.
 
-```python
-class ChessEngine:
-    def choose_move(self, game, color, depth=3):
-        return self._minimax(game.board, color, depth, True)[1]
+```java
+public class ChessEngine {
 
-    def _minimax(self, board, color, depth, maximizing):
-        if depth == 0:
-            return self._evaluate(board, color), None
-        best_move = None
-        best_score = float('-inf') if maximizing else float('inf')
-        for piece in board.get_pieces(color):
-            for move in piece.get_valid_moves(board):
-                test = board.clone()
-                test.move_piece(piece.get_position(), move)
-                score, _ = self._minimax(test, opponent(color), depth-1, not maximizing)
-                if maximizing and score > best_score:
-                    best_score, best_move = score, (piece.get_position(), move)
-                elif not maximizing and score < best_score:
-                    best_score, best_move = score, (piece.get_position(), move)
-        return best_score, best_move
+    public Move chooseMove(Game game, Color color, int depth) {
+        return minimax(game.getBoard(), color, depth, true).getMove();
+    }
+
+    private ScoredMove minimax(Board board, Color color, int depth, boolean maximizing) {
+        if (depth == 0) {
+            return new ScoredMove(evaluate(board, color), null);
+        }
+        Move bestMove = null;
+        double bestScore = maximizing ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY;
+        for (Piece piece : board.getPieces(color)) {
+            for (Position move : piece.getValidMoves(board)) {
+                Board test = board.clone();
+                test.movePiece(piece.getPosition(), move);
+                double score = minimax(test, opponent(color), depth - 1, !maximizing).getScore();
+                if (maximizing && score > bestScore) {
+                    bestScore = score;
+                    bestMove = new Move(piece.getPosition(), move);
+                } else if (!maximizing && score < bestScore) {
+                    bestScore = score;
+                    bestMove = new Move(piece.getPosition(), move);
+                }
+            }
+        }
+        return new ScoredMove(bestScore, bestMove);
+    }
+}
 ```
 
 Alpha-beta pruning cuts search tree significantly (O(b^d) → O(b^(d/2)) in best case).
@@ -397,17 +457,20 @@ Alpha-beta pruning cuts search tree significantly (O(b^d) → O(b^(d/2)) in best
 
 Track board state hashes in Game. After each move, hash the board (piece positions + color to move). If the same hash appears 3 times → draw.
 
-```python
-class Game:
-    def __init__(self):
-        self.position_history = Counter()
+```java
+public class Game {
+    private final Map<String, Integer> positionHistory = new HashMap<>();
 
-    def make_move(self, from_pos, to_pos):
-        # ... apply move ...
-        board_hash = self._hash_board()
-        self.position_history[board_hash] += 1
-        if self.position_history[board_hash] >= 3:
-            self.state = GameState.DRAW
+    public boolean makeMove(Position fromPos, Position toPos) {
+        // ... apply move ...
+        String boardHash = hashBoard();
+        positionHistory.merge(boardHash, 1, Integer::sum);
+        if (positionHistory.get(boardHash) >= 3) {
+            state = GameState.DRAW;
+        }
+        return true;
+    }
+}
 ```
 
 ---
@@ -440,7 +503,7 @@ class Game:
   **A**: Checkmate = in check AND no legal moves. Stalemate = NOT in check AND no legal moves. Both end the game, but checkmate is a loss, stalemate is a draw.
 
 - **Q**: How would you make `board.clone()` efficient?
-  **A**: With a dict, clone is `dict(self.grid)` plus reconstructing each Piece. Since there are at most 32 pieces and each is lightweight (color + position), this is O(32) = O(1) effectively.
+  **A**: With a map, clone is `new HashMap<>(this.grid)` plus reconstructing each Piece. Since there are at most 32 pieces and each is lightweight (color + position), this is O(32) = O(1) effectively.
 
 ---
 

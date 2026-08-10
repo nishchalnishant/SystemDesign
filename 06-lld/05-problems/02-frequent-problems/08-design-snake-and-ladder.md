@@ -167,56 +167,71 @@ class Game:
 - Snake on 100: impossible if config is valid
 - Multiple snakes/ladders chained: resolve only once
 
-```python
-def take_turn(self):
-    if self.is_over():
-        return None
+```java
+public TurnResult takeTurn() {
+    if (isOver()) {
+        return null;
+    }
 
-    player = self.get_current_player()
-    roll = self.dice.roll()
-    new_pos = player.get_position() + roll
+    Player player = getCurrentPlayer();
+    int roll = dice.roll();
+    int newPos = player.getPosition() + roll;
 
-    if new_pos > self.board.size:
-        new_pos = player.get_position()  # overshoot — stay
-    else:
-        new_pos = self.board.resolve(new_pos)
+    if (newPos > board.getSize()) {
+        newPos = player.getPosition(); // overshoot — stay
+    } else {
+        newPos = board.resolve(newPos);
+    }
 
-    player.set_position(new_pos)
+    player.setPosition(newPos);
 
-    if new_pos == self.board.size:
-        self.winner = player
+    if (newPos == board.getSize()) {
+        winner = player;
+    }
 
-    self.current_index = (self.current_index + 1) % len(self.players)
+    currentIndex = (currentIndex + 1) % players.size();
 
-    return TurnResult(player=player, roll=roll, final_pos=new_pos)
+    return new TurnResult(player, roll, newPos);
+}
 ```
 
 ### Core Method: `board.resolve`
 
-```python
-def resolve(self, position):
-    if position in self.snakes:
-        return self.snakes[position]   # slide down
-    if position in self.ladders:
-        return self.ladders[position]  # climb up
-    return position
+```java
+public int resolve(int position) {
+    if (snakes.containsKey(position)) {
+        return snakes.get(position);   // slide down
+    }
+    if (ladders.containsKey(position)) {
+        return ladders.get(position);  // climb up
+    }
+    return position;
+}
 ```
 
 ### Board validation
 
-```python
-def is_valid_config(self):
-    snake_heads = set(self.snakes.keys())
-    ladder_bases = set(self.ladders.keys())
-    if snake_heads & ladder_bases:
-        return False
-    for head, tail in self.snakes.items():
-        if tail >= head:
-            return False
-    for base, top in self.ladders.items():
-        if top <= base:
-            return False
-    return True
+```java
+public boolean isValidConfig() {
+    Set<Integer> snakeHeads = snakes.keySet();
+    Set<Integer> ladderBases = ladders.keySet();
+    for (Integer head : snakeHeads) {
+        if (ladderBases.contains(head)) {
+            return false;
+        }
+    }
+    for (Map.Entry<Integer, Integer> entry : snakes.entrySet()) {
+        if (entry.getValue() >= entry.getKey()) {
+            return false;
+        }
+    }
+    for (Map.Entry<Integer, Integer> entry : ladders.entrySet()) {
+        if (entry.getValue() <= entry.getKey()) {
+            return false;
+        }
+    }
+    return true;
+}
 ```
 
 ---
@@ -256,13 +271,23 @@ Turn N — Bob at 97, rolls 3:
 
 Replace `Dice` with `DiceSet`:
 
-```python
-class DiceSet:
-    def __init__(self, dice_list):
-        self.dice = dice_list
+```java
+public class DiceSet implements Dice {
+    private final List<Dice> dice;
 
-    def roll(self):
-        return sum(d.roll() for d in self.dice)
+    public DiceSet(List<Dice> dice) {
+        this.dice = dice;
+    }
+
+    @Override
+    public int roll() {
+        int total = 0;
+        for (Dice d : dice) {
+            total += d.roll();
+        }
+        return total;
+    }
+}
 ```
 
 `Game` accepts any object with a `roll()` method — no other changes needed. This is the Strategy pattern paying off.
@@ -271,12 +296,14 @@ class DiceSet:
 
 **Option A** — Cell type enum: After resolving position, check `board.get_effect(new_pos)` → CellEffect (NONE, SKIP_TURN, ROLL_AGAIN). `take_turn` handles each case.
 
-```python
-effect = self.board.get_effect(new_pos)
-if effect == CellEffect.ROLL_AGAIN:
-    return self.take_turn()   # same player rolls again
-if effect == CellEffect.SKIP_TURN:
-    self.skip_flags[self.current_index] = True
+```java
+CellEffect effect = board.getEffect(newPos);
+if (effect == CellEffect.ROLL_AGAIN) {
+    return takeTurn();   // same player rolls again
+}
+if (effect == CellEffect.SKIP_TURN) {
+    skipFlags.put(currentIndex, true);
+}
 ```
 
 **Option B** — Observer: `Game` fires `PlayerLanded(player, pos)`. Power-up handlers subscribe. More extensible when effect types grow beyond 2-3.
@@ -285,29 +312,38 @@ if effect == CellEffect.SKIP_TURN:
 
 Track move history as a stack of `(player_index, old_position, roll)`. Undo pops the last entry.
 
-```python
-def undo(self):
-    if not self.history:
-        return
-    last = self.history.pop()
-    self.players[last.player_index].set_position(last.old_position)
-    self.current_index = last.player_index
-    self.winner = None
+```java
+public void undo() {
+    if (history.isEmpty()) {
+        return;
+    }
+    MoveRecord last = history.pop();
+    players.get(last.getPlayerIndex()).setPosition(last.getOldPosition());
+    currentIndex = last.getPlayerIndex();
+    winner = null;
+}
 ```
 
 ### 4. "What if we want to load board config from JSON?"
 
-Factory classmethod on `Board`:
+Factory static method on `Board`:
 
-```python
-@classmethod
-def from_config(cls, config: dict):
-    snakes = {s['head']: s['tail'] for s in config.get('snakes', [])}
-    ladders = {l['base']: l['top'] for l in config.get('ladders', [])}
-    board = Board(snakes, ladders)
-    if not board.is_valid_config():
-        raise ValueError("Invalid board configuration")
-    return board
+```java
+public static Board fromConfig(Map<String, Object> config) {
+    Map<Integer, Integer> snakes = new HashMap<>();
+    for (Map<String, Integer> s : (List<Map<String, Integer>>) config.getOrDefault("snakes", new ArrayList<>())) {
+        snakes.put(s.get("head"), s.get("tail"));
+    }
+    Map<Integer, Integer> ladders = new HashMap<>();
+    for (Map<String, Integer> l : (List<Map<String, Integer>>) config.getOrDefault("ladders", new ArrayList<>())) {
+        ladders.put(l.get("base"), l.get("top"));
+    }
+    Board board = new Board(snakes, ladders);
+    if (!board.isValidConfig()) {
+        throw new IllegalArgumentException("Invalid board configuration");
+    }
+    return board;
+}
 ```
 
 `Game` never sees the config format — open for new formats (YAML, DB) without touching game logic.

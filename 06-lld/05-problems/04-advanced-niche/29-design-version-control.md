@@ -177,199 +177,279 @@ class Repository:
 - First commit — parent_hash is None
 - Detached HEAD — update HEAD directly to new commit hash, not a branch
 
-```python
-import hashlib
-import time
-from dataclasses import dataclass, field
-from typing import Optional
+```java
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
 
+public final class Hashing {
+    private Hashing() {}
 
-def sha256(content: str) -> str:
-    return hashlib.sha256(content.encode()).hexdigest()
+    public static String sha256(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
 
+public final class Blob {
+    private final String content;
+    private final String hash;
 
-@dataclass
-class Blob:
-    content: str
-    hash: str
+    private Blob(String content, String hash) {
+        this.content = content;
+        this.hash = hash;
+    }
 
-    @classmethod
-    def from_content(cls, content: str) -> 'Blob':
-        return cls(content=content, hash=sha256(content))
+    public static Blob fromContent(String content) {
+        return new Blob(content, Hashing.sha256(content));
+    }
 
+    public String getContent() { return content; }
+    public String getHash() { return hash; }
+}
 
-@dataclass
-class Tree:
-    files: dict  # path -> blob_hash
-    hash: str
+public final class Tree {
+    private final Map<String, String> files; // path -> blob_hash
+    private final String hash;
 
-    @classmethod
-    def from_files(cls, files: dict) -> 'Tree':
-        # Deterministic hash: sort by path
-        serialized = str(sorted(files.items()))
-        return cls(files=dict(files), hash=sha256(serialized))
+    private Tree(Map<String, String> files, String hash) {
+        this.files = files;
+        this.hash = hash;
+    }
 
+    public static Tree fromFiles(Map<String, String> files) {
+        // Deterministic hash: sort by path
+        List<String> entries = new ArrayList<>();
+        List<String> sortedKeys = new ArrayList<>(files.keySet());
+        Collections.sort(sortedKeys);
+        for (String key : sortedKeys) {
+            entries.add("(" + key + ", " + files.get(key) + ")");
+        }
+        String serialized = "[" + String.join(", ", entries) + "]";
+        return new Tree(new HashMap<>(files), Hashing.sha256(serialized));
+    }
 
-@dataclass
-class Commit:
-    hash: str
-    parent_hash: Optional[str]
-    tree_hash: str
-    message: str
-    author: str
-    timestamp: float
+    public Map<String, String> getFiles() { return files; }
+    public String getHash() { return hash; }
+}
 
-    @classmethod
-    def create(cls, parent_hash, tree_hash, message, author) -> 'Commit':
-        ts = time.time()
-        content = f"{parent_hash}|{tree_hash}|{message}|{author}|{ts}"
-        commit_hash = sha256(content)
-        return cls(
-            hash=commit_hash,
-            parent_hash=parent_hash,
-            tree_hash=tree_hash,
-            message=message,
-            author=author,
-            timestamp=ts,
-        )
+public final class Commit {
+    private final String hash;
+    private final String parentHash; // nullable
+    private final String treeHash;
+    private final String message;
+    private final String author;
+    private final double timestamp;
 
+    private Commit(String hash, String parentHash, String treeHash,
+                    String message, String author, double timestamp) {
+        this.hash = hash;
+        this.parentHash = parentHash;
+        this.treeHash = treeHash;
+        this.message = message;
+        this.author = author;
+        this.timestamp = timestamp;
+    }
 
-class ObjectStore:
-    """Content-addressed storage for blobs, trees, and commits."""
-    def __init__(self):
-        self._store: dict = {}  # hash -> object
+    public static Commit create(String parentHash, String treeHash, String message, String author) {
+        double ts = System.currentTimeMillis() / 1000.0;
+        String content = String.format("%s|%s|%s|%s|%s", parentHash, treeHash, message, author, ts);
+        String commitHash = Hashing.sha256(content);
+        return new Commit(commitHash, parentHash, treeHash, message, author, ts);
+    }
 
-    def put(self, obj) -> str:
-        self._store[obj.hash] = obj
-        return obj.hash
+    public String getHash() { return hash; }
+    public String getParentHash() { return parentHash; }
+    public String getTreeHash() { return treeHash; }
+    public String getMessage() { return message; }
+    public String getAuthor() { return author; }
+    public double getTimestamp() { return timestamp; }
+}
 
-    def get(self, obj_hash: str):
-        return self._store.get(obj_hash)
+/** Content-addressed storage for blobs, trees, and commits. */
+public class ObjectStore {
+    private final Map<String, Object> store = new HashMap<>(); // hash -> object
 
-    def exists(self, obj_hash: str) -> bool:
-        return obj_hash in self._store
+    public String put(Blob obj) { store.put(obj.getHash(), obj); return obj.getHash(); }
+    public String put(Tree obj) { store.put(obj.getHash(), obj); return obj.getHash(); }
+    public String put(Commit obj) { store.put(obj.getHash(), obj); return obj.getHash(); }
 
+    @SuppressWarnings("unchecked")
+    public <T> T get(String objHash) {
+        return (T) store.get(objHash);
+    }
 
-@dataclass
-class DiffResult:
-    added: list      # paths added in commit2 not in commit1
-    removed: list    # paths removed
-    modified: list   # paths present in both but different blob hash
+    public boolean exists(String objHash) {
+        return store.containsKey(objHash);
+    }
 
+    public Map<String, Object> getStore() { return store; }
+}
 
-class Repository:
-    def __init__(self):
-        self.object_store = ObjectStore()
-        self.branches: dict = {}           # name -> commit_hash
-        self.HEAD: str = 'main'            # branch name or detached commit hash
-        self._is_detached: bool = False
-        self.staging_area: dict = {}       # path -> content
-        self.working_dir: dict = {}        # path -> content
+public final class DiffResult {
+    private final List<String> added;    // paths added in commit2 not in commit1
+    private final List<String> removed;  // paths removed
+    private final List<String> modified; // paths present in both but different blob hash
 
-    def init(self):
-        self.branches['main'] = None       # main branch with no commits yet
-        self.HEAD = 'main'
+    public DiffResult(List<String> added, List<String> removed, List<String> modified) {
+        this.added = added;
+        this.removed = removed;
+        this.modified = modified;
+    }
 
-    def stage(self, file_path: str, content: str):
-        self.staging_area[file_path] = content
-        self.working_dir[file_path] = content
+    public List<String> getAdded() { return added; }
+    public List<String> getRemoved() { return removed; }
+    public List<String> getModified() { return modified; }
+}
 
-    def commit(self, message: str, author: str = "user") -> str:
-        if not self.staging_area:
-            raise ValueError("Nothing to commit — staging area is empty")
+public class Repository {
+    private final ObjectStore objectStore = new ObjectStore();
+    private final Map<String, String> branches = new HashMap<>(); // name -> commit_hash
+    private String head = "main"; // branch name or detached commit hash
+    private boolean isDetached = false;
+    private final Map<String, String> stagingArea = new LinkedHashMap<>(); // path -> content
+    private Map<String, String> workingDir = new LinkedHashMap<>();        // path -> content
 
-        # Create blobs for each staged file
-        tree_files = {}
-        for path, content in self.staging_area.items():
-            blob = Blob.from_content(content)
-            self.object_store.put(blob)
-            tree_files[path] = blob.hash
+    public void init() {
+        branches.put("main", null); // main branch with no commits yet
+        head = "main";
+    }
 
-        # Carry forward files from previous commit not overwritten
-        parent_hash = self.current_commit_hash()
-        if parent_hash:
-            prev_commit = self.object_store.get(parent_hash)
-            prev_tree = self.object_store.get(prev_commit.tree_hash)
-            for path, blob_hash in prev_tree.files.items():
-                if path not in tree_files:
-                    tree_files[path] = blob_hash
+    public void stage(String filePath, String content) {
+        stagingArea.put(filePath, content);
+        workingDir.put(filePath, content);
+    }
 
-        # Create tree and commit
-        tree = Tree.from_files(tree_files)
-        self.object_store.put(tree)
+    public String commit(String message, String author) {
+        if (stagingArea.isEmpty()) {
+            throw new IllegalStateException("Nothing to commit — staging area is empty");
+        }
 
-        commit = Commit.create(parent_hash, tree.hash, message, author)
-        self.object_store.put(commit)
+        // Create blobs for each staged file
+        Map<String, String> treeFiles = new HashMap<>();
+        for (Map.Entry<String, String> entry : stagingArea.entrySet()) {
+            Blob blob = Blob.fromContent(entry.getValue());
+            objectStore.put(blob);
+            treeFiles.put(entry.getKey(), blob.getHash());
+        }
 
-        # Advance branch or detached HEAD
-        if self._is_detached:
-            self.HEAD = commit.hash
-        else:
-            self.branches[self.HEAD] = commit.hash
+        // Carry forward files from previous commit not overwritten
+        String parentHash = currentCommitHash();
+        if (parentHash != null) {
+            Commit prevCommit = objectStore.get(parentHash);
+            Tree prevTree = objectStore.get(prevCommit.getTreeHash());
+            for (Map.Entry<String, String> entry : prevTree.getFiles().entrySet()) {
+                treeFiles.putIfAbsent(entry.getKey(), entry.getValue());
+            }
+        }
 
-        self.staging_area.clear()
-        return commit.hash
+        // Create tree and commit
+        Tree tree = Tree.fromFiles(treeFiles);
+        objectStore.put(tree);
 
-    def current_commit_hash(self) -> Optional[str]:
-        if self._is_detached:
-            return self.HEAD
-        return self.branches.get(self.HEAD)
+        Commit newCommit = Commit.create(parentHash, tree.getHash(), message, author);
+        objectStore.put(newCommit);
 
-    def create_branch(self, name: str):
-        current = self.current_commit_hash()
-        if current is None:
-            raise ValueError("Cannot create branch — no commits yet")
-        self.branches[name] = current
+        // Advance branch or detached HEAD
+        if (isDetached) {
+            head = newCommit.getHash();
+        } else {
+            branches.put(head, newCommit.getHash());
+        }
 
-    def checkout(self, ref: str):
-        """Checkout a branch name or commit hash."""
-        if ref in self.branches:
-            self.HEAD = ref
-            self._is_detached = False
-            commit_hash = self.branches[ref]
-        elif self.object_store.exists(ref):
-            self.HEAD = ref
-            self._is_detached = True
-            commit_hash = ref
-        else:
-            raise ValueError(f"Unknown ref: {ref}")
+        stagingArea.clear();
+        return newCommit.getHash();
+    }
 
-        # Restore working directory from the commit's tree
-        if commit_hash:
-            commit = self.object_store.get(commit_hash)
-            tree = self.object_store.get(commit.tree_hash)
-            self.working_dir = {}
-            for path, blob_hash in tree.files.items():
-                blob = self.object_store.get(blob_hash)
-                self.working_dir[path] = blob.content
+    public String currentCommitHash() {
+        if (isDetached) {
+            return head;
+        }
+        return branches.get(head);
+    }
 
-    def diff(self, hash1: str, hash2: str) -> DiffResult:
-        c1 = self.object_store.get(hash1)
-        c2 = self.object_store.get(hash2)
-        tree1 = self.object_store.get(c1.tree_hash) if c1 else None
-        tree2 = self.object_store.get(c2.tree_hash) if c2 else None
+    public void createBranch(String name) {
+        String current = currentCommitHash();
+        if (current == null) {
+            throw new IllegalStateException("Cannot create branch — no commits yet");
+        }
+        branches.put(name, current);
+    }
 
-        files1 = tree1.files if tree1 else {}
-        files2 = tree2.files if tree2 else {}
+    /** Checkout a branch name or commit hash. */
+    public void checkout(String ref) {
+        String commitHash;
+        if (branches.containsKey(ref)) {
+            head = ref;
+            isDetached = false;
+            commitHash = branches.get(ref);
+        } else if (objectStore.exists(ref)) {
+            head = ref;
+            isDetached = true;
+            commitHash = ref;
+        } else {
+            throw new IllegalArgumentException("Unknown ref: " + ref);
+        }
 
-        added = [p for p in files2 if p not in files1]
-        removed = [p for p in files1 if p not in files2]
-        modified = [p for p in files1
-                    if p in files2 and files1[p] != files2[p]]
+        // Restore working directory from the commit's tree
+        if (commitHash != null) {
+            Commit commit = objectStore.get(commitHash);
+            Tree tree = objectStore.get(commit.getTreeHash());
+            workingDir = new LinkedHashMap<>();
+            for (Map.Entry<String, String> entry : tree.getFiles().entrySet()) {
+                Blob blob = objectStore.get(entry.getValue());
+                workingDir.put(entry.getKey(), blob.getContent());
+            }
+        }
+    }
 
-        return DiffResult(added=added, removed=removed, modified=modified)
+    public DiffResult diff(String hash1, String hash2) {
+        Commit c1 = objectStore.get(hash1);
+        Commit c2 = objectStore.get(hash2);
+        Tree tree1 = c1 != null ? (Tree) objectStore.get(c1.getTreeHash()) : null;
+        Tree tree2 = c2 != null ? (Tree) objectStore.get(c2.getTreeHash()) : null;
 
-    def log(self) -> list:
-        """Walk commit history from HEAD backwards."""
-        commits = []
-        current_hash = self.current_commit_hash()
-        while current_hash:
-            commit = self.object_store.get(current_hash)
-            if commit is None:
-                break
-            commits.append(commit)
-            current_hash = commit.parent_hash
-        return commits
+        Map<String, String> files1 = tree1 != null ? tree1.getFiles() : Collections.emptyMap();
+        Map<String, String> files2 = tree2 != null ? tree2.getFiles() : Collections.emptyMap();
+
+        List<String> added = new ArrayList<>();
+        for (String p : files2.keySet()) {
+            if (!files1.containsKey(p)) added.add(p);
+        }
+        List<String> removed = new ArrayList<>();
+        for (String p : files1.keySet()) {
+            if (!files2.containsKey(p)) removed.add(p);
+        }
+        List<String> modified = new ArrayList<>();
+        for (String p : files1.keySet()) {
+            if (files2.containsKey(p) && !files1.get(p).equals(files2.get(p))) modified.add(p);
+        }
+
+        return new DiffResult(added, removed, modified);
+    }
+
+    /** Walk commit history from HEAD backwards. */
+    public List<Commit> log() {
+        List<Commit> commits = new ArrayList<>();
+        String currentHash = currentCommitHash();
+        while (currentHash != null) {
+            Commit commit = objectStore.get(currentHash);
+            if (commit == null) break;
+            commits.add(commit);
+            currentHash = commit.getParentHash();
+        }
+        return commits;
+    }
+}
 ```
 
 ---
@@ -400,11 +480,11 @@ In CAS, the key is the SHA hash of the content. This gives three properties:
 - **Integrity**: retrieving a blob and re-hashing it verifies it hasn't been corrupted
 - **Immutability**: you cannot update a blob in-place; any change produces a new hash
 
-```python
-# If two files have the same content, they share one blob
-blob_a = Blob.from_content("same content")
-blob_b = Blob.from_content("same content")
-assert blob_a.hash == blob_b.hash  # only stored once in ObjectStore
+```java
+// If two files have the same content, they share one blob
+Blob blobA = Blob.fromContent("same content");
+Blob blobB = Blob.fromContent("same content");
+assert blobA.getHash().equals(blobB.getHash()); // only stored once in ObjectStore
 ```
 
 Git uses SHA-1 for its object store (`.git/objects`). The first 2 hex chars become a directory name, the remaining 38 become the filename — a simple sharding strategy for the filesystem.
@@ -416,49 +496,57 @@ Each commit has a `parent_hash` pointer. This forms a directed acyclic graph whe
 - A merge commit has two parents
 - A branch is just a named pointer to a commit node
 
-```python
-def get_ancestors(self, commit_hash: str) -> set:
-    """BFS to collect all ancestor hashes."""
-    visited = set()
-    queue = [commit_hash]
-    while queue:
-        h = queue.pop()
-        if h in visited or h is None:
-            continue
-        visited.add(h)
-        commit = self.object_store.get(h)
-        if commit and commit.parent_hash:
-            queue.append(commit.parent_hash)
-    return visited
+```java
+/** BFS to collect all ancestor hashes. */
+public Set<String> getAncestors(String commitHash) {
+    Set<String> visited = new HashSet<>();
+    Deque<String> queue = new ArrayDeque<>();
+    queue.push(commitHash);
+    while (!queue.isEmpty()) {
+        String h = queue.pop();
+        if (h == null || visited.contains(h)) continue;
+        visited.add(h);
+        Commit commit = objectStore.get(h);
+        if (commit != null && commit.getParentHash() != null) {
+            queue.push(commit.getParentHash());
+        }
+    }
+    return visited;
+}
 
-def find_common_ancestor(self, hash1: str, hash2: str) -> Optional[str]:
-    ancestors1 = self.get_ancestors(hash1)
-    h = hash2
-    while h:
-        if h in ancestors1:
-            return h
-        commit = self.object_store.get(h)
-        h = commit.parent_hash if commit else None
-    return None
+public String findCommonAncestor(String hash1, String hash2) {
+    Set<String> ancestors1 = getAncestors(hash1);
+    String h = hash2;
+    while (h != null) {
+        if (ancestors1.contains(h)) {
+            return h;
+        }
+        Commit commit = objectStore.get(h);
+        h = commit != null ? commit.getParentHash() : null;
+    }
+    return null;
+}
 ```
 
 ### 3. "How does fast-forward vs 3-way merge work?"
 
 Fast-forward: branch B is a direct ancestor of branch A. Moving B's pointer to A's tip is sufficient — no new commit needed.
 
-```python
-def merge(self, source_branch: str):
-    source_hash = self.branches[source_branch]
-    target_hash = self.current_commit_hash()
-    ancestors_of_source = self.get_ancestors(source_hash)
-    if target_hash in ancestors_of_source:
-        # Fast-forward: target is ancestor of source
-        self.branches[self.HEAD] = source_hash
-        return "fast-forward"
-    # Otherwise: 3-way merge needed
-    lca = self.find_common_ancestor(source_hash, target_hash)
-    # Merge tree(lca), tree(source), tree(target)
-    return self._three_way_merge(lca, source_hash, target_hash)
+```java
+public String merge(String sourceBranch) {
+    String sourceHash = branches.get(sourceBranch);
+    String targetHash = currentCommitHash();
+    Set<String> ancestorsOfSource = getAncestors(sourceHash);
+    if (ancestorsOfSource.contains(targetHash)) {
+        // Fast-forward: target is ancestor of source
+        branches.put(head, sourceHash);
+        return "fast-forward";
+    }
+    // Otherwise: 3-way merge needed
+    String lca = findCommonAncestor(sourceHash, targetHash);
+    // Merge tree(lca), tree(source), tree(target)
+    return threeWayMerge(lca, sourceHash, targetHash);
+}
 ```
 
 3-way merge: find the least common ancestor (LCA). For each file:
@@ -470,31 +558,35 @@ def merge(self, source_branch: str):
 
 Rebase replays commits from the current branch on top of a new base, creating new commit objects with new hashes. This rewrites history.
 
-```python
-def rebase(self, onto_branch: str):
-    onto_hash = self.branches[onto_branch]
-    current_hash = self.current_commit_hash()
-    lca = self.find_common_ancestor(onto_hash, current_hash)
+```java
+public void rebase(String ontoBranch) {
+    String ontoHash = branches.get(ontoBranch);
+    String currentHash = currentCommitHash();
+    String lca = findCommonAncestor(ontoHash, currentHash);
 
-    # Collect commits to replay (from LCA to current, oldest first)
-    commits_to_replay = []
-    h = current_hash
-    while h != lca:
-        commits_to_replay.append(self.object_store.get(h))
-        h = self.object_store.get(h).parent_hash
-    commits_to_replay.reverse()
+    // Collect commits to replay (from LCA to current, oldest first)
+    List<Commit> commitsToReplay = new ArrayList<>();
+    String h = currentHash;
+    while (!Objects.equals(h, lca)) {
+        Commit commit = objectStore.get(h);
+        commitsToReplay.add(commit);
+        h = commit.getParentHash();
+    }
+    Collections.reverse(commitsToReplay);
 
-    # Replay each commit on top of onto
-    new_base = onto_hash
-    for old_commit in commits_to_replay:
-        # Apply the diff from old_commit's parent to old_commit onto new_base
-        # Create a new commit with parent=new_base
-        new_commit = Commit.create(new_base, old_commit.tree_hash,
-                                   old_commit.message, old_commit.author)
-        self.object_store.put(new_commit)
-        new_base = new_commit.hash
+    // Replay each commit on top of onto
+    String newBase = ontoHash;
+    for (Commit oldCommit : commitsToReplay) {
+        // Apply the diff from oldCommit's parent to oldCommit onto newBase
+        // Create a new commit with parent=newBase
+        Commit newCommit = Commit.create(newBase, oldCommit.getTreeHash(),
+                oldCommit.getMessage(), oldCommit.getAuthor());
+        objectStore.put(newCommit);
+        newBase = newCommit.getHash();
+    }
 
-    self.branches[self.HEAD] = new_base
+    branches.put(head, newBase);
+}
 ```
 
 Because rebasing creates new hashes, the old commits become unreachable (garbage collectable).
@@ -503,30 +595,38 @@ Because rebasing creates new hashes, the old commits become unreachable (garbage
 
 Objects that are no longer reachable from any branch or tag can be deleted. GC does a graph traversal from all branch tips and tags, collecting all reachable hashes, then deletes everything else from the ObjectStore.
 
-```python
-def garbage_collect(self):
-    reachable = set()
-    # Start from all branch tips
-    for commit_hash in self.branches.values():
-        if commit_hash:
-            reachable.update(self.get_ancestors(commit_hash))
-            # Also mark the trees and blobs reachable from each commit
-            for h in list(reachable):
-                commit = self.object_store.get(h)
-                if commit:
-                    tree = self.object_store.get(commit.tree_hash)
-                    if tree:
-                        reachable.add(commit.tree_hash)
-                        reachable.update(tree.files.values())
+```java
+public int garbageCollect() {
+    Set<String> reachable = new HashSet<>();
+    // Start from all branch tips
+    for (String commitHash : branches.values()) {
+        if (commitHash != null) {
+            reachable.addAll(getAncestors(commitHash));
+            // Also mark the trees and blobs reachable from each commit
+            for (String h : new ArrayList<>(reachable)) {
+                Commit commit = objectStore.get(h);
+                if (commit != null) {
+                    Tree tree = objectStore.get(commit.getTreeHash());
+                    if (tree != null) {
+                        reachable.add(commit.getTreeHash());
+                        reachable.addAll(tree.getFiles().values());
+                    }
+                }
+            }
+        }
+    }
 
-    # Delete unreachable objects
-    all_hashes = list(self.object_store._store.keys())
-    deleted = 0
-    for h in all_hashes:
-        if h not in reachable:
-            del self.object_store._store[h]
-            deleted += 1
-    return deleted
+    // Delete unreachable objects
+    List<String> allHashes = new ArrayList<>(objectStore.getStore().keySet());
+    int deleted = 0;
+    for (String h : allHashes) {
+        if (!reachable.contains(h)) {
+            objectStore.getStore().remove(h);
+            deleted++;
+        }
+    }
+    return deleted;
+}
 ```
 
 ---

@@ -152,75 +152,109 @@ class NotificationService:
 - All channels fail → DeliveryResult.ALL_FAILED
 - Template rendering failure → skip sending, return error
 
-```python
-def send(self, user_id, notification):
-    user = self.user_repo.get(user_id)
-    if not user:
-        return DeliveryResult.USER_NOT_FOUND
+```java
+public DeliveryResult send(String userId, Notification notification) {
+    User user = userRepo.get(userId);
+    if (user == null) {
+        return DeliveryResult.USER_NOT_FOUND;
+    }
 
-    active_channels = user.preferences.get_active_channels()
-    if not active_channels:
-        return DeliveryResult.NO_CHANNEL
+    List<ChannelType> activeChannels = user.getPreferences().getActiveChannels();
+    if (activeChannels.isEmpty()) {
+        return DeliveryResult.NO_CHANNEL;
+    }
 
-    for channel_type in active_channels:
-        channel = self.channels.get(channel_type)
-        if not channel:
-            continue
+    for (ChannelType channelType : activeChannels) {
+        NotificationChannel channel = channels.get(channelType);
+        if (channel == null) {
+            continue;
+        }
 
-        recipient = self._get_recipient(user, channel_type)
-        content = self.template_engine.render(
-            notification.template_id,
-            notification.variables
-        )
+        String recipient = getRecipient(user, channelType);
+        String content = templateEngine.render(
+            notification.getTemplateId(),
+            notification.getVariables()
+        );
 
-        delivered = self._send_with_retry(channel, recipient, content)
-        if delivered:
-            return DeliveryResult.SUCCESS
+        boolean delivered = sendWithRetry(channel, recipient, content);
+        if (delivered) {
+            return DeliveryResult.SUCCESS;
+        }
+    }
 
-    return DeliveryResult.ALL_FAILED
+    return DeliveryResult.ALL_FAILED;
+}
 
-def _send_with_retry(self, channel, recipient, content):
-    for attempt in range(self.retry_policy.max_retries):
-        try:
-            if channel.send(recipient, content):
-                return True
-        except Exception:
-            pass
-        if attempt < self.retry_policy.max_retries - 1:
-            time.sleep(self.retry_policy.backoff_seconds * (2 ** attempt))
-    return False
+private boolean sendWithRetry(NotificationChannel channel, String recipient, String content) {
+    for (int attempt = 0; attempt < retryPolicy.getMaxRetries(); attempt++) {
+        try {
+            if (channel.send(recipient, content)) {
+                return true;
+            }
+        } catch (Exception e) {
+            // swallow and retry
+        }
+        if (attempt < retryPolicy.getMaxRetries() - 1) {
+            try {
+                long backoffMillis = (long) (retryPolicy.getBackoffSeconds() * Math.pow(2, attempt) * 1000);
+                Thread.sleep(backoffMillis);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+    return false;
+}
 ```
 
 ### Template Engine
 
-```python
-class TemplateEngine:
-    def __init__(self):
-        self.templates = {}  # template_id → template string
+```java
+public class TemplateEngine {
+    private final Map<String, String> templates = new HashMap<>(); // templateId -> template string
 
-    def register(self, template_id, template):
-        self.templates[template_id] = template
+    public void register(String templateId, String template) {
+        templates.put(templateId, template);
+    }
 
-    def render(self, template_id, variables):
-        template = self.templates.get(template_id)
-        if not template:
-            raise TemplateNotFoundError(template_id)
-        # Simple {{variable}} substitution
-        for key, value in variables.items():
-            template = template.replace(f"{{{{{key}}}}}", str(value))
-        return template
+    public String render(String templateId, Map<String, Object> variables) {
+        String template = templates.get(templateId);
+        if (template == null) {
+            throw new TemplateNotFoundError(templateId);
+        }
+        // Simple {{variable}} substitution
+        for (Map.Entry<String, Object> entry : variables.entrySet()) {
+            String placeholder = "{{" + entry.getKey() + "}}";
+            template = template.replace(placeholder, String.valueOf(entry.getValue()));
+        }
+        return template;
+    }
+}
 ```
 
 ### User preference routing
 
-```python
-class UserPreferences:
-    def __init__(self, preferred_channels, opted_out=None):
-        self.preferred_channels = preferred_channels  # [EMAIL, SMS, PUSH]
-        self.opted_out = opted_out or set()
+```java
+public class UserPreferences {
+    private final List<ChannelType> preferredChannels; // [EMAIL, SMS, PUSH]
+    private final Set<ChannelType> optedOut;
 
-    def get_active_channels(self):
-        return [c for c in self.preferred_channels if c not in self.opted_out]
+    public UserPreferences(List<ChannelType> preferredChannels, Set<ChannelType> optedOut) {
+        this.preferredChannels = preferredChannels;
+        this.optedOut = (optedOut != null) ? optedOut : new HashSet<>();
+    }
+
+    public List<ChannelType> getActiveChannels() {
+        List<ChannelType> active = new ArrayList<>();
+        for (ChannelType c : preferredChannels) {
+            if (!optedOut.contains(c)) {
+                active.add(c);
+            }
+        }
+        return active;
+    }
+}
 ```
 
 ---
@@ -256,8 +290,8 @@ send("alice", notification):
 
 Create `WhatsAppChannel(NotificationChannel)` implementing `send()`. Register it in `NotificationService.channels`:
 
-```python
-service.channels[ChannelType.WHATSAPP] = WhatsAppChannel(whatsapp_client)
+```java
+service.getChannels().put(ChannelType.WHATSAPP, new WhatsAppChannel(whatsappClient));
 ```
 
 Users add WHATSAPP to their `preferred_channels`. No other changes. This is Open/Closed Principle — the system is open for extension (new channel) but closed for modification.
@@ -266,26 +300,28 @@ Users add WHATSAPP to their `preferred_channels`. No other changes. This is Open
 
 Replace the synchronous `_send_with_retry` with an async queue:
 
-```python
-def send(self, user_id, notification):
-    # Resolve channels synchronously (fast)
-    channels = self._resolve_channels(user_id)
-    # Enqueue dispatch job
-    for channel_type in channels:
-        self.queue.publish(DeliveryJob(
-            channel_type=channel_type,
-            user_id=user_id,
-            notification=notification
-        ))
-        break  # enqueue only first preferred channel; worker handles fallback
+```java
+public void send(String userId, Notification notification) {
+    // Resolve channels synchronously (fast)
+    List<ChannelType> channels = resolveChannels(userId);
+    // Enqueue dispatch job (only first preferred channel; worker handles fallback)
+    if (!channels.isEmpty()) {
+        ChannelType channelType = channels.get(0);
+        queue.publish(new DeliveryJob(channelType, userId, notification));
+    }
+}
 
-class DeliveryWorker:
-    def process(self, job):
-        delivered = self._send_with_retry(job)
-        if not delivered:
-            next_channel = self._get_next_channel(job)
-            if next_channel:
-                self.queue.publish(job.with_channel(next_channel))
+public class DeliveryWorker {
+    public void process(DeliveryJob job) {
+        boolean delivered = sendWithRetry(job);
+        if (!delivered) {
+            ChannelType nextChannel = getNextChannel(job);
+            if (nextChannel != null) {
+                queue.publish(job.withChannel(nextChannel));
+            }
+        }
+    }
+}
 ```
 
 Retry + fallback moves into the worker. The API returns immediately after enqueue.
@@ -294,22 +330,29 @@ Retry + fallback moves into the worker. The API returns immediately after enqueu
 
 Use a sliding window counter per user:
 
-```python
-class RateLimiter:
-    def __init__(self, max_per_hour):
-        self.max_per_hour = max_per_hour
-        self.counters = defaultdict(lambda: deque())
+```java
+public class RateLimiter {
+    private final int maxPerHour;
+    private final Map<String, Deque<Long>> counters = new ConcurrentHashMap<>();
 
-    def allow(self, user_id):
-        now = time.time()
-        window = self.counters[user_id]
-        # Remove events older than 1 hour
-        while window and window[0] < now - 3600:
-            window.popleft()
-        if len(window) >= self.max_per_hour:
-            return False
-        window.append(now)
-        return True
+    public RateLimiter(int maxPerHour) {
+        this.maxPerHour = maxPerHour;
+    }
+
+    public synchronized boolean allow(String userId) {
+        long now = System.currentTimeMillis() / 1000;
+        Deque<Long> window = counters.computeIfAbsent(userId, k -> new ArrayDeque<>());
+        // Remove events older than 1 hour
+        while (!window.isEmpty() && window.peekFirst() < now - 3600) {
+            window.pollFirst();
+        }
+        if (window.size() >= maxPerHour) {
+            return false;
+        }
+        window.addLast(now);
+        return true;
+    }
+}
 ```
 
 `NotificationService.send()` calls `rate_limiter.allow(user_id)` before dispatching.
@@ -318,15 +361,16 @@ class RateLimiter:
 
 Add a `NotificationLog` entity with status enum (QUEUED, SENT, DELIVERED, READ). Each channel's `send()` returns a delivery receipt ID. A webhook from the channel provider (e.g., Twilio for SMS) updates status.
 
-```python
-class NotificationLog:
-    - id: str
-    - user_id: str
-    - channel: ChannelType
-    - status: DeliveryStatus
-    - sent_at: datetime
-    - delivered_at: Optional[datetime]
-    - read_at: Optional[datetime]
+```java
+public class NotificationLog {
+    private String id;
+    private String userId;
+    private ChannelType channel;
+    private DeliveryStatus status;
+    private Instant sentAt;
+    private Instant deliveredAt; // nullable
+    private Instant readAt;      // nullable
+}
 ```
 
 ---

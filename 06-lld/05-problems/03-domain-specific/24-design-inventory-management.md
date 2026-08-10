@@ -94,45 +94,45 @@ Design an inventory management system that tracks stock levels for products acro
 
 ```
 class Inventory:
-- product_id: str
-- warehouse_id: str
-- available_qty: int
-- reserved_qty: int
-- version: int          # optimistic lock
+- productId: String
+- warehouseId: String
+- availableQty: int
+- reservedQty: int
+- version: int          // optimistic lock
 
-+ total_qty() -> int    # available + reserved
-+ can_reserve(qty) -> bool
++ totalQty() -> int     // available + reserved
++ canReserve(qty) -> boolean
 ```
 
 ### Reservation
 
 ```
 class Reservation:
-- id: str
-- product_id: str
-- warehouse_id: str
-- order_id: str
+- id: String
+- productId: String
+- warehouseId: String
+- orderId: String
 - quantity: int
-- created_at: datetime
-- expires_at: datetime
-- status: ReservationStatus   # ACTIVE, CONFIRMED, RELEASED
+- createdAt: Instant
+- expiresAt: Instant
+- status: ReservationStatus   // ACTIVE, CONFIRMED, RELEASED
 ```
 
 ### InventoryService
 
 ```
 class InventoryService:
-- inventory_repo: InventoryRepository
-- reservation_repo: ReservationRepository
-- movement_repo: StockMovementRepository
-- observers: list[StockAlertObserver]
+- inventoryRepo: InventoryRepository
+- reservationRepo: ReservationRepository
+- movementRepo: StockMovementRepository
+- observers: List<StockAlertObserver>
 
-+ reserve(product_id, warehouse_id, order_id, qty, ttl_minutes) -> Reservation
-+ confirm_reservation(reservation_id) -> bool
-+ release_reservation(reservation_id) -> bool
-+ restock(product_id, warehouse_id, qty, reason) -> Inventory
-+ expire_stale_reservations()
-+ add_observer(observer: StockAlertObserver)
++ reserve(productId, warehouseId, orderId, qty, ttlMinutes) -> Reservation
++ confirmReservation(reservationId) -> boolean
++ releaseReservation(reservationId) -> boolean
++ restock(productId, warehouseId, qty, reason) -> Inventory
++ expireStaleReservations()
++ addObserver(observer: StockAlertObserver)
 ```
 
 ---
@@ -154,126 +154,149 @@ class InventoryService:
 - CAS failure (concurrent modification) → retry up to 3 times
 - TTL = 0 or negative → raise ValueError
 
-```python
-def reserve(self, product_id, warehouse_id, order_id, qty, ttl_minutes=15):
-    if qty <= 0:
-        raise ValueError("Quantity must be positive")
+```java
+public Reservation reserve(String productId, String warehouseId, String orderId,
+                            int qty, int ttlMinutes) {
+    if (qty <= 0) {
+        throw new IllegalArgumentException("Quantity must be positive");
+    }
 
-    for attempt in range(3):
-        inventory = self.inventory_repo.get(product_id, warehouse_id)
-        if not inventory:
-            raise ProductNotFoundError()
-        if inventory.available_qty < qty:
-            raise InsufficientStockError(
-                f"Only {inventory.available_qty} available"
-            )
+    boolean updated = false;
+    for (int attempt = 0; attempt < 3; attempt++) {
+        Inventory inventory = inventoryRepo.get(productId, warehouseId);
+        if (inventory == null) {
+            throw new ProductNotFoundError();
+        }
+        if (inventory.getAvailableQty() < qty) {
+            throw new InsufficientStockError(
+                String.format("Only %d available", inventory.getAvailableQty())
+            );
+        }
 
-        updated = self.inventory_repo.cas_update(
-            product_id=product_id,
-            warehouse_id=warehouse_id,
-            expected_version=inventory.version,
-            available_delta=-qty,
-            reserved_delta=+qty
-        )
-        if updated:
-            break
-        if attempt == 2:
-            raise ConcurrencyError("Failed to reserve after retries")
+        updated = inventoryRepo.casUpdate(
+            productId,
+            warehouseId,
+            inventory.getVersion(),
+            -qty,
+            +qty
+        );
+        if (updated) {
+            break;
+        }
+        if (attempt == 2) {
+            throw new ConcurrencyError("Failed to reserve after retries");
+        }
+    }
 
-    reservation = Reservation(
-        id=generate_id(),
-        product_id=product_id,
-        warehouse_id=warehouse_id,
-        order_id=order_id,
-        quantity=qty,
-        created_at=datetime.utcnow(),
-        expires_at=datetime.utcnow() + timedelta(minutes=ttl_minutes),
-        status=ReservationStatus.ACTIVE
-    )
-    self.reservation_repo.save(reservation)
-    self._log_movement(product_id, warehouse_id, -qty, f"Reserved for order {order_id}")
-    self._check_low_stock(product_id, warehouse_id)
-    return reservation
+    Reservation reservation = new Reservation(
+        generateId(),
+        productId,
+        warehouseId,
+        orderId,
+        qty,
+        Instant.now(),
+        Instant.now().plus(Duration.ofMinutes(ttlMinutes)),
+        ReservationStatus.ACTIVE
+    );
+    reservationRepo.save(reservation);
+    logMovement(productId, warehouseId, -qty, String.format("Reserved for order %s", orderId));
+    checkLowStock(productId, warehouseId);
+    return reservation;
+}
 ```
 
 ### CAS update in the repository
 
-```python
-def cas_update(self, product_id, warehouse_id, expected_version, available_delta, reserved_delta):
-    # SQL equivalent:
-    # UPDATE inventory
-    # SET available_qty = available_qty + ?,
-    #     reserved_qty = reserved_qty + ?,
-    #     version = version + 1
-    # WHERE product_id = ? AND warehouse_id = ? AND version = ?
-    # Returns rows affected
-    rows_affected = self.db.execute(
-        "UPDATE inventory SET available_qty=available_qty+?, "
-        "reserved_qty=reserved_qty+?, version=version+1 "
+```java
+public boolean casUpdate(String productId, String warehouseId, int expectedVersion,
+                          int availableDelta, int reservedDelta) {
+    // SQL equivalent:
+    // UPDATE inventory
+    // SET available_qty = available_qty + ?,
+    //     reserved_qty = reserved_qty + ?,
+    //     version = version + 1
+    // WHERE product_id = ? AND warehouse_id = ? AND version = ?
+    // Returns rows affected
+    int rowsAffected = db.execute(
+        "UPDATE inventory SET available_qty=available_qty+?, " +
+        "reserved_qty=reserved_qty+?, version=version+1 " +
         "WHERE product_id=? AND warehouse_id=? AND version=?",
-        [available_delta, reserved_delta, product_id, warehouse_id, expected_version]
-    )
-    return rows_affected > 0
+        availableDelta, reservedDelta, productId, warehouseId, expectedVersion
+    );
+    return rowsAffected > 0;
+}
 ```
 
 ### Observer: low-stock alert
 
-```python
-class StockAlertObserver:
-    def on_stock_changed(self, product_id, warehouse_id, new_qty, threshold):
-        pass
+```java
+public interface StockAlertObserver {
+    void onStockChanged(String productId, String warehouseId, int newQty, int threshold);
+}
 
-class EmailAlertObserver(StockAlertObserver):
-    def on_stock_changed(self, product_id, warehouse_id, new_qty, threshold):
-        if new_qty < threshold:
-            send_email(
-                to="ops@company.com",
-                subject=f"Low stock: {product_id} at {warehouse_id}",
-                body=f"Only {new_qty} units remaining (threshold: {threshold})"
-            )
+public class EmailAlertObserver implements StockAlertObserver {
+    @Override
+    public void onStockChanged(String productId, String warehouseId, int newQty, int threshold) {
+        if (newQty < threshold) {
+            EmailService.sendEmail(
+                "ops@company.com",
+                String.format("Low stock: %s at %s", productId, warehouseId),
+                String.format("Only %d units remaining (threshold: %d)", newQty, threshold)
+            );
+        }
+    }
+}
 
-def _check_low_stock(self, product_id, warehouse_id):
-    inventory = self.inventory_repo.get(product_id, warehouse_id)
-    product = self.product_repo.get(product_id)
-    if inventory.available_qty < product.low_stock_threshold:
-        for observer in self.observers:
-            observer.on_stock_changed(
-                product_id, warehouse_id,
-                inventory.available_qty,
-                product.low_stock_threshold
-            )
+private void checkLowStock(String productId, String warehouseId) {
+    Inventory inventory = inventoryRepo.get(productId, warehouseId);
+    Product product = productRepo.get(productId);
+    if (inventory.getAvailableQty() < product.getLowStockThreshold()) {
+        for (StockAlertObserver observer : observers) {
+            observer.onStockChanged(
+                productId, warehouseId,
+                inventory.getAvailableQty(),
+                product.getLowStockThreshold()
+            );
+        }
+    }
+}
 ```
 
 ### Confirmation and release
 
-```python
-def confirm_reservation(self, reservation_id):
-    res = self.reservation_repo.get(reservation_id)
-    if res.status != ReservationStatus.ACTIVE:
-        raise InvalidReservationError()
-    # Move from reserved to permanently deducted (reserved_qty - qty)
-    self.inventory_repo.cas_update(
-        res.product_id, res.warehouse_id,
-        expected_version=self._get_version(res.product_id, res.warehouse_id),
-        available_delta=0,
-        reserved_delta=-res.quantity
-    )
-    res.status = ReservationStatus.CONFIRMED
-    self.reservation_repo.save(res)
-    self._log_movement(res.product_id, res.warehouse_id, -res.quantity, "Order confirmed")
+```java
+public boolean confirmReservation(String reservationId) {
+    Reservation res = reservationRepo.get(reservationId);
+    if (res.getStatus() != ReservationStatus.ACTIVE) {
+        throw new InvalidReservationError();
+    }
+    // Move from reserved to permanently deducted (reserved_qty - qty)
+    inventoryRepo.casUpdate(
+        res.getProductId(), res.getWarehouseId(),
+        getVersion(res.getProductId(), res.getWarehouseId()),
+        0,
+        -res.getQuantity()
+    );
+    res.setStatus(ReservationStatus.CONFIRMED);
+    reservationRepo.save(res);
+    logMovement(res.getProductId(), res.getWarehouseId(), -res.getQuantity(), "Order confirmed");
+    return true;
+}
 
-def release_reservation(self, reservation_id):
-    res = self.reservation_repo.get(reservation_id)
-    # Move reserved qty back to available
-    self.inventory_repo.cas_update(
-        res.product_id, res.warehouse_id,
-        expected_version=self._get_version(res.product_id, res.warehouse_id),
-        available_delta=+res.quantity,
-        reserved_delta=-res.quantity
-    )
-    res.status = ReservationStatus.RELEASED
-    self.reservation_repo.save(res)
-    self._log_movement(res.product_id, res.warehouse_id, +res.quantity, "Reservation released")
+public boolean releaseReservation(String reservationId) {
+    Reservation res = reservationRepo.get(reservationId);
+    // Move reserved qty back to available
+    inventoryRepo.casUpdate(
+        res.getProductId(), res.getWarehouseId(),
+        getVersion(res.getProductId(), res.getWarehouseId()),
+        +res.getQuantity(),
+        -res.getQuantity()
+    );
+    res.setStatus(ReservationStatus.RELEASED);
+    reservationRepo.save(res);
+    logMovement(res.getProductId(), res.getWarehouseId(), +res.getQuantity(), "Reservation released");
+    return true;
+}
 ```
 
 ---
@@ -308,13 +331,16 @@ Concurrent attempt: reserve("P1", "W1", "ORD-2", qty=3):
 
 Run a background job (cron or scheduled task):
 
-```python
-def expire_stale_reservations(self):
-    now = datetime.utcnow()
-    expired = self.reservation_repo.find_expired(now)
-    for res in expired:
-        if res.status == ReservationStatus.ACTIVE:
-            self.release_reservation(res.id)
+```java
+public void expireStaleReservations() {
+    Instant now = Instant.now();
+    List<Reservation> expired = reservationRepo.findExpired(now);
+    for (Reservation res : expired) {
+        if (res.getStatus() == ReservationStatus.ACTIVE) {
+            releaseReservation(res.getId());
+        }
+    }
+}
 ```
 
 For high throughput, process in batches and use `SKIP LOCKED` in SQL to avoid contention with concurrent workers.
@@ -323,26 +349,32 @@ For high throughput, process in batches and use `SKIP LOCKED` in SQL to avoid co
 
 When a single warehouse can't fulfill an order, split across warehouses:
 
-```python
-def reserve_across_warehouses(self, product_id, order_id, total_qty):
-    warehouses = self.warehouse_repo.get_with_stock(product_id)
-    remaining = total_qty
-    reservations = []
-    for warehouse in warehouses:
-        available = warehouse.get_available(product_id)
-        to_reserve = min(available, remaining)
-        if to_reserve > 0:
-            res = self.reserve(product_id, warehouse.id, order_id, to_reserve)
-            reservations.append(res)
-            remaining -= to_reserve
-        if remaining == 0:
-            break
-    if remaining > 0:
-        # Roll back all reservations
-        for res in reservations:
-            self.release_reservation(res.id)
-        raise InsufficientStockError("Insufficient stock across all warehouses")
-    return reservations
+```java
+public List<Reservation> reserveAcrossWarehouses(String productId, String orderId, int totalQty) {
+    List<Warehouse> warehouses = warehouseRepo.getWithStock(productId);
+    int remaining = totalQty;
+    List<Reservation> reservations = new ArrayList<>();
+    for (Warehouse warehouse : warehouses) {
+        int available = warehouse.getAvailable(productId);
+        int toReserve = Math.min(available, remaining);
+        if (toReserve > 0) {
+            Reservation res = reserve(productId, warehouse.getId(), orderId, toReserve, DEFAULT_TTL_MINUTES);
+            reservations.add(res);
+            remaining -= toReserve;
+        }
+        if (remaining == 0) {
+            break;
+        }
+    }
+    if (remaining > 0) {
+        // Roll back all reservations
+        for (Reservation res : reservations) {
+            releaseReservation(res.getId());
+        }
+        throw new InsufficientStockError("Insufficient stock across all warehouses");
+    }
+    return reservations;
+}
 ```
 
 ### 3. "What if the system needs real-time stock dashboard?"

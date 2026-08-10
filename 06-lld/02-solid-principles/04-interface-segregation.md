@@ -57,7 +57,7 @@ tags: [06-lld, system-design, solid-principles]
 ├── Identifying Violations
 │   ├── Implementation throws UnsupportedOperationException
 │   ├── Implementation returns null/empty/no-op silently
-│   └── Callers must isinstance-check before calling interface methods
+│   └── Callers must instanceof-check before calling interface methods
 ├── ISP vs SRP
 │   ├── SRP: one class has one reason to change
 │   ├── ISP: one interface serves one client's need
@@ -76,44 +76,48 @@ tags: [06-lld, system-design, solid-principles]
 
 Instead of one large, "fat" interface, break it into smaller, focused interfaces. Classes implement only what they actually need. This prevents classes from being burdened with methods they cannot meaningfully support.
 
-**Simple test**: Does any class implement an interface method only to raise `NotImplementedError` or leave it empty? That's ISP violation.
+**Simple test**: Does any class implement an interface method only to throw `UnsupportedOperationException` or leave it empty? That's ISP violation.
 
 ---
 
 ## Bad Design (Violates ISP)
 
-```python
-from abc import ABC, abstractmethod
+```java
+interface Worker {
+    void work();
+    void eat();
+    void sleep();
+}
 
 
-class Worker(ABC):
-    @abstractmethod
-    def work(self): pass
-
-    @abstractmethod
-    def eat(self): pass
-
-    @abstractmethod
-    def sleep(self): pass
-
-
-class HumanWorker(Worker):
-    def work(self):  print("Human working...")
-    def eat(self):   print("Human eating...")
-    def sleep(self): print("Human sleeping...")
+class HumanWorker implements Worker {
+    @Override
+    public void work() { System.out.println("Human working..."); }
+    @Override
+    public void eat() { System.out.println("Human eating..."); }
+    @Override
+    public void sleep() { System.out.println("Human sleeping..."); }
+}
 
 
-class Robot(Worker):
-    def work(self):
-        print("Robot working...")
+class Robot implements Worker {
+    @Override
+    public void work() {
+        System.out.println("Robot working...");
+    }
 
-    def eat(self):
-        raise NotImplementedError("Robots don't eat")
-        # Forced to implement something that doesn't apply
+    @Override
+    public void eat() {
+        throw new UnsupportedOperationException("Robots don't eat");
+        // Forced to implement something that doesn't apply
+    }
 
-    def sleep(self):
-        raise NotImplementedError("Robots don't sleep")
-        # Forced again
+    @Override
+    public void sleep() {
+        throw new UnsupportedOperationException("Robots don't sleep");
+        // Forced again
+    }
+}
 ```
 
 **Problems:**
@@ -125,38 +129,42 @@ class Robot(Worker):
 
 ## Good Design (Follows ISP)
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Segregated interfaces — each interface does ONE thing
+interface Workable {
+    void work();
+}
 
 
-# Segregated interfaces — each interface does ONE thing
-class Workable(ABC):
-    @abstractmethod
-    def work(self): pass
+interface Eatable {
+    void eat();
+}
 
 
-class Eatable(ABC):
-    @abstractmethod
-    def eat(self): pass
+interface Sleepable {
+    void sleep();
+}
 
 
-class Sleepable(ABC):
-    @abstractmethod
-    def sleep(self): pass
+// Human needs all three
+class HumanWorker implements Workable, Eatable, Sleepable {
+    @Override
+    public void work() { System.out.println("Human working..."); }
+    @Override
+    public void eat() { System.out.println("Human eating..."); }
+    @Override
+    public void sleep() { System.out.println("Human sleeping..."); }
+}
 
 
-# Human needs all three
-class HumanWorker(Workable, Eatable, Sleepable):
-    def work(self):  print("Human working...")
-    def eat(self):   print("Human eating...")
-    def sleep(self): print("Human sleeping...")
-
-
-# Robot only implements what applies
-class Robot(Workable):
-    def work(self):
-        print("Robot working...")
-    # No eat(), no sleep() — and that's correct
+// Robot only implements what applies
+class Robot implements Workable {
+    @Override
+    public void work() {
+        System.out.println("Robot working...");
+    }
+    // No eat(), no sleep() — and that's correct
+}
 ```
 
 Now `Robot` implements only what it actually supports. No fake methods, no runtime exceptions.
@@ -165,126 +173,113 @@ Now `Robot` implements only what it actually supports. No fake methods, no runti
 
 ## Real-World Example: Printer Interface
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Bad: Fat interface
+interface MultiFunctionPrinter {
+    void print(Document document);
+    void scan(Document document);
+    void fax(Document document);
+    void staple(Document document);
+}
 
 
-# Bad: Fat interface
-class MultiFunctionPrinter(ABC):
-    @abstractmethod
-    def print(self, document): pass
-
-    @abstractmethod
-    def scan(self, document): pass
-
-    @abstractmethod
-    def fax(self, document): pass
-
-    @abstractmethod
-    def staple(self, document): pass
-
-
-# A basic home printer has to implement fax and staple?
-class BasicPrinter(MultiFunctionPrinter):
-    def print(self, document): pass  # OK
-    def scan(self, document):  pass  # OK
-    def fax(self, document):   raise NotImplementedError("No fax")
-    def staple(self, document): raise NotImplementedError("No stapler")
+// A basic home printer has to implement fax and staple?
+class BasicPrinter implements MultiFunctionPrinter {
+    @Override
+    public void print(Document document) { /* OK */ }
+    @Override
+    public void scan(Document document) { /* OK */ }
+    @Override
+    public void fax(Document document) { throw new UnsupportedOperationException("No fax"); }
+    @Override
+    public void staple(Document document) { throw new UnsupportedOperationException("No stapler"); }
+}
 ```
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Good: Segregated interfaces
+interface Printable {
+    void print(Document document);
+}
+
+interface Scannable {
+    void scan(Document document);
+}
+
+interface Faxable {
+    void fax(Document document);
+}
+
+interface Stapleable {
+    void staple(Document document);
+}
 
 
-# Good: Segregated interfaces
-class Printable(ABC):
-    @abstractmethod
-    def print(self, document): pass
-
-class Scannable(ABC):
-    @abstractmethod
-    def scan(self, document): pass
-
-class Faxable(ABC):
-    @abstractmethod
-    def fax(self, document): pass
-
-class Stapleable(ABC):
-    @abstractmethod
-    def staple(self, document): pass
+// Basic printer implements only what it supports
+class BasicPrinter implements Printable, Scannable {
+    @Override
+    public void print(Document document) { /* Print logic */ }
+    @Override
+    public void scan(Document document) { /* Scan logic */ }
+}
 
 
-# Basic printer implements only what it supports
-class BasicPrinter(Printable, Scannable):
-    def print(self, document): pass  # Print logic
-    def scan(self, document):  pass  # Scan logic
-
-
-# Enterprise printer supports everything
-class EnterprisePrinter(Printable, Scannable, Faxable, Stapleable):
-    def print(self, document):  pass
-    def scan(self, document):   pass
-    def fax(self, document):    pass
-    def staple(self, document): pass
+// Enterprise printer supports everything
+class EnterprisePrinter implements Printable, Scannable, Faxable, Stapleable {
+    @Override
+    public void print(Document document) { }
+    @Override
+    public void scan(Document document) { }
+    @Override
+    public void fax(Document document) { }
+    @Override
+    public void staple(Document document) { }
+}
 ```
 
 ---
 
 ## Real-World Example: Order Service
 
-```python
-from abc import ABC, abstractmethod
-from typing import List
+```java
+import java.util.List;
+
+// Bad: One giant interface
+interface OrderService {
+    void placeOrder(Order order);
+    void cancelOrder(String orderId);
+    void trackOrder(String orderId);
+    void generateInvoice(String orderId);
+    void applyDiscount(String orderId, double percent);
+    void exportToCsv(List<Order> orders);        // Report concern
+    void sendConfirmationEmail(Order order);      // Notification concern
+}
 
 
-# Bad: One giant interface
-class OrderService(ABC):
-    @abstractmethod
-    def place_order(self, order): pass
+// Good: Segregated by concern
+interface OrderPlacementService {
+    void placeOrder(Order order);
+}
 
-    @abstractmethod
-    def cancel_order(self, order_id: str): pass
+interface OrderCancellationService {
+    void cancelOrder(String orderId);
+}
 
-    @abstractmethod
-    def track_order(self, order_id: str): pass
+interface OrderTrackingService {
+    void trackOrder(String orderId);
+}
 
-    @abstractmethod
-    def generate_invoice(self, order_id: str): pass
+interface InvoiceService {
+    void generateInvoice(String orderId);
+}
 
-    @abstractmethod
-    def apply_discount(self, order_id: str, percent: float): pass
+interface NotificationService {
+    void sendConfirmationEmail(Order order);
+}
 
-    @abstractmethod
-    def export_to_csv(self, orders: List): pass       # Report concern
-
-    @abstractmethod
-    def send_confirmation_email(self, order): pass    # Notification concern
-
-
-# Good: Segregated by concern
-class OrderPlacementService(ABC):
-    @abstractmethod
-    def place_order(self, order): pass
-
-class OrderCancellationService(ABC):
-    @abstractmethod
-    def cancel_order(self, order_id: str): pass
-
-class OrderTrackingService(ABC):
-    @abstractmethod
-    def track_order(self, order_id: str): pass
-
-class InvoiceService(ABC):
-    @abstractmethod
-    def generate_invoice(self, order_id: str): pass
-
-class NotificationService(ABC):
-    @abstractmethod
-    def send_confirmation_email(self, order): pass
-
-class ReportService(ABC):
-    @abstractmethod
-    def export_to_csv(self, orders: List): pass
+interface ReportService {
+    void exportToCsv(List<Order> orders);
+}
 ```
 
 Each service class implements only the interface(s) relevant to it.
@@ -295,7 +290,7 @@ Each service class implements only the interface(s) relevant to it.
 
 - When designing service interfaces: "Rather than one `UserService` with 15 methods, I'd split by read vs write, or by domain concern — `UserQueryService`, `UserCommandService`, `UserNotificationService`."
 - When building plugin or extension systems: "I'd define narrow interfaces so each plugin only depends on the capabilities it actually needs."
-- When reviewing legacy code: "If I see `NotImplementedError` in any interface implementation, that's an ISP violation I'd flag immediately."
+- When reviewing legacy code: "If I see `UnsupportedOperationException` in any interface implementation, that's an ISP violation I'd flag immediately."
 
 ---
 
@@ -305,7 +300,7 @@ Each service class implements only the interface(s) relevant to it.
 |---|---|---|
 | Fat interface | One interface with 10+ methods from different concerns | Split by responsibility |
 | `UnsupportedOperationException` | Implementing class throws for some methods | Segregate the interface |
-| Forced empty implementations | Methods with `pass` that do nothing | Split; implement only relevant interface |
+| Forced empty implementations | Methods with empty bodies that do nothing | Split; implement only relevant interface |
 | God interface in frameworks | One interface every service must implement | Use multiple focused interfaces or abstract base classes |
 
 ---
@@ -323,7 +318,7 @@ They complement each other: ISP keeps interfaces lean, SRP keeps classes focused
 ## Interview Tips
 
 **Q: "Give an example of ISP violation"**
-- "A `Worker` interface with `work()`, `eat()`, and `sleep()`. A `Robot` class forced to implement `eat()` and `sleep()` with `NotImplementedError`. The fix is to split into `Workable`, `Eatable`, `Sleepable` interfaces."
+- "A `Worker` interface with `work()`, `eat()`, and `sleep()`. A `Robot` class forced to implement `eat()` and `sleep()` with `UnsupportedOperationException`. The fix is to split into `Workable`, `Eatable`, `Sleepable` interfaces."
 
 **Q: "How does ISP relate to the Dependency Inversion Principle?"**
 - "DIP says depend on abstractions. ISP says those abstractions should be narrow. Together, they keep your dependencies minimal — you depend only on the exact capabilities you need."

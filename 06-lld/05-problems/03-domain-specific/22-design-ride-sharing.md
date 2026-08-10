@@ -176,212 +176,321 @@ class SurgeFareCalculator(FareCalculator):
 - Driver rejects — MatchingService skips and tries next candidate.
 - Rider cancels before driver accepts — set ride CANCELLED.
 
-```python
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum, auto
-from typing import Optional
-import math, uuid
+```java
+import java.time.Instant;
+import java.time.Duration;
+import java.util.*;
 
+enum DriverStatus {
+    OFFLINE, AVAILABLE, ON_RIDE
+}
 
-class DriverStatus(Enum):
-    OFFLINE   = auto()
-    AVAILABLE = auto()
-    ON_RIDE   = auto()
+enum RideStatus {
+    REQUESTED, MATCHED, IN_PROGRESS, COMPLETED, CANCELLED
+}
 
+class Location {
+    private final double lat;
+    private final double lon;
 
-class RideStatus(Enum):
-    REQUESTED   = auto()
-    MATCHED     = auto()
-    IN_PROGRESS = auto()
-    COMPLETED   = auto()
-    CANCELLED   = auto()
+    public Location(double lat, double lon) {
+        this.lat = lat;
+        this.lon = lon;
+    }
 
+    public double getLat() { return lat; }
+    public double getLon() { return lon; }
 
-@dataclass
-class Location:
-    lat: float
-    lon: float
+    // Euclidean approximation; use Haversine in production
+    public double distanceKm(Location other) {
+        double dlat = (this.lat - other.lat) * 111.0;
+        double dlon = (this.lon - other.lon) * 111.0 * Math.cos(Math.toRadians(this.lat));
+        return Math.sqrt(dlat * dlat + dlon * dlon);
+    }
+}
 
-    def distance_km(self, other: "Location") -> float:
-        # Euclidean approximation; use Haversine in production
-        dlat = (self.lat - other.lat) * 111.0
-        dlon = (self.lon - other.lon) * 111.0 * math.cos(math.radians(self.lat))
-        return math.sqrt(dlat ** 2 + dlon ** 2)
+class Rider {
+    private final String riderId;
+    private final String name;
+    private double rating;
 
+    public Rider(String riderId, String name) {
+        this(riderId, name, 5.0);
+    }
 
-@dataclass
-class Rider:
-    rider_id: str
-    name: str
-    rating: float = 5.0
+    public Rider(String riderId, String name, double rating) {
+        this.riderId = riderId;
+        this.name = name;
+        this.rating = rating;
+    }
 
+    public String getRiderId() { return riderId; }
+    public String getName() { return name; }
+    public double getRating() { return rating; }
+    public void setRating(double rating) { this.rating = rating; }
+}
 
-@dataclass
-class Driver:
-    driver_id: str
-    name: str
-    vehicle: str
-    rating: float = 5.0
-    status: DriverStatus = DriverStatus.OFFLINE
-    current_location: Location = field(default_factory=lambda: Location(0, 0))
+class Driver {
+    private final String driverId;
+    private final String name;
+    private final String vehicle;
+    private double rating;
+    private DriverStatus status;
+    private Location currentLocation;
 
-    def go_online(self):
-        self.status = DriverStatus.AVAILABLE
+    public Driver(String driverId, String name, String vehicle) {
+        this(driverId, name, vehicle, 5.0, DriverStatus.OFFLINE, new Location(0, 0));
+    }
 
-    def go_offline(self):
-        if self.status == DriverStatus.ON_RIDE:
-            raise ValueError("Cannot go offline mid-ride")
-        self.status = DriverStatus.OFFLINE
+    public Driver(String driverId, String name, String vehicle, double rating,
+                  DriverStatus status, Location currentLocation) {
+        this.driverId = driverId;
+        this.name = name;
+        this.vehicle = vehicle;
+        this.rating = rating;
+        this.status = status;
+        this.currentLocation = currentLocation;
+    }
 
+    public String getDriverId() { return driverId; }
+    public String getName() { return name; }
+    public String getVehicle() { return vehicle; }
+    public double getRating() { return rating; }
+    public void setRating(double rating) { this.rating = rating; }
+    public DriverStatus getStatus() { return status; }
+    public void setStatus(DriverStatus status) { this.status = status; }
+    public Location getCurrentLocation() { return currentLocation; }
+    public void setCurrentLocation(Location currentLocation) { this.currentLocation = currentLocation; }
 
-@dataclass
-class Ride:
-    ride_id: str
-    rider: Rider
-    pickup: Location
-    dropoff: Location
-    status: RideStatus = RideStatus.REQUESTED
-    driver: Optional[Driver] = None
-    requested_at: datetime = field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    fare: float = 0.0
-    distance_km: float = 0.0
+    public void goOnline() {
+        this.status = DriverStatus.AVAILABLE;
+    }
 
+    public void goOffline() {
+        if (this.status == DriverStatus.ON_RIDE) {
+            throw new IllegalStateException("Cannot go offline mid-ride");
+        }
+        this.status = DriverStatus.OFFLINE;
+    }
+}
 
-class FareCalculator:
-    BASE_FARE = 2.0
-    PER_KM    = 1.5
-    PER_MIN   = 0.25
+class Ride {
+    private final String rideId;
+    private final Rider rider;
+    private final Location pickup;
+    private final Location dropoff;
+    private RideStatus status;
+    private Driver driver;
+    private final Instant requestedAt;
+    private Instant startedAt;
+    private Instant completedAt;
+    private double fare;
+    private double distanceKm;
 
-    def calculate(self, ride: Ride) -> float:
-        if ride.started_at is None or ride.completed_at is None:
-            return 0.0
-        duration_min = (ride.completed_at - ride.started_at).seconds / 60
-        return (self.BASE_FARE
-                + ride.distance_km * self.PER_KM
-                + duration_min * self.PER_MIN)
+    public Ride(String rideId, Rider rider, Location pickup, Location dropoff) {
+        this.rideId = rideId;
+        this.rider = rider;
+        this.pickup = pickup;
+        this.dropoff = dropoff;
+        this.status = RideStatus.REQUESTED;
+        this.driver = null;
+        this.requestedAt = Instant.now();
+        this.startedAt = null;
+        this.completedAt = null;
+        this.fare = 0.0;
+        this.distanceKm = 0.0;
+    }
 
+    public String getRideId() { return rideId; }
+    public Rider getRider() { return rider; }
+    public Location getPickup() { return pickup; }
+    public Location getDropoff() { return dropoff; }
+    public RideStatus getStatus() { return status; }
+    public void setStatus(RideStatus status) { this.status = status; }
+    public Driver getDriver() { return driver; }
+    public void setDriver(Driver driver) { this.driver = driver; }
+    public Instant getRequestedAt() { return requestedAt; }
+    public Instant getStartedAt() { return startedAt; }
+    public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
+    public Instant getCompletedAt() { return completedAt; }
+    public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
+    public double getFare() { return fare; }
+    public void setFare(double fare) { this.fare = fare; }
+    public double getDistanceKm() { return distanceKm; }
+    public void setDistanceKm(double distanceKm) { this.distanceKm = distanceKm; }
+}
 
-class SurgeFareCalculator(FareCalculator):
-    def __init__(self, multiplier: float):
-        self.multiplier = multiplier
+class FareCalculator {
+    protected static final double BASE_FARE = 2.0;
+    protected static final double PER_KM = 1.5;
+    protected static final double PER_MIN = 0.25;
 
-    def calculate(self, ride: Ride) -> float:
-        return super().calculate(ride) * self.multiplier
+    public double calculate(Ride ride) {
+        if (ride.getStartedAt() == null || ride.getCompletedAt() == null) {
+            return 0.0;
+        }
+        double durationMin = Duration.between(ride.getStartedAt(), ride.getCompletedAt()).getSeconds() / 60.0;
+        return BASE_FARE
+                + ride.getDistanceKm() * PER_KM
+                + durationMin * PER_MIN;
+    }
+}
 
+class SurgeFareCalculator extends FareCalculator {
+    private final double multiplier;
 
-class MatchingService:
-    def find_driver(self, pickup: Location,
-                    drivers: list[Driver]) -> Optional[Driver]:
-        available = [d for d in drivers if d.status == DriverStatus.AVAILABLE]
-        if not available:
-            return None
-        # sort by distance, then rating descending as tiebreaker
-        return min(available,
-                   key=lambda d: (d.current_location.distance_km(pickup), -d.rating))
+    public SurgeFareCalculator(double multiplier) {
+        this.multiplier = multiplier;
+    }
 
+    @Override
+    public double calculate(Ride ride) {
+        return super.calculate(ride) * multiplier;
+    }
+}
 
-class RatingService:
-    def __init__(self):
-        self._driver_ratings: dict[str, list[float]] = {}
-        self._rider_ratings: dict[str, list[float]] = {}
+class MatchingService {
+    public Driver findDriver(Location pickup, List<Driver> drivers) {
+        List<Driver> available = new ArrayList<>();
+        for (Driver d : drivers) {
+            if (d.getStatus() == DriverStatus.AVAILABLE) {
+                available.add(d);
+            }
+        }
+        if (available.isEmpty()) {
+            return null;
+        }
+        // sort by distance, then rating descending as tiebreaker
+        return Collections.min(available, Comparator
+                .comparingDouble((Driver d) -> d.getCurrentLocation().distanceKm(pickup))
+                .thenComparingDouble(d -> -d.getRating()));
+    }
+}
 
-    def rate_driver(self, driver: Driver, score: float):
-        self._driver_ratings.setdefault(driver.driver_id, []).append(score)
-        driver.rating = sum(self._driver_ratings[driver.driver_id]) / \
-                        len(self._driver_ratings[driver.driver_id])
+class RatingService {
+    private final Map<String, List<Double>> driverRatings = new HashMap<>();
+    private final Map<String, List<Double>> riderRatings = new HashMap<>();
 
-    def rate_rider(self, rider: Rider, score: float):
-        self._rider_ratings.setdefault(rider.rider_id, []).append(score)
-        rider.rating = sum(self._rider_ratings[rider.rider_id]) / \
-                       len(self._rider_ratings[rider.rider_id])
+    public void rateDriver(Driver driver, double score) {
+        driverRatings.computeIfAbsent(driver.getDriverId(), k -> new ArrayList<>()).add(score);
+        List<Double> scores = driverRatings.get(driver.getDriverId());
+        driver.setRating(average(scores));
+    }
 
+    public void rateRider(Rider rider, double score) {
+        riderRatings.computeIfAbsent(rider.getRiderId(), k -> new ArrayList<>()).add(score);
+        List<Double> scores = riderRatings.get(rider.getRiderId());
+        rider.setRating(average(scores));
+    }
 
-class RideService:
-    def __init__(self):
-        self.rides: dict[str, Ride] = {}
-        self.drivers: dict[str, Driver] = {}
-        self.riders: dict[str, Rider] = {}
-        self.matching = MatchingService()
-        self.fare_calculator: FareCalculator = FareCalculator()
-        self.rating_service = RatingService()
+    private double average(List<Double> scores) {
+        double sum = 0.0;
+        for (double s : scores) sum += s;
+        return sum / scores.size();
+    }
+}
 
-    def register_driver(self, driver: Driver):
-        self.drivers[driver.driver_id] = driver
+class RideService {
+    private final Map<String, Ride> rides = new HashMap<>();
+    private final Map<String, Driver> drivers = new HashMap<>();
+    private final Map<String, Rider> riders = new HashMap<>();
+    private final MatchingService matching = new MatchingService();
+    private FareCalculator fareCalculator = new FareCalculator();
+    private final RatingService ratingService = new RatingService();
 
-    def register_rider(self, rider: Rider):
-        self.riders[rider.rider_id] = rider
+    public void registerDriver(Driver driver) {
+        drivers.put(driver.getDriverId(), driver);
+    }
 
-    def request_ride(self, rider_id: str, pickup: Location,
-                     dropoff: Location) -> Ride:
-        rider = self.riders[rider_id]
-        ride = Ride(ride_id=str(uuid.uuid4()), rider=rider,
-                    pickup=pickup, dropoff=dropoff)
-        self.rides[ride.ride_id] = ride
+    public void registerRider(Rider rider) {
+        riders.put(rider.getRiderId(), rider);
+    }
 
-        driver = self.matching.find_driver(pickup, list(self.drivers.values()))
-        if driver:
-            ride.driver = driver
-            ride.status = RideStatus.MATCHED
-            driver.status = DriverStatus.ON_RIDE
+    public Ride requestRide(String riderId, Location pickup, Location dropoff) {
+        Rider rider = riders.get(riderId);
+        Ride ride = new Ride(UUID.randomUUID().toString(), rider, pickup, dropoff);
+        rides.put(ride.getRideId(), ride);
 
-        return ride
+        Driver driver = matching.findDriver(pickup, new ArrayList<>(drivers.values()));
+        if (driver != null) {
+            ride.setDriver(driver);
+            ride.setStatus(RideStatus.MATCHED);
+            driver.setStatus(DriverStatus.ON_RIDE);
+        }
 
-    def accept_ride(self, driver_id: str, ride_id: str) -> Ride:
-        # Called when driver explicitly confirms acceptance UI
-        ride = self.rides[ride_id]
-        if ride.status != RideStatus.MATCHED:
-            raise ValueError("Ride not in MATCHED state")
-        if ride.driver.driver_id != driver_id:
-            raise ValueError("Driver mismatch")
-        return ride  # already matched; acceptance is implicit in matching
+        return ride;
+    }
 
-    def start_ride(self, ride_id: str) -> Ride:
-        ride = self.rides[ride_id]
-        if ride.status != RideStatus.MATCHED:
-            raise ValueError("Cannot start — ride not MATCHED")
-        ride.status = RideStatus.IN_PROGRESS
-        ride.started_at = datetime.utcnow()
-        return ride
+    public Ride acceptRide(String driverId, String rideId) {
+        // Called when driver explicitly confirms acceptance UI
+        Ride ride = rides.get(rideId);
+        if (ride.getStatus() != RideStatus.MATCHED) {
+            throw new IllegalStateException("Ride not in MATCHED state");
+        }
+        if (!ride.getDriver().getDriverId().equals(driverId)) {
+            throw new IllegalStateException("Driver mismatch");
+        }
+        return ride;  // already matched; acceptance is implicit in matching
+    }
 
-    def complete_ride(self, ride_id: str) -> Ride:
-        ride = self.rides[ride_id]
-        if ride.status != RideStatus.IN_PROGRESS:
-            raise ValueError("Cannot complete — ride not IN_PROGRESS")
-        ride.completed_at = datetime.utcnow()
-        ride.distance_km = ride.pickup.distance_km(ride.dropoff)
-        ride.fare = self.fare_calculator.calculate(ride)
-        ride.status = RideStatus.COMPLETED
-        ride.driver.status = DriverStatus.AVAILABLE
-        return ride
+    public Ride startRide(String rideId) {
+        Ride ride = rides.get(rideId);
+        if (ride.getStatus() != RideStatus.MATCHED) {
+            throw new IllegalStateException("Cannot start — ride not MATCHED");
+        }
+        ride.setStatus(RideStatus.IN_PROGRESS);
+        ride.setStartedAt(Instant.now());
+        return ride;
+    }
 
-    def cancel_ride(self, ride_id: str, by: str = "rider") -> Ride:
-        ride = self.rides[ride_id]
-        if ride.status in (RideStatus.COMPLETED, RideStatus.CANCELLED):
-            raise ValueError("Cannot cancel completed/cancelled ride")
-        if ride.status == RideStatus.IN_PROGRESS:
-            raise ValueError("Cannot cancel an in-progress ride")
-        if ride.driver:
-            ride.driver.status = DriverStatus.AVAILABLE
-        ride.status = RideStatus.CANCELLED
-        return ride
+    public Ride completeRide(String rideId) {
+        Ride ride = rides.get(rideId);
+        if (ride.getStatus() != RideStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Cannot complete — ride not IN_PROGRESS");
+        }
+        ride.setCompletedAt(Instant.now());
+        ride.setDistanceKm(ride.getPickup().distanceKm(ride.getDropoff()));
+        ride.setFare(fareCalculator.calculate(ride));
+        ride.setStatus(RideStatus.COMPLETED);
+        ride.getDriver().setStatus(DriverStatus.AVAILABLE);
+        return ride;
+    }
 
-    def rate_driver(self, ride_id: str, score: float):
-        ride = self.rides[ride_id]
-        if ride.status != RideStatus.COMPLETED:
-            raise ValueError("Can only rate after completion")
-        self.rating_service.rate_driver(ride.driver, score)
+    public Ride cancelRide(String rideId, String by) {
+        Ride ride = rides.get(rideId);
+        if (ride.getStatus() == RideStatus.COMPLETED || ride.getStatus() == RideStatus.CANCELLED) {
+            throw new IllegalStateException("Cannot cancel completed/cancelled ride");
+        }
+        if (ride.getStatus() == RideStatus.IN_PROGRESS) {
+            throw new IllegalStateException("Cannot cancel an in-progress ride");
+        }
+        if (ride.getDriver() != null) {
+            ride.getDriver().setStatus(DriverStatus.AVAILABLE);
+        }
+        ride.setStatus(RideStatus.CANCELLED);
+        return ride;
+    }
 
-    def rate_rider(self, ride_id: str, score: float):
-        ride = self.rides[ride_id]
-        if ride.status != RideStatus.COMPLETED:
-            raise ValueError("Can only rate after completion")
-        self.rating_service.rate_rider(ride.rider, score)
+    public void rateDriver(String rideId, double score) {
+        Ride ride = rides.get(rideId);
+        if (ride.getStatus() != RideStatus.COMPLETED) {
+            throw new IllegalStateException("Can only rate after completion");
+        }
+        ratingService.rateDriver(ride.getDriver(), score);
+    }
 
-    def update_driver_location(self, driver_id: str, location: Location):
-        self.drivers[driver_id].current_location = location
+    public void rateRider(String rideId, double score) {
+        Ride ride = rides.get(rideId);
+        if (ride.getStatus() != RideStatus.COMPLETED) {
+            throw new IllegalStateException("Can only rate after completion");
+        }
+        ratingService.rateRider(ride.getRider(), score);
+    }
+
+    public void updateDriverLocation(String driverId, Location location) {
+        drivers.get(driverId).setCurrentLocation(location);
+    }
+}
 ```
 
 ---
@@ -404,39 +513,57 @@ Scenario: Rider requests a ride; driver accepts; ride completes.
 
 In production, use a geohash or quadtree index. Geohash divides the map into a grid of cells identified by a base-32 string. Drivers in the same or adjacent geohash cells are candidates. This reduces the search from O(N drivers) to O(drivers in nearby cells).
 
-```python
-import geohash2
+```java
+import ch.hsr.geohash.GeoHash;
+import java.util.*;
 
-def find_driver_geohash(self, pickup: Location,
-                         driver_index: dict[str, list[Driver]]) -> Optional[Driver]:
-    cell = geohash2.encode(pickup.lat, pickup.lon, precision=6)  # ~1.2km cell
-    neighbors = geohash2.neighbors(cell) + [cell]
-    candidates = []
-    for c in neighbors:
-        candidates.extend(driver_index.get(c, []))
-    available = [d for d in candidates if d.status == DriverStatus.AVAILABLE]
-    return min(available, key=lambda d: d.current_location.distance_km(pickup),
-               default=None)
+public Driver findDriverGeohash(Location pickup, Map<String, List<Driver>> driverIndex) {
+    String cell = GeoHash.withCharacterPrecision(pickup.getLat(), pickup.getLon(), 6).toBase32();  // ~1.2km cell
+    List<String> neighbors = new ArrayList<>(Arrays.asList(
+            GeoHash.fromGeohashString(cell).getAdjacent()).stream()
+            .map(GeoHash::toBase32).toList());
+    neighbors.add(cell);
+
+    List<Driver> candidates = new ArrayList<>();
+    for (String c : neighbors) {
+        candidates.addAll(driverIndex.getOrDefault(c, Collections.emptyList()));
+    }
+
+    List<Driver> available = new ArrayList<>();
+    for (Driver d : candidates) {
+        if (d.getStatus() == DriverStatus.AVAILABLE) {
+            available.add(d);
+        }
+    }
+    if (available.isEmpty()) {
+        return null;
+    }
+    return Collections.min(available,
+            Comparator.comparingDouble(d -> d.getCurrentLocation().distanceKm(pickup)));
+}
 ```
 
 ### 2. "How does surge pricing work?"
 
 Surge multiplier = f(demand / supply) in a geographic zone. When open ride requests in a zone exceed available drivers by a threshold, activate surge.
 
-```python
-def compute_surge(self, zone_id: str) -> float:
-    open_requests = self._open_requests_in_zone(zone_id)
-    available_drivers = self._available_drivers_in_zone(zone_id)
-    if available_drivers == 0:
-        return 3.0
-    ratio = open_requests / available_drivers
-    if ratio > 3:
-        return 2.5
-    elif ratio > 2:
-        return 1.8
-    elif ratio > 1.5:
-        return 1.3
-    return 1.0
+```java
+public double computeSurge(String zoneId) {
+    int openRequests = openRequestsInZone(zoneId);
+    int availableDrivers = availableDriversInZone(zoneId);
+    if (availableDrivers == 0) {
+        return 3.0;
+    }
+    double ratio = (double) openRequests / availableDrivers;
+    if (ratio > 3) {
+        return 2.5;
+    } else if (ratio > 2) {
+        return 1.8;
+    } else if (ratio > 1.5) {
+        return 1.3;
+    }
+    return 1.0;
+}
 ```
 
 `RideService` then selects `SurgeFareCalculator(multiplier)` for rides in that zone.
@@ -445,24 +572,34 @@ def compute_surge(self, zone_id: str) -> float:
 
 Cancellation is valid in REQUESTED or MATCHED states. If a driver cancels a matched ride, the system should rematch with the next closest driver before giving up. Track a `cancelled_by_drivers` list on the Ride to skip already-rejected drivers.
 
-```python
-def driver_cancel(self, ride_id: str, driver_id: str):
-    ride = self.rides[ride_id]
-    if ride.status != RideStatus.MATCHED:
-        raise ValueError("Driver can only cancel a matched ride")
-    ride.driver.status = DriverStatus.AVAILABLE
-    ride._skipped_drivers = getattr(ride, "_skipped_drivers", set())
-    ride._skipped_drivers.add(driver_id)
-    ride.driver = None
-    ride.status = RideStatus.REQUESTED
-    # Attempt rematch excluding skipped drivers
-    candidates = [d for d in self.drivers.values()
-                  if d.driver_id not in ride._skipped_drivers]
-    new_driver = self.matching.find_driver(ride.pickup, candidates)
-    if new_driver:
-        ride.driver = new_driver
-        ride.status = RideStatus.MATCHED
-        new_driver.status = DriverStatus.ON_RIDE
+```java
+// Ride gains a private Set<String> skippedDrivers field (lazily initialized)
+// to track drivers who have already cancelled or rejected this ride.
+
+public void driverCancel(String rideId, String driverId) {
+    Ride ride = rides.get(rideId);
+    if (ride.getStatus() != RideStatus.MATCHED) {
+        throw new IllegalStateException("Driver can only cancel a matched ride");
+    }
+    ride.getDriver().setStatus(DriverStatus.AVAILABLE);
+    ride.getSkippedDrivers().add(driverId);
+    ride.setDriver(null);
+    ride.setStatus(RideStatus.REQUESTED);
+
+    // Attempt rematch excluding skipped drivers
+    List<Driver> candidates = new ArrayList<>();
+    for (Driver d : drivers.values()) {
+        if (!ride.getSkippedDrivers().contains(d.getDriverId())) {
+            candidates.add(d);
+        }
+    }
+    Driver newDriver = matching.findDriver(ride.getPickup(), candidates);
+    if (newDriver != null) {
+        ride.setDriver(newDriver);
+        ride.setStatus(RideStatus.MATCHED);
+        newDriver.setStatus(DriverStatus.ON_RIDE);
+    }
+}
 ```
 
 ### 4. "How do you track real-time driver location?"

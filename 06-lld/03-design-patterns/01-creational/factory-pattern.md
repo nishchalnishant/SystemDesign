@@ -78,19 +78,22 @@ Try writing it before reading on.
 
 The first instinct is a single method with branching:
 
-```python
-class NotificationService:
-    def send(self, type: str, message: str):
-        if type == "EMAIL":
-            n = EmailNotification()
-            n.send(message)
-        elif type == "SMS":
-            n = SMSNotification()
-            n.send(message)
-        elif type == "PUSH":
-            n = PushNotification()
-            n.send(message)
-        # Adding "SLACK" means editing this method
+```java
+class NotificationService {
+    void send(String type, String message) {
+        if (type.equals("EMAIL")) {
+            Notification n = new EmailNotification();
+            n.send(message);
+        } else if (type.equals("SMS")) {
+            Notification n = new SMSNotification();
+            n.send(message);
+        } else if (type.equals("PUSH")) {
+            Notification n = new PushNotification();
+            n.send(message);
+        }
+        // Adding "SLACK" means editing this method
+    }
+}
 ```
 
 **What breaks**:
@@ -106,36 +109,43 @@ class NotificationService:
 The constraint: **the caller should not instantiate the concrete type directly**.
 
 Step 1 — extract an interface so all notification types are interchangeable:
-```python
-from abc import ABC, abstractmethod
+```java
+interface Notification {
+    void send(String message);
+}
 
-class Notification(ABC):
-    @abstractmethod
-    def send(self, message: str): ...
+class EmailNotification implements Notification {
+    public void send(String message) { /* ... */ }
+}
 
-class EmailNotification(Notification): ...
-class SMSNotification(Notification): ...
+class SMSNotification implements Notification {
+    public void send(String message) { /* ... */ }
+}
 ```
 
 Step 2 — move the instantiation into a dedicated method that returns the interface:
-```python
-class NotificationFactory:
-    @staticmethod
-    def create(type: str) -> Notification:
-        if type == "EMAIL":
-            return EmailNotification()
-        elif type == "SMS":
-            return SMSNotification()
-        else:
-            raise ValueError(f"Unknown type: {type}")
+```java
+class NotificationFactory {
+    static Notification create(String type) {
+        if (type.equals("EMAIL")) {
+            return new EmailNotification();
+        } else if (type.equals("SMS")) {
+            return new SMSNotification();
+        } else {
+            throw new IllegalArgumentException("Unknown type: " + type);
+        }
+    }
+}
 ```
 
 Step 3 — the service only calls the factory, never instantiates directly:
-```python
-class NotificationService:
-    def send(self, type: str, message: str):
-        n = NotificationFactory.create(type)
-        n.send(message)
+```java
+class NotificationService {
+    void send(String type, String message) {
+        Notification n = NotificationFactory.create(type);
+        n.send(message);
+    }
+}
 ```
 
 Adding `SLACK` means adding one branch in `NotificationFactory` — `NotificationService` is untouched. That's the pattern.
@@ -155,22 +165,24 @@ Not a formal GoF pattern, but the most commonly used in practice. A static metho
 
 ### Example: Vehicle Factory
 
-```python
-class VehicleFactory:
-    @staticmethod
-    def create_vehicle(type: str):
-        type_lower = type.lower()
-        if type_lower == "car":
-            return Car()
-        elif type_lower == "bike":
-            return Bike()
-        elif type_lower == "truck":
-            return Truck()
-        else:
-            raise ValueError(f"Unknown vehicle type: {type}")
+```java
+class VehicleFactory {
+    static Vehicle createVehicle(String type) {
+        String typeLower = type.toLowerCase();
+        if (typeLower.equals("car")) {
+            return new Car();
+        } else if (typeLower.equals("bike")) {
+            return new Bike();
+        } else if (typeLower.equals("truck")) {
+            return new Truck();
+        } else {
+            throw new IllegalArgumentException("Unknown vehicle type: " + type);
+        }
+    }
+}
 
-# Usage — caller doesn't know or care about Car/Bike/Truck constructors
-car = VehicleFactory.create_vehicle("car")
+// Usage — caller doesn't know or care about Car/Bike/Truck constructors
+Vehicle car = VehicleFactory.createVehicle("car");
 ```
 
 **Pros:**
@@ -195,56 +207,67 @@ ConcreteCreator → implements factory_method(), decides which product to create
 
 ### Example: Logistics System
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Product interface
+interface Transport {
+    void deliver();
+}
 
-# Product interface
-class Transport(ABC):
-    @abstractmethod
-    def deliver(self): ...
+class Truck implements Transport {
+    public void deliver() {
+        System.out.println("Delivering by land in a box");
+    }
+}
 
-class Truck(Transport):
-    def deliver(self):
-        print("Delivering by land in a box")
+class Ship implements Transport {
+    public void deliver() {
+        System.out.println("Delivering by sea in a container");
+    }
+}
 
-class Ship(Transport):
-    def deliver(self):
-        print("Delivering by sea in a container")
+class Drone implements Transport {
+    public void deliver() {
+        System.out.println("Delivering by air via drone");
+    }
+}
 
-class Drone(Transport):
-    def deliver(self):
-        print("Delivering by air via drone")
+// Creator (abstract) — core logic uses the product, but doesn't create it directly
+abstract class Logistics {
+    void planDelivery() {
+        Transport t = createTransport();  // Uses the factory method
+        t.deliver();
+    }
 
-# Creator (abstract) — core logic uses the product, but doesn't create it directly
-class Logistics(ABC):
-    def plan_delivery(self):
-        t = self.create_transport()  # Uses the factory method
-        t.deliver()
+    // Factory method — subclass decides what to create
+    abstract Transport createTransport();
+}
 
-    # Factory method — subclass decides what to create
-    @abstractmethod
-    def create_transport(self) -> Transport: ...
+// Concrete Creators — each decides which product to instantiate
+class RoadLogistics extends Logistics {
+    Transport createTransport() {
+        return new Truck();
+    }
+}
 
-# Concrete Creators — each decides which product to instantiate
-class RoadLogistics(Logistics):
-    def create_transport(self) -> Transport:
-        return Truck()
+class SeaLogistics extends Logistics {
+    Transport createTransport() {
+        return new Ship();
+    }
+}
 
-class SeaLogistics(Logistics):
-    def create_transport(self) -> Transport:
-        return Ship()
+// Adding drone delivery = new subclass only, no changes to Logistics or existing creators
+class AirLogistics extends Logistics {
+    Transport createTransport() {
+        return new Drone();
+    }
+}
 
-# Adding drone delivery = new subclass only, no changes to Logistics or existing creators
-class AirLogistics(Logistics):
-    def create_transport(self) -> Transport:
-        return Drone()
+// Usage
+Logistics logistics = new RoadLogistics();
+logistics.planDelivery();  // "Delivering by land in a box"
 
-# Usage
-logistics = RoadLogistics()
-logistics.plan_delivery()  # "Delivering by land in a box"
-
-logistics = AirLogistics()
-logistics.plan_delivery()  # "Delivering by air via drone"
+logistics = new AirLogistics();
+logistics.planDelivery();  // "Delivering by air via drone"
 ```
 
 ### Class Diagram
@@ -297,48 +320,55 @@ classDiagram
 
 Produces families of related objects. See `abstract-factory-pattern.md` for full coverage.
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Abstract Products
+interface Button {
+    void paint();
+}
 
-# Abstract Products
-class Button(ABC):
-    @abstractmethod
-    def paint(self): ...
+interface Checkbox {
+    void paint();
+}
 
-class Checkbox(ABC):
-    @abstractmethod
-    def paint(self): ...
+// Abstract Factory — produces a matched family
+interface GUIFactory {
+    Button createButton();
+    Checkbox createCheckbox();
+}
 
-# Abstract Factory — produces a matched family
-class GUIFactory(ABC):
-    @abstractmethod
-    def create_button(self) -> Button: ...
+// Concrete Factories — produce platform-specific families
+class WinFactory implements GUIFactory {
+    public Button createButton() {
+        return new WinButton();
+    }
 
-    @abstractmethod
-    def create_checkbox(self) -> Checkbox: ...
+    public Checkbox createCheckbox() {
+        return new WinCheckbox();
+    }
+}
 
-# Concrete Factories — produce platform-specific families
-class WinFactory(GUIFactory):
-    def create_button(self) -> Button:
-        return WinButton()
+class MacFactory implements GUIFactory {
+    public Button createButton() {
+        return new MacButton();
+    }
 
-    def create_checkbox(self) -> Checkbox:
-        return WinCheckbox()
+    public Checkbox createCheckbox() {
+        return new MacCheckbox();
+    }
+}
 
-class MacFactory(GUIFactory):
-    def create_button(self) -> Button:
-        return MacButton()
+// Client — works with any factory without knowing the platform
+class Application {
+    private final Button button;
 
-    def create_checkbox(self) -> Checkbox:
-        return MacCheckbox()
+    Application(GUIFactory factory) {
+        this.button = factory.createButton();
+    }
 
-# Client — works with any factory without knowing the platform
-class Application:
-    def __init__(self, factory: GUIFactory):
-        self._button = factory.create_button()
-
-    def render(self):
-        self._button.paint()
+    void render() {
+        button.paint();
+    }
+}
 ```
 
 ---

@@ -8,9 +8,10 @@
 > - Observer Pattern: The foundational pattern. Subscribers observe Topics.
 > - Delivery Strategies: `AtMostOnce`, `AtLeastOnce`, `ExactlyOnce`.
 > - Push vs Pull: Does the broker push messages to subscribers (RabbitMQ style, easy for LLD), or do subscribers poll the broker (Kafka style, better for scale)?
-> - Concurrency: Thread pools for workers consuming messages, thread-safe queues (`ConcurrentLinkedQueue`), and handling slow consumers without blocking the publisher.
+> - Concurrency: Thread pools for workers consuming messages, thread-safe queues (`ConcurrentLinkedQueue`), and handling slow consumers without blocking the publisher. Use `CopyOnWriteArrayList` for subscriber/member lists and `ConcurrentHashMap` for topic/group registries.
 >
 > **Key takeaway:** Keep it simple initially: implement an in-memory "Push" based system. If asked for high throughput, introduce a `BlockingQueue` per topic, where a worker thread reads from the queue and pushes to the subscribers asynchronously.
+
 
 ---
 module: 06-lld
@@ -178,181 +179,287 @@ class ConsumerGroup:
 - Subscriber not in group — raise ValueError.
 - Message already in-flight for another subscriber in the group — skip (already being processed).
 
-```python
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Optional
-import uuid, threading
+```java
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReentrantLock;
 
+final class Message {
+    private final String messageId;
+    private final String topicName;
+    private final Object payload;
+    private final Instant publishedAt;
 
-@dataclass
-class Message:
-    message_id: str
-    topic_name: str
-    payload: Any
-    published_at: datetime = field(default_factory=datetime.utcnow)
+    Message(String messageId, String topicName, Object payload) {
+        this.messageId = messageId;
+        this.topicName = topicName;
+        this.payload = payload;
+        this.publishedAt = Instant.now();
+    }
 
+    String getMessageId() { return messageId; }
+    String getTopicName() { return topicName; }
+    Object getPayload() { return payload; }
+    Instant getPublishedAt() { return publishedAt; }
 
-@dataclass
-class InFlightMessage:
-    message: Message
-    subscriber_id: str
-    delivered_at: datetime
-    retry_count: int = 0
-    deadline: datetime = field(init=False)
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Message)) return false;
+        return messageId.equals(((Message) o).messageId);
+    }
 
-    def __post_init__(self):
-        self.deadline = self.delivered_at + timedelta(seconds=30)
+    @Override
+    public int hashCode() { return Objects.hash(messageId); }
 
-    def is_expired(self) -> bool:
-        return datetime.utcnow() > self.deadline
+    @Override
+    public String toString() {
+        return String.format("Message{id=%s, topic=%s, payload=%s}", messageId, topicName, payload);
+    }
+}
 
+final class InFlightMessage {
+    private final Message message;
+    private final String subscriberId;
+    private final Instant deliveredAt;
+    private int retryCount = 0;
+    private Instant deadline;
 
-@dataclass
-class DeadLetterQueue:
-    messages: list[tuple[Message, str]] = field(default_factory=list)  # (msg, reason)
+    InFlightMessage(Message message, String subscriberId, Instant deliveredAt) {
+        this.message = message;
+        this.subscriberId = subscriberId;
+        this.deliveredAt = deliveredAt;
+        this.deadline = deliveredAt.plusSeconds(30);
+    }
 
-    def add(self, message: Message, reason: str):
-        self.messages.append((message, reason))
-        print(f"DLQ: message {message.message_id} moved — {reason}")
+    Message getMessage() { return message; }
+    String getSubscriberId() { return subscriberId; }
+    int getRetryCount() { return retryCount; }
+    void incrementRetryCount() { retryCount++; }
 
+    boolean isExpired() {
+        return Instant.now().isAfter(deadline);
+    }
+}
 
-class ConsumerGroup:
-    def __init__(self, group_id: str):
-        self.group_id = group_id
-        self.offset: int = 0
-        self.members: list[str] = []
-        self._rr_idx: int = 0
-        self.in_flight: dict[str, InFlightMessage] = {}
-        self._lock = threading.Lock()
+final class DeadLetterQueue {
+    // (message, reason) pairs
+    private final List<Map.Entry<Message, String>> messages = new CopyOnWriteArrayList<>();
 
-    def add_member(self, subscriber_id: str):
-        if subscriber_id not in self.members:
-            self.members.append(subscriber_id)
+    void add(Message message, String reason) {
+        messages.add(Map.entry(message, reason));
+        System.out.println(String.format("DLQ: message %s moved — %s", message.getMessageId(), reason));
+    }
 
-    def next_member(self) -> Optional[str]:
-        if not self.members:
-            return None
-        m = self.members[self._rr_idx % len(self.members)]
-        self._rr_idx += 1
-        return m
+    List<Map.Entry<Message, String>> getMessages() { return messages; }
+}
 
-    def ack(self, message_id: str):
-        with self._lock:
-            self.in_flight.pop(message_id, None)
+class ConsumerGroup {
+    private final String groupId;
+    private int offset = 0;
+    private final List<String> members = new CopyOnWriteArrayList<>();
+    private int rrIdx = 0;
+    private final Map<String, InFlightMessage> inFlight = new ConcurrentHashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def nack(self, message_id: str):
-        with self._lock:
-            if message_id in self.in_flight:
-                self.in_flight[message_id].retry_count += 1
+    ConsumerGroup(String groupId) {
+        this.groupId = groupId;
+    }
 
-    def expired_messages(self, max_retries: int) -> tuple[list[Message], list[Message]]:
-        """Returns (to_redeliver, to_dlq)"""
-        now = datetime.utcnow()
-        redeliver, dlq = [], []
-        with self._lock:
-            for mid, inflight in list(self.in_flight.items()):
-                if inflight.is_expired():
-                    if inflight.retry_count >= max_retries:
-                        dlq.append(inflight.message)
-                        del self.in_flight[mid]
-                    else:
-                        redeliver.append(inflight.message)
-                        del self.in_flight[mid]
-                        self.offset -= 1  # simplified: requeue by backing offset
-        return redeliver, dlq
+    String getGroupId() { return groupId; }
+    int getOffset() { return offset; }
+    List<String> getMembers() { return members; }
 
+    void addMember(String subscriberId) {
+        if (!members.contains(subscriberId)) {
+            members.add(subscriberId);
+        }
+    }
 
-class Topic:
-    MAX_RETRIES = 3
+    Optional<String> nextMember() {
+        if (members.isEmpty()) {
+            return Optional.empty();
+        }
+        String m = members.get(rrIdx % members.size());
+        rrIdx++;
+        return Optional.of(m);
+    }
 
-    def __init__(self, name: str):
-        self.name = name
-        self.messages: list[Message] = []
-        self.groups: dict[str, ConsumerGroup] = {}
-        self.dlq = DeadLetterQueue()
-        self._lock = threading.Lock()
+    void ack(String messageId) {
+        inFlight.remove(messageId);
+    }
 
-    def publish(self, payload: Any) -> Message:
-        msg = Message(message_id=str(uuid.uuid4()),
-                      topic_name=self.name,
-                      payload=payload)
-        with self._lock:
-            self.messages.append(msg)
-        return msg
+    void nack(String messageId) {
+        InFlightMessage inf = inFlight.get(messageId);
+        if (inf != null) {
+            inf.incrementRetryCount();
+        }
+    }
 
-    def create_group(self, group_id: str) -> ConsumerGroup:
-        if group_id not in self.groups:
-            self.groups[group_id] = ConsumerGroup(group_id)
-        return self.groups[group_id]
+    // Returns [toRedeliver, toDlq]
+    ExpiredResult expiredMessages(int maxRetries) {
+        List<Message> redeliver = new ArrayList<>();
+        List<Message> dlq = new ArrayList<>();
+        lock.lock();
+        try {
+            for (Iterator<Map.Entry<String, InFlightMessage>> it = inFlight.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<String, InFlightMessage> entry = it.next();
+                InFlightMessage inflight = entry.getValue();
+                if (inflight.isExpired()) {
+                    if (inflight.getRetryCount() >= maxRetries) {
+                        dlq.add(inflight.getMessage());
+                        it.remove();
+                    } else {
+                        redeliver.add(inflight.getMessage());
+                        it.remove();
+                        offset -= 1; // simplified: requeue by backing offset
+                    }
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+        return new ExpiredResult(redeliver, dlq);
+    }
 
-    def subscribe(self, group_id: str, subscriber_id: str):
-        group = self.create_group(group_id)
-        group.add_member(subscriber_id)
+    void advanceOffset() { offset += 1; }
 
-    def consume(self, group_id: str, subscriber_id: str) -> Optional[Message]:
-        group = self.groups.get(group_id)
-        if not group:
-            raise ValueError(f"Group {group_id} not subscribed to {self.name}")
-        if subscriber_id not in group.members:
-            raise ValueError(f"Subscriber {subscriber_id} not in group {group_id}")
+    boolean isBelowOffset(int size) { return offset < size; }
 
-        expected = group.next_member()
-        if expected != subscriber_id:
-            return None  # not this subscriber's turn
+    void putInFlight(Message msg, InFlightMessage inflight) {
+        inFlight.put(msg.getMessageId(), inflight);
+    }
 
-        with self._lock:
-            if group.offset >= len(self.messages):
-                return None
-            msg = self.messages[group.offset]
-            group.offset += 1
+    static final class ExpiredResult {
+        final List<Message> toRedeliver;
+        final List<Message> toDlq;
 
-        inflight = InFlightMessage(message=msg, subscriber_id=subscriber_id,
-                                   delivered_at=datetime.utcnow())
-        group.in_flight[msg.message_id] = inflight
-        return msg
+        ExpiredResult(List<Message> toRedeliver, List<Message> toDlq) {
+            this.toRedeliver = toRedeliver;
+            this.toDlq = toDlq;
+        }
+    }
+}
 
-    def ack(self, group_id: str, message_id: str):
-        self.groups[group_id].ack(message_id)
+class Topic {
+    static final int MAX_RETRIES = 3;
 
-    def nack(self, group_id: str, message_id: str):
-        self.groups[group_id].nack(message_id)
+    private final String name;
+    private final List<Message> messages = new CopyOnWriteArrayList<>();
+    private final Map<String, ConsumerGroup> groups = new ConcurrentHashMap<>();
+    private final DeadLetterQueue dlq = new DeadLetterQueue();
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def reap_expired(self):
-        for group in self.groups.values():
-            redeliver, to_dlq = group.expired_messages(self.MAX_RETRIES)
-            for msg in to_dlq:
-                self.dlq.add(msg, f"exceeded {self.MAX_RETRIES} retries")
+    Topic(String name) {
+        this.name = name;
+    }
 
+    String getName() { return name; }
+    DeadLetterQueue getDlq() { return dlq; }
 
-class PubSubSystem:
-    def __init__(self):
-        self.topics: dict[str, Topic] = {}
+    Message publish(Object payload) {
+        Message msg = new Message(UUID.randomUUID().toString(), name, payload);
+        lock.lock();
+        try {
+            messages.add(msg);
+        } finally {
+            lock.unlock();
+        }
+        return msg;
+    }
 
-    def create_topic(self, name: str) -> Topic:
-        if name not in self.topics:
-            self.topics[name] = Topic(name)
-        return self.topics[name]
+    ConsumerGroup createGroup(String groupId) {
+        return groups.computeIfAbsent(groupId, ConsumerGroup::new);
+    }
 
-    def publish(self, topic_name: str, payload: Any) -> Message:
-        topic = self.topics.get(topic_name)
-        if not topic:
-            raise ValueError(f"Topic {topic_name} does not exist")
-        return topic.publish(payload)
+    void subscribe(String groupId, String subscriberId) {
+        ConsumerGroup group = createGroup(groupId);
+        group.addMember(subscriberId);
+    }
 
-    def subscribe(self, topic_name: str, group_id: str, subscriber_id: str):
-        topic = self.topics[topic_name]
-        topic.subscribe(group_id, subscriber_id)
+    Optional<Message> consume(String groupId, String subscriberId) {
+        ConsumerGroup group = groups.get(groupId);
+        if (group == null) {
+            throw new IllegalArgumentException(String.format("Group %s not subscribed to %s", groupId, name));
+        }
+        if (!group.getMembers().contains(subscriberId)) {
+            throw new IllegalArgumentException(String.format("Subscriber %s not in group %s", subscriberId, groupId));
+        }
 
-    def consume(self, topic_name: str, group_id: str,
-                subscriber_id: str) -> Optional[Message]:
-        return self.topics[topic_name].consume(group_id, subscriber_id)
+        Optional<String> expected = group.nextMember();
+        if (expected.isEmpty() || !expected.get().equals(subscriberId)) {
+            return Optional.empty(); // not this subscriber's turn
+        }
 
-    def ack(self, topic_name: str, group_id: str, message_id: str):
-        self.topics[topic_name].ack(group_id, message_id)
+        Message msg;
+        lock.lock();
+        try {
+            if (!group.isBelowOffset(messages.size())) {
+                return Optional.empty();
+            }
+            msg = messages.get(group.getOffset());
+            group.advanceOffset();
+        } finally {
+            lock.unlock();
+        }
 
-    def nack(self, topic_name: str, group_id: str, message_id: str):
-        self.topics[topic_name].nack(group_id, message_id)
+        InFlightMessage inflight = new InFlightMessage(msg, subscriberId, Instant.now());
+        group.putInFlight(msg, inflight);
+        return Optional.of(msg);
+    }
+
+    void ack(String groupId, String messageId) {
+        groups.get(groupId).ack(messageId);
+    }
+
+    void nack(String groupId, String messageId) {
+        groups.get(groupId).nack(messageId);
+    }
+
+    void reapExpired() {
+        for (ConsumerGroup group : groups.values()) {
+            ConsumerGroup.ExpiredResult result = group.expiredMessages(MAX_RETRIES);
+            for (Message msg : result.toDlq) {
+                dlq.add(msg, String.format("exceeded %d retries", MAX_RETRIES));
+            }
+        }
+    }
+}
+
+class PubSubSystem {
+    private final Map<String, Topic> topics = new ConcurrentHashMap<>();
+
+    Topic createTopic(String name) {
+        return topics.computeIfAbsent(name, Topic::new);
+    }
+
+    Message publish(String topicName, Object payload) {
+        Topic topic = topics.get(topicName);
+        if (topic == null) {
+            throw new IllegalArgumentException(String.format("Topic %s does not exist", topicName));
+        }
+        return topic.publish(payload);
+    }
+
+    void subscribe(String topicName, String groupId, String subscriberId) {
+        Topic topic = topics.get(topicName);
+        topic.subscribe(groupId, subscriberId);
+    }
+
+    Optional<Message> consume(String topicName, String groupId, String subscriberId) {
+        return topics.get(topicName).consume(groupId, subscriberId);
+    }
+
+    void ack(String topicName, String groupId, String messageId) {
+        topics.get(topicName).ack(groupId, messageId);
+    }
+
+    void nack(String topicName, String groupId, String messageId) {
+        topics.get(topicName).nack(groupId, messageId);
+    }
+}
 ```
 
 ---
@@ -382,17 +489,26 @@ Scenario: Topic "orders"; group "billing" with two members (B1, B2); publisher s
 
 **Exactly-once**: requires idempotent producers (message_id dedup) + transactional consumers (commit offset atomically with processing). Expensive — needs a distributed transaction or an idempotency store.
 
-```python
-# Idempotency store for exactly-once consumer side
-class IdempotentConsumer:
-    def __init__(self):
-        self._processed: set[str] = set()
+```java
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-    def process(self, message: Message):
-        if message.message_id in self._processed:
-            return  # duplicate — skip
-        self._handle(message)
-        self._processed.add(message.message_id)
+// Idempotency store for exactly-once consumer side
+class IdempotentConsumer {
+    private final Set<String> processed = ConcurrentHashMap.newKeySet();
+
+    void process(Message message) {
+        if (processed.contains(message.getMessageId())) {
+            return; // duplicate — skip
+        }
+        handle(message);
+        processed.add(message.getMessageId());
+    }
+
+    private void handle(Message message) {
+        // business logic here
+    }
+}
 ```
 
 ### 2. "How do consumer groups work?"
@@ -414,15 +530,19 @@ Within a single partition (the topic's message list), ordering is preserved beca
 
 After `max_retries` failed deliveries (ack timeout + nack), the message is moved to a per-topic DLQ. Operations teams can inspect and replay DLQ messages after fixing the root cause.
 
-```python
-def reap_expired(self):
-    for group in self.groups.values():
-        redeliver, to_dlq = group.expired_messages(self.MAX_RETRIES)
-        for msg in to_dlq:
-            self.dlq.add(msg, f"exceeded {self.MAX_RETRIES} retries in group {group.group_id}")
-        for msg in redeliver:
-            # Re-insert at current offset position for redelivery
-            self.messages.insert(group.offset, msg)
+```java
+void reapExpired() {
+    for (ConsumerGroup group : groups.values()) {
+        ConsumerGroup.ExpiredResult result = group.expiredMessages(MAX_RETRIES);
+        for (Message msg : result.toDlq) {
+            dlq.add(msg, String.format("exceeded %d retries in group %s", MAX_RETRIES, group.getGroupId()));
+        }
+        for (Message msg : result.toRedeliver) {
+            // Re-insert at current offset position for redelivery
+            messages.add(group.getOffset(), msg);
+        }
+    }
+}
 ```
 
 ### 5. "Push vs pull delivery model"
@@ -431,18 +551,36 @@ def reap_expired(self):
 
 **Push**: system calls consumer's callback when a message arrives; lower latency; consumer can be overwhelmed. Used by SQS (push notification) and traditional message brokers.
 
-```python
-# Push model addition
-class PushSubscription:
-    def __init__(self, callback):
-        self.callback = callback
+```java
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
-class Topic:
-    def publish(self, payload):
-        msg = Message(...)
-        self.messages.append(msg)
-        for sub in self._push_subscriptions:
-            threading.Thread(target=sub.callback, args=(msg,), daemon=True).start()
+// Push model addition
+class PushSubscription {
+    private final Consumer<Message> callback;
+
+    PushSubscription(Consumer<Message> callback) {
+        this.callback = callback;
+    }
+
+    Consumer<Message> getCallback() { return callback; }
+}
+
+class Topic {
+    private final List<Message> messages = new CopyOnWriteArrayList<>();
+    private final List<PushSubscription> pushSubscriptions = new CopyOnWriteArrayList<>();
+
+    void publish(Object payload) {
+        Message msg = new Message(java.util.UUID.randomUUID().toString(), "topic", payload);
+        messages.add(msg);
+        for (PushSubscription sub : pushSubscriptions) {
+            Thread t = new Thread(() -> sub.getCallback().accept(msg));
+            t.setDaemon(true);
+            t.start();
+        }
+    }
+}
 ```
 
 ---
@@ -471,276 +609,368 @@ class Topic:
 
 Runnable tests that verify thread-safety invariants: no message delivered twice within a group, no message lost across multiple concurrent publishers, and DLQ correctly captures unacknowledged messages.
 
-```python
-import threading
-import time
-import uuid
-from dataclasses import dataclass, field
-from typing import Any, Optional
+```java
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
-# ── Minimal self-contained pub-sub implementation ──
+// ── Minimal self-contained pub-sub implementation ──
 
-@dataclass
-class Message:
-    message_id: str
-    topic_name: str
-    payload: Any
-    published_at: float = field(default_factory=time.time)
+final class Message {
+    private final String messageId;
+    private final String topicName;
+    private final Object payload;
+    private final long publishedAt;
 
-@dataclass
-class InFlight:
-    message: Message
-    deadline: float
-    retries: int = 0
+    Message(String messageId, String topicName, Object payload) {
+        this.messageId = messageId;
+        this.topicName = topicName;
+        this.payload = payload;
+        this.publishedAt = System.nanoTime();
+    }
 
-class DLQ:
-    def __init__(self):
-        self._messages = []
-        self._lock = threading.Lock()
+    String getMessageId() { return messageId; }
+    Object getPayload() { return payload; }
+}
 
-    def add(self, message, reason):
-        with self._lock:
-            self._messages.append((message, reason))
+final class InFlight {
+    final Message message;
+    volatile long deadlineNanos;
+    volatile int retries = 0;
 
-    def size(self):
-        with self._lock:
-            return len(self._messages)
+    InFlight(Message message, long deadlineNanos) {
+        this.message = message;
+        this.deadlineNanos = deadlineNanos;
+    }
+}
 
+class DLQ {
+    private final List<Map.Entry<Message, String>> messages = new CopyOnWriteArrayList<>();
 
-class ConsumerGroup:
-    def __init__(self, group_id, ack_timeout=5.0, max_retries=3):
-        self.group_id = group_id
-        self.offset = 0
-        self.ack_timeout = ack_timeout
-        self.max_retries = max_retries
-        self._in_flight = {}       # message_id -> InFlight
-        self._delivered_ids = set()  # all message_ids ever delivered to this group
-        self._lock = threading.Lock()
+    void add(Message message, String reason) {
+        messages.add(Map.entry(message, reason));
+    }
 
-    def fetch(self, messages, dlq):
-        with self._lock:
-            # Redeliver expired in-flight messages first
-            now = time.time()
-            to_redeliver = []
-            to_dlq = []
-            for mid, inf in list(self._in_flight.items()):
-                if now > inf.deadline:
-                    if inf.retries >= self.max_retries:
-                        to_dlq.append(mid)
-                    else:
-                        to_redeliver.append(inf.message)
-                        inf.retries += 1
-                        inf.deadline = now + self.ack_timeout
+    int size() {
+        return messages.size();
+    }
+}
 
-            for mid in to_dlq:
-                dlq.add(self._in_flight.pop(mid).message, "max_retries")
+class ConsumerGroup {
+    private final String groupId;
+    private volatile int offset = 0;
+    private final double ackTimeoutSeconds;
+    private final int maxRetries;
+    private final Map<String, InFlight> inFlight = new ConcurrentHashMap<>();
+    private final Set<String> deliveredIds = ConcurrentHashMap.newKeySet();
+    private final ReentrantLockHolder lock = new ReentrantLockHolder();
 
-            if to_redeliver:
-                msg = to_redeliver[0]
-                return msg
+    ConsumerGroup(String groupId) {
+        this(groupId, 5.0, 3);
+    }
 
-            # Fetch next from log
-            if self.offset < len(messages):
-                msg = messages[self.offset]
-                self.offset += 1
-                self._in_flight[msg.message_id] = InFlight(msg, now + self.ack_timeout)
-                self._delivered_ids.add(msg.message_id)
-                return msg
+    ConsumerGroup(String groupId, double ackTimeoutSeconds, int maxRetries) {
+        this.groupId = groupId;
+        this.ackTimeoutSeconds = ackTimeoutSeconds;
+        this.maxRetries = maxRetries;
+    }
 
-            return None
+    Message fetch(List<Message> messages, DLQ dlq) {
+        lock.lock();
+        try {
+            // Redeliver expired in-flight messages first
+            long now = System.nanoTime();
+            List<Message> toRedeliver = new ArrayList<>();
+            List<String> toDlq = new ArrayList<>();
+            for (Map.Entry<String, InFlight> entry : inFlight.entrySet()) {
+                InFlight inf = entry.getValue();
+                if (now > inf.deadlineNanos) {
+                    if (inf.retries >= maxRetries) {
+                        toDlq.add(entry.getKey());
+                    } else {
+                        toRedeliver.add(inf.message);
+                        inf.retries += 1;
+                        inf.deadlineNanos = now + (long) (ackTimeoutSeconds * 1_000_000_000L);
+                    }
+                }
+            }
 
-    def ack(self, message_id):
-        with self._lock:
-            self._in_flight.pop(message_id, None)
+            for (String mid : toDlq) {
+                InFlight removed = inFlight.remove(mid);
+                dlq.add(removed.message, "max_retries");
+            }
 
-    def nack(self, message_id):
-        with self._lock:
-            if message_id in self._in_flight:
-                inf = self._in_flight[message_id]
-                inf.deadline = 0  # force immediate redeliver
+            if (!toRedeliver.isEmpty()) {
+                return toRedeliver.get(0);
+            }
 
+            // Fetch next from log
+            if (offset < messages.size()) {
+                Message msg = messages.get(offset);
+                offset += 1;
+                inFlight.put(msg.getMessageId(), new InFlight(msg, now + (long) (ackTimeoutSeconds * 1_000_000_000L)));
+                deliveredIds.add(msg.getMessageId());
+                return msg;
+            }
 
-class Topic:
-    def __init__(self, name):
-        self.name = name
-        self._messages = []
-        self._groups = {}
-        self._msg_lock = threading.Lock()
-        self._grp_lock = threading.Lock()
-        self.dlq = DLQ()
+            return null;
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def publish(self, payload):
-        msg = Message(str(uuid.uuid4()), self.name, payload)
-        with self._msg_lock:
-            self._messages.append(msg)
-        return msg
+    void ack(String messageId) {
+        inFlight.remove(messageId);
+    }
 
-    def subscribe(self, group_id, **kwargs):
-        with self._grp_lock:
-            if group_id not in self._groups:
-                self._groups[group_id] = ConsumerGroup(group_id, **kwargs)
-        return self._groups[group_id]
+    void nack(String messageId) {
+        InFlight inf = inFlight.get(messageId);
+        if (inf != null) {
+            inf.deadlineNanos = 0; // force immediate redeliver
+        }
+    }
 
-    def consume(self, group_id):
-        with self._grp_lock:
-            group = self._groups.get(group_id)
-        if group is None:
-            raise ValueError(f"No group: {group_id}")
-        with self._msg_lock:
-            msgs = list(self._messages)   # snapshot
-        return group.fetch(msgs, self.dlq)
+    // Small wrapper so ConsumerGroup keeps a single lock member without importing
+    // java.util.concurrent.locks.ReentrantLock at the top of every nested class.
+    private static final class ReentrantLockHolder {
+        private final java.util.concurrent.locks.ReentrantLock lock = new java.util.concurrent.locks.ReentrantLock();
+        void lock() { lock.lock(); }
+        void unlock() { lock.unlock(); }
+    }
+}
 
+class Topic {
+    private final String name;
+    private final List<Message> messages = new CopyOnWriteArrayList<>();
+    private final Map<String, ConsumerGroup> groups = new ConcurrentHashMap<>();
+    final DLQ dlq = new DLQ();
 
-# ─────────────────────────────────────────────────────────────
-# TEST 1: No message delivered twice within a consumer group
-# 1 publisher sends 200 messages; 5 consumer threads race to consume.
-# Each message_id must appear exactly once in the consumed set.
-# ─────────────────────────────────────────────────────────────
-def test_no_duplicate_delivery():
-    topic = Topic("orders")
-    topic.subscribe("group-A")
+    Topic(String name) {
+        this.name = name;
+    }
 
-    # Publish 200 messages (single thread — ordering guarantee)
-    published_ids = set()
-    for i in range(200):
-        msg = topic.publish(f"order-{i}")
-        published_ids.add(msg.message_id)
+    Message publish(Object payload) {
+        Message msg = new Message(UUID.randomUUID().toString(), name, payload);
+        messages.add(msg);
+        return msg;
+    }
 
-    consumed_ids = []
-    c_lock = threading.Lock()
+    ConsumerGroup subscribe(String groupId) {
+        return subscribe(groupId, 5.0, 3);
+    }
 
-    def consumer():
-        while True:
-            msg = topic.consume("group-A")
-            if msg is None:
-                break
-            with c_lock:
-                consumed_ids.append(msg.message_id)
-            topic._groups["group-A"].ack(msg.message_id)
+    ConsumerGroup subscribe(String groupId, double ackTimeout, int maxRetries) {
+        return groups.computeIfAbsent(groupId, id -> new ConsumerGroup(id, ackTimeout, maxRetries));
+    }
 
-    threads = [threading.Thread(target=consumer) for _ in range(5)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    Message consume(String groupId) {
+        ConsumerGroup group = groups.get(groupId);
+        if (group == null) {
+            throw new IllegalArgumentException("No group: " + groupId);
+        }
+        List<Message> snapshot = new ArrayList<>(messages); // snapshot
+        return group.fetch(snapshot, dlq);
+    }
 
-    # Check no duplicates
-    assert len(consumed_ids) == len(set(consumed_ids)), \
-        f"Duplicate deliveries: {len(consumed_ids) - len(set(consumed_ids))} duplicates"
-    # Check all messages were delivered
-    assert set(consumed_ids) == published_ids, "Some messages were not delivered"
-    print(f"PASS: test_no_duplicate_delivery ({len(consumed_ids)} messages)")
-
-
-# ─────────────────────────────────────────────────────────────
-# TEST 2: Multiple consumer groups each see all messages
-# 3 groups subscribe to the same topic.
-# Each group must consume all 100 published messages independently.
-# ─────────────────────────────────────────────────────────────
-def test_each_group_sees_all_messages():
-    topic = Topic("events")
-    groups = ["group-X", "group-Y", "group-Z"]
-    for gid in groups:
-        topic.subscribe(gid)
-
-    for i in range(100):
-        topic.publish(f"event-{i}")
-
-    per_group_consumed = {gid: [] for gid in groups}
-
-    def consume_all(gid):
-        while True:
-            msg = topic.consume(gid)
-            if msg is None:
-                break
-            per_group_consumed[gid].append(msg.message_id)
-            topic._groups[gid].ack(msg.message_id)
-
-    threads = [threading.Thread(target=consume_all, args=(gid,)) for gid in groups]
-    for t in threads: t.start()
-    for t in threads: t.join()
-
-    for gid in groups:
-        assert len(per_group_consumed[gid]) == 100, \
-            f"{gid}: expected 100, got {len(per_group_consumed[gid])}"
-
-    print("PASS: test_each_group_sees_all_messages")
+    ConsumerGroup getGroup(String groupId) {
+        return groups.get(groupId);
+    }
+}
 
 
-# ─────────────────────────────────────────────────────────────
-# TEST 3: Concurrent publishers — no messages lost
-# 10 publisher threads each publish 50 messages concurrently.
-# Total published: 500. Consuming group must see all 500.
-# ─────────────────────────────────────────────────────────────
-def test_concurrent_publishers_no_loss():
-    topic = Topic("logs")
-    topic.subscribe("group-log")
+// ─────────────────────────────────────────────────────────────
+// TEST 1: No message delivered twice within a consumer group
+// 1 publisher sends 200 messages; 5 consumer threads race to consume.
+// Each message_id must appear exactly once in the consumed set.
+// ─────────────────────────────────────────────────────────────
+public class PubSubConcurrencyTest {
 
-    published = []
-    p_lock = threading.Lock()
+    static void testNoDuplicateDelivery() throws InterruptedException {
+        Topic topic = new Topic("orders");
+        topic.subscribe("group-A");
 
-    def publisher(tid):
-        for i in range(50):
-            msg = topic.publish(f"log-{tid}-{i}")
-            with p_lock:
-                published.append(msg.message_id)
+        // Publish 200 messages (single thread — ordering guarantee)
+        Set<String> publishedIds = ConcurrentHashMap.newKeySet();
+        for (int i = 0; i < 200; i++) {
+            Message msg = topic.publish("order-" + i);
+            publishedIds.add(msg.getMessageId());
+        }
 
-    pub_threads = [threading.Thread(target=publisher, args=(i,)) for i in range(10)]
-    for t in pub_threads: t.start()
-    for t in pub_threads: t.join()
+        List<String> consumedIds = new CopyOnWriteArrayList<>();
 
-    assert len(published) == 500
+        Runnable consumer = () -> {
+            while (true) {
+                Message msg = topic.consume("group-A");
+                if (msg == null) {
+                    break;
+                }
+                consumedIds.add(msg.getMessageId());
+                topic.getGroup("group-A").ack(msg.getMessageId());
+            }
+        };
 
-    consumed = []
-    while True:
-        msg = topic.consume("group-log")
-        if msg is None:
-            break
-        consumed.append(msg.message_id)
-        topic._groups["group-log"].ack(msg.message_id)
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            Thread t = new Thread(consumer);
+            threads.add(t);
+            t.start();
+        }
+        for (Thread t : threads) t.join();
 
-    assert len(consumed) == 500, f"Expected 500 consumed, got {len(consumed)}"
-    assert set(consumed) == set(published), "Consumed set != published set"
-    print("PASS: test_concurrent_publishers_no_loss")
+        // Check no duplicates
+        Set<String> uniqueConsumed = new HashSet<>(consumedIds);
+        if (consumedIds.size() != uniqueConsumed.size()) {
+            throw new AssertionError("Duplicate deliveries: "
+                    + (consumedIds.size() - uniqueConsumed.size()) + " duplicates");
+        }
+        // Check all messages were delivered
+        if (!uniqueConsumed.equals(publishedIds)) {
+            throw new AssertionError("Some messages were not delivered");
+        }
+        System.out.println(String.format("PASS: testNoDuplicateDelivery (%d messages)", consumedIds.size()));
+    }
 
+    // ─────────────────────────────────────────────────────────────
+    // TEST 2: Multiple consumer groups each see all messages
+    // 3 groups subscribe to the same topic.
+    // Each group must consume all 100 published messages independently.
+    // ─────────────────────────────────────────────────────────────
+    static void testEachGroupSeesAllMessages() throws InterruptedException {
+        Topic topic = new Topic("events");
+        List<String> groups = List.of("group-X", "group-Y", "group-Z");
+        for (String gid : groups) {
+            topic.subscribe(gid);
+        }
 
-# ─────────────────────────────────────────────────────────────
-# TEST 4: Unacknowledged messages moved to DLQ after max_retries
-# Publish 1 message; consumer always nacks it.
-# After max_retries, message must appear in DLQ.
-# ─────────────────────────────────────────────────────────────
-def test_dlq_after_max_retries():
-    topic = Topic("payments")
-    topic.subscribe("group-pay", ack_timeout=0.05, max_retries=2)
+        for (int i = 0; i < 100; i++) {
+            topic.publish("event-" + i);
+        }
 
-    topic.publish("payment-001")
+        Map<String, List<String>> perGroupConsumed = new ConcurrentHashMap<>();
+        for (String gid : groups) {
+            perGroupConsumed.put(gid, new CopyOnWriteArrayList<>());
+        }
 
-    # Consume and nack 3 times (max_retries=2 means after 3 deliveries → DLQ)
-    for _ in range(3):
-        msg = topic.consume("group-pay")
-        if msg:
-            topic._groups["group-pay"].nack(msg.message_id)
-        time.sleep(0.06)  # let ack_timeout expire
+        List<Thread> threads = new ArrayList<>();
+        for (String gid : groups) {
+            Thread t = new Thread(() -> {
+                while (true) {
+                    Message msg = topic.consume(gid);
+                    if (msg == null) {
+                        break;
+                    }
+                    perGroupConsumed.get(gid).add(msg.getMessageId());
+                    topic.getGroup(gid).ack(msg.getMessageId());
+                }
+            });
+            threads.add(t);
+            t.start();
+        }
+        for (Thread t : threads) t.join();
 
-    # After max_retries exceeded, message should be in DLQ
-    # Trigger the reaper by attempting one more consume
-    topic.consume("group-pay")
+        for (String gid : groups) {
+            int size = perGroupConsumed.get(gid).size();
+            if (size != 100) {
+                throw new AssertionError(String.format("%s: expected 100, got %d", gid, size));
+            }
+        }
 
-    assert topic.dlq.size() >= 1, f"Expected message in DLQ, size={topic.dlq.size()}"
-    print("PASS: test_dlq_after_max_retries")
+        System.out.println("PASS: testEachGroupSeesAllMessages");
+    }
 
+    // ─────────────────────────────────────────────────────────────
+    // TEST 3: Concurrent publishers — no messages lost
+    // 10 publisher threads each publish 50 messages concurrently.
+    // Total published: 500. Consuming group must see all 500.
+    // ─────────────────────────────────────────────────────────────
+    static void testConcurrentPublishersNoLoss() throws InterruptedException {
+        Topic topic = new Topic("logs");
+        topic.subscribe("group-log");
 
-if __name__ == "__main__":
-    test_no_duplicate_delivery()
-    test_each_group_sees_all_messages()
-    test_concurrent_publishers_no_loss()
-    test_dlq_after_max_retries()
-    print("All concurrency tests passed.")
+        List<String> published = new CopyOnWriteArrayList<>();
+
+        List<Thread> pubThreads = new ArrayList<>();
+        for (int t = 0; t < 10; t++) {
+            final int tid = t;
+            Thread thread = new Thread(() -> {
+                for (int i = 0; i < 50; i++) {
+                    Message msg = topic.publish(String.format("log-%d-%d", tid, i));
+                    published.add(msg.getMessageId());
+                }
+            });
+            pubThreads.add(thread);
+            thread.start();
+        }
+        for (Thread thread : pubThreads) thread.join();
+
+        if (published.size() != 500) {
+            throw new AssertionError("Expected 500 published, got " + published.size());
+        }
+
+        List<String> consumed = new ArrayList<>();
+        while (true) {
+            Message msg = topic.consume("group-log");
+            if (msg == null) {
+                break;
+            }
+            consumed.add(msg.getMessageId());
+            topic.getGroup("group-log").ack(msg.getMessageId());
+        }
+
+        if (consumed.size() != 500) {
+            throw new AssertionError("Expected 500 consumed, got " + consumed.size());
+        }
+        if (!new HashSet<>(consumed).equals(new HashSet<>(published))) {
+            throw new AssertionError("Consumed set != published set");
+        }
+        System.out.println("PASS: testConcurrentPublishersNoLoss");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // TEST 4: Unacknowledged messages moved to DLQ after max_retries
+    // Publish 1 message; consumer always nacks it.
+    // After max_retries, message must appear in DLQ.
+    // ─────────────────────────────────────────────────────────────
+    static void testDlqAfterMaxRetries() throws InterruptedException {
+        Topic topic = new Topic("payments");
+        topic.subscribe("group-pay", 0.05, 2);
+
+        topic.publish("payment-001");
+
+        // Consume and nack 3 times (max_retries=2 means after 3 deliveries → DLQ)
+        for (int i = 0; i < 3; i++) {
+            Message msg = topic.consume("group-pay");
+            if (msg != null) {
+                topic.getGroup("group-pay").nack(msg.getMessageId());
+            }
+            Thread.sleep(60); // let ack_timeout expire
+        }
+
+        // After max_retries exceeded, message should be in DLQ
+        // Trigger the reaper by attempting one more consume
+        topic.consume("group-pay");
+
+        if (topic.dlq.size() < 1) {
+            throw new AssertionError("Expected message in DLQ, size=" + topic.dlq.size());
+        }
+        System.out.println("PASS: testDlqAfterMaxRetries");
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        testNoDuplicateDelivery();
+        testEachGroupSeesAllMessages();
+        testConcurrentPublishersNoLoss();
+        testDlqAfterMaxRetries();
+        System.out.println("All concurrency tests passed.");
+    }
+}
 ```
 
 **What each test verifies:**
-- `test_no_duplicate_delivery`: The group's offset is guarded by `_lock`; two threads cannot both fetch the same offset. Without the lock, two threads could both read `offset=5`, both deliver `messages[5]`, and both advance the counter.
-- `test_each_group_sees_all_messages`: Each `ConsumerGroup` maintains its own independent offset; publishing to a topic does not advance any group's offset automatically. All three groups start at offset 0 and consume independently.
-- `test_concurrent_publishers_no_loss`: `topic._messages` is a list protected by `_msg_lock`. Without the lock, concurrent `append()` calls from multiple threads can corrupt the list (CPython's GIL makes bare appends safe, but the lock is required for non-CPython runtimes and for compound operations like publish+notify).
-- `test_dlq_after_max_retries`: The DLQ path exercises the expiry-based redelivery loop; after `max_retries` attempts, the message must be quarantined rather than silently dropped or re-queued indefinitely.
+- `testNoDuplicateDelivery`: The group's `fetch` is guarded by a `ReentrantLock`; two threads cannot both fetch the same offset. Without the lock, two threads could both read `offset=5`, both deliver `messages[5]`, and both advance the counter.
+- `testEachGroupSeesAllMessages`: Each `ConsumerGroup` maintains its own independent offset; publishing to a topic does not advance any group's offset automatically. All three groups start at offset 0 and consume independently.
+- `testConcurrentPublishersNoLoss`: `Topic.messages` is a `CopyOnWriteArrayList`. Unlike a plain `ArrayList`, concurrent `add()` calls from multiple publisher threads are safe without external locking — each write copies the underlying array, so readers never see a partially-updated structure.
+- `testDlqAfterMaxRetries`: The DLQ path exercises the expiry-based redelivery loop; after `max_retries` attempts, the message must be quarantined rather than silently dropped or re-queued indefinitely.
 
 ---
 

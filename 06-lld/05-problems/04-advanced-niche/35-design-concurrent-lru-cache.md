@@ -85,41 +85,41 @@ The DLL tracks recency: MRU at head, LRU at tail (between sentinel dummy nodes).
 ### DLinkedNode
 
 ```
-class DLinkedNode:
+class DLinkedNode<K, V>:
 - key: K
 - value: V
-- prev: Optional[DLinkedNode]
-- next: Optional[DLinkedNode]
+- prev: DLinkedNode<K, V> or null
+- next: DLinkedNode<K, V> or null
 ```
 
 ### LRUCache (single-lock)
 
 ```
-class LRUCache:
+class LRUCache<K, V>:
 - capacity: int
-- cache: dict[K, DLinkedNode]    # key → node
-- head: DLinkedNode              # dummy head (MRU side)
-- tail: DLinkedNode              # dummy tail (LRU side)
-- lock: threading.RLock
+- cache: Map<K, DLinkedNode<K, V>>    # key -> node
+- head: DLinkedNode<K, V>             # dummy head (MRU side)
+- tail: DLinkedNode<K, V>             # dummy tail (LRU side)
+- lock: ReentrantLock
 
-+ get(key: K) -> Optional[V]
-+ put(key: K, value: V)
-+ _move_to_head(node: DLinkedNode)
-+ _remove_node(node: DLinkedNode)
-+ _add_to_head(node: DLinkedNode)
-+ _pop_tail() -> DLinkedNode
++ get(key: K): V or null
++ put(key: K, value: V): void
++ moveToHead(node: DLinkedNode<K, V>): void
++ removeNode(node: DLinkedNode<K, V>): void
++ addToHead(node: DLinkedNode<K, V>): void
++ popTail(): DLinkedNode<K, V>
 ```
 
 ### StripedLRUCache
 
 ```
-class StripedLRUCache:
-- segments: list[LRUCache]
-- num_segments: int
+class StripedLRUCache<K, V>:
+- segments: List<LRUCache<K, V>>
+- numSegments: int
 
-+ get(key) -> Optional[V]
-+ put(key, value)
-+ _segment(key) -> LRUCache
++ get(key: K): V or null
++ put(key: K, value: V): void
++ segment(key: K): LRUCache<K, V>
 ```
 
 ---
@@ -128,119 +128,218 @@ class StripedLRUCache:
 
 ### Single-Lock LRU Cache
 
-```python
-class DLinkedNode:
-    def __init__(self, key=None, value=None):
-        self.key = key
-        self.value = value
-        self.prev = None
-        self.next = None
+```java
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
-class LRUCache:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.cache = {}
-        self.lock = threading.RLock()
+public class LRUCache<K, V> {
 
-        # Sentinel nodes simplify edge cases
-        self.head = DLinkedNode()   # MRU sentinel
-        self.tail = DLinkedNode()   # LRU sentinel
-        self.head.next = self.tail
-        self.tail.prev = self.head
+    private static class DLinkedNode<K, V> {
+        K key;
+        V value;
+        DLinkedNode<K, V> prev;
+        DLinkedNode<K, V> next;
 
-    def get(self, key):
-        with self.lock:
-            if key not in self.cache:
-                return None
-            node = self.cache[key]
-            self._move_to_head(node)
-            return node.value
+        DLinkedNode() {}
 
-    def put(self, key, value):
-        with self.lock:
-            if key in self.cache:
-                node = self.cache[key]
-                node.value = value
-                self._move_to_head(node)
-            else:
-                node = DLinkedNode(key, value)
-                self.cache[key] = node
-                self._add_to_head(node)
-                if len(self.cache) > self.capacity:
-                    evicted = self._pop_tail()
-                    del self.cache[evicted.key]
+        DLinkedNode(K key, V value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
 
-    def _add_to_head(self, node):
-        node.prev = self.head
-        node.next = self.head.next
-        self.head.next.prev = node
-        self.head.next = node
+    private final int capacity;
+    private final Map<K, DLinkedNode<K, V>> cache = new HashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def _remove_node(self, node):
-        node.prev.next = node.next
-        node.next.prev = node.prev
+    // Sentinel nodes simplify edge cases
+    private final DLinkedNode<K, V> head = new DLinkedNode<>();   // MRU sentinel
+    private final DLinkedNode<K, V> tail = new DLinkedNode<>();   // LRU sentinel
 
-    def _move_to_head(self, node):
-        self._remove_node(node)
-        self._add_to_head(node)
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        head.next = tail;
+        tail.prev = head;
+    }
 
-    def _pop_tail(self):
-        lru = self.tail.prev   # the real last node
-        self._remove_node(lru)
-        return lru
+    public V get(K key) {
+        lock.lock();
+        try {
+            DLinkedNode<K, V> node = cache.get(key);
+            if (node == null) {
+                return null;
+            }
+            moveToHead(node);
+            return node.value;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void put(K key, V value) {
+        lock.lock();
+        try {
+            DLinkedNode<K, V> node = cache.get(key);
+            if (node != null) {
+                node.value = value;
+                moveToHead(node);
+            } else {
+                DLinkedNode<K, V> newNode = new DLinkedNode<>(key, value);
+                cache.put(key, newNode);
+                addToHead(newNode);
+                if (cache.size() > capacity) {
+                    DLinkedNode<K, V> evicted = popTail();
+                    cache.remove(evicted.key);
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void addToHead(DLinkedNode<K, V> node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(DLinkedNode<K, V> node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(DLinkedNode<K, V> node) {
+        removeNode(node);
+        addToHead(node);
+    }
+
+    private DLinkedNode<K, V> popTail() {
+        DLinkedNode<K, V> lru = tail.prev;   // the real last node
+        removeNode(lru);
+        return lru;
+    }
+}
 ```
 
 ### Striped LRU Cache
 
 Each segment has its own `LRUCache` (with its own lock and its own capacity = total_capacity / num_segments). Key → segment mapping by hash. Only the relevant segment is locked per operation.
 
-```python
-class StripedLRUCache:
-    def __init__(self, total_capacity, num_segments=16):
-        self.num_segments = num_segments
-        segment_capacity = max(1, total_capacity // num_segments)
-        self.segments = [LRUCache(segment_capacity) for _ in range(num_segments)]
+```java
+import java.util.ArrayList;
+import java.util.List;
 
-    def _segment(self, key):
-        return self.segments[hash(key) % self.num_segments]
+public class StripedLRUCache<K, V> {
 
-    def get(self, key):
-        return self._segment(key).get(key)
+    private final List<LRUCache<K, V>> segments;
+    private final int numSegments;
 
-    def put(self, key, value):
-        self._segment(key).put(key, value)
+    public StripedLRUCache(int totalCapacity, int numSegments) {
+        this.numSegments = numSegments;
+        int segmentCapacity = Math.max(1, totalCapacity / numSegments);
+        this.segments = new ArrayList<>(numSegments);
+        for (int i = 0; i < numSegments; i++) {
+            segments.add(new LRUCache<>(segmentCapacity));
+        }
+    }
+
+    private LRUCache<K, V> segment(K key) {
+        int idx = Math.floorMod(key.hashCode(), numSegments);
+        return segments.get(idx);
+    }
+
+    public V get(K key) {
+        return segment(key).get(key);
+    }
+
+    public void put(K key, V value) {
+        segment(key).put(key, value);
+    }
+}
 ```
 
 **Trade-off**: Striped locking reduces lock contention by 1/num_segments. Trade-off: the total effective capacity is `num_segments × segment_capacity`, but items are not redistributed across segments — one segment may be full while another is empty (uneven distribution for skewed key spaces).
 
 ### Read-Write Lock variant for read-heavy workloads
 
-For read-heavy caches, use `RWLock`: multiple readers can hold simultaneously, writer holds exclusively. In Python, use `threading.Lock` + a reader count:
+For read-heavy caches, use a read-write lock: multiple readers can hold simultaneously, writer holds exclusively. Java ships this directly as `java.util.concurrent.locks.ReentrantReadWriteLock` — no hand-rolled reader-count bookkeeping needed:
 
-```python
-class ReadWriteLock:
-    def __init__(self):
-        self._read_lock = threading.Lock()
-        self._write_lock = threading.Lock()
-        self._readers = 0
+```java
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-    def acquire_read(self):
-        with self._read_lock:
-            self._readers += 1
-            if self._readers == 1:
-                self._write_lock.acquire()
+public class ReadWriteLockedCache {
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
 
-    def release_read(self):
-        with self._read_lock:
-            self._readers -= 1
-            if self._readers == 0:
-                self._write_lock.release()
+    public void acquireRead() {
+        rwLock.readLock().lock();
+    }
 
-    def acquire_write(self):
-        self._write_lock.acquire()
+    public void releaseRead() {
+        rwLock.readLock().unlock();
+    }
 
-    def release_write(self):
-        self._write_lock.release()
+    public void acquireWrite() {
+        rwLock.writeLock().lock();
+    }
+
+    public void releaseWrite() {
+        rwLock.writeLock().unlock();
+    }
+}
+```
+
+For educational purposes, here is what `ReentrantReadWriteLock` does internally (a hand-rolled version using an intrinsic monitor + reader count, matching the naive reader-count approach some languages use before reaching for a library primitive):
+
+```java
+public class NaiveReadWriteLock {
+    private final Object monitor = new Object();
+    private int readers = 0;
+    private boolean writerActive = false;
+
+    public void acquireRead() {
+        synchronized (monitor) {
+            while (writerActive) {
+                try {
+                    monitor.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            readers++;
+        }
+    }
+
+    public void releaseRead() {
+        synchronized (monitor) {
+            readers--;
+            if (readers == 0) {
+                monitor.notifyAll();
+            }
+        }
+    }
+
+    public void acquireWrite() {
+        synchronized (monitor) {
+            while (writerActive || readers > 0) {
+                try {
+                    monitor.wait();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            writerActive = true;
+        }
+    }
+
+    public void releaseWrite() {
+        synchronized (monitor) {
+            writerActive = false;
+            monitor.notifyAll();
+        }
+    }
+}
 ```
 
 Note: `get` in LRU also writes (moves node to head), so it can't use a pure read lock unless we separate the "lookup" and "recency update" operations.
@@ -296,20 +395,27 @@ With 1 lock: all threads serialize. With 16 segments: 16 threads can operate in 
 
 ### 3. "How would you add TTL (expiry) to the cache?"
 
-Add `expires_at: datetime` to `DLinkedNode`. On `get`, check if `expires_at < now` → treat as cache miss, remove node. Run a background "janitor" thread that periodically scans the LRU end (where old items accumulate) and removes expired entries.
+Add `expiresAt: Instant` to `DLinkedNode`. On `get`, check if `expiresAt` is before `now` → treat as cache miss, remove node. Run a background "janitor" thread that periodically scans the LRU end (where old items accumulate) and removes expired entries.
 
-```python
-def get(self, key):
-    with self.lock:
-        if key not in self.cache:
-            return None
-        node = self.cache[key]
-        if node.expires_at and datetime.utcnow() > node.expires_at:
-            self._remove_node(node)
-            del self.cache[key]
-            return None
-        self._move_to_head(node)
-        return node.value
+```java
+public V get(K key) {
+    lock.lock();
+    try {
+        DLinkedNode<K, V> node = cache.get(key);
+        if (node == null) {
+            return null;
+        }
+        if (node.expiresAt != null && Instant.now().isAfter(node.expiresAt)) {
+            removeNode(node);
+            cache.remove(key);
+            return null;
+        }
+        moveToHead(node);
+        return node.value;
+    } finally {
+        lock.unlock();
+    }
+}
 ```
 
 ### 4. "What's the difference between LRU and LFU eviction?"
@@ -322,7 +428,7 @@ def get(self, key):
 
 ## Interviewer Questions by Level
 
-**Junior**: LRU cache with OrderedDict. get/put in O(1). Capacity enforcement with eviction.
+**Junior**: LRU cache with `LinkedHashMap` (access-order mode). get/put in O(1). Capacity enforcement with eviction (override `removeEldestEntry`).
 
 **Mid-level**: Doubly linked list + HashMap implementation. Sentinel dummy nodes. Thread-safe with a single RLock. O(1) move-to-head via prev/next pointers.
 

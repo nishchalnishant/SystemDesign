@@ -8,7 +8,7 @@
 > - State Pattern: `ElevatorState` (MovingUp, MovingDown, Idle, DoorOpen).
 > - The Algorithm: SCAN (or LOOK) algorithm. The elevator maintains two min/max heaps or sorted sets: one for upward requests, one for downward requests. It sweeps fully up, then fully down.
 > - Strategy Pattern: the `ElevatorDispatchStrategy` decides *which* car gets a request (e.g., shortest wait time, nearest car moving in the same direction).
-> - Concurrency: Requests arrive asynchronously from different floors. The request queues must be thread-safe (e.g., `PriorityBlockingQueue`).
+> - Concurrency: Requests arrive asynchronously from different floors. The request queues must be thread-safe (e.g., `PriorityBlockingQueue`, `ReentrantLock` per elevator).
 >
 > **Key takeaway:** Do not use a basic FIFO queue for elevator requests, or the elevator will bounce erratically. You must mention the SCAN/LOOK directional sweep algorithm and use sorted data structures.
 
@@ -148,66 +148,85 @@ class SCANStrategy(SchedulingStrategy):
 - Empty destination queue → set IDLE
 - Arrive at destination → remove it, check remaining direction
 
-```python
-def move_step(self):
-    if not self.destinations:
-        self.state = ElevatorState.IDLE
-        return
+```java
+public void moveStep() {
+    if (destinations.isEmpty()) {
+        state = ElevatorState.IDLE;
+        return;
+    }
 
-    next_dest = self.get_next_destination()
+    int nextDest = getNextDestination();
 
-    if self.current_floor < next_dest:
-        self.current_floor += 1
-        self.state = ElevatorState.MOVING_UP
-    elif self.current_floor > next_dest:
-        self.current_floor -= 1
-        self.state = ElevatorState.MOVING_DOWN
+    if (currentFloor < nextDest) {
+        currentFloor++;
+        state = ElevatorState.MOVING_UP;
+    } else if (currentFloor > nextDest) {
+        currentFloor--;
+        state = ElevatorState.MOVING_DOWN;
+    }
 
-    if self.current_floor == next_dest:
-        self.destinations.remove(next_dest)
-        if not self.destinations:
-            self.state = ElevatorState.IDLE
-        elif min(self.destinations) > self.current_floor:
-            self.state = ElevatorState.MOVING_UP
-        else:
-            self.state = ElevatorState.MOVING_DOWN
+    if (currentFloor == nextDest) {
+        destinations.remove(nextDest);
+        if (destinations.isEmpty()) {
+            state = ElevatorState.IDLE;
+        } else if (Collections.min(destinations) > currentFloor) {
+            state = ElevatorState.MOVING_UP;
+        } else {
+            state = ElevatorState.MOVING_DOWN;
+        }
+    }
+}
 
-def get_next_destination(self):
-    if self.state in (ElevatorState.MOVING_UP, ElevatorState.IDLE):
-        above = [d for d in self.destinations if d >= self.current_floor]
-        return min(above) if above else max(self.destinations)
-    else:
-        below = [d for d in self.destinations if d <= self.current_floor]
-        return max(below) if below else min(self.destinations)
+public Integer getNextDestination() {
+    if (state == ElevatorState.MOVING_UP || state == ElevatorState.IDLE) {
+        List<Integer> above = destinations.stream()
+                .filter(d -> d >= currentFloor)
+                .collect(Collectors.toList());
+        return above.isEmpty() ? Collections.max(destinations) : Collections.min(above);
+    } else {
+        List<Integer> below = destinations.stream()
+                .filter(d -> d <= currentFloor)
+                .collect(Collectors.toList());
+        return below.isEmpty() ? Collections.min(destinations) : Collections.max(below);
+    }
+}
 ```
 
 ### Core Method: `SCANStrategy.assign`
 
-```python
-def assign(self, request, elevators):
-    best = None
-    best_score = float('inf')
-    for elevator in elevators:
-        score = self._score(elevator, request)
-        if score < best_score:
-            best_score = score
-            best = elevator
-    return best
+```java
+@Override
+public Elevator assign(FloorRequest request, List<Elevator> elevators) {
+    Elevator best = null;
+    int bestScore = Integer.MAX_VALUE;
+    for (Elevator elevator : elevators) {
+        int score = score(elevator, request);
+        if (score < bestScore) {
+            bestScore = score;
+            best = elevator;
+        }
+    }
+    return best;
+}
 
-def _score(self, elevator, request):
-    distance = abs(elevator.current_floor - request.floor)
-    # Same direction, elevator will pass through request floor
-    if (elevator.state == ElevatorState.MOVING_UP
-            and request.direction == Direction.UP
-            and elevator.current_floor <= request.floor):
-        return distance
-    if (elevator.state == ElevatorState.MOVING_DOWN
-            and request.direction == Direction.DOWN
-            and elevator.current_floor >= request.floor):
-        return distance
-    if elevator.state == ElevatorState.IDLE:
-        return distance + 1
-    return distance + 100  # wrong direction — last resort
+private int score(Elevator elevator, FloorRequest request) {
+    int distance = Math.abs(elevator.getCurrentFloor() - request.getFloor());
+    // Same direction, elevator will pass through request floor
+    if (elevator.getState() == ElevatorState.MOVING_UP
+            && request.getDirection() == Direction.UP
+            && elevator.getCurrentFloor() <= request.getFloor()) {
+        return distance;
+    }
+    if (elevator.getState() == ElevatorState.MOVING_DOWN
+            && request.getDirection() == Direction.DOWN
+            && elevator.getCurrentFloor() >= request.getFloor()) {
+        return distance;
+    }
+    if (elevator.getState() == ElevatorState.IDLE) {
+        return distance + 1;
+    }
+    return distance + 100; // wrong direction — last resort
+}
 ```
 
 ---
@@ -249,15 +268,21 @@ Request 3: Floor 9, DOWN
 
 LOOK is more efficient — no wasted travel to extreme floors.
 
-```python
-# LOOK: reverse when no more destinations in current direction
-def get_next_destination_look(self):
-    if self.state == ElevatorState.MOVING_UP:
-        above = [d for d in self.destinations if d > self.current_floor]
-        return min(above) if above else max(self.destinations)  # reverse
-    else:
-        below = [d for d in self.destinations if d < self.current_floor]
-        return max(below) if below else min(self.destinations)  # reverse
+```java
+// LOOK: reverse when no more destinations in current direction
+public Integer getNextDestinationLook() {
+    if (state == ElevatorState.MOVING_UP) {
+        List<Integer> above = destinations.stream()
+                .filter(d -> d > currentFloor)
+                .collect(Collectors.toList());
+        return above.isEmpty() ? Collections.max(destinations) : Collections.min(above); // reverse
+    } else {
+        List<Integer> below = destinations.stream()
+                .filter(d -> d < currentFloor)
+                .collect(Collectors.toList());
+        return below.isEmpty() ? Collections.min(destinations) : Collections.max(below); // reverse
+    }
+}
 ```
 
 Since `SchedulingStrategy` is injectable, swapping from SCAN to LOOK requires zero changes to `ElevatorController` or `Elevator`.
@@ -266,12 +291,14 @@ Since `SchedulingStrategy` is injectable, swapping from SCAN to LOOK requires ze
 
 Add `EMERGENCY` to `ElevatorState`. In `ElevatorController`:
 
-```python
-def trigger_emergency(self):
-    for elevator in self.elevators:
-        elevator.state = ElevatorState.EMERGENCY
-        elevator.destinations.clear()
-        elevator.add_destination(0)  # ground floor
+```java
+public void triggerEmergency() {
+    for (Elevator elevator : elevators) {
+        elevator.setState(ElevatorState.EMERGENCY);
+        elevator.getDestinations().clear();
+        elevator.addDestination(0); // ground floor
+    }
+}
 ```
 
 In `move_step`, when state is EMERGENCY, always move toward floor 0. External requests are rejected during emergency.
@@ -280,12 +307,13 @@ In `move_step`, when state is EMERGENCY, always move toward floor 0. External re
 
 Add `MAINTENANCE` flag. `assign()` skips maintenance elevators. After the current destination queue drains, the elevator parks and awaits service.
 
-```python
-def set_maintenance(self, elevator_id):
-    elevator = self._get_elevator(elevator_id)
-    elevator.maintenance_pending = True
-    # assign() checks: if elevator.maintenance_pending → skip
-    # After destinations drain, move_step sets state = MAINTENANCE
+```java
+public void setMaintenance(int elevatorId) {
+    Elevator elevator = getElevator(elevatorId);
+    elevator.setMaintenancePending(true);
+    // assign() checks: if elevator.isMaintenancePending() → skip
+    // After destinations drain, moveStep() sets state = MAINTENANCE
+}
 ```
 
 ### 4. "What about starvation?"
@@ -295,31 +323,43 @@ SCAN can starve a floor if traffic is continuously heavy in one direction. Solut
 - **Age-based priority boost**: requests older than threshold T get score = 0 (always served next)
 - **C-SCAN**: elevator always moves one direction only, jumps to bottom on reversal — uniform wait times
 
-```python
-def _score(self, elevator, request):
-    base_score = self._base_score(elevator, request)
-    age = time.time() - request.timestamp
-    urgency_bonus = max(0, age - STARVATION_THRESHOLD) * 10
-    return base_score - urgency_bonus
+```java
+private int score(Elevator elevator, FloorRequest request) {
+    int baseScore = baseScore(elevator, request);
+    long age = System.currentTimeMillis() - request.getTimestamp();
+    long urgencyBonus = Math.max(0, age - STARVATION_THRESHOLD) * 10;
+    return (int) (baseScore - urgencyBonus);
+}
 ```
 
 ### 5. "How do you make this thread-safe?"
 
 One lock per elevator — no global lock needed:
 
-```python
-class Elevator:
-    def __init__(self):
-        self._lock = threading.Lock()
+```java
+public class Elevator {
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def add_destination(self, floor):
-        with self._lock:
-            if floor not in self.destinations:
-                self.destinations.add(floor)
+    public void addDestination(int floor) {
+        lock.lock();
+        try {
+            if (!destinations.contains(floor)) {
+                destinations.add(floor);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def move_step(self):
-        with self._lock:
-            # ... existing logic ...
+    public void moveStep() {
+        lock.lock();
+        try {
+            // ... existing logic ...
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 ```
 
 `ElevatorController.assign()` reads elevator snapshots (floor + state) under each elevator's lock. Avoids a single global bottleneck.

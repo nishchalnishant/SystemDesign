@@ -183,137 +183,196 @@ class ByLikes(SortStrategy):
 - Parent is soft-deleted → still allow replies (replies are independent content)
 - Empty or whitespace-only text → raise `ValueError`
 
-```python
-import uuid
-from datetime import datetime
-from typing import Optional, List, Dict, Set
-from abc import ABC, abstractmethod
+```java
+import java.util.*;
+import java.time.Instant;
+
+class Comment {
+    private final String commentId;
+    private final String postId;
+    private final String userId;
+    private String text;
+    private final String parentId; // nullable
+    private final List<Comment> children = new ArrayList<>();
+    private final Set<String> likedBy = new HashSet<>();
+    private final Instant createdAt;
+    private boolean isDeleted;
+
+    public Comment(String commentId, String postId, String userId,
+                    String text, String parentId) {
+        this.commentId = commentId;
+        this.postId = postId;
+        this.userId = userId;
+        this.text = text;
+        this.parentId = parentId;
+        this.createdAt = Instant.now();
+        this.isDeleted = false;
+    }
+
+    public void toggleLike(String userId) {
+        if (likedBy.contains(userId)) {
+            likedBy.remove(userId);
+        } else {
+            likedBy.add(userId);
+        }
+    }
+
+    public void softDelete() {
+        this.isDeleted = true;
+        this.text = "[deleted]";
+    }
+
+    public int likeCount() {
+        return likedBy.size();
+    }
+
+    public void addChild(Comment comment) {
+        children.add(comment);
+    }
+
+    public String getCommentId() { return commentId; }
+    public String getPostId() { return postId; }
+    public String getUserId() { return userId; }
+    public String getText() { return text; }
+    public String getParentId() { return parentId; }
+    public List<Comment> getChildren() { return children; }
+    public void setChildren(List<Comment> children) {
+        this.children.clear();
+        this.children.addAll(children);
+    }
+    public Set<String> getLikedBy() { return likedBy; }
+    public Instant getCreatedAt() { return createdAt; }
+    public boolean isDeleted() { return isDeleted; }
+}
 
 
-class Comment:
-    def __init__(self, comment_id: str, post_id: str, user_id: str,
-                 text: str, parent_id: Optional[str] = None):
-        self.comment_id = comment_id
-        self.post_id = post_id
-        self.user_id = user_id
-        self.text = text
-        self.parent_id = parent_id
-        self.children: List['Comment'] = []
-        self.liked_by: Set[str] = set()
-        self.created_at = datetime.utcnow()
-        self.is_deleted = False
+class CommentTree {
+    private final String postId;
+    private final Map<String, Comment> commentMap = new HashMap<>();
+    private final List<Comment> roots = new ArrayList<>();
 
-    def toggle_like(self, user_id: str) -> None:
-        if user_id in self.liked_by:
-            self.liked_by.discard(user_id)
-        else:
-            self.liked_by.add(user_id)
+    public CommentTree(String postId) {
+        this.postId = postId;
+    }
 
-    def soft_delete(self) -> None:
-        self.is_deleted = True
-        self.text = "[deleted]"
+    public void insert(Comment comment) {
+        commentMap.put(comment.getCommentId(), comment);
+        if (comment.getParentId() == null) {
+            roots.add(comment);
+        } else {
+            Comment parent = find(comment.getParentId());
+            parent.addChild(comment);
+        }
+    }
 
-    def like_count(self) -> int:
-        return len(self.liked_by)
+    public Comment find(String commentId) {
+        if (!commentMap.containsKey(commentId)) {
+            throw new NoSuchElementException("Comment " + commentId + " not found");
+        }
+        return commentMap.get(commentId);
+    }
 
-    def add_child(self, comment: 'Comment') -> None:
-        self.children.append(comment)
+    // BFS traversal — level-order, preserves nesting context.
+    public List<Comment> getFlat() {
+        List<Comment> result = new ArrayList<>();
+        Deque<Comment> queue = new ArrayDeque<>(roots);
+        while (!queue.isEmpty()) {
+            Comment node = queue.poll();
+            result.add(node);
+            queue.addAll(node.getChildren());
+        }
+        return result;
+    }
 
-
-class CommentTree:
-    def __init__(self, post_id: str):
-        self.post_id = post_id
-        self.comment_map: Dict[str, Comment] = {}
-        self.roots: List[Comment] = []
-
-    def insert(self, comment: Comment) -> None:
-        self.comment_map[comment.comment_id] = comment
-        if comment.parent_id is None:
-            self.roots.append(comment)
-        else:
-            parent = self.find(comment.parent_id)
-            parent.add_child(comment)
-
-    def find(self, comment_id: str) -> Comment:
-        if comment_id not in self.comment_map:
-            raise KeyError(f"Comment {comment_id} not found")
-        return self.comment_map[comment_id]
-
-    def get_flat(self) -> List[Comment]:
-        """BFS traversal — level-order, preserves nesting context."""
-        result = []
-        queue = list(self.roots)
-        while queue:
-            node = queue.pop(0)
-            result.append(node)
-            queue.extend(node.children)
-        return result
+    public Map<String, Comment> getCommentMap() { return commentMap; }
+    public List<Comment> getRoots() { return roots; }
+    public String getPostId() { return postId; }
+}
 
 
-class SortStrategy(ABC):
-    @abstractmethod
-    def sort(self, comments: List[Comment]) -> List[Comment]:
-        pass
+interface SortStrategy {
+    List<Comment> sort(List<Comment> comments);
+}
 
 
-class ByTimeAscending(SortStrategy):
-    def sort(self, comments: List[Comment]) -> List[Comment]:
-        return sorted(comments, key=lambda c: c.created_at)
+class ByTimeAscending implements SortStrategy {
+    @Override
+    public List<Comment> sort(List<Comment> comments) {
+        List<Comment> sorted = new ArrayList<>(comments);
+        sorted.sort(Comparator.comparing(Comment::getCreatedAt));
+        return sorted;
+    }
+}
 
 
-class ByTimeDescending(SortStrategy):
-    def sort(self, comments: List[Comment]) -> List[Comment]:
-        return sorted(comments, key=lambda c: c.created_at, reverse=True)
+class ByTimeDescending implements SortStrategy {
+    @Override
+    public List<Comment> sort(List<Comment> comments) {
+        List<Comment> sorted = new ArrayList<>(comments);
+        sorted.sort(Comparator.comparing(Comment::getCreatedAt).reversed());
+        return sorted;
+    }
+}
 
 
-class ByLikes(SortStrategy):
-    def sort(self, comments: List[Comment]) -> List[Comment]:
-        return sorted(comments, key=lambda c: c.like_count(), reverse=True)
+class ByLikes implements SortStrategy {
+    @Override
+    public List<Comment> sort(List<Comment> comments) {
+        List<Comment> sorted = new ArrayList<>(comments);
+        sorted.sort(Comparator.comparingInt(Comment::likeCount).reversed());
+        return sorted;
+    }
+}
 
 
-class CommentService:
-    def __init__(self):
-        self.trees: Dict[str, CommentTree] = {}
+class CommentService {
+    private final Map<String, CommentTree> trees = new HashMap<>();
 
-    def _get_tree(self, post_id: str) -> CommentTree:
-        if post_id not in self.trees:
-            self.trees[post_id] = CommentTree(post_id)
-        return self.trees[post_id]
+    private CommentTree getTree(String postId) {
+        return trees.computeIfAbsent(postId, CommentTree::new);
+    }
 
-    def add_comment(self, post_id: str, user_id: str, text: str,
-                    parent_id: Optional[str] = None) -> Comment:
-        if not text or not text.strip():
-            raise ValueError("Comment text cannot be empty")
-        tree = self._get_tree(post_id)
-        if parent_id and parent_id not in tree.comment_map:
-            raise KeyError(f"Parent comment {parent_id} not found")
-        comment = Comment(
-            comment_id=str(uuid.uuid4()),
-            post_id=post_id,
-            user_id=user_id,
-            text=text.strip(),
-            parent_id=parent_id
-        )
-        tree.insert(comment)
-        return comment
+    public Comment addComment(String postId, String userId, String text,
+                               String parentId) {
+        if (text == null || text.trim().isEmpty()) {
+            throw new IllegalArgumentException("Comment text cannot be empty");
+        }
+        CommentTree tree = getTree(postId);
+        if (parentId != null && !tree.getCommentMap().containsKey(parentId)) {
+            throw new NoSuchElementException("Parent comment " + parentId + " not found");
+        }
+        Comment comment = new Comment(
+            UUID.randomUUID().toString(),
+            postId,
+            userId,
+            text.trim(),
+            parentId
+        );
+        tree.insert(comment);
+        return comment;
+    }
 
-    def get_comments(self, post_id: str,
-                     sort_strategy: Optional[SortStrategy] = None) -> List[Comment]:
-        tree = self._get_tree(post_id)
-        comments = tree.get_flat()
-        if sort_strategy:
-            comments = sort_strategy.sort(comments)
-        return comments
+    public List<Comment> getComments(String postId, SortStrategy sortStrategy) {
+        CommentTree tree = getTree(postId);
+        List<Comment> comments = tree.getFlat();
+        if (sortStrategy != null) {
+            comments = sortStrategy.sort(comments);
+        }
+        return comments;
+    }
 
-    def like_comment(self, post_id: str, comment_id: str, user_id: str) -> None:
-        tree = self._get_tree(post_id)
-        comment = tree.find(comment_id)
-        comment.toggle_like(user_id)
+    public void likeComment(String postId, String commentId, String userId) {
+        CommentTree tree = getTree(postId);
+        Comment comment = tree.find(commentId);
+        comment.toggleLike(userId);
+    }
 
-    def delete_comment(self, post_id: str, comment_id: str) -> None:
-        tree = self._get_tree(post_id)
-        comment = tree.find(comment_id)
-        comment.soft_delete()
+    public void deleteComment(String postId, String commentId) {
+        CommentTree tree = getTree(postId);
+        Comment comment = tree.find(commentId);
+        comment.softDelete();
+    }
+}
 ```
 
 ---
@@ -358,19 +417,23 @@ Recommendation: Adjacency list for most systems (simple, works with recursive CT
 
 Sorting applies within siblings at each level, not across levels. Apply the strategy recursively on each node's `children` list before serialization.
 
-```python
-def sort_tree(node: Comment, strategy: SortStrategy) -> None:
-    node.children = strategy.sort(node.children)
-    for child in node.children:
-        sort_tree(child, strategy)
+```java
+void sortTree(Comment node, SortStrategy strategy) {
+    node.setChildren(strategy.sort(node.getChildren()));
+    for (Comment child : node.getChildren()) {
+        sortTree(child, strategy);
+    }
+}
 
-# Apply to roots first, then recurse
-def get_sorted_tree(post_id: str, strategy: SortStrategy) -> List[Comment]:
-    tree = self._get_tree(post_id)
-    sorted_roots = strategy.sort(tree.roots)
-    for root in sorted_roots:
-        sort_tree(root, strategy)
-    return sorted_roots
+// Apply to roots first, then recurse
+List<Comment> getSortedTree(String postId, SortStrategy strategy) {
+    CommentTree tree = getTree(postId);
+    List<Comment> sortedRoots = strategy.sort(tree.getRoots());
+    for (Comment root : sortedRoots) {
+        sortTree(root, strategy);
+    }
+    return sortedRoots;
+}
 ```
 
 This is O(n log n) total across all levels.
@@ -387,32 +450,40 @@ This is O(n log n) total across all levels.
 
 **Top-level pagination**: Page over root comments only. Fetch children eagerly per root, or lazily on expand. Works when threads are shallow.
 
-```python
-def get_top_level_comments(self, post_id: str, page: int, size: int,
-                            strategy: SortStrategy) -> List[Comment]:
-    tree = self._get_tree(post_id)
-    sorted_roots = strategy.sort(tree.roots)
-    start = page * size
-    return sorted_roots[start:start + size]
+```java
+List<Comment> getTopLevelComments(String postId, int page, int size,
+                                   SortStrategy strategy) {
+    CommentTree tree = getTree(postId);
+    List<Comment> sortedRoots = strategy.sort(tree.getRoots());
+    int start = page * size;
+    int end = Math.min(start + size, sortedRoots.size());
+    if (start >= sortedRoots.size()) {
+        return new ArrayList<>();
+    }
+    return sortedRoots.subList(start, end);
+}
 ```
 
 **Cursor-based**: Encode cursor as `(parent_id, offset)`. The client calls `GET /comments?post_id=X&parent_id=c1&cursor=Y` to load more children. This is Reddit's "load more comments" pattern.
 
 ### 5. "How would you add comment moderation / flagging?"
 
-Add `flags: Dict[str, str]` to `Comment` (user_id → reason). Auto-hide when flag count exceeds threshold. A `ModerationService` processes the queue.
+Add `flags: Map<String, String>` to `Comment` (user_id → reason). Auto-hide when flag count exceeds threshold. A `ModerationService` processes the queue.
 
-```python
-FLAG_THRESHOLD = 5
+```java
+static final int FLAG_THRESHOLD = 5;
 
-def flag_comment(self, post_id: str, comment_id: str,
-                 reporter_id: str, reason: str) -> None:
-    comment = self._get_tree(post_id).find(comment_id)
-    if reporter_id == comment.user_id:
-        raise ValueError("Cannot flag your own comment")
-    comment.flags[reporter_id] = reason
-    if len(comment.flags) >= FLAG_THRESHOLD:
-        comment.auto_hidden = True
+void flagComment(String postId, String commentId,
+                  String reporterId, String reason) {
+    Comment comment = getTree(postId).find(commentId);
+    if (reporterId.equals(comment.getUserId())) {
+        throw new IllegalArgumentException("Cannot flag your own comment");
+    }
+    comment.getFlags().put(reporterId, reason);
+    if (comment.getFlags().size() >= FLAG_THRESHOLD) {
+        comment.setAutoHidden(true);
+    }
+}
 ```
 
 Moderators see a priority queue of flagged comments sorted by flag count descending.

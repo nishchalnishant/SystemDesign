@@ -98,12 +98,12 @@ Design a library management system where members can search for books, borrow an
 
 ```
 class Book:
-- isbn: str
-- title: str
-- author: str
-- genre: str
-- copies: list[BookCopy]
-+ available_copies() -> list[BookCopy]
+- isbn: String
+- title: String
+- author: String
+- genre: String
+- copies: List<BookCopy>
++ availableCopies(): List<BookCopy>
 ```
 
 ### BookCopy
@@ -116,10 +116,10 @@ class Book:
 
 ```
 class BookCopy:
-- copy_id: str
+- copyId: String
 - book: Book
 - status: CopyStatus
-- active_borrowal: Optional[Borrowal]
+- activeBorrowal: Borrowal (nullable)
 ```
 
 ### Member
@@ -132,14 +132,14 @@ class BookCopy:
 
 ```
 class Member:
-- member_id: str
-- name: str
-- email: str
+- memberId: String
+- name: String
+- email: String
 - tier: MemberTier
-- active_borrowals: list[Borrowal]
-- pending_fines: float
-+ borrow_limit() -> int
-+ can_borrow() -> bool
+- activeBorrowals: List<Borrowal>
+- pendingFines: double
++ borrowLimit(): int
++ canBorrow(): boolean
 ```
 
 ### Borrowal
@@ -151,28 +151,28 @@ class Member:
 
 ```
 class Borrowal:
-- borrowal_id: str
+- borrowalId: String
 - member: Member
 - copy: BookCopy
-- borrow_date: date
-- due_date: date
-- return_date: Optional[date]
-+ is_overdue() -> bool
-+ overdue_days() -> int
+- borrowDate: LocalDate
+- dueDate: LocalDate
+- returnDate: LocalDate (nullable)
++ isOverdue(): boolean
++ overdueDays(): int
 ```
 
 ### Library
 
 ```
 class Library:
-- books: dict[str, Book]            # isbn -> Book
-- members: dict[str, Member]        # member_id -> Member
-- reservations: dict[str, deque[Reservation]]  # isbn -> queue
-- fine_calculator: FineCalculator
-+ search_books(query: str, field: str) -> list[Book]
-+ borrow_book(member_id: str, isbn: str) -> Borrowal
-+ return_book(borrowal_id: str) -> float
-+ reserve_book(member_id: str, isbn: str) -> Reservation
+- books: Map<String, Book>            // isbn -> Book
+- members: Map<String, Member>        // memberId -> Member
+- reservations: Map<String, Deque<Reservation>>  // isbn -> queue
+- fineCalculator: FineCalculator
++ searchBooks(query: String, field: String): List<Book>
++ borrowBook(memberId: String, isbn: String): Borrowal
++ returnBook(borrowalId: String): double
++ reserveBook(memberId: String, isbn: String): Reservation
 ```
 
 ---
@@ -194,191 +194,308 @@ class Library:
 - Reservation queue empty on return — copy becomes AVAILABLE.
 - Member has multiple overdue copies — fine applies per copy independently.
 
-```python
-from dataclasses import dataclass, field
-from datetime import date
-from collections import deque
-from enum import Enum, auto
-from typing import Optional
-import uuid
+```java
+import java.time.LocalDate;
+import java.util.*;
 
+enum CopyStatus {
+    AVAILABLE,
+    CHECKED_OUT,
+    RESERVED,
+    LOST
+}
 
-class CopyStatus(Enum):
-    AVAILABLE   = auto()
-    CHECKED_OUT = auto()
-    RESERVED    = auto()
-    LOST        = auto()
+enum MemberTier {
+    STANDARD(3),
+    PREMIUM(10);
 
+    private final int limit;
 
-class MemberTier(Enum):
-    STANDARD = 3
-    PREMIUM  = 10
+    MemberTier(int limit) {
+        this.limit = limit;
+    }
 
+    public int getLimit() {
+        return limit;
+    }
+}
 
-@dataclass
-class Book:
-    isbn: str
-    title: str
-    author: str
-    genre: str
-    copies: list = field(default_factory=list)
+class Book {
+    private final String isbn;
+    private final String title;
+    private final String author;
+    private final String genre;
+    private final List<BookCopy> copies = new ArrayList<>();
 
-    def available_copies(self):
-        return [c for c in self.copies if c.status == CopyStatus.AVAILABLE]
+    public Book(String isbn, String title, String author, String genre) {
+        this.isbn = isbn;
+        this.title = title;
+        this.author = author;
+        this.genre = genre;
+    }
 
+    public List<BookCopy> availableCopies() {
+        List<BookCopy> result = new ArrayList<>();
+        for (BookCopy c : copies) {
+            if (c.getStatus() == CopyStatus.AVAILABLE) {
+                result.add(c);
+            }
+        }
+        return result;
+    }
 
-@dataclass
-class BookCopy:
-    copy_id: str
-    book: Book
-    status: CopyStatus = CopyStatus.AVAILABLE
-    active_borrowal: Optional["Borrowal"] = None
+    public String getIsbn() { return isbn; }
+    public String getTitle() { return title; }
+    public String getAuthor() { return author; }
+    public String getGenre() { return genre; }
+    public List<BookCopy> getCopies() { return copies; }
+}
 
+class BookCopy {
+    private final String copyId;
+    private final Book book;
+    private CopyStatus status;
+    private Borrowal activeBorrowal;
 
-@dataclass
-class Member:
-    member_id: str
-    name: str
-    email: str
-    tier: MemberTier = MemberTier.STANDARD
-    active_borrowals: list = field(default_factory=list)
-    pending_fines: float = 0.0
+    public BookCopy(String copyId, Book book) {
+        this.copyId = copyId;
+        this.book = book;
+        this.status = CopyStatus.AVAILABLE;
+        this.activeBorrowal = null;
+    }
 
-    def borrow_limit(self) -> int:
-        return self.tier.value
+    public String getCopyId() { return copyId; }
+    public Book getBook() { return book; }
+    public CopyStatus getStatus() { return status; }
+    public void setStatus(CopyStatus status) { this.status = status; }
+    public Borrowal getActiveBorrowal() { return activeBorrowal; }
+    public void setActiveBorrowal(Borrowal activeBorrowal) { this.activeBorrowal = activeBorrowal; }
+}
 
-    def can_borrow(self) -> bool:
-        overdue = any(b.is_overdue() for b in self.active_borrowals)
-        return (not overdue
-                and self.pending_fines == 0.0
-                and len(self.active_borrowals) < self.borrow_limit())
+class Member {
+    private final String memberId;
+    private final String name;
+    private final String email;
+    private MemberTier tier;
+    private final List<Borrowal> activeBorrowals = new ArrayList<>();
+    private double pendingFines;
 
+    public Member(String memberId, String name, String email, MemberTier tier) {
+        this.memberId = memberId;
+        this.name = name;
+        this.email = email;
+        this.tier = tier;
+        this.pendingFines = 0.0;
+    }
 
-@dataclass
-class Borrowal:
-    borrowal_id: str
-    member: Member
-    copy: BookCopy
-    borrow_date: date
-    due_date: date
-    return_date: Optional[date] = None
+    public int borrowLimit() {
+        return tier.getLimit();
+    }
 
-    def is_overdue(self) -> bool:
-        check = self.return_date or date.today()
-        return check > self.due_date
+    public boolean canBorrow() {
+        boolean overdue = activeBorrowals.stream().anyMatch(Borrowal::isOverdue);
+        return !overdue
+                && pendingFines == 0.0
+                && activeBorrowals.size() < borrowLimit();
+    }
 
-    def overdue_days(self) -> int:
-        if not self.is_overdue():
-            return 0
-        check = self.return_date or date.today()
-        return (check - self.due_date).days
+    public String getMemberId() { return memberId; }
+    public String getName() { return name; }
+    public String getEmail() { return email; }
+    public MemberTier getTier() { return tier; }
+    public void setTier(MemberTier tier) { this.tier = tier; }
+    public List<Borrowal> getActiveBorrowals() { return activeBorrowals; }
+    public double getPendingFines() { return pendingFines; }
+    public void setPendingFines(double pendingFines) { this.pendingFines = pendingFines; }
+}
 
+class Borrowal {
+    private final String borrowalId;
+    private final Member member;
+    private final BookCopy copy;
+    private final LocalDate borrowDate;
+    private final LocalDate dueDate;
+    private LocalDate returnDate;
 
-@dataclass
-class Reservation:
-    reservation_id: str
-    member: Member
-    book: Book
-    reserved_date: date
+    public Borrowal(String borrowalId, Member member, BookCopy copy,
+                     LocalDate borrowDate, LocalDate dueDate) {
+        this.borrowalId = borrowalId;
+        this.member = member;
+        this.copy = copy;
+        this.borrowDate = borrowDate;
+        this.dueDate = dueDate;
+        this.returnDate = null;
+    }
 
+    public boolean isOverdue() {
+        LocalDate check = (returnDate != null) ? returnDate : LocalDate.now();
+        return check.isAfter(dueDate);
+    }
 
-class FineCalculator:
-    DAILY_RATE = 1.0   # dollars per day
-    MAX_FINE   = 25.0
+    public int overdueDays() {
+        if (!isOverdue()) {
+            return 0;
+        }
+        LocalDate check = (returnDate != null) ? returnDate : LocalDate.now();
+        return (int) java.time.temporal.ChronoUnit.DAYS.between(dueDate, check);
+    }
 
-    def calculate(self, borrowal: Borrowal) -> float:
-        days = borrowal.overdue_days()
-        return min(days * self.DAILY_RATE, self.MAX_FINE)
+    public String getBorrowalId() { return borrowalId; }
+    public Member getMember() { return member; }
+    public BookCopy getCopy() { return copy; }
+    public LocalDate getBorrowDate() { return borrowDate; }
+    public LocalDate getDueDate() { return dueDate; }
+    public LocalDate getReturnDate() { return returnDate; }
+    public void setReturnDate(LocalDate returnDate) { this.returnDate = returnDate; }
+}
 
+class Reservation {
+    private final String reservationId;
+    private final Member member;
+    private final Book book;
+    private final LocalDate reservedDate;
 
-class Library:
-    def __init__(self):
-        self.books: dict[str, Book] = {}
-        self.members: dict[str, Member] = {}
-        self.borrowals: dict[str, Borrowal] = {}
-        self.reservations: dict[str, deque] = {}
-        self.fine_calculator = FineCalculator()
+    public Reservation(String reservationId, Member member, Book book, LocalDate reservedDate) {
+        this.reservationId = reservationId;
+        this.member = member;
+        this.book = book;
+        this.reservedDate = reservedDate;
+    }
 
-    def add_book(self, book: Book):
-        self.books[book.isbn] = book
-        self.reservations[book.isbn] = deque()
+    public String getReservationId() { return reservationId; }
+    public Member getMember() { return member; }
+    public Book getBook() { return book; }
+    public LocalDate getReservedDate() { return reservedDate; }
+}
 
-    def add_member(self, member: Member):
-        self.members[member.member_id] = member
+class FineCalculator {
+    static final double DAILY_RATE = 1.0;   // dollars per day
+    static final double MAX_FINE = 25.0;
 
-    def search_books(self, query: str, field: str = "title") -> list[Book]:
-        query = query.lower()
-        return [b for b in self.books.values()
-                if query in getattr(b, field, "").lower()]
+    public double calculate(Borrowal borrowal) {
+        int days = borrowal.overdueDays();
+        return Math.min(days * DAILY_RATE, MAX_FINE);
+    }
+}
 
-    def borrow_book(self, member_id: str, isbn: str,
-                    loan_days: int = 14) -> Borrowal:
-        member = self.members[member_id]
-        book = self.books[isbn]
+class Library {
+    private final Map<String, Book> books = new HashMap<>();
+    private final Map<String, Member> members = new HashMap<>();
+    private final Map<String, Borrowal> borrowals = new HashMap<>();
+    private final Map<String, Deque<Reservation>> reservations = new HashMap<>();
+    private final FineCalculator fineCalculator = new FineCalculator();
 
-        if not member.can_borrow():
-            raise ValueError("Member cannot borrow: overdue books or fines outstanding")
+    public void addBook(Book book) {
+        books.put(book.getIsbn(), book);
+        reservations.put(book.getIsbn(), new ArrayDeque<>());
+    }
 
-        available = book.available_copies()
-        if not available:
-            raise ValueError("No available copies; consider reserving")
+    public void addMember(Member member) {
+        members.put(member.getMemberId(), member);
+    }
 
-        copy = available[0]
-        today = date.today()
-        borrowal = Borrowal(
-            borrowal_id=str(uuid.uuid4()),
-            member=member,
-            copy=copy,
-            borrow_date=today,
-            due_date=date.fromordinal(today.toordinal() + loan_days),
-        )
-        copy.status = CopyStatus.CHECKED_OUT
-        copy.active_borrowal = borrowal
-        member.active_borrowals.append(borrowal)
-        self.borrowals[borrowal.borrowal_id] = borrowal
-        return borrowal
+    public List<Book> searchBooks(String query, String field) {
+        String q = query.toLowerCase();
+        List<Book> result = new ArrayList<>();
+        for (Book b : books.values()) {
+            String value = switch (field) {
+                case "title" -> b.getTitle();
+                case "author" -> b.getAuthor();
+                case "isbn" -> b.getIsbn();
+                case "genre" -> b.getGenre();
+                default -> "";
+            };
+            if (value.toLowerCase().contains(q)) {
+                result.add(b);
+            }
+        }
+        return result;
+    }
 
-    def return_book(self, borrowal_id: str) -> float:
-        borrowal = self.borrowals[borrowal_id]
-        if borrowal.return_date is not None:
-            raise ValueError("Book already returned")
+    public Borrowal borrowBook(String memberId, String isbn, int loanDays) {
+        Member member = members.get(memberId);
+        Book book = books.get(isbn);
 
-        borrowal.return_date = date.today()
-        fine = self.fine_calculator.calculate(borrowal)
-        if fine > 0:
-            borrowal.member.pending_fines += fine
+        if (!member.canBorrow()) {
+            throw new IllegalStateException("Member cannot borrow: overdue books or fines outstanding");
+        }
 
-        copy = borrowal.copy
-        member = borrowal.member
-        member.active_borrowals.remove(borrowal)
+        List<BookCopy> available = book.availableCopies();
+        if (available.isEmpty()) {
+            throw new IllegalStateException("No available copies; consider reserving");
+        }
 
-        isbn = copy.book.isbn
-        queue = self.reservations.get(isbn, deque())
-        if queue:
-            reservation = queue.popleft()
-            copy.status = CopyStatus.RESERVED
-            self._notify(reservation.member, copy)
-        else:
-            copy.status = CopyStatus.AVAILABLE
+        BookCopy copy = available.get(0);
+        LocalDate today = LocalDate.now();
+        Borrowal borrowal = new Borrowal(
+                UUID.randomUUID().toString(),
+                member,
+                copy,
+                today,
+                today.plusDays(loanDays)
+        );
+        copy.setStatus(CopyStatus.CHECKED_OUT);
+        copy.setActiveBorrowal(borrowal);
+        member.getActiveBorrowals().add(borrowal);
+        borrowals.put(borrowal.getBorrowalId(), borrowal);
+        return borrowal;
+    }
 
-        copy.active_borrowal = None
-        return fine
+    public Borrowal borrowBook(String memberId, String isbn) {
+        return borrowBook(memberId, isbn, 14);
+    }
 
-    def reserve_book(self, member_id: str, isbn: str) -> Reservation:
-        member = self.members[member_id]
-        book = self.books[isbn]
-        reservation = Reservation(
-            reservation_id=str(uuid.uuid4()),
-            member=member,
-            book=book,
-            reserved_date=date.today(),
-        )
-        self.reservations[isbn].append(reservation)
-        return reservation
+    public double returnBook(String borrowalId) {
+        Borrowal borrowal = borrowals.get(borrowalId);
+        if (borrowal.getReturnDate() != null) {
+            throw new IllegalStateException("Book already returned");
+        }
 
-    def _notify(self, member: Member, copy: BookCopy):
-        print(f"Notification: {member.name}, copy {copy.copy_id} of "
-              f"'{copy.book.title}' is ready for pickup.")
+        borrowal.setReturnDate(LocalDate.now());
+        double fine = fineCalculator.calculate(borrowal);
+        if (fine > 0) {
+            borrowal.getMember().setPendingFines(borrowal.getMember().getPendingFines() + fine);
+        }
+
+        BookCopy copy = borrowal.getCopy();
+        Member member = borrowal.getMember();
+        member.getActiveBorrowals().remove(borrowal);
+
+        String isbn = copy.getBook().getIsbn();
+        Deque<Reservation> queue = reservations.getOrDefault(isbn, new ArrayDeque<>());
+        if (!queue.isEmpty()) {
+            Reservation reservation = queue.pollFirst();
+            copy.setStatus(CopyStatus.RESERVED);
+            notify(reservation.getMember(), copy);
+        } else {
+            copy.setStatus(CopyStatus.AVAILABLE);
+        }
+
+        copy.setActiveBorrowal(null);
+        return fine;
+    }
+
+    public Reservation reserveBook(String memberId, String isbn) {
+        Member member = members.get(memberId);
+        Book book = books.get(isbn);
+        Reservation reservation = new Reservation(
+                UUID.randomUUID().toString(),
+                member,
+                book,
+                LocalDate.now()
+        );
+        reservations.get(isbn).addLast(reservation);
+        return reservation;
+    }
+
+    private void notify(Member member, BookCopy copy) {
+        System.out.println(String.format(
+                "Notification: %s, copy %s of '%s' is ready for pickup.",
+                member.getName(), copy.getCopyId(), copy.getBook().getTitle()));
+    }
+
+    public Map<String, Borrowal> getBorrowals() { return borrowals; }
+}
 ```
 
 ---
@@ -401,42 +518,57 @@ Scenario: Alice (STANDARD) borrows "Clean Code"; Bob reserves it; Alice returns 
 
 Book is a logical title record (isbn, metadata). BookCopy is one physical item that can be checked out independently. Without this split you cannot express "3 copies of Clean Code: one checked out, two available."
 
-```python
-# Adding a copy to an existing book title
-new_copy = BookCopy(copy_id=str(uuid.uuid4()), book=book)
-book.copies.append(new_copy)
+```java
+// Adding a copy to an existing book title
+BookCopy newCopy = new BookCopy(UUID.randomUUID().toString(), book);
+book.getCopies().add(newCopy);
 ```
 
 ### 2. "How does fine calculation work with a cap?"
 
 Strategy pattern: `FineCalculator.calculate(borrowal)` computes `min(days * rate, max_fine)`. To change the policy (weekend exclusion, per-genre rates), subclass `FineCalculator` and swap it in Library.
 
-```python
-class WeekdayFineCalculator(FineCalculator):
-    def calculate(self, borrowal: Borrowal) -> float:
-        # count only weekdays between due_date and return_date
-        due = borrowal.due_date
-        ret = borrowal.return_date or date.today()
-        days = sum(1 for i in range((ret - due).days)
-                   if (due.toordinal() + i) % 7 not in (5, 6))
-        return min(days * self.DAILY_RATE, self.MAX_FINE)
+```java
+class WeekdayFineCalculator extends FineCalculator {
+    @Override
+    public double calculate(Borrowal borrowal) {
+        // count only weekdays between due_date and return_date
+        LocalDate due = borrowal.getDueDate();
+        LocalDate ret = (borrowal.getReturnDate() != null) ? borrowal.getReturnDate() : LocalDate.now();
+        long totalDays = java.time.temporal.ChronoUnit.DAYS.between(due, ret);
+        int days = 0;
+        for (long i = 0; i < totalDays; i++) {
+            LocalDate d = due.plusDays(i);
+            java.time.DayOfWeek dow = d.getDayOfWeek();
+            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) {
+                days++;
+            }
+        }
+        return Math.min(days * DAILY_RATE, MAX_FINE);
+    }
+}
 ```
 
 ### 3. "How does the reservation queue work?"
 
 Per-isbn `deque` of `Reservation` objects ordered by `reserved_date`. On return, `popleft()` gives the earliest reserver. The copy is set to RESERVED (not AVAILABLE) so it cannot be grabbed by a walk-in borrower before the notified member arrives.
 
-```python
-# Hold period: if reserver doesn't pick up within N days, release
-def expire_reservations(self):
-    for isbn, queue in self.reservations.items():
-        today = date.today()
-        while queue:
-            r = queue[0]
-            if (today - r.reserved_date).days > 3:
-                queue.popleft()
-            else:
-                break
+```java
+// Hold period: if reserver doesn't pick up within N days, release
+public void expireReservations() {
+    LocalDate today = LocalDate.now();
+    for (Deque<Reservation> queue : reservations.values()) {
+        while (!queue.isEmpty()) {
+            Reservation r = queue.peekFirst();
+            long daysWaiting = java.time.temporal.ChronoUnit.DAYS.between(r.getReservedDate(), today);
+            if (daysWaiting > 3) {
+                queue.pollFirst();
+            } else {
+                break;
+            }
+        }
+    }
+}
 ```
 
 ### 4. "How do membership tiers set borrow limits?"
@@ -447,15 +579,22 @@ def expire_reservations(self):
 
 Observer pattern: register an `OverdueObserver` that the Library calls on a daily scheduler task. The observer iterates all active borrowals and emails members whose due_date has passed.
 
-```python
-class OverdueObserver:
-    def check(self, library: Library):
-        for borrowal in library.borrowals.values():
-            if borrowal.return_date is None and borrowal.is_overdue():
-                self._send_reminder(borrowal.member, borrowal)
+```java
+class OverdueObserver {
+    public void check(Library library) {
+        for (Borrowal borrowal : library.getBorrowals().values()) {
+            if (borrowal.getReturnDate() == null && borrowal.isOverdue()) {
+                sendReminder(borrowal.getMember(), borrowal);
+            }
+        }
+    }
 
-    def _send_reminder(self, member: Member, borrowal: Borrowal):
-        print(f"Reminder to {member.email}: return '{borrowal.copy.book.title}'")
+    private void sendReminder(Member member, Borrowal borrowal) {
+        System.out.println(String.format(
+                "Reminder to %s: return '%s'",
+                member.getEmail(), borrowal.getCopy().getBook().getTitle()));
+    }
+}
 ```
 
 ---

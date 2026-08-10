@@ -111,7 +111,7 @@ class Movie:
 class Hall:
 - hall_id: str
 - name: str
-- seats: list[list[Seat]]   # 2D grid: rows x cols
+- seats: List<List<Seat>>   # 2D grid: rows x cols
 - total_capacity: int
 
 class Seat:
@@ -131,10 +131,10 @@ class Show:
 - hall: Hall
 - start_time: datetime
 - end_time: datetime
-- seat_prices: dict[SeatCategory, float]
-- seat_locks: dict[str, SeatLock]       # seat_id -> active lock
-- confirmed_seats: set[str]             # seat_ids confirmed in bookings
-- _lock: threading.Lock                 # for atomic seat operations
+- seat_prices: Map<SeatCategory, Double>
+- seat_locks: Map<String, SeatLock>       # seat_id -> active lock
+- confirmed_seats: Set<String>             # seat_ids confirmed in bookings
+- lock: ReentrantLock                     # for atomic seat operations
 ```
 
 ### SeatLock
@@ -159,13 +159,13 @@ class Booking:
 - booking_id: str
 - user_id: str
 - show: Show
-- seats: list[Seat]
+- seats: List<Seat>
 - total_amount: float
 - status: BookingStatus     # PENDING, CONFIRMED, CANCELLED
 - created_at: datetime
-- confirmed_at: datetime | None
-- cancelled_at: datetime | None
-- payment_id: str | None
+- confirmed_at: datetime  # nullable
+- cancelled_at: datetime  # nullable
+- payment_id: String  # nullable
 ```
 
 ### PaymentService (abstract)
@@ -206,34 +206,42 @@ class TimedRefundPolicy(CancellationPolicy):
 - Seat locked by same user again — treat as conflict (force cancel first)
 - Partial lock failure — must be all-or-nothing (rollback created locks)
 
-```python
-def lock_seats(self, show: Show, seat_ids: list[str],
-               user_id: str) -> list[SeatLock]:
-    with show._lock:
-        # First pass: validate all seats
-        for seat_id in seat_ids:
-            if seat_id in show.confirmed_seats:
-                raise SeatUnavailableError(f"Seat {seat_id} is already booked")
-            existing_lock = show.seat_locks.get(seat_id)
-            if existing_lock and not existing_lock.is_expired():
-                raise SeatUnavailableError(f"Seat {seat_id} is currently held by another user")
+```java
+public List<SeatLock> lockSeats(Show show, List<String> seatIds, String userId) {
+    show.getLock().lock();
+    try {
+        // First pass: validate all seats
+        for (String seatId : seatIds) {
+            if (show.getConfirmedSeats().contains(seatId)) {
+                throw new SeatUnavailableError("Seat " + seatId + " is already booked");
+            }
+            SeatLock existingLock = show.getSeatLocks().get(seatId);
+            if (existingLock != null && !existingLock.isExpired()) {
+                throw new SeatUnavailableError("Seat " + seatId + " is currently held by another user");
+            }
+        }
 
-        # Second pass: create locks (atomic since we hold show._lock)
-        now = datetime.now()
-        locks = []
-        for seat_id in seat_ids:
-            lock = SeatLock(
-                lock_id=str(uuid.uuid4()),
-                seat_id=seat_id,
-                show_id=show.show_id,
-                user_id=user_id,
-                locked_at=now,
-                expires_at=now + timedelta(minutes=10)
-            )
-            show.seat_locks[seat_id] = lock
-            locks.append(lock)
+        // Second pass: create locks (atomic since we hold show's lock)
+        LocalDateTime now = LocalDateTime.now();
+        List<SeatLock> locks = new ArrayList<>();
+        for (String seatId : seatIds) {
+            SeatLock lock = new SeatLock(
+                UUID.randomUUID().toString(),
+                seatId,
+                show.getShowId(),
+                userId,
+                now,
+                now.plusMinutes(10)
+            );
+            show.getSeatLocks().put(seatId, lock);
+            locks.add(lock);
+        }
 
-        return locks
+        return locks;
+    } finally {
+        show.getLock().unlock();
+    }
+}
 ```
 
 ### Core Method: confirm_booking
@@ -249,44 +257,57 @@ def lock_seats(self, show: Show, seat_ids: list[str],
 - Lock expired between lock_seats and confirm — payment hasn't happened yet, release and fail cleanly
 - Payment failure — release locks, set booking to CANCELLED
 
-```python
-def confirm_booking(self, booking: Booking,
-                    payment_service: PaymentService) -> Booking:
-    if booking.status != BookingStatus.PENDING:
-        raise InvalidStateError(f"Cannot confirm a {booking.status} booking")
+```java
+public Booking confirmBooking(Booking booking, PaymentService paymentService) {
+    if (booking.getStatus() != BookingStatus.PENDING) {
+        throw new InvalidStateError("Cannot confirm a " + booking.getStatus() + " booking");
+    }
 
-    show = booking.show
-    seat_ids = [seat.seat_id for seat in booking.seats]
+    Show show = booking.getShow();
+    List<String> seatIds = booking.getSeats().stream()
+        .map(Seat::getSeatId)
+        .collect(Collectors.toList());
 
-    with show._lock:
-        # Verify locks still valid
-        for seat_id in seat_ids:
-            lock = show.seat_locks.get(seat_id)
-            if lock is None or lock.is_expired() or lock.user_id != booking.user_id:
-                booking.status = BookingStatus.CANCELLED
-                raise LockExpiredError("Seat lock expired. Please retry booking.")
+    show.getLock().lock();
+    try {
+        // Verify locks still valid
+        for (String seatId : seatIds) {
+            SeatLock lock = show.getSeatLocks().get(seatId);
+            if (lock == null || lock.isExpired() || !lock.getUserId().equals(booking.getUserId())) {
+                booking.setStatus(BookingStatus.CANCELLED);
+                throw new LockExpiredError("Seat lock expired. Please retry booking.");
+            }
+        }
 
-        # Process payment
-        try:
-            payment_id = payment_service.charge(
-                booking.user_id, booking.total_amount, booking.booking_id
-            )
-        except PaymentError:
-            # Release locks on payment failure
-            for seat_id in seat_ids:
-                show.seat_locks.pop(seat_id, None)
-            booking.status = BookingStatus.CANCELLED
-            raise
+        // Process payment
+        String paymentId;
+        try {
+            paymentId = paymentService.charge(
+                booking.getUserId(), booking.getTotalAmount(), booking.getBookingId()
+            );
+        } catch (PaymentError e) {
+            // Release locks on payment failure
+            for (String seatId : seatIds) {
+                show.getSeatLocks().remove(seatId);
+            }
+            booking.setStatus(BookingStatus.CANCELLED);
+            throw e;
+        }
 
-        # Confirm seats
-        for seat_id in seat_ids:
-            show.seat_locks.pop(seat_id)
-            show.confirmed_seats.add(seat_id)
+        // Confirm seats
+        for (String seatId : seatIds) {
+            show.getSeatLocks().remove(seatId);
+            show.getConfirmedSeats().add(seatId);
+        }
 
-        booking.status = BookingStatus.CONFIRMED
-        booking.payment_id = payment_id
-        booking.confirmed_at = datetime.now()
-        return booking
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setPaymentId(paymentId);
+        booking.setConfirmedAt(LocalDateTime.now());
+        return booking;
+    } finally {
+        show.getLock().unlock();
+    }
+}
 ```
 
 ### Core Method: cancel_booking
@@ -298,44 +319,59 @@ def confirm_booking(self, booking: Booking,
 4. Remove seats from confirmed_seats
 5. Set booking to CANCELLED
 
-```python
-def cancel_booking(self, booking: Booking, payment_service: PaymentService,
-                   cancellation_policy: CancellationPolicy) -> float:
-    if booking.status != BookingStatus.CONFIRMED:
-        raise InvalidStateError("Can only cancel a confirmed booking")
+```java
+public double cancelBooking(Booking booking, PaymentService paymentService,
+                             CancellationPolicy cancellationPolicy) {
+    if (booking.getStatus() != BookingStatus.CONFIRMED) {
+        throw new InvalidStateError("Can only cancel a confirmed booking");
+    }
 
-    cancelled_at = datetime.now()
-    refund_amount = cancellation_policy.compute_refund(booking, cancelled_at)
+    LocalDateTime cancelledAt = LocalDateTime.now();
+    double refundAmount = cancellationPolicy.computeRefund(booking, cancelledAt);
 
-    if refund_amount > 0:
-        payment_service.refund(booking.payment_id, refund_amount)
+    if (refundAmount > 0) {
+        paymentService.refund(booking.getPaymentId(), refundAmount);
+    }
 
-    show = booking.show
-    with show._lock:
-        for seat in booking.seats:
-            show.confirmed_seats.discard(seat.seat_id)
+    Show show = booking.getShow();
+    show.getLock().lock();
+    try {
+        for (Seat seat : booking.getSeats()) {
+            show.getConfirmedSeats().remove(seat.getSeatId());
+        }
+    } finally {
+        show.getLock().unlock();
+    }
 
-    booking.status = BookingStatus.CANCELLED
-    booking.cancelled_at = cancelled_at
-    return refund_amount
+    booking.setStatus(BookingStatus.CANCELLED);
+    booking.setCancelledAt(cancelledAt);
+    return refundAmount;
+}
 ```
 
 ### SeatLock.is_expired + release_expired_locks
 
-```python
-def is_expired(self) -> bool:
-    return datetime.now() > self.expires_at
+```java
+public boolean isExpired() {
+    return LocalDateTime.now().isAfter(this.expiresAt);
+}
 
-def release_expired_locks(self, show: Show) -> int:
-    """Returns count of locks released. Call lazily or on a scheduler."""
-    with show._lock:
-        expired = [
-            seat_id for seat_id, lock in show.seat_locks.items()
-            if lock.is_expired()
-        ]
-        for seat_id in expired:
-            del show.seat_locks[seat_id]
-        return len(expired)
+// Returns count of locks released. Call lazily or on a scheduler.
+public int releaseExpiredLocks(Show show) {
+    show.getLock().lock();
+    try {
+        List<String> expired = show.getSeatLocks().entrySet().stream()
+            .filter(entry -> entry.getValue().isExpired())
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toList());
+        for (String seatId : expired) {
+            show.getSeatLocks().remove(seatId);
+        }
+        return expired.size();
+    } finally {
+        show.getLock().unlock();
+    }
+}
 ```
 
 ---
@@ -372,12 +408,17 @@ def release_expired_locks(self, show: Show) -> int:
 
 **Lazy expiry**: On each call to `lock_seats`, scan `seat_locks` and remove expired entries before checking availability. No background thread needed. The downside: stale locks stay in memory until the next `lock_seats` call for that show.
 
-```python
-def _evict_expired_locks(self, show: Show):
-    # Called at start of lock_seats, under show._lock
-    expired = [sid for sid, lock in show.seat_locks.items() if lock.is_expired()]
-    for sid in expired:
-        del show.seat_locks[sid]
+```java
+private void evictExpiredLocks(Show show) {
+    // Called at start of lockSeats, under show's lock
+    List<String> expired = show.getSeatLocks().entrySet().stream()
+        .filter(entry -> entry.getValue().isExpired())
+        .map(Map.Entry::getKey)
+        .collect(Collectors.toList());
+    for (String sid : expired) {
+        show.getSeatLocks().remove(sid);
+    }
+}
 ```
 
 **Scheduler-based expiry**: A background thread runs every 30 seconds, scans all shows for expired locks, and releases them. Keeps memory clean and shows accurate availability. Requires thread-safe iteration.
@@ -388,7 +429,7 @@ def _evict_expired_locks(self, show: Show):
 
 The critical section is: check availability + create lock. These must be atomic.
 
-The show-level `_lock` (threading.Lock) makes this atomic in a single-node system. The sequence under the lock:
+The show-level `lock` (`ReentrantLock`) makes this atomic in a single-node system. The sequence under the lock:
 1. Check all seats — if any fail, raise immediately (no partial state)
 2. Create all locks — only if all seats pass validation
 
@@ -396,27 +437,34 @@ This prevents the TOCTOU (time-of-check-time-of-use) race: without the lock, two
 
 For a distributed system (multiple app servers): the lock must be external. Use Redis with `SET NX PX` (set if not exists, with TTL):
 
-```python
-def lock_seat_redis(self, redis, show_id, seat_id, user_id, ttl_ms):
-    key = f"seat_lock:{show_id}:{seat_id}"
-    acquired = redis.set(key, user_id, nx=True, px=ttl_ms)
-    return acquired  # True if locked, False if already taken
+```java
+public boolean lockSeatRedis(RedisCommands<String, String> redis, String showId,
+                              String seatId, String userId, long ttlMs) {
+    String key = String.format("seat_lock:%s:%s", showId, seatId);
+    SetArgs args = SetArgs.Builder.nx().px(ttlMs);
+    String result = redis.set(key, userId, args);
+    return result != null;  // true if locked, false if already taken
+}
 ```
 
 Redis SET NX is atomic. Lock all requested seats using a pipeline. If any fail, release already-acquired locks via DEL.
 
 ### 3. "How do you handle cancellation and refund?"
 
-```python
-class TimedRefundPolicy(CancellationPolicy):
-    def compute_refund(self, booking: Booking, cancelled_at: datetime) -> float:
-        hours_since_booking = (cancelled_at - booking.confirmed_at).total_seconds() / 3600
-        if hours_since_booking <= 2:
-            return booking.total_amount  # full refund
-        elif hours_since_booking <= 24:
-            return booking.total_amount * 0.5  # 50% refund
-        else:
-            return 0.0  # no refund (show may have already passed)
+```java
+public class TimedRefundPolicy implements CancellationPolicy {
+    @Override
+    public double computeRefund(Booking booking, LocalDateTime cancelledAt) {
+        long hoursSinceBooking = Duration.between(booking.getConfirmedAt(), cancelledAt).toMinutes() / 60;
+        if (hoursSinceBooking <= 2) {
+            return booking.getTotalAmount();  // full refund
+        } else if (hoursSinceBooking <= 24) {
+            return booking.getTotalAmount() * 0.5;  // 50% refund
+        } else {
+            return 0.0;  // no refund (show may have already passed)
+        }
+    }
+}
 ```
 
 On cancellation:
@@ -425,55 +473,64 @@ On cancellation:
 3. Release seats from `confirmed_seats` — these seats become available for new bookings
 4. Set booking.status = CANCELLED
 
-What if the show time has already passed? Add a guard: if `show.start_time < datetime.now()`, cancellation is disallowed (show already happened).
+What if the show time has already passed? Add a guard: if `show.getStartTime().isBefore(LocalDateTime.now())`, cancellation is disallowed (show already happened).
 
 ### 4. "How would you implement seat recommendation (best available)?"
 
 Define "best" as premium seats first, then best row/column position (center of hall):
 
-```python
-def find_best_seats(self, show: Show, count: int,
-                    preferred_category: SeatCategory) -> list[Seat]:
-    available = [
-        seat
-        for row in show.hall.seats
-        for seat in row
-        if seat.seat_id not in show.confirmed_seats
-        and not self._has_active_lock(show, seat.seat_id)
-    ]
+```java
+public List<Seat> findBestSeats(Show show, int count, SeatCategory preferredCategory) {
+    List<Seat> available = new ArrayList<>();
+    for (List<Seat> row : show.getHall().getSeats()) {
+        for (Seat seat : row) {
+            if (!show.getConfirmedSeats().contains(seat.getSeatId())
+                    && !hasActiveLock(show, seat.getSeatId())) {
+                available.add(seat);
+            }
+        }
+    }
 
-    # Score: prefer requested category, then proximity to center
-    center_row = show.hall.total_rows // 2
-    center_col = show.hall.total_cols // 2
+    // Score: prefer requested category, then proximity to center
+    int centerRow = show.getHall().getTotalRows() / 2;
+    int centerCol = show.getHall().getTotalCols() / 2;
 
-    def score(seat):
-        category_match = 0 if seat.seat_category == preferred_category else 1
-        distance = abs(seat.row - center_row) + abs(seat.col - center_col)
-        return (category_match, distance)
+    Comparator<Seat> byScore = Comparator
+        .comparingInt((Seat s) -> s.getSeatCategory() == preferredCategory ? 0 : 1)
+        .thenComparingInt(s -> Math.abs(s.getRow() - centerRow) + Math.abs(s.getCol() - centerCol));
 
-    available.sort(key=score)
+    available.sort(byScore);
 
-    # Find count consecutive seats in the same row (better UX)
-    for i in range(len(available) - count + 1):
-        group = available[i:i+count]
-        if all(s.row == group[0].row for s in group):
-            return group
+    // Find count consecutive seats in the same row (better UX)
+    for (int i = 0; i <= available.size() - count; i++) {
+        List<Seat> group = available.subList(i, i + count);
+        int firstRow = group.get(0).getRow();
+        boolean sameRow = group.stream().allMatch(s -> s.getRow() == firstRow);
+        if (sameRow) {
+            return new ArrayList<>(group);
+        }
+    }
 
-    return available[:count]  # fallback: any available seats
+    return new ArrayList<>(available.subList(0, Math.min(count, available.size())));  // fallback
+}
 ```
 
 ### 5. "How do you handle sold-out shows?"
 
-A show is sold-out when `len(confirmed_seats) + len(active_locks) == hall.total_capacity`.
+A show is sold-out when `confirmedSeats.size() + activeLocks.size() == hall.getTotalCapacity()`.
 
-```python
-def is_sold_out(self, show: Show) -> bool:
-    with show._lock:
-        active_lock_count = sum(
-            1 for lock in show.seat_locks.values()
-            if not lock.is_expired()
-        )
-        return len(show.confirmed_seats) + active_lock_count >= show.hall.total_capacity
+```java
+public boolean isSoldOut(Show show) {
+    show.getLock().lock();
+    try {
+        long activeLockCount = show.getSeatLocks().values().stream()
+            .filter(lock -> !lock.isExpired())
+            .count();
+        return show.getConfirmedSeats().size() + activeLockCount >= show.getHall().getTotalCapacity();
+    } finally {
+        show.getLock().unlock();
+    }
+}
 ```
 
 For the browse experience, compute `available_count` as `total - confirmed - active_locks`. Show "Filling Fast" below a threshold (e.g., < 10% remaining). Show "Sold Out" at 0 available.

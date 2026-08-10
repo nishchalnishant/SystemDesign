@@ -189,25 +189,42 @@ class VendingMachine:
 - Invalid item code — raise error, stay in IDLE
 - Item out of stock — raise error, stay in IDLE
 
-```python
-class IdleState(VendingMachineState):
-    def select_item(self, code: str) -> None:
-        item = self.machine.inventory.get_item(code)
-        if item is None:
-            raise ValueError(f"Unknown item code: {code}")
-        if not self.machine.inventory.is_available(code):
-            raise OutOfStockError(f"{item.name} is out of stock")
-        self.machine.selected_item = item
-        self.machine.set_state(ItemSelectedState(self.machine))
+```java
+public class IdleState implements VendingMachineState {
+    private final VendingMachine machine;
 
-    def insert_coin(self, amount_cents: int) -> None:
-        raise InvalidOperationError("Select an item first")
+    public IdleState(VendingMachine machine) {
+        this.machine = machine;
+    }
 
-    def complete_purchase(self) -> None:
-        raise InvalidOperationError("Select an item first")
+    @Override
+    public void selectItem(String code) {
+        Item item = machine.getInventory().getItem(code);
+        if (item == null) {
+            throw new IllegalArgumentException("Unknown item code: " + code);
+        }
+        if (!machine.getInventory().isAvailable(code)) {
+            throw new OutOfStockError(item.getName() + " is out of stock");
+        }
+        machine.setSelectedItem(item);
+        machine.setState(new ItemSelectedState(machine));
+    }
 
-    def cancel(self) -> None:
-        pass  # Nothing to cancel in idle
+    @Override
+    public void insertCoin(int amountCents) {
+        throw new InvalidOperationError("Select an item first");
+    }
+
+    @Override
+    public void completePurchase() {
+        throw new InvalidOperationError("Select an item first");
+    }
+
+    @Override
+    public void cancel() {
+        // Nothing to cancel in idle
+    }
+}
 ```
 
 ### Core Method: insert_coin (in PaymentState)
@@ -217,37 +234,53 @@ class IdleState(VendingMachineState):
 2. Add coin to machine's CoinChanger pool
 3. If inserted_amount >= item price, automatically attempt purchase
 
-```python
-class PaymentState(VendingMachineState):
-    def insert_coin(self, amount_cents: int) -> None:
-        self.machine.inserted_amount += amount_cents
-        self.machine.coin_changer.add_coins({amount_cents: 1})
+```java
+public class PaymentState implements VendingMachineState {
+    private final VendingMachine machine;
 
-        if self.machine.inserted_amount >= self.machine.selected_item.price_cents:
-            self.complete_purchase()
+    public PaymentState(VendingMachine machine) {
+        this.machine = machine;
+    }
 
-    def complete_purchase(self) -> None:
-        item = self.machine.selected_item
-        change = self.machine.inserted_amount - item.price_cents
+    @Override
+    public void insertCoin(int amountCents) {
+        machine.setInsertedAmount(machine.getInsertedAmount() + amountCents);
+        machine.getCoinChanger().addCoins(Map.of(amountCents, 1));
 
-        if change > 0 and not self.machine.coin_changer.can_make_change(change):
-            # Cannot give change — refund all coins
-            returned = self.machine.coin_changer.make_change(
-                self.machine.inserted_amount
-            )
-            self.machine.inserted_amount = 0
-            self.machine.selected_item = None
-            self.machine.set_state(IdleState(self.machine))
-            raise InsufficientChangeError(f"Cannot make change of {change} cents. Coins returned.")
+        if (machine.getInsertedAmount() >= machine.getSelectedItem().getPriceCents()) {
+            completePurchase();
+        }
+    }
 
-        self.machine.set_state(DispensingState(self.machine))
-        self.machine.state.dispense()
+    @Override
+    public void completePurchase() {
+        Item item = machine.getSelectedItem();
+        int change = machine.getInsertedAmount() - item.getPriceCents();
 
-    def cancel(self) -> None:
-        returned = self.machine.coin_changer.make_change(self.machine.inserted_amount)
-        self.machine.inserted_amount = 0
-        self.machine.selected_item = None
-        self.machine.set_state(IdleState(self.machine))
+        if (change > 0 && !machine.getCoinChanger().canMakeChange(change)) {
+            // Cannot give change — refund all coins
+            Map<Integer, Integer> returned = machine.getCoinChanger()
+                .makeChange(machine.getInsertedAmount());
+            machine.setInsertedAmount(0);
+            machine.setSelectedItem(null);
+            machine.setState(new IdleState(machine));
+            throw new InsufficientChangeError(
+                "Cannot make change of " + change + " cents. Coins returned.");
+        }
+
+        machine.setState(new DispensingState(machine));
+        machine.getState().dispense();
+    }
+
+    @Override
+    public void cancel() {
+        Map<Integer, Integer> returned = machine.getCoinChanger()
+            .makeChange(machine.getInsertedAmount());
+        machine.setInsertedAmount(0);
+        machine.setSelectedItem(null);
+        machine.setState(new IdleState(machine));
+    }
+}
 ```
 
 ### Core Method: CoinChanger.make_change
@@ -255,54 +288,72 @@ class PaymentState(VendingMachineState):
 **Core logic:**
 Uses a greedy algorithm with available denominations (works correctly when denominations are standard currency coins).
 
-```python
-def make_change(self, amount_cents: int) -> dict[int, int]:
-    change = {}
-    remaining = amount_cents
-    for denom in self.coin_denominations:  # sorted descending
-        count = min(remaining // denom, self.available_coins.get(denom, 0))
-        if count > 0:
-            change[denom] = count
-            remaining -= count * denom
-            self.available_coins[denom] -= count
-    if remaining != 0:
-        raise InsufficientChangeError(f"Cannot make exact change for {amount_cents} cents")
-    return change
+```java
+public Map<Integer, Integer> makeChange(int amountCents) {
+    Map<Integer, Integer> change = new HashMap<>();
+    int remaining = amountCents;
+    for (int denom : coinDenominations) { // sorted descending
+        int count = Math.min(remaining / denom, availableCoins.getOrDefault(denom, 0));
+        if (count > 0) {
+            change.put(denom, count);
+            remaining -= count * denom;
+            availableCoins.merge(denom, -count, Integer::sum);
+        }
+    }
+    if (remaining != 0) {
+        throw new InsufficientChangeError(
+            "Cannot make exact change for " + amountCents + " cents");
+    }
+    return change;
+}
 
-def can_make_change(self, amount_cents: int) -> bool:
-    try:
-        # Simulate without modifying state
-        temp = dict(self.available_coins)
-        remaining = amount_cents
-        for denom in self.coin_denominations:
-            count = min(remaining // denom, temp.get(denom, 0))
-            remaining -= count * denom
-        return remaining == 0
-    except Exception:
-        return False
+public boolean canMakeChange(int amountCents) {
+    try {
+        // Simulate without modifying state
+        Map<Integer, Integer> temp = new HashMap<>(availableCoins);
+        int remaining = amountCents;
+        for (int denom : coinDenominations) {
+            int count = Math.min(remaining / denom, temp.getOrDefault(denom, 0));
+            remaining -= count * denom;
+        }
+        return remaining == 0;
+    } catch (Exception e) {
+        return false;
+    }
+}
 ```
 
 ### DispensingState.dispense
 
-```python
-class DispensingState(VendingMachineState):
-    def dispense(self) -> None:
-        item = self.machine.selected_item
-        change = self.machine.inserted_amount - item.price_cents
+```java
+public class DispensingState implements VendingMachineState {
+    private final VendingMachine machine;
 
-        # Dispense item
-        self.machine.inventory.decrement(item.code)
-        print(f"Dispensing: {item.name}")
+    public DispensingState(VendingMachine machine) {
+        this.machine = machine;
+    }
 
-        # Return change
-        if change > 0:
-            returned = self.machine.coin_changer.make_change(change)
-            print(f"Returning change: {returned}")
+    @Override
+    public void dispense() {
+        Item item = machine.getSelectedItem();
+        int change = machine.getInsertedAmount() - item.getPriceCents();
 
-        # Reset machine
-        self.machine.inserted_amount = 0
-        self.machine.selected_item = None
-        self.machine.set_state(IdleState(self.machine))
+        // Dispense item
+        machine.getInventory().decrement(item.getCode());
+        System.out.println("Dispensing: " + item.getName());
+
+        // Return change
+        if (change > 0) {
+            Map<Integer, Integer> returned = machine.getCoinChanger().makeChange(change);
+            System.out.println("Returning change: " + returned);
+        }
+
+        // Reset machine
+        machine.setInsertedAmount(0);
+        machine.setSelectedItem(null);
+        machine.setState(new IdleState(machine));
+    }
+}
 ```
 
 ---
@@ -328,19 +379,22 @@ class DispensingState(VendingMachineState):
 
 Without State pattern:
 
-```python
-def insert_coin(self, amount):
-    if self.state == "IDLE":
-        raise InvalidOperationError(...)
-    elif self.state == "ITEM_SELECTED":
-        self.transition_to("PAYMENT")
-        self.inserted_amount += amount
-    elif self.state == "PAYMENT":
-        self.inserted_amount += amount
-        if self.inserted_amount >= self.item.price:
-            self.complete_purchase()
-    elif self.state == "DISPENSING":
-        raise InvalidOperationError(...)
+```java
+public void insertCoin(int amount) {
+    if (state.equals("IDLE")) {
+        throw new InvalidOperationError("...");
+    } else if (state.equals("ITEM_SELECTED")) {
+        transitionTo("PAYMENT");
+        insertedAmount += amount;
+    } else if (state.equals("PAYMENT")) {
+        insertedAmount += amount;
+        if (insertedAmount >= item.getPrice()) {
+            completePurchase();
+        }
+    } else if (state.equals("DISPENSING")) {
+        throw new InvalidOperationError("...");
+    }
+}
 ```
 
 Every method has a growing if/else block. Adding a new state means modifying every action method. With State pattern, adding a new state (e.g., `MaintenanceState`) means adding one class — zero changes to existing state classes. Each state class is independently testable and has a single clear responsibility.
@@ -349,26 +403,53 @@ Every method has a growing if/else block. Adding a new state means modifying eve
 
 Credit card payment is a different `PaymentMethod` strategy:
 
-```python
-class PaymentMethod:                    # abstract
-+ initiate(amount: float) -> str        # returns transaction_id
-+ confirm(transaction_id: str) -> bool
-+ refund(transaction_id: str) -> bool
+```java
+public interface PaymentMethod {
+    String initiate(double amount);       // returns transactionId
+    boolean confirm(String transactionId);
+    boolean refund(String transactionId);
+}
 
-class CoinPayment(PaymentMethod):
-    def initiate(self, amount):
-        # accumulate coins — return None (no external transaction)
-        ...
+public class CoinPayment implements PaymentMethod {
+    @Override
+    public String initiate(double amount) {
+        // accumulate coins — return null (no external transaction)
+        return null;
+    }
 
-class CardPayment(PaymentMethod):
-    def __init__(self, payment_gateway):
-        self.gateway = payment_gateway
+    @Override
+    public boolean confirm(String transactionId) {
+        return true;
+    }
 
-    def initiate(self, amount):
-        return self.gateway.charge(amount)
+    @Override
+    public boolean refund(String transactionId) {
+        return true;
+    }
+}
 
-    def confirm(self, transaction_id):
-        return self.gateway.verify(transaction_id)
+public class CardPayment implements PaymentMethod {
+    private final PaymentGateway gateway;
+
+    public CardPayment(PaymentGateway paymentGateway) {
+        this.gateway = paymentGateway;
+    }
+
+    @Override
+    public String initiate(double amount) {
+        return gateway.charge(amount);
+    }
+
+    @Override
+    public boolean confirm(String transactionId) {
+        return gateway.verify(transactionId);
+    }
+
+    @Override
+    public boolean refund(String transactionId) {
+        return gateway.refund(transactionId);
+    }
+}
 ```
 
 VendingMachine accepts a `PaymentMethod` at construction or per-session. The PaymentState uses whichever method is set. The state machine logic (transitions, inventory update) stays identical — only the payment mechanism changes.
@@ -387,26 +468,35 @@ The implementation above uses Option A. The `can_make_change` simulation runs wi
 
 Add an `AdminPanel` class that operates on `Inventory` and `CoinChanger` directly, bypassing the state machine:
 
-```python
-class AdminPanel:
-    def __init__(self, machine: VendingMachine):
-        self.machine = machine
+```java
+public class AdminPanel {
+    private final VendingMachine machine;
 
-    def restock_item(self, code: str, quantity: int) -> None:
-        if self.machine.state.__class__ != IdleState:
-            raise InvalidOperationError("Cannot restock during a transaction")
-        self.machine.inventory.restock(code, quantity)
+    public AdminPanel(VendingMachine machine) {
+        this.machine = machine;
+    }
 
-    def add_coins(self, coins: dict[int, int]) -> None:
-        self.machine.coin_changer.add_coins(coins)
+    public void restockItem(String code, int quantity) {
+        if (!(machine.getState() instanceof IdleState)) {
+            throw new InvalidOperationError("Cannot restock during a transaction");
+        }
+        machine.getInventory().restock(code, quantity);
+    }
 
-    def add_item_type(self, item: Item, quantity: int) -> None:
-        self.machine.inventory.add_item(item, quantity)
+    public void addCoins(Map<Integer, Integer> coins) {
+        machine.getCoinChanger().addCoins(coins);
+    }
 
-    def collect_revenue(self) -> float:
-        revenue = self.machine.revenue
-        self.machine.revenue = 0
-        return revenue
+    public void addItemType(Item item, int quantity) {
+        machine.getInventory().addItem(item, quantity);
+    }
+
+    public double collectRevenue() {
+        double revenue = machine.getRevenue();
+        machine.setRevenue(0);
+        return revenue;
+    }
+}
 ```
 
 The machine tracks `revenue: float` incrementing on each successful purchase. Admin can only restock when the machine is in IdleState to avoid race conditions mid-transaction.
@@ -438,217 +528,295 @@ The machine tracks `revenue: float` incrementing on each successful purchase. Ad
 
 A vending machine is a single physical device — transactions must be strictly sequential. These tests verify that concurrent access is correctly serialized and invariants hold under race conditions.
 
-```python
-import threading
-import time
-from enum import Enum, auto
-from dataclasses import dataclass, field
+```java
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
-# ── Minimal stub implementation (self-contained) ──
+// ── Minimal stub implementation (self-contained) ──
 
-class VendingException(Exception):
-    pass
+class VendingException extends RuntimeException {
+    public VendingException(String message) {
+        super(message);
+    }
+}
 
-@dataclass
-class Item:
-    code: str
-    name: str
-    price_cents: int
+class Item {
+    private final String code;
+    private final String name;
+    private final int priceCents;
 
-class Inventory:
-    def __init__(self):
-        self._items = {}
-        self._quantities = {}
-        self._lock = threading.Lock()
+    public Item(String code, String name, int priceCents) {
+        this.code = code;
+        this.name = name;
+        this.priceCents = priceCents;
+    }
 
-    def add_item(self, item, qty):
-        with self._lock:
-            self._items[item.code] = item
-            self._quantities[item.code] = qty
+    public String getCode() { return code; }
+    public String getName() { return name; }
+    public int getPriceCents() { return priceCents; }
+}
 
-    def get_item(self, code):
-        with self._lock:
-            if code not in self._items:
-                raise VendingException(f"Unknown code: {code}")
-            if self._quantities[code] == 0:
-                raise VendingException(f"Out of stock: {code}")
-            return self._items[code]
+class Inventory {
+    private final Map<String, Item> items = new HashMap<>();
+    private final Map<String, Integer> quantities = new HashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def decrement(self, code):
-        with self._lock:
-            if self._quantities.get(code, 0) == 0:
-                raise VendingException(f"Out of stock: {code}")
-            self._quantities[code] -= 1
+    public void addItem(Item item, int qty) {
+        lock.lock();
+        try {
+            items.put(item.getCode(), item);
+            quantities.put(item.getCode(), qty);
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def quantity(self, code):
-        with self._lock:
-            return self._quantities.get(code, 0)
+    public Item getItem(String code) {
+        lock.lock();
+        try {
+            if (!items.containsKey(code)) {
+                throw new VendingException("Unknown code: " + code);
+            }
+            if (quantities.get(code) == 0) {
+                throw new VendingException("Out of stock: " + code);
+            }
+            return items.get(code);
+        } finally {
+            lock.unlock();
+        }
+    }
 
+    public void decrement(String code) {
+        lock.lock();
+        try {
+            if (quantities.getOrDefault(code, 0) == 0) {
+                throw new VendingException("Out of stock: " + code);
+            }
+            quantities.merge(code, -1, Integer::sum);
+        } finally {
+            lock.unlock();
+        }
+    }
 
-class VendingMachine:
-    """Single-transaction serialization via a global reentrant lock."""
+    public int quantity(String code) {
+        lock.lock();
+        try {
+            return quantities.getOrDefault(code, 0);
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 
-    def __init__(self):
-        self.inventory = Inventory()
-        self._transaction_lock = threading.Lock()
-        self._inserted_cents = 0
-        self._selected_code = None
-        self._revenue = 0
+/** Single-transaction serialization via a global reentrant lock. */
+class VendingMachine {
+    private final Inventory inventory = new Inventory();
+    private final ReentrantLock transactionLock = new ReentrantLock();
+    private int insertedCents = 0;
+    private String selectedCode = null;
+    private int revenue = 0;
 
-    def select_item(self, code):
-        with self._transaction_lock:
-            item = self.inventory.get_item(code)
-            self._selected_code = code
-            self._inserted_cents = 0
-            return item
+    public Inventory getInventory() { return inventory; }
+    public int getRevenue() { return revenue; }
 
-    def insert_coin(self, cents):
-        with self._transaction_lock:
-            if self._selected_code is None:
-                raise VendingException("No item selected")
-            self._inserted_cents += cents
+    public Item selectItem(String code) {
+        transactionLock.lock();
+        try {
+            Item item = inventory.getItem(code);
+            selectedCode = code;
+            insertedCents = 0;
+            return item;
+        } finally {
+            transactionLock.unlock();
+        }
+    }
 
-    def dispense(self):
-        with self._transaction_lock:
-            if self._selected_code is None:
-                raise VendingException("No item selected")
-            item = self.inventory.get_item(self._selected_code)
-            if self._inserted_cents < item.price_cents:
-                raise VendingException(
-                    f"Insufficient: need {item.price_cents}, have {self._inserted_cents}"
-                )
-            change = self._inserted_cents - item.price_cents
-            self.inventory.decrement(self._selected_code)
-            self._revenue += item.price_cents
-            code = self._selected_code
-            self._selected_code = None
-            self._inserted_cents = 0
-            return change
+    public void insertCoin(int cents) {
+        transactionLock.lock();
+        try {
+            if (selectedCode == null) {
+                throw new VendingException("No item selected");
+            }
+            insertedCents += cents;
+        } finally {
+            transactionLock.unlock();
+        }
+    }
 
-    def cancel(self):
-        with self._transaction_lock:
-            refund = self._inserted_cents
-            self._selected_code = None
-            self._inserted_cents = 0
-            return refund
+    public int dispense() {
+        transactionLock.lock();
+        try {
+            if (selectedCode == null) {
+                throw new VendingException("No item selected");
+            }
+            Item item = inventory.getItem(selectedCode);
+            if (insertedCents < item.getPriceCents()) {
+                throw new VendingException(
+                    "Insufficient: need " + item.getPriceCents() + ", have " + insertedCents);
+            }
+            int change = insertedCents - item.getPriceCents();
+            inventory.decrement(selectedCode);
+            revenue += item.getPriceCents();
+            selectedCode = null;
+            insertedCents = 0;
+            return change;
+        } finally {
+            transactionLock.unlock();
+        }
+    }
 
+    public int cancel() {
+        transactionLock.lock();
+        try {
+            int refund = insertedCents;
+            selectedCode = null;
+            insertedCents = 0;
+            return refund;
+        } finally {
+            transactionLock.unlock();
+        }
+    }
+}
 
-# ─────────────────────────────────────────────────────────────
-# TEST 1: Inventory never goes negative under concurrent purchases
-# 100 threads all try to buy the same item (stock=10).
-# Exactly 10 must succeed; 90 must get VendingException.
-# ─────────────────────────────────────────────────────────────
-def test_inventory_never_negative():
-    vm = VendingMachine()
-    cola = Item("A1", "Cola", 150)
-    vm.inventory.add_item(cola, 10)
+public class VendingMachineConcurrencyTest {
 
-    successes = []
-    failures = []
-    lock = threading.Lock()
+    // ─────────────────────────────────────────────────────────────
+    // TEST 1: Inventory never goes negative under concurrent purchases
+    // 100 threads all try to buy the same item (stock=10).
+    // Exactly 10 must succeed; 90 must get VendingException.
+    // ─────────────────────────────────────────────────────────────
+    static void testInventoryNeverNegative() throws InterruptedException {
+        VendingMachine vm = new VendingMachine();
+        Item cola = new Item("A1", "Cola", 150);
+        vm.getInventory().addItem(cola, 10);
 
-    def buy():
-        try:
-            vm.select_item("A1")
-            vm.insert_coin(200)
-            change = vm.dispense()
-            with lock:
-                successes.append(change)
-        except VendingException as e:
-            with lock:
-                failures.append(str(e))
+        List<Integer> successes = Collections.synchronizedList(new ArrayList<>());
+        List<String> failures = Collections.synchronizedList(new ArrayList<>());
 
-    threads = [threading.Thread(target=buy) for _ in range(100)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+        Runnable buy = () -> {
+            try {
+                vm.selectItem("A1");
+                vm.insertCoin(200);
+                int change = vm.dispense();
+                successes.add(change);
+            } catch (VendingException e) {
+                failures.add(e.getMessage());
+            }
+        };
 
-    # Exactly 10 purchases; 90 stock-out failures
-    # Note: serialization means each thread sees a consistent state
-    final_qty = vm.inventory.quantity("A1")
-    sold = 10 - final_qty
-    assert final_qty >= 0, f"Inventory went negative: {final_qty}"
-    assert len(successes) == sold, f"Success count {len(successes)} != sold {sold}"
-    print(f"PASS: test_inventory_never_negative ({sold} sold, {final_qty} remaining)")
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            threads.add(new Thread(buy));
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
+        // Exactly 10 purchases; 90 stock-out failures
+        // Note: serialization means each thread sees a consistent state
+        int finalQty = vm.getInventory().quantity("A1");
+        int sold = 10 - finalQty;
+        assert finalQty >= 0 : "Inventory went negative: " + finalQty;
+        assert successes.size() == sold : "Success count " + successes.size() + " != sold " + sold;
+        System.out.println("PASS: testInventoryNeverNegative (" + sold + " sold, " + finalQty + " remaining)");
+    }
 
-# ─────────────────────────────────────────────────────────────
-# TEST 2: No revenue corruption under concurrent transactions
-# N threads each complete a full transaction.
-# Total revenue must equal N × item price.
-# ─────────────────────────────────────────────────────────────
-def test_revenue_consistency():
-    vm = VendingMachine()
-    water = Item("B1", "Water", 100)
-    vm.inventory.add_item(water, 50)
+    // ─────────────────────────────────────────────────────────────
+    // TEST 2: No revenue corruption under concurrent transactions
+    // N threads each complete a full transaction.
+    // Total revenue must equal N x item price.
+    // ─────────────────────────────────────────────────────────────
+    static void testRevenueConsistency() throws InterruptedException {
+        VendingMachine vm = new VendingMachine();
+        Item water = new Item("B1", "Water", 100);
+        vm.getInventory().addItem(water, 50);
 
-    success_count = 0
-    lock = threading.Lock()
+        AtomicInteger successCount = new AtomicInteger(0);
 
-    def buy():
-        nonlocal success_count
-        try:
-            vm.select_item("B1")
-            vm.insert_coin(100)
-            vm.dispense()
-            with lock:
-                success_count += 1
-        except VendingException:
-            pass
+        Runnable buy = () -> {
+            try {
+                vm.selectItem("B1");
+                vm.insertCoin(100);
+                vm.dispense();
+                successCount.incrementAndGet();
+            } catch (VendingException e) {
+                // ignore
+            }
+        };
 
-    threads = [threading.Thread(target=buy) for _ in range(50)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            threads.add(new Thread(buy));
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
-    expected_revenue = success_count * 100
-    assert vm._revenue == expected_revenue, \
-        f"Revenue mismatch: expected {expected_revenue}, got {vm._revenue}"
-    print(f"PASS: test_revenue_consistency ({success_count} purchases, revenue={vm._revenue})")
+        int expectedRevenue = successCount.get() * 100;
+        assert vm.getRevenue() == expectedRevenue :
+            "Revenue mismatch: expected " + expectedRevenue + ", got " + vm.getRevenue();
+        System.out.println("PASS: testRevenueConsistency (" + successCount.get()
+            + " purchases, revenue=" + vm.getRevenue() + ")");
+    }
 
+    // ─────────────────────────────────────────────────────────────
+    // TEST 3: Cancel returns inserted amount, leaves machine in clean state
+    // Thread A inserts coins and then cancels.
+    // Thread B then completes a transaction.
+    // Thread B must see a clean machine state (not A's insertedCents).
+    // ─────────────────────────────────────────────────────────────
+    static void testCancelResetsState() throws InterruptedException {
+        VendingMachine vm = new VendingMachine();
+        Item snack = new Item("C1", "Snack", 75);
+        vm.getInventory().addItem(snack, 5);
 
-# ─────────────────────────────────────────────────────────────
-# TEST 3: Cancel returns inserted amount, leaves machine in clean state
-# Thread A inserts coins and then cancels.
-# Thread B then completes a transaction.
-# Thread B must see a clean machine state (not A's inserted_cents).
-# ─────────────────────────────────────────────────────────────
-def test_cancel_resets_state():
-    vm = VendingMachine()
-    snack = Item("C1", "Snack", 75)
-    vm.inventory.add_item(snack, 5)
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Map<String, Integer> results = new ConcurrentHashMap<>();
 
-    barrier = threading.Barrier(2)
-    results = {}
+        Runnable threadA = () -> {
+            vm.selectItem("C1");
+            vm.insertCoin(200);
+            int refund = vm.cancel();
+            results.put("refund", refund);
+            try {
+                barrier.await(); // signal B to proceed
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
 
-    def thread_a():
-        vm.select_item("C1")
-        vm.insert_coin(200)
-        refund = vm.cancel()
-        results["refund"] = refund
-        barrier.wait()  # signal B to proceed
+        Runnable threadB = () -> {
+            try {
+                barrier.await(); // wait for A to cancel
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            vm.selectItem("C1");
+            vm.insertCoin(75);
+            int change = vm.dispense();
+            results.put("change", change);
+        };
 
-    def thread_b():
-        barrier.wait()  # wait for A to cancel
-        vm.select_item("C1")
-        vm.insert_coin(75)
-        change = vm.dispense()
-        results["change"] = change
+        Thread ta = new Thread(threadA);
+        Thread tb = new Thread(threadB);
+        ta.start();
+        tb.start();
+        ta.join();
+        tb.join();
 
-    ta = threading.Thread(target=thread_a)
-    tb = threading.Thread(target=thread_b)
-    ta.start(); tb.start()
-    ta.join(); tb.join()
+        assert results.get("refund") == 200 : "Expected refund 200, got " + results.get("refund");
+        assert results.get("change") == 0 : "Expected change 0, got " + results.get("change");
+        assert vm.getInventory().quantity("C1") == 4 : "Inventory not decremented correctly";
+        System.out.println("PASS: testCancelResetsState");
+    }
 
-    assert results["refund"] == 200, f"Expected refund 200, got {results['refund']}"
-    assert results["change"] == 0, f"Expected change 0, got {results['change']}"
-    assert vm.inventory.quantity("C1") == 4, "Inventory not decremented correctly"
-    print("PASS: test_cancel_resets_state")
-
-
-if __name__ == "__main__":
-    test_inventory_never_negative()
-    test_revenue_consistency()
-    test_cancel_resets_state()
-    print("All concurrency tests passed.")
+    public static void main(String[] args) throws InterruptedException {
+        testInventoryNeverNegative();
+        testRevenueConsistency();
+        testCancelResetsState();
+        System.out.println("All concurrency tests passed.");
+    }
+}
 ```
 
 **What each test verifies:**

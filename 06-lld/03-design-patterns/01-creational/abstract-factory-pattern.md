@@ -21,7 +21,7 @@ tags: [06-lld, system-design, design-patterns]
 ---
 # Abstract Factory Pattern
 
-> 🔵 **Java idiom:** The Python example uses duck-typed factory classes; in Java each family is an `interface` (e.g. `GUIFactory` with `createButton()`, `createCheckbox()`) and each concrete factory an implementing class. **JDK equivalent:** `DocumentBuilderFactory`, `javax.xml.transform.TransformerFactory` — `newInstance()` returns a platform-specific family. **Interview gotcha:** don't confuse it with Factory Method — Abstract Factory produces a *family of related products* that must be used together; a single Factory Method produces *one* product. Name the "family consistency" constraint (a `WinButton` must never pair with a `MacCheckbox`) — that's the reason the pattern exists.
+> 🔵 **Java idiom:** Each family is defined by an `interface` (e.g. `GUIFactory` with `createButton()`, `createCheckbox()`) and each concrete factory an implementing class. **JDK equivalent:** `DocumentBuilderFactory`, `javax.xml.transform.TransformerFactory` — `newInstance()` returns a platform-specific family. **Interview gotcha:** don't confuse it with Factory Method — Abstract Factory produces a *family of related products* that must be used together; a single Factory Method produces *one* product. Name the "family consistency" constraint (a `WinButton` must never pair with a `MacCheckbox`) — that's the reason the pattern exists.
 
 ## Question
 
@@ -79,21 +79,31 @@ Try it before reading on.
 
 The instinct is to branch on region:
 
-```python
-class CheckoutService:
-    def __init__(self, region: str):
-        self._region = region
+```java
+class CheckoutService {
+    private final String region;
 
-    def checkout(self, order):
-        if self._region == "IN":
-            processor = UPIProcessor()
-            invoice   = RupeeInvoice()
-        elif self._region == "US":
-            processor = CreditCardProcessor()
-            invoice   = DollarInvoice()
+    CheckoutService(String region) {
+        this.region = region;
+    }
 
-        processor.process(order)
-        invoice.generate(order)
+    void checkout(Order order) {
+        PaymentProcessor processor;
+        InvoiceGenerator invoice;
+        if (region.equals("IN")) {
+            processor = new UPIProcessor();
+            invoice = new RupeeInvoice();
+        } else if (region.equals("US")) {
+            processor = new CreditCardProcessor();
+            invoice = new DollarInvoice();
+        } else {
+            throw new IllegalArgumentException("Unknown region: " + region);
+        }
+
+        processor.process(order);
+        invoice.generate(order);
+    }
+}
 ```
 
 **What breaks**:
@@ -109,54 +119,61 @@ class CheckoutService:
 The constraint: **group the related objects (payment + invoice) behind a single factory, and the service only talks to the factory**.
 
 Step 1 — extract interfaces for the product types:
-```python
-from abc import ABC, abstractmethod
+```java
+interface PaymentProcessor {
+    void process(Order order);
+}
 
-class PaymentProcessor(ABC):
-    @abstractmethod
-    def process(self, order): ...
-
-class InvoiceGenerator(ABC):
-    @abstractmethod
-    def generate(self, order): ...
+interface InvoiceGenerator {
+    void generate(Order order);
+}
 ```
 
 Step 2 — define the factory interface that creates a matched family:
-```python
-class RegionFactory(ABC):
-    @abstractmethod
-    def create_payment_processor(self) -> PaymentProcessor: ...
-
-    @abstractmethod
-    def create_invoice_generator(self) -> InvoiceGenerator: ...
+```java
+interface RegionFactory {
+    PaymentProcessor createPaymentProcessor();
+    InvoiceGenerator createInvoiceGenerator();
+}
 ```
 
 Step 3 — one concrete factory per region, each wiring the correct pair:
-```python
-class IndiaFactory(RegionFactory):
-    def create_payment_processor(self) -> PaymentProcessor:
-        return UPIProcessor()
+```java
+class IndiaFactory implements RegionFactory {
+    public PaymentProcessor createPaymentProcessor() {
+        return new UPIProcessor();
+    }
 
-    def create_invoice_generator(self) -> InvoiceGenerator:
-        return RupeeInvoice()
+    public InvoiceGenerator createInvoiceGenerator() {
+        return new RupeeInvoice();
+    }
+}
 
-class USFactory(RegionFactory):
-    def create_payment_processor(self) -> PaymentProcessor:
-        return CreditCardProcessor()
+class USFactory implements RegionFactory {
+    public PaymentProcessor createPaymentProcessor() {
+        return new CreditCardProcessor();
+    }
 
-    def create_invoice_generator(self) -> InvoiceGenerator:
-        return DollarInvoice()
+    public InvoiceGenerator createInvoiceGenerator() {
+        return new DollarInvoice();
+    }
+}
 ```
 
 Step 4 — `CheckoutService` depends only on the `RegionFactory` interface:
-```python
-class CheckoutService:
-    def __init__(self, factory: RegionFactory):
-        self._factory = factory
+```java
+class CheckoutService {
+    private final RegionFactory factory;
 
-    def checkout(self, order):
-        self._factory.create_payment_processor().process(order)
-        self._factory.create_invoice_generator().generate(order)
+    CheckoutService(RegionFactory factory) {
+        this.factory = factory;
+    }
+
+    void checkout(Order order) {
+        factory.createPaymentProcessor().process(order);
+        factory.createInvoiceGenerator().generate(order);
+    }
+}
 ```
 
 Adding EU is now: one new `EUFactory` class, zero changes to `CheckoutService`.
@@ -180,24 +197,31 @@ When you need multiple related objects that must be consistent with each other (
 
 ## The Problem: Hardcoded Object Creation
 
-```python
-# Bad: CheckoutService directly creates objects — tightly coupled
-class CheckoutService:
-    def __init__(self, gateway_type: str):
-        self._gateway_type = gateway_type
+```java
+// Bad: CheckoutService directly creates objects — tightly coupled
+class CheckoutService {
+    private final String gatewayType;
 
-    def check_out(self, amount: float):
-        # Hardcoded decision logic — violates OCP
-        if self._gateway_type == "razorpay":
-            payment_gateway = RazorpayGateway()
-        else:
-            payment_gateway = PayUGateway()
+    CheckoutService(String gatewayType) {
+        this.gatewayType = gatewayType;
+    }
 
-        payment_gateway.process_payment(amount)
+    void checkOut(double amount) {
+        // Hardcoded decision logic — violates OCP
+        PaymentGateway paymentGateway;
+        if (gatewayType.equals("razorpay")) {
+            paymentGateway = new RazorpayGateway();
+        } else {
+            paymentGateway = new PayUGateway();
+        }
 
-        # Always uses GSTInvoice — can't support US invoices
-        invoice = GSTInvoice()
-        invoice.generate_invoice()
+        paymentGateway.processPayment(amount);
+
+        // Always uses GSTInvoice — can't support US invoices
+        Invoice invoice = new GSTInvoice();
+        invoice.generateInvoice();
+    }
+}
 ```
 
 **Issues:**
@@ -209,97 +233,124 @@ class CheckoutService:
 
 ## The Solution: Abstract Factory Pattern
 
-```python
-from abc import ABC, abstractmethod
+```java
+// ===== Abstract Product Interfaces =====
+interface PaymentGateway {
+    void processPayment(double amount);
+}
 
-# ===== Abstract Product Interfaces =====
-class PaymentGateway(ABC):
-    @abstractmethod
-    def process_payment(self, amount: float): ...
+interface Invoice {
+    void generateInvoice();
+}
 
-class Invoice(ABC):
-    @abstractmethod
-    def generate_invoice(self): ...
+// ===== India Product Family =====
+class RazorpayGateway implements PaymentGateway {
+    public void processPayment(double amount) {
+        System.out.println("Processing INR payment via Razorpay: " + amount);
+    }
+}
 
-# ===== India Product Family =====
-class RazorpayGateway(PaymentGateway):
-    def process_payment(self, amount: float):
-        print(f"Processing INR payment via Razorpay: {amount}")
+class PayUGateway implements PaymentGateway {
+    public void processPayment(double amount) {
+        System.out.println("Processing INR payment via PayU: " + amount);
+    }
+}
 
-class PayUGateway(PaymentGateway):
-    def process_payment(self, amount: float):
-        print(f"Processing INR payment via PayU: {amount}")
+class GSTInvoice implements Invoice {
+    public void generateInvoice() {
+        System.out.println("Generating GST Invoice for India.");
+    }
+}
 
-class GSTInvoice(Invoice):
-    def generate_invoice(self):
-        print("Generating GST Invoice for India.")
+// ===== US Product Family =====
+class PayPalGateway implements PaymentGateway {
+    public void processPayment(double amount) {
+        System.out.println("Processing USD payment via PayPal: " + amount);
+    }
+}
 
-# ===== US Product Family =====
-class PayPalGateway(PaymentGateway):
-    def process_payment(self, amount: float):
-        print(f"Processing USD payment via PayPal: {amount}")
+class StripeGateway implements PaymentGateway {
+    public void processPayment(double amount) {
+        System.out.println("Processing USD payment via Stripe: " + amount);
+    }
+}
 
-class StripeGateway(PaymentGateway):
-    def process_payment(self, amount: float):
-        print(f"Processing USD payment via Stripe: {amount}")
+class USInvoice implements Invoice {
+    public void generateInvoice() {
+        System.out.println("Generating Invoice as per US norms.");
+    }
+}
 
-class USInvoice(Invoice):
-    def generate_invoice(self):
-        print("Generating Invoice as per US norms.")
+// ===== Abstract Factory =====
+interface RegionFactory {
+    PaymentGateway createPaymentGateway(String gatewayType);
+    Invoice createInvoice();
+}
 
-# ===== Abstract Factory =====
-class RegionFactory(ABC):
-    @abstractmethod
-    def create_payment_gateway(self, gateway_type: str) -> PaymentGateway: ...
+// ===== Concrete Factories — each produces a matched family =====
+class IndiaFactory implements RegionFactory {
+    public PaymentGateway createPaymentGateway(String gatewayType) {
+        if (gatewayType.equals("razorpay")) {
+            return new RazorpayGateway();
+        }
+        if (gatewayType.equals("payu")) {
+            return new PayUGateway();
+        }
+        throw new IllegalArgumentException("Unsupported gateway for India: " + gatewayType);
+    }
 
-    @abstractmethod
-    def create_invoice(self) -> Invoice: ...
+    public Invoice createInvoice() {
+        return new GSTInvoice();  // India always gets GST invoice
+    }
+}
 
-# ===== Concrete Factories — each produces a matched family =====
-class IndiaFactory(RegionFactory):
-    def create_payment_gateway(self, gateway_type: str) -> PaymentGateway:
-        if gateway_type == "razorpay":
-            return RazorpayGateway()
-        if gateway_type == "payu":
-            return PayUGateway()
-        raise ValueError(f"Unsupported gateway for India: {gateway_type}")
+class USFactory implements RegionFactory {
+    public PaymentGateway createPaymentGateway(String gatewayType) {
+        if (gatewayType.equals("paypal")) {
+            return new PayPalGateway();
+        }
+        if (gatewayType.equals("stripe")) {
+            return new StripeGateway();
+        }
+        throw new IllegalArgumentException("Unsupported gateway for US: " + gatewayType);
+    }
 
-    def create_invoice(self) -> Invoice:
-        return GSTInvoice()  # India always gets GST invoice
+    public Invoice createInvoice() {
+        return new USInvoice();  // US always gets US-style invoice
+    }
+}
 
-class USFactory(RegionFactory):
-    def create_payment_gateway(self, gateway_type: str) -> PaymentGateway:
-        if gateway_type == "paypal":
-            return PayPalGateway()
-        if gateway_type == "stripe":
-            return StripeGateway()
-        raise ValueError(f"Unsupported gateway for US: {gateway_type}")
+// ===== CheckoutService — depends on abstraction only =====
+class CheckoutService {
+    private final PaymentGateway paymentGateway;
+    private final Invoice invoice;
 
-    def create_invoice(self) -> Invoice:
-        return USInvoice()  # US always gets US-style invoice
+    CheckoutService(RegionFactory factory, String gatewayType) {
+        this.paymentGateway = factory.createPaymentGateway(gatewayType);
+        this.invoice = factory.createInvoice();
+        // Guaranteed matched pair — correct gateway + correct invoice for the region
+    }
 
-# ===== CheckoutService — depends on abstraction only =====
-class CheckoutService:
-    def __init__(self, factory: RegionFactory, gateway_type: str):
-        self._payment_gateway = factory.create_payment_gateway(gateway_type)
-        self._invoice = factory.create_invoice()
-        # Guaranteed matched pair — correct gateway + correct invoice for the region
+    void completeOrder(double amount) {
+        paymentGateway.processPayment(amount);
+        invoice.generateInvoice();
+    }
+}
 
-    def complete_order(self, amount: float):
-        self._payment_gateway.process_payment(amount)
-        self._invoice.generate_invoice()
+// ===== Usage =====
+public class Main {
+    public static void main(String[] args) {
+        // India checkout with Razorpay — gets GST invoice automatically
+        CheckoutService indiaCheckout = new CheckoutService(new IndiaFactory(), "razorpay");
+        indiaCheckout.completeOrder(1999.0);
 
-# ===== Usage =====
-if __name__ == "__main__":
-    # India checkout with Razorpay — gets GST invoice automatically
-    india_checkout = CheckoutService(IndiaFactory(), "razorpay")
-    india_checkout.complete_order(1999.0)
+        System.out.println("---");
 
-    print("---")
-
-    # US checkout with PayPal — gets US invoice automatically
-    us_checkout = CheckoutService(USFactory(), "paypal")
-    us_checkout.complete_order(49.99)
+        // US checkout with PayPal — gets US invoice automatically
+        CheckoutService usCheckout = new CheckoutService(new USFactory(), "paypal");
+        usCheckout.completeOrder(49.99);
+    }
+}
 ```
 
 ### Class Diagram

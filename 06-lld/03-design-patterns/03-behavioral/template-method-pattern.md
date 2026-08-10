@@ -67,27 +67,33 @@ Try it before reading on.
 
 ## Problem Without the Pattern
 
-```python
-class EmailOrderProcessor:
-    def process_order(self, o):
-        # Step 1: validate
-        if o.get_email() is None:
-            raise ValueError("No email")
-        # Step 2: calculate
-        price = o.get_base_price() * 1.1  # email surcharge
-        # Step 3: notify
-        email_service.send(o.get_email(), f"Your order: ${price}")
+```java
+class EmailOrderProcessor {
+    void processOrder(Order o) {
+        // Step 1: validate
+        if (o.getEmail() == null) {
+            throw new IllegalArgumentException("No email");
+        }
+        // Step 2: calculate
+        double price = o.getBasePrice() * 1.1;  // email surcharge
+        // Step 3: notify
+        emailService.send(o.getEmail(), "Your order: $" + price);
+    }
+}
 
 
-class SMSOrderProcessor:
-    def process_order(self, o):
-        # Step 1: validate
-        if o.get_phone() is None:
-            raise ValueError("No phone")
-        # Step 2: calculate
-        price = o.get_base_price()  # no surcharge
-        # Step 3: notify
-        sms_service.send(o.get_phone(), f"Order: ${price}")
+class SMSOrderProcessor {
+    void processOrder(Order o) {
+        // Step 1: validate
+        if (o.getPhone() == null) {
+            throw new IllegalArgumentException("No phone");
+        }
+        // Step 2: calculate
+        double price = o.getBasePrice();  // no surcharge
+        // Step 3: notify
+        smsService.send(o.getPhone(), "Order: $" + price);
+    }
+}
 ```
 
 **What breaks**:
@@ -101,45 +107,42 @@ class SMSOrderProcessor:
 
 The constraint: **the algorithm's sequence lives in one place; only the varying steps are overridable**.
 
-Step 1 — move the sequence into a base class as a method that is not meant to be overridden (the "template"):
-```python
-from abc import ABC, abstractmethod
+Step 1 — move the sequence into a base class as a `final` method (the "template"):
+```java
+abstract class OrderProcessor {
+    // Template method — sequence is fixed
+    final void processOrder(Order o) {
+        validate(o);
+        double price = calculatePrice(o);
+        notify(o, price);
+    }
 
-class OrderProcessor(ABC):
-    # Template method — sequence is fixed
-    def process_order(self, o):
-        self.validate(o)
-        price = self.calculate_price(o)
-        self.notify(o, price)
-
-    @abstractmethod
-    def validate(self, o):
-        pass
-
-    @abstractmethod
-    def calculate_price(self, o):
-        pass
-
-    @abstractmethod
-    def notify(self, o, price):
-        pass
+    abstract void validate(Order o);
+    abstract double calculatePrice(Order o);
+    abstract void notify(Order o, double price);
+}
 ```
 
 Step 2 — subclasses only provide the varying steps:
-```python
-class EmailOrderProcessor(OrderProcessor):
-    def validate(self, o):
-        if o.get_email() is None:
-            raise ValueError("No email")
+```java
+class EmailOrderProcessor extends OrderProcessor {
+    void validate(Order o) {
+        if (o.getEmail() == null) {
+            throw new IllegalArgumentException("No email");
+        }
+    }
 
-    def calculate_price(self, o):
-        return o.get_base_price() * 1.1
+    double calculatePrice(Order o) {
+        return o.getBasePrice() * 1.1;
+    }
 
-    def notify(self, o, price):
-        email_service.send(o.get_email(), f"Your order: ${price}")
+    void notify(Order o, double price) {
+        emailService.send(o.getEmail(), "Your order: $" + price);
+    }
+}
 ```
 
-Adding a new channel (`PushNotification`) is one new subclass — the sequence in `process_order()` is untouched.
+Adding a new channel (`PushNotification`) is one new subclass — the sequence in `processOrder()` is untouched.
 
 ---
 
@@ -176,7 +179,7 @@ The Template Method Pattern provides a blueprint for executing an algorithm. It 
 | Step | Type | Description |
 |---|---|---|
 | **Template Method** | Non-overridable in base class | Defines the skeleton. Calls other steps in order. Cannot be overridden. |
-| **Primitive Operations** | `@abstractmethod` | Variable steps that subclasses MUST implement. |
+| **Primitive Operations** | `abstract` | Variable steps that subclasses MUST implement. |
 | **Concrete Operations** | Regular methods in base class | Shared behavior. Subclasses inherit unchanged. |
 | **Hooks** | Optional methods with default behavior | Subclasses CAN override, but don't have to. |
 
@@ -186,53 +189,60 @@ The Template Method Pattern provides a blueprint for executing an algorithm. It 
 
 Without Template Method, common logic is duplicated across classes:
 
-```python
-# EmailNotification handles sending emails
-class EmailNotification:
-    def send(self, to, message):
-        print(f"Checking rate limits for: {to}")
-        print(f"Validating email recipient: {to}")
-        formatted = message.strip()
-        print(f"Logging before send: {formatted} to {to}")
+```java
+// EmailNotification handles sending emails
+class EmailNotification {
+    void send(String to, String message) {
+        System.out.println("Checking rate limits for: " + to);
+        System.out.println("Validating email recipient: " + to);
+        String formatted = message.strip();
+        System.out.println("Logging before send: " + formatted + " to " + to);
 
-        # Compose Email
-        composed_message = f"<html><body><p>{formatted}</p></body></html>"
+        // Compose Email
+        String composedMessage = "<html><body><p>" + formatted + "</p></body></html>";
 
-        # Send Email
-        print(f"Sending EMAIL to {to} with content:\n{composed_message}")
+        // Send Email
+        System.out.println("Sending EMAIL to " + to + " with content:\n" + composedMessage);
 
-        # Analytics
-        print(f"Analytics updated for: {to}")
-
-
-# SMSNotification handles sending SMS messages
-class SMSNotification:
-    def send(self, to, message):
-        print(f"Checking rate limits for: {to}")
-        print(f"Validating phone number: {to}")
-        formatted = message.strip()
-        print(f"Logging before send: {formatted} to {to}")
-
-        # Compose SMS
-        composed_message = f"[SMS] {formatted}"
-
-        # Send SMS
-        print(f"Sending SMS to {to} with message: {composed_message}")
-
-        # Analytics (custom)
-        print(f"Custom SMS analytics for: {to}")
+        // Analytics
+        System.out.println("Analytics updated for: " + to);
+    }
+}
 
 
-# Main function to test sending notifications
-if __name__ == "__main__":
-    email_notification = EmailNotification()
-    sms_notification = SMSNotification()
+// SMSNotification handles sending SMS messages
+class SMSNotification {
+    void send(String to, String message) {
+        System.out.println("Checking rate limits for: " + to);
+        System.out.println("Validating phone number: " + to);
+        String formatted = message.strip();
+        System.out.println("Logging before send: " + formatted + " to " + to);
 
-    email_notification.send("example@example.com", "Your order has been placed!")
+        // Compose SMS
+        String composedMessage = "[SMS] " + formatted;
 
-    print()
+        // Send SMS
+        System.out.println("Sending SMS to " + to + " with message: " + composedMessage);
 
-    sms_notification.send("1234567890", "Your OTP is 1234.")
+        // Analytics (custom)
+        System.out.println("Custom SMS analytics for: " + to);
+    }
+}
+
+
+// Main function to test sending notifications
+public class Main {
+    public static void main(String[] args) {
+        EmailNotification emailNotification = new EmailNotification();
+        SMSNotification smsNotification = new SMSNotification();
+
+        emailNotification.send("example@example.com", "Your order has been placed!");
+
+        System.out.println();
+
+        smsNotification.send("1234567890", "Your OTP is 1234.");
+    }
+}
 ```
 
 **Issues**:
@@ -245,93 +255,104 @@ if __name__ == "__main__":
 
 ## Solution: Template Method Pattern
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Abstract class defining the template method and common steps
+abstract class NotificationSender {
+    // Template method (final — not meant to be overridden)
+    final void send(String to, String rawMessage) {
+        // Common Logic
+        rateLimitCheck(to);
+        validateRecipient(to);
+        String formatted = formatMessage(rawMessage);
+        preSendAuditLog(to, formatted);
+
+        // Specific Logic: defined by subclasses
+        String composedMessage = composeMessage(formatted);
+        sendMessage(to, composedMessage);
+
+        // Optional Hook
+        postSendAnalytics(to);
+    }
+
+    // Common step 1: Check rate limits
+    void rateLimitCheck(String to) {
+        System.out.println("Checking rate limits for: " + to);
+    }
+
+    // Common step 2: Validate recipient
+    void validateRecipient(String to) {
+        System.out.println("Validating recipient: " + to);
+    }
+
+    // Common step 3: Format the message (can be customized)
+    String formatMessage(String message) {
+        return message.strip();  // Trim spaces
+    }
+
+    // Common step 4: Pre-send audit log
+    void preSendAuditLog(String to, String formatted) {
+        System.out.println("Logging before send: " + formatted + " to " + to);
+    }
+
+    // Abstract: Subclasses must implement custom message composition
+    abstract String composeMessage(String formattedMessage);
+
+    // Abstract: Subclasses must implement custom message sending
+    abstract void sendMessage(String to, String message);
+
+    // Optional hook for analytics (can be overridden)
+    void postSendAnalytics(String to) {
+        System.out.println("Analytics updated for: " + to);
+    }
+}
 
 
-# Abstract class defining the template method and common steps
-class NotificationSender(ABC):
-    # Template method (not meant to be overridden)
-    def send(self, to, raw_message):
-        # Common Logic
-        self.rate_limit_check(to)
-        self.validate_recipient(to)
-        formatted = self.format_message(raw_message)
-        self.pre_send_audit_log(to, formatted)
+// Concrete class for email notifications
+class EmailNotification extends NotificationSender {
+    // Implement message composition for email
+    String composeMessage(String formattedMessage) {
+        return "<html><body><p>" + formattedMessage + "</p></body></html>";
+    }
 
-        # Specific Logic: defined by subclasses
-        composed_message = self.compose_message(formatted)
-        self.send_message(to, composed_message)
-
-        # Optional Hook
-        self.post_send_analytics(to)
-
-    # Common step 1: Check rate limits
-    def rate_limit_check(self, to):
-        print(f"Checking rate limits for: {to}")
-
-    # Common step 2: Validate recipient
-    def validate_recipient(self, to):
-        print(f"Validating recipient: {to}")
-
-    # Common step 3: Format the message (can be customized)
-    def format_message(self, message):
-        return message.strip()  # Trim spaces
-
-    # Common step 4: Pre-send audit log
-    def pre_send_audit_log(self, to, formatted):
-        print(f"Logging before send: {formatted} to {to}")
-
-    # Abstract: Subclasses must implement custom message composition
-    @abstractmethod
-    def compose_message(self, formatted_message):
-        pass
-
-    # Abstract: Subclasses must implement custom message sending
-    @abstractmethod
-    def send_message(self, to, message):
-        pass
-
-    # Optional hook for analytics (can be overridden)
-    def post_send_analytics(self, to):
-        print(f"Analytics updated for: {to}")
+    // Implement email sending logic
+    void sendMessage(String to, String message) {
+        System.out.println("Sending EMAIL to " + to + " with content:\n" + message);
+    }
+}
 
 
-# Concrete class for email notifications
-class EmailNotification(NotificationSender):
-    # Implement message composition for email
-    def compose_message(self, formatted_message):
-        return f"<html><body><p>{formatted_message}</p></body></html>"
+// Concrete class for SMS notifications
+class SMSNotification extends NotificationSender {
+    // Implement message composition for SMS
+    String composeMessage(String formattedMessage) {
+        return "[SMS] " + formattedMessage;
+    }
 
-    # Implement email sending logic
-    def send_message(self, to, message):
-        print(f"Sending EMAIL to {to} with content:\n{message}")
+    // Implement SMS sending logic
+    void sendMessage(String to, String message) {
+        System.out.println("Sending SMS to " + to + " with message: " + message);
+    }
 
-
-# Concrete class for SMS notifications
-class SMSNotification(NotificationSender):
-    # Implement message composition for SMS
-    def compose_message(self, formatted_message):
-        return f"[SMS] {formatted_message}"
-
-    # Implement SMS sending logic
-    def send_message(self, to, message):
-        print(f"Sending SMS to {to} with message: {message}")
-
-    # Override optional hook for custom SMS analytics
-    def post_send_analytics(self, to):
-        print(f"Custom SMS analytics for: {to}")
+    // Override optional hook for custom SMS analytics
+    @Override
+    void postSendAnalytics(String to) {
+        System.out.println("Custom SMS analytics for: " + to);
+    }
+}
 
 
-# Client code
-if __name__ == "__main__":
-    email_sender = EmailNotification()
-    email_sender.send("john@example.com", "Welcome to TUF+!")
+// Client code
+public class Main {
+    public static void main(String[] args) {
+        EmailNotification emailSender = new EmailNotification();
+        emailSender.send("john@example.com", "Welcome to TUF+!");
 
-    print()
+        System.out.println();
 
-    sms_sender = SMSNotification()
-    sms_sender.send("9876543210", "Your OTP is 4567.")
+        SMSNotification smsSender = new SMSNotification();
+        smsSender.send("9876543210", "Your OTP is 4567.");
+    }
+}
 ```
 
 ### Class Diagram

@@ -146,57 +146,57 @@ class DownloadManager:
 - File size unknown → single-stream, progress indeterminate
 - num_chunks > file_size → clamp to 1 chunk per byte
 
-```python
-def start_download(self, url, output_path, num_chunks=4):
-    file_size, supports_range = self.http_client.head(url)
+```java
+public String startDownload(String url, String outputPath, int numChunks) {
+    HeadResult head = httpClient.head(url);
+    Long fileSize = head.fileSize;
+    boolean supportsRange = head.supportsRange;
 
-    download_id = str(uuid.uuid4())
-    if not supports_range or not file_size:
-        chunks = [Chunk(
-            chunk_id=0,
-            start_byte=0,
-            end_byte=file_size - 1 if file_size else 0,
-            temp_file_path=f"/tmp/{download_id}_0.part",
-            state=ChunkState.PENDING,
-            bytes_downloaded=0,
-            retry_count=0
-        )]
-        num_chunks = 1
-    else:
-        chunks = self._split_into_chunks(download_id, file_size, num_chunks)
+    String downloadId = UUID.randomUUID().toString();
+    List<Chunk> chunks;
+    if (!supportsRange || fileSize == null) {
+        Chunk single = new Chunk(
+            0,
+            0,
+            fileSize != null ? fileSize - 1 : 0,
+            String.format("/tmp/%s_0.part", downloadId),
+            ChunkState.PENDING,
+            0,
+            0
+        );
+        chunks = List.of(single);
+        numChunks = 1;
+    } else {
+        chunks = splitIntoChunks(downloadId, fileSize, numChunks);
+    }
 
-    download = Download(
-        download_id=download_id,
-        url=url,
-        output_path=output_path,
-        file_size=file_size,
-        chunks=chunks,
-        state=DownloadState.DOWNLOADING,
-        created_at=datetime.utcnow()
-    )
-    self.downloads[download_id] = download
+    Download download = new Download(
+        downloadId, url, outputPath, fileSize, chunks,
+        DownloadState.DOWNLOADING, Instant.now()
+    );
+    downloads.put(downloadId, download);
 
-    for chunk in chunks:
-        self.thread_pool.submit(self._download_chunk, download, chunk)
+    for (Chunk chunk : chunks) {
+        threadPool.submit(() -> downloadChunk(download, chunk));
+    }
 
-    return download_id
+    return downloadId;
+}
 
-def _split_into_chunks(self, download_id, file_size, num_chunks):
-    chunk_size = file_size // num_chunks
-    chunks = []
-    for i in range(num_chunks):
-        start = i * chunk_size
-        end = (i + 1) * chunk_size - 1 if i < num_chunks - 1 else file_size - 1
-        chunks.append(Chunk(
-            chunk_id=i,
-            start_byte=start,
-            end_byte=end,
-            temp_file_path=f"/tmp/{download_id}_{i}.part",
-            state=ChunkState.PENDING,
-            bytes_downloaded=0,
-            retry_count=0
-        ))
-    return chunks
+private List<Chunk> splitIntoChunks(String downloadId, long fileSize, int numChunks) {
+    long chunkSize = fileSize / numChunks;
+    List<Chunk> chunks = new ArrayList<>();
+    for (int i = 0; i < numChunks; i++) {
+        long start = i * chunkSize;
+        long end = (i < numChunks - 1) ? (i + 1) * chunkSize - 1 : fileSize - 1;
+        chunks.add(new Chunk(
+            i, start, end,
+            String.format("/tmp/%s_%d.part", downloadId, i),
+            ChunkState.PENDING, 0, 0
+        ));
+    }
+    return chunks;
+}
 ```
 
 ### Core Method: `_download_chunk`
@@ -208,85 +208,128 @@ def _split_into_chunks(self, download_id, file_size, num_chunks):
 - On failure: retry up to 3 times with exponential backoff
 - On all chunks complete: trigger FileMerger
 
-```python
-def _download_chunk(self, download, chunk):
-    chunk.state = ChunkState.IN_PROGRESS
+```java
+private void downloadChunk(Download download, Chunk chunk) {
+    chunk.setState(ChunkState.IN_PROGRESS);
 
-    for attempt in range(3):
-        if download.state in (DownloadState.PAUSED,
-                               DownloadState.CANCELLED,
-                               DownloadState.FAILED):
-            chunk.state = ChunkState.PENDING
-            return
-        try:
-            headers = {'Range': f'bytes={chunk.start_byte}-{chunk.end_byte}'}
-            response = self.http_client.get(download.url, headers=headers, stream=True)
+    for (int attempt = 0; attempt < 3; attempt++) {
+        DownloadState state = download.getState();
+        if (state == DownloadState.PAUSED
+                || state == DownloadState.CANCELLED
+                || state == DownloadState.FAILED) {
+            chunk.setState(ChunkState.PENDING);
+            return;
+        }
+        try {
+            Map<String, String> headers = Map.of(
+                "Range", String.format("bytes=%d-%d", chunk.getStartByte(), chunk.getEndByte())
+            );
+            HttpResponse response = httpClient.get(download.getUrl(), headers, /* stream= */ true);
 
-            with open(chunk.temp_file_path, 'wb') as f:
-                for data in response.iter_content(chunk_size=8192):
-                    if download.state == DownloadState.PAUSED:
-                        chunk.state = ChunkState.PENDING
-                        return
-                    f.write(data)
-                    chunk.bytes_downloaded += len(data)
+            try (OutputStream out = new FileOutputStream(chunk.getTempFilePath())) {
+                for (byte[] data : response.iterContent(8192)) {
+                    if (download.getState() == DownloadState.PAUSED) {
+                        chunk.setState(ChunkState.PENDING);
+                        return;
+                    }
+                    out.write(data);
+                    chunk.addBytesDownloaded(data.length);
+                }
+            }
 
-            chunk.state = ChunkState.COMPLETED
-            self._check_and_merge(download)
-            return
+            chunk.setState(ChunkState.COMPLETED);
+            checkAndMerge(download);
+            return;
 
-        except Exception:
-            chunk.retry_count += 1
-            if attempt < 2:
-                time.sleep(2 ** attempt)
+        } catch (IOException e) {
+            chunk.incrementRetryCount();
+            if (attempt < 2) {
+                try {
+                    Thread.sleep((long) Math.pow(2, attempt) * 1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+    }
 
-    chunk.state = ChunkState.FAILED
-    download.state = DownloadState.FAILED
+    chunk.setState(ChunkState.FAILED);
+    download.setState(DownloadState.FAILED);
+}
 
-def _check_and_merge(self, download):
-    if all(c.state == ChunkState.COMPLETED for c in download.chunks):
-        FileMerger().merge(download)
+private void checkAndMerge(Download download) {
+    boolean allComplete = download.getChunks().stream()
+        .allMatch(c -> c.getState() == ChunkState.COMPLETED);
+    if (allComplete) {
+        new FileMerger().merge(download);
+    }
+}
 ```
+
+Note on `download.state`, `chunk.bytes_downloaded`, etc.: because multiple chunk threads read/write these fields concurrently, the Java port backs them with `volatile` fields (state flags) and `AtomicLong` (`bytesDownloaded`, `retryCount`) rather than plain `int`/enum fields — Python's GIL made the equivalent read-modify-write on plain attributes safe by accident (each bytecode-level attribute access is atomic under the GIL), but the JVM has no such guarantee, so unsynchronized access here would be a real data race.
 
 ### FileMerger
 
-```python
-class FileMerger:
-    def merge(self, download):
-        with open(download.output_path, 'wb') as out:
-            for chunk in sorted(download.chunks, key=lambda c: c.chunk_id):
-                with open(chunk.temp_file_path, 'rb') as part:
-                    while True:
-                        buf = part.read(65536)
-                        if not buf:
-                            break
-                        out.write(buf)
-                os.remove(chunk.temp_file_path)
-        download.state = DownloadState.COMPLETED
+```java
+public class FileMerger {
+    public void merge(Download download) {
+        List<Chunk> sortedChunks = download.getChunks().stream()
+            .sorted(Comparator.comparingInt(Chunk::getChunkId))
+            .collect(Collectors.toList());
+
+        try (OutputStream out = new FileOutputStream(download.getOutputPath())) {
+            byte[] buf = new byte[65536];
+            for (Chunk chunk : sortedChunks) {
+                try (InputStream part = new FileInputStream(chunk.getTempFilePath())) {
+                    int n;
+                    while ((n = part.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                    }
+                }
+                new File(chunk.getTempFilePath()).delete();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        download.setState(DownloadState.COMPLETED);
+    }
+}
 ```
 
 ### Pause / Resume
 
-```python
-def pause_download(self, download_id):
-    download = self.downloads[download_id]
-    if download.state == DownloadState.DOWNLOADING:
-        download.state = DownloadState.PAUSED
-        # In-flight threads poll download.state and exit cooperatively
+```java
+public void pauseDownload(String downloadId) {
+    Download download = downloads.get(downloadId);
+    if (download.getState() == DownloadState.DOWNLOADING) {
+        download.setState(DownloadState.PAUSED);
+        // In-flight threads poll download.getState() and exit cooperatively
+    }
+}
 
-def resume_download(self, download_id):
-    download = self.downloads[download_id]
-    if download.state == DownloadState.PAUSED:
-        download.state = DownloadState.DOWNLOADING
-        for chunk in download.chunks:
-            if chunk.state == ChunkState.PENDING:
-                self.thread_pool.submit(self._download_chunk, download, chunk)
+public void resumeDownload(String downloadId) {
+    Download download = downloads.get(downloadId);
+    if (download.getState() == DownloadState.PAUSED) {
+        download.setState(DownloadState.DOWNLOADING);
+        for (Chunk chunk : download.getChunks()) {
+            if (chunk.getState() == ChunkState.PENDING) {
+                threadPool.submit(() -> downloadChunk(download, chunk));
+            }
+        }
+    }
+}
 
-def get_progress(self, download_id):
-    download = self.downloads[download_id]
-    if not download.file_size:
-        return 0.0
-    downloaded = sum(c.bytes_downloaded for c in download.chunks)
-    return min(downloaded / download.file_size, 1.0)
+public double getProgress(String downloadId) {
+    Download download = downloads.get(downloadId);
+    if (download.getFileSize() == null) {
+        return 0.0;
+    }
+    long downloaded = download.getChunks().stream()
+        .mapToLong(Chunk::getBytesDownloaded)
+        .sum();
+    return Math.min((double) downloaded / download.getFileSize(), 1.0);
+}
 ```
 
 ---
@@ -331,26 +374,43 @@ In-flight threads poll `download.state` between buffer writes (inside `iter_cont
 
 Use a token bucket per download:
 
-```python
-class TokenBucket:
-    def __init__(self, rate_bps):
-        self.rate = rate_bps / 8        # bytes per second
-        self.tokens = self.rate
-        self.last_refill = time.time()
+```java
+public class TokenBucket {
+    private final double rate;              // bytes per second
+    private double tokens;
+    private long lastRefillNanos;
+    private final Object lock = new Object();
 
-    def consume(self, n_bytes):
-        self._refill()
-        if self.tokens >= n_bytes:
-            self.tokens -= n_bytes
-        else:
-            sleep_time = (n_bytes - self.tokens) / self.rate
-            time.sleep(sleep_time)
-            self.tokens = 0
+    public TokenBucket(double rateBps) {
+        this.rate = rateBps / 8;
+        this.tokens = this.rate;
+        this.lastRefillNanos = System.nanoTime();
+    }
 
-    def _refill(self):
-        now = time.time()
-        self.tokens = min(self.rate, self.tokens + self.rate * (now - self.last_refill))
-        self.last_refill = now
+    public void consume(int nBytes) {
+        synchronized (lock) {
+            refill();
+            if (tokens >= nBytes) {
+                tokens -= nBytes;
+                return;
+            }
+            double sleepSeconds = (nBytes - tokens) / rate;
+            tokens = 0;
+            try {
+                Thread.sleep((long) (sleepSeconds * 1000));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private void refill() {
+        long now = System.nanoTime();
+        double elapsedSeconds = (now - lastRefillNanos) / 1_000_000_000.0;
+        tokens = Math.min(rate, tokens + rate * elapsedSeconds);
+        lastRefillNanos = now;
+    }
+}
 ```
 
 Each chunk thread calls `bucket.consume(len(data))` before writing.
@@ -359,16 +419,36 @@ Each chunk thread calls `bucket.consume(len(data))` before writing.
 
 Request checksum from server (MD5/SHA256 header or sidecar `.sha256` file). After merging:
 
-```python
-def verify_integrity(self, output_path, expected_checksum):
-    sha256 = hashlib.sha256()
-    with open(output_path, 'rb') as f:
-        for block in iter(lambda: f.read(65536), b''):
-            sha256.update(block)
-    actual = sha256.hexdigest()
-    if actual != expected_checksum:
-        os.remove(output_path)
-        raise IntegrityError(f"Checksum mismatch: got {actual}, expected {expected_checksum}")
+```java
+public void verifyIntegrity(String outputPath, String expectedChecksum) throws IOException {
+    MessageDigest sha256;
+    try {
+        sha256 = MessageDigest.getInstance("SHA-256");
+    } catch (NoSuchAlgorithmException e) {
+        throw new IllegalStateException(e);
+    }
+
+    byte[] buf = new byte[65536];
+    try (InputStream f = new FileInputStream(outputPath)) {
+        int n;
+        while ((n = f.read(buf)) != -1) {
+            sha256.update(buf, 0, n);
+        }
+    }
+
+    StringBuilder hex = new StringBuilder();
+    for (byte b : sha256.digest()) {
+        hex.append(String.format("%02x", b));
+    }
+    String actual = hex.toString();
+
+    if (!actual.equals(expectedChecksum)) {
+        new File(outputPath).delete();
+        throw new IntegrityException(
+            String.format("Checksum mismatch: got %s, expected %s", actual, expectedChecksum)
+        );
+    }
+}
 ```
 
 ### 4. "How would you handle a download queue with priority?"

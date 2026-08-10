@@ -72,18 +72,21 @@ Try to identify every failure mode before reading on.
 
 ## Race Conditions Without Synchronization
 
-```python
-buffer = []  # shared, unsynchronized
+```java
+List<Task> buffer = new ArrayList<>();  // shared, unsynchronized
 
-# Thread A — Producer:
-while True:
-    buffer.append(generate())  # no check on size
+// Thread A — Producer:
+while (true) {
+    buffer.add(generate());  // no check on size
+}
 
-# Thread B — Consumer:
-while True:
-    if buffer:
-        t = buffer.pop(0)  # concurrent modification — race condition
-        process(t)
+// Thread B — Consumer:
+while (true) {
+    if (!buffer.isEmpty()) {
+        Task t = buffer.remove(0);  // concurrent modification — race condition
+        process(t);
+    }
+}
 ```
 
 **Concrete failures**:
@@ -126,38 +129,58 @@ while True:
 
 Java's `java.util.concurrent` package solves this automatically.
 
-```python
-import queue
-import threading
-import time
+```java
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
-POISON_PILL = None  # sentinel to stop consumer
+public class ProducerConsumerDemo {
 
-def producer(q):
-    for i in range(20):
-        print(f"Produced: {i}")
-        q.put(i)          # blocks if full
-        time.sleep(0.1)
-    q.put(POISON_PILL)    # poison pill to stop consumer
+    private static final Integer POISON_PILL = null;  // sentinel to stop consumer
 
-def consumer(q):
-    while True:
-        value = q.get()   # blocks if empty
-        if value is POISON_PILL:
-            break
-        print(f"Consumed: {value}")
-        time.sleep(0.2)   # simulate slow processing
+    static void producer(BlockingQueue<Integer> q) throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            System.out.println("Produced: " + i);
+            q.put(i);              // blocks if full
+            Thread.sleep(100);
+        }
+        q.put(POISON_PILL);        // poison pill to stop consumer
+    }
 
-if __name__ == "__main__":
-    # Shared buffer with capacity 10
-    q = queue.Queue(maxsize=10)
+    static void consumer(BlockingQueue<Integer> q) throws InterruptedException {
+        while (true) {
+            Integer value = q.take();   // blocks if empty
+            if (value == POISON_PILL) {
+                break;
+            }
+            System.out.println("Consumed: " + value);
+            Thread.sleep(200);          // simulate slow processing
+        }
+    }
 
-    t_producer = threading.Thread(target=producer, args=(q,))
-    t_consumer = threading.Thread(target=consumer, args=(q,))
-    t_producer.start()
-    t_consumer.start()
-    t_producer.join()
-    t_consumer.join()
+    public static void main(String[] args) throws InterruptedException {
+        // Shared buffer with capacity 10
+        BlockingQueue<Integer> q = new ArrayBlockingQueue<>(10);
+
+        Thread tProducer = new Thread(() -> {
+            try {
+                producer(q);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        Thread tConsumer = new Thread(() -> {
+            try {
+                consumer(q);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        tProducer.start();
+        tConsumer.start();
+        tProducer.join();
+        tConsumer.join();
+    }
+}
 ```
 
 ---
@@ -166,33 +189,43 @@ if __name__ == "__main__":
 
 Implementing from scratch to understand under the hood.
 
-```python
-import threading
-from collections import deque
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
 
-class SharedBuffer:
-    def __init__(self, capacity):
-        self._queue = deque()
-        self._capacity = capacity
-        self._cond = threading.Condition()
+public class SharedBuffer<T> {
+    private final Deque<T> queue = new ArrayDeque<>();
+    private final int capacity;
+    private final Object lock = new Object();
 
-    def produce(self, value):
-        with self._cond:
-            # while loop crucial — guards against spurious wakeups
-            while len(self._queue) == self._capacity:
-                self._cond.wait()   # release lock, wait for space
-            self._queue.append(value)
-            print(f"Produced: {value}")
-            self._cond.notify_all()  # notify waiting consumers
+    public SharedBuffer(int capacity) {
+        this.capacity = capacity;
+    }
 
-    def consume(self):
-        with self._cond:
-            while not self._queue:
-                self._cond.wait()   # release lock, wait for data
-            value = self._queue.popleft()
-            print(f"Consumed: {value}")
-            self._cond.notify_all()  # notify waiting producers
-            return value
+    public void produce(T value) throws InterruptedException {
+        synchronized (lock) {
+            // while loop crucial — guards against spurious wakeups
+            while (queue.size() == capacity) {
+                lock.wait();          // release lock, wait for space
+            }
+            queue.addLast(value);
+            System.out.println("Produced: " + value);
+            lock.notifyAll();         // notify waiting consumers
+        }
+    }
+
+    public T consume() throws InterruptedException {
+        synchronized (lock) {
+            while (queue.isEmpty()) {
+                lock.wait();          // release lock, wait for data
+            }
+            T value = queue.removeFirst();
+            System.out.println("Consumed: " + value);
+            lock.notifyAll();         // notify waiting producers
+            return value;
+        }
+    }
+}
 ```
 
 **Key Concept**: `wait()` releases the lock. `notifyAll()` wakes up threads but doesn't release lock immediately (synch block must exit).

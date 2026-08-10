@@ -77,18 +77,27 @@ Try it before reading on.
 
 The obvious approach: construct each one from scratch.
 
-```python
-class EmailTemplate:
-    def __init__(self, recipient: str, personalization: str):
-        self.html_body       = FileLoader.load("template.html")   # disk I/O
-        self.headers         = ConfigParser.parse("email.cfg")    # file parse
-        self.sender_info     = DB.query("SELECT sender FROM config")  # DB call
-        self.recipient       = recipient
-        self.personalization = personalization
+```java
+class EmailTemplate {
+    String htmlBody;
+    Map<String, String> headers;
+    String senderInfo;
+    String recipient;
+    String personalization;
 
-# Sending to 10,000 users:
-for user in users:
-    t = EmailTemplate(user, f"Hi {user}")  # 10,000 disk + DB calls
+    EmailTemplate(String recipient, String personalization) {
+        this.htmlBody = FileLoader.load("template.html");        // disk I/O
+        this.headers = ConfigParser.parse("email.cfg");          // file parse
+        this.senderInfo = Db.query("SELECT sender FROM config"); // DB call
+        this.recipient = recipient;
+        this.personalization = personalization;
+    }
+}
+
+// Sending to 10,000 users:
+for (String user : users) {
+    EmailTemplate t = new EmailTemplate(user, "Hi " + user);  // 10,000 disk + DB calls
+}
 ```
 
 **What breaks**:
@@ -103,28 +112,37 @@ for user in users:
 The constraint: **do the expensive initialization once, then copy the result**.
 
 Step 1 — do the expensive initialization once and store it as a prototype:
-```python
-prototype = EmailTemplate()  # one disk read, one DB call
+```java
+EmailTemplate prototype = new EmailTemplate();  // one disk read, one DB call
 ```
 
 Step 2 — for each new instance, clone the prototype and only set what differs:
-```python
-import copy
-
-for_alice = copy.copy(prototype)
-for_alice.recipient       = "alice@example.com"
-for_alice.personalization = "Hi Alice"
+```java
+EmailTemplate forAlice = prototype.clone();
+forAlice.recipient       = "alice@example.com";
+forAlice.personalization = "Hi Alice";
 ```
 
 Step 3 — the `clone()` implementation must decide: shallow copy (share the 50KB HTML reference — fine if it's immutable) or deep copy (create independent mutable copies):
-```python
-import copy
+```java
+class EmailTemplate implements Cloneable {
+    String htmlBody;
+    Map<String, String> headers;
+    String senderInfo;
+    String recipient;
+    String personalization;
 
-class EmailTemplate:
-    def clone(self):
-        new_obj = copy.copy(self)           # shallow copy primitives + strings
-        new_obj.headers = dict(self.headers)  # deep copy mutable field
-        return new_obj
+    @Override
+    public EmailTemplate clone() {
+        try {
+            EmailTemplate copy = (EmailTemplate) super.clone(); // shallow copy primitives + strings
+            copy.headers = new HashMap<>(this.headers);         // deep copy mutable field
+            return copy;
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e); // can't happen, we implement Cloneable
+        }
+    }
+}
 ```
 
 Now 10,000 emails = 1 expensive initialization + 10,000 cheap clones. That's the pattern.
@@ -147,42 +165,49 @@ When object creation is expensive (heavy DB lookups, complex configuration, deep
 
 ## The Problem: Repetitive Instantiation
 
-```python
-import copy
-from abc import ABC, abstractmethod
+```java
+// Bad: Every email is created from scratch
+abstract class EmailTemplate {
+    abstract void setContent(String content);
+    abstract void send(String to);
+}
 
-# Bad: Every email is created from scratch
-class EmailTemplate(ABC):
-    @abstractmethod
-    def set_content(self, content: str): ...
+class WelcomeEmail extends EmailTemplate {
+    String subject;
+    String content;
 
-    @abstractmethod
-    def send(self, to: str): ...
+    WelcomeEmail() {
+        this.subject = "Welcome to TUF+";
+        this.content = "Hi there! Thanks for joining us.";
+        // Imagine this also loads config, validates templates, sets up formatting — expensive
+    }
 
-class WelcomeEmail(EmailTemplate):
-    def __init__(self):
-        self.subject = "Welcome to TUF+"
-        self.content = "Hi there! Thanks for joining us."
-        # Imagine this also loads config, validates templates, sets up formatting — expensive
+    @Override
+    void setContent(String content) {
+        this.content = content;
+    }
 
-    def set_content(self, content: str):
-        self.content = content
+    @Override
+    void send(String to) {
+        System.out.println("Sending to " + to + ": [" + subject + "] " + content);
+    }
+}
 
-    def send(self, to: str):
-        print(f"Sending to {to}: [{self.subject}] {self.content}")
+public class Main {
+    public static void main(String[] args) {
+        // Creating a new instance every time — redundant re-initialization
+        WelcomeEmail email1 = new WelcomeEmail();
+        email1.send("user1@example.com");
 
-if __name__ == "__main__":
-    # Creating a new instance every time — redundant re-initialization
-    email1 = WelcomeEmail()
-    email1.send("user1@example.com")
+        WelcomeEmail email2 = new WelcomeEmail();  // Same expensive constructor again
+        email2.setContent("Hi there! Welcome to TUF Premium.");
+        email2.send("user2@example.com");
 
-    email2 = WelcomeEmail()  # Same expensive constructor again
-    email2.set_content("Hi there! Welcome to TUF Premium.")
-    email2.send("user2@example.com")
-
-    email3 = WelcomeEmail()  # And again
-    email3.set_content("Thanks for signing up. Let's get started!")
-    email3.send("user3@example.com")
+        WelcomeEmail email3 = new WelcomeEmail();  // And again
+        email3.setContent("Thanks for signing up. Let's get started!");
+        email3.send("user3@example.com");
+    }
+}
 ```
 
 **Issues:**
@@ -195,72 +220,87 @@ if __name__ == "__main__":
 
 ## The Solution: Prototype Pattern
 
-```python
-import copy
-from abc import ABC, abstractmethod
-from typing import Dict
+```java
+import java.util.HashMap;
+import java.util.Map;
 
-# 1. Prototype interface
-class EmailTemplateProto(ABC):
-    @abstractmethod
-    def clone(self) -> "EmailTemplateProto": ...
+// 1. Prototype interface
+interface EmailTemplateProto extends Cloneable {
+    EmailTemplate clone();
+}
 
-# 2. Base class with clone support
-class EmailTemplate(EmailTemplateProto):
-    def __init__(self):
-        self.subject: str = ""
-        self.content: str = ""
+// 2. Base class with clone support
+abstract class EmailTemplate implements EmailTemplateProto {
+    protected String subject = "";
+    protected String content = "";
 
-    def clone(self) -> "EmailTemplate":
-        return copy.copy(self)  # Shallow copy
-
-    def set_content(self, content: str):
-        self.content = content
-
-    def send(self, to: str):
-        print(f"Sending to {to}: [{self.subject}] {self.content}")
-
-# 3. Concrete prototypes — expensive setup happens ONCE in the constructor
-class WelcomeEmail(EmailTemplate):
-    def __init__(self):
-        super().__init__()
-        self.subject = "Welcome to TUF+"
-        self.content = "Hi there! Thanks for joining us."
-        # Expensive initialization happens only once here
-
-class DiscountEmail(EmailTemplate):
-    def __init__(self):
-        super().__init__()
-        self.subject = "Special Offer — 30% Off!"
-        self.content = "Hi! Use code SAVE30 at checkout."
-
-# 4. Registry — stores and serves clones of pre-configured prototypes
-class EmailTemplateRegistry:
-    _templates: Dict[str, EmailTemplate] = {
-        "welcome":  WelcomeEmail(),   # Created ONCE
-        "discount": DiscountEmail(),  # Created ONCE
+    @Override
+    public EmailTemplate clone() {
+        try {
+            return (EmailTemplate) super.clone();  // Shallow copy
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e);
+        }
     }
 
-    @classmethod
-    def get_template(cls, type: str) -> EmailTemplate:
-        template = cls._templates.get(type)
-        if template is None:
-            raise ValueError(f"Unknown template: {type}")
-        return template.clone()  # Return a clone, never the original
+    void setContent(String content) {
+        this.content = content;
+    }
 
-# 5. Client — clones templates, modifies only what's needed
-if __name__ == "__main__":
-    email1 = EmailTemplateRegistry.get_template("welcome")
-    email1.set_content("Hi Alice, welcome to TUF Premium!")
-    email1.send("alice@example.com")
+    void send(String to) {
+        System.out.println("Sending to " + to + ": [" + subject + "] " + content);
+    }
+}
 
-    email2 = EmailTemplateRegistry.get_template("welcome")
-    email2.set_content("Hi Bob, thanks for joining!")
-    email2.send("bob@example.com")
+// 3. Concrete prototypes — expensive setup happens ONCE in the constructor
+class WelcomeEmail extends EmailTemplate {
+    WelcomeEmail() {
+        this.subject = "Welcome to TUF+";
+        this.content = "Hi there! Thanks for joining us.";
+        // Expensive initialization happens only once here
+    }
+}
 
-    # Original prototype is unchanged — both emails were cloned independently
-    discount = EmailTemplateRegistry.get_template("discount")
-    discount.send("carol@example.com")  # Use as-is
+class DiscountEmail extends EmailTemplate {
+    DiscountEmail() {
+        this.subject = "Special Offer — 30% Off!";
+        this.content = "Hi! Use code SAVE30 at checkout.";
+    }
+}
+
+// 4. Registry — stores and serves clones of pre-configured prototypes
+class EmailTemplateRegistry {
+    private static final Map<String, EmailTemplate> TEMPLATES = new HashMap<>();
+    static {
+        TEMPLATES.put("welcome", new WelcomeEmail());    // Created ONCE
+        TEMPLATES.put("discount", new DiscountEmail());  // Created ONCE
+    }
+
+    static EmailTemplate getTemplate(String type) {
+        EmailTemplate template = TEMPLATES.get(type);
+        if (template == null) {
+            throw new IllegalArgumentException("Unknown template: " + type);
+        }
+        return template.clone();  // Return a clone, never the original
+    }
+}
+
+// 5. Client — clones templates, modifies only what's needed
+public class Main {
+    public static void main(String[] args) {
+        EmailTemplate email1 = EmailTemplateRegistry.getTemplate("welcome");
+        email1.setContent("Hi Alice, welcome to TUF Premium!");
+        email1.send("alice@example.com");
+
+        EmailTemplate email2 = EmailTemplateRegistry.getTemplate("welcome");
+        email2.setContent("Hi Bob, thanks for joining!");
+        email2.send("bob@example.com");
+
+        // Original prototype is unchanged — both emails were cloned independently
+        EmailTemplate discount = EmailTemplateRegistry.getTemplate("discount");
+        discount.send("carol@example.com");  // Use as-is
+    }
+}
 ```
 
 ### Class Diagram
@@ -313,23 +353,34 @@ classDiagram
 
 **Deep Clone**: Copies everything recursively. Each clone is fully independent.
 
-```python
-import copy
+```java
+import java.util.ArrayList;
+import java.util.List;
 
-# Deep clone example — for objects with nested mutable state
-class EmailTemplate:
-    def __init__(self):
-        self.subject     = ""
-        self.attachments = []  # Mutable nested object
+// Deep clone example — for objects with nested mutable state
+class EmailTemplate implements Cloneable {
+    String subject = "";
+    List<String> attachments = new ArrayList<>();  // Mutable nested field
 
-    def clone(self) -> "EmailTemplate":
-        new_obj = copy.copy(self)
-        new_obj.attachments = list(self.attachments)  # Deep copy the list
-        return new_obj
+    @Override
+    public EmailTemplate clone() {
+        try {
+            EmailTemplate copy = (EmailTemplate) super.clone();
+            copy.attachments = new ArrayList<>(this.attachments);  // Deep copy the list
+            return copy;
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e);
+        }
+    }
 
-    # For arbitrarily nested mutable objects, use copy.deepcopy:
-    def deep_clone(self) -> "EmailTemplate":
-        return copy.deepcopy(self)
+    // For arbitrarily nested mutable objects, deep-clone each nested field by hand
+    // (Java has no built-in equivalent of Python's copy.deepcopy)
+    public EmailTemplate deepClone() {
+        EmailTemplate copy = clone();
+        // ... recursively clone any further nested mutable objects here
+        return copy;
+    }
+}
 ```
 
 Use deep cloning when the prototype contains mutable nested objects. Otherwise, clones share state and modifying one affects all others.

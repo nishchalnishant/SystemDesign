@@ -168,90 +168,128 @@ class ACL:
 - Key is empty → raise ValueError
 - Overwrite existing object (versioning disabled) → silently replaces
 
-```python
-def put_object(self, caller, bucket_name, key, data, content_type, tags=None):
-    bucket = self._get_bucket(bucket_name)
-    if not bucket:
-        raise BucketNotFoundError(bucket_name)
-    if not bucket.acl.has_permission(caller, Permission.WRITE):
-        raise PermissionDeniedError(f"{caller} lacks WRITE on {bucket_name}")
-    if not key:
-        raise ValueError("Object key cannot be empty")
+```java
+public ObjectMetadata putObject(String caller, String bucketName, String key, byte[] data,
+                                 String contentType, Map<String, String> tags) {
+    Bucket bucket = getBucket(bucketName);
+    if (bucket == null) {
+        throw new BucketNotFoundError(bucketName);
+    }
+    if (!bucket.getAcl().hasPermission(caller, Permission.WRITE)) {
+        throw new PermissionDeniedError(caller + " lacks WRITE on " + bucketName);
+    }
+    if (key == null || key.isEmpty()) {
+        throw new IllegalArgumentException("Object key cannot be empty");
+    }
 
-    checksum = hashlib.md5(data).hexdigest()
-    metadata = ObjectMetadata(
-        content_type=content_type,
-        size=len(data),
-        checksum=checksum,
-        tags=tags or {},
-        created_at=datetime.utcnow(),
-        last_modified=datetime.utcnow(),
-        etag=checksum
-    )
-    obj = StorageObject(
-        bucket_name=bucket_name,
-        key=key,
-        data=data,
-        metadata=metadata,
-        acl=ACL()   # inherit bucket ACL by default or start empty
-    )
-    bucket.objects[key] = obj
-    return metadata
+    String checksum = md5Hex(data);
+    Instant now = Instant.now();
+    ObjectMetadata metadata = new ObjectMetadata(
+        contentType,
+        data.length,
+        checksum,
+        tags != null ? tags : new HashMap<>(),
+        now,
+        now,
+        checksum
+    );
+    StorageObject obj = new StorageObject(
+        bucketName,
+        key,
+        data,
+        metadata,
+        new ACL()   // inherit bucket ACL by default or start empty
+    );
+    bucket.getObjects().put(key, obj);
+    return metadata;
+}
+
+private static String md5Hex(byte[] data) {
+    try {
+        MessageDigest digest = MessageDigest.getInstance("MD5");
+        byte[] hash = digest.digest(data);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hash) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    } catch (NoSuchAlgorithmException e) {
+        throw new RuntimeException(e);
+    }
+}
 ```
 
 ### Core Method: `Bucket.list_objects`
 
-```python
-def list_objects(self, prefix=""):
-    if not prefix:
-        return list(self.objects.values())
-    return [
-        obj for key, obj in self.objects.items()
-        if key.startswith(prefix)
-    ]
+```java
+public List<StorageObject> listObjects(String prefix) {
+    if (prefix == null || prefix.isEmpty()) {
+        return new ArrayList<>(this.objects.values());
+    }
+    List<StorageObject> result = new ArrayList<>();
+    for (Map.Entry<String, StorageObject> entry : this.objects.entrySet()) {
+        if (entry.getKey().startsWith(prefix)) {
+            result.add(entry.getValue());
+        }
+    }
+    return result;
+}
 ```
 
 ### Core Method: `StorageService.get_object`
 
-```python
-def get_object(self, caller, bucket_name, key):
-    bucket = self._get_bucket(bucket_name)
-    if not bucket:
-        raise BucketNotFoundError(bucket_name)
+```java
+public AbstractMap.SimpleEntry<byte[], ObjectMetadata> getObject(String caller, String bucketName, String key) {
+    Bucket bucket = getBucket(bucketName);
+    if (bucket == null) {
+        throw new BucketNotFoundError(bucketName);
+    }
 
-    obj = bucket.get_object(key)
-    if not obj:
-        raise ObjectNotFoundError(key)
+    StorageObject obj = bucket.getObject(key).orElse(null);
+    if (obj == null) {
+        throw new ObjectNotFoundError(key);
+    }
 
-    # Check bucket-level READ, then object-level READ
-    if not (bucket.acl.has_permission(caller, Permission.READ) or
-            obj.acl.has_permission(caller, Permission.READ) or
-            obj.acl.is_public(Permission.READ)):
-        raise PermissionDeniedError(f"{caller} lacks READ on {key}")
+    // Check bucket-level READ, then object-level READ
+    boolean allowed = bucket.getAcl().hasPermission(caller, Permission.READ)
+            || obj.getAcl().hasPermission(caller, Permission.READ)
+            || obj.getAcl().isPublic(Permission.READ);
+    if (!allowed) {
+        throw new PermissionDeniedError(caller + " lacks READ on " + key);
+    }
 
-    return obj.data, obj.metadata
+    return new AbstractMap.SimpleEntry<>(obj.getData(), obj.getMetadata());
+}
 ```
 
 ### ACL implementation
 
-```python
-class ACL:
-    PUBLIC_PRINCIPAL = "*"
+```java
+public class ACL {
+    public static final String PUBLIC_PRINCIPAL = "*";
 
-    def __init__(self):
-        self.grants = {}
+    private final Map<String, Set<Permission>> grants = new HashMap<>();
 
-    def grant(self, principal, permissions):
-        if principal not in self.grants:
-            self.grants[principal] = set()
-        self.grants[principal].update(permissions)
+    public void grant(String principal, Set<Permission> permissions) {
+        grants.computeIfAbsent(principal, k -> new HashSet<>()).addAll(permissions);
+    }
 
-    def has_permission(self, principal, permission):
-        return (permission in self.grants.get(principal, set()) or
-                self.is_public(permission))
+    public void revoke(String principal, Set<Permission> permissions) {
+        Set<Permission> existing = grants.get(principal);
+        if (existing != null) {
+            existing.removeAll(permissions);
+        }
+    }
 
-    def is_public(self, permission):
-        return permission in self.grants.get(self.PUBLIC_PRINCIPAL, set())
+    public boolean hasPermission(String principal, Permission permission) {
+        return grants.getOrDefault(principal, Collections.emptySet()).contains(permission)
+                || isPublic(permission);
+    }
+
+    public boolean isPublic(Permission permission) {
+        return grants.getOrDefault(PUBLIC_PRINCIPAL, Collections.emptySet()).contains(permission);
+    }
+}
 ```
 
 ---
@@ -297,38 +335,60 @@ ss.get_object(caller="bob", ...)
 
 Change `Bucket.objects` from `dict[str, StorageObject]` to `dict[str, list[StorageObject]]`. Each put appends a new version. The latest version is `objects[key][-1]`. Add a `version_id` field to `StorageObject` (UUID or sequential).
 
-```python
-def put_object_versioned(self, key, data, metadata):
-    if key not in self.versions:
-        self.versions[key] = []
-    obj = StorageObject(..., version_id=generate_id())
-    self.versions[key].append(obj)
-    return obj
+```java
+public StorageObject putObjectVersioned(String key, byte[] data, ObjectMetadata metadata) {
+    versions.computeIfAbsent(key, k -> new ArrayList<>());
+    StorageObject obj = new StorageObject(/* ... */ generateId());
+    versions.get(key).add(obj);
+    return obj;
+}
 
-def get_object(self, key, version_id=None):
-    versions = self.versions.get(key, [])
-    if not versions:
-        return None
-    if version_id:
-        return next((v for v in versions if v.version_id == version_id), None)
-    return versions[-1]  # latest
+public Optional<StorageObject> getObject(String key, String versionId) {
+    List<StorageObject> objVersions = versions.getOrDefault(key, Collections.emptyList());
+    if (objVersions.isEmpty()) {
+        return Optional.empty();
+    }
+    if (versionId != null) {
+        return objVersions.stream()
+                .filter(v -> v.getVersionId().equals(versionId))
+                .findFirst();
+    }
+    return Optional.of(objVersions.get(objVersions.size() - 1));  // latest
+}
 ```
 
 ### 2. "How would you handle multipart upload for large objects?"
 
-```python
-class MultipartUpload:
-    def __init__(self, upload_id, bucket, key):
-        self.upload_id = upload_id
-        self.parts = {}   # part_number → bytes
+```java
+public class MultipartUpload {
+    private final String uploadId;
+    private final String bucket;
+    private final String key;
+    private final Map<Integer, byte[]> parts = new TreeMap<>();  // part_number → bytes
 
-    def upload_part(self, part_number, data):
-        self.parts[part_number] = data
-        return hashlib.md5(data).hexdigest()  # ETag for the part
+    public MultipartUpload(String uploadId, String bucket, String key) {
+        this.uploadId = uploadId;
+        this.bucket = bucket;
+        this.key = key;
+    }
 
-    def complete(self):
-        all_data = b"".join(self.parts[n] for n in sorted(self.parts))
-        return all_data
+    public String uploadPart(int partNumber, byte[] data) {
+        parts.put(partNumber, data);
+        return md5Hex(data);  // ETag for the part
+    }
+
+    public byte[] complete() {
+        // TreeMap keeps parts sorted by part number
+        int totalLength = parts.values().stream().mapToInt(p -> p.length).sum();
+        byte[] allData = new byte[totalLength];
+        int offset = 0;
+        for (byte[] part : parts.values()) {
+            System.arraycopy(part, 0, allData, offset, part.length);
+            offset += part.length;
+        }
+        return allData;
+    }
+}
 ```
 
 `StorageService` manages `active_uploads: dict[upload_id, MultipartUpload]`. Client uploads parts in parallel, then calls `complete_multipart_upload`.
@@ -337,22 +397,63 @@ class MultipartUpload:
 
 For a true FS (not S3 flat), use Composite:
 
-```python
-class FileSystemEntry (abstract):
-+ get_name() -> str
-+ get_size() -> int
+```java
+public interface FileSystemEntry {
+    String getName();
+    int getSize();
+}
 
-class File(FileSystemEntry):
-- name: str
-- content: bytes
-+ get_size() -> int  # len(content)
+public class File implements FileSystemEntry {
+    private final String name;
+    private final byte[] content;
 
-class Directory(FileSystemEntry):
-- name: str
-- children: dict[str, FileSystemEntry]
-+ add(entry: FileSystemEntry)
-+ get_size() -> int  # sum of children sizes (recursive)
-+ list() -> list[FileSystemEntry]
+    public File(String name, byte[] content) {
+        this.name = name;
+        this.content = content;
+    }
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    @Override
+    public int getSize() {
+        return content.length;
+    }
+}
+
+public class Directory implements FileSystemEntry {
+    private final String name;
+    private final Map<String, FileSystemEntry> children = new HashMap<>();
+
+    public Directory(String name) {
+        this.name = name;
+    }
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    public void add(FileSystemEntry entry) {
+        children.put(entry.getName(), entry);
+    }
+
+    @Override
+    public int getSize() {
+        // sum of children sizes (recursive)
+        int total = 0;
+        for (FileSystemEntry entry : children.values()) {
+            total += entry.getSize();
+        }
+        return total;
+    }
+
+    public List<FileSystemEntry> list() {
+        return new ArrayList<>(children.values());
+    }
+}
 ```
 
 `get_size()` on `Directory` recursively sums children — the classic Composite pattern.
@@ -361,17 +462,21 @@ class Directory(FileSystemEntry):
 
 S3's design principle: metadata reads are far more frequent than data reads. Store metadata in a fast index (DB/in-memory dict) separate from the binary data (block storage). `get_object` can return just metadata (HEAD request) without loading the binary.
 
-```python
-class StorageBackend:
-    def put(self, object_id, data: bytes) -> str:  # returns storage path
-        path = f"/storage/{object_id[:2]}/{object_id}"
-        with open(path, 'wb') as f:
-            f.write(data)
-        return path
+```java
+public class StorageBackend {
 
-    def get(self, path) -> bytes:
-        with open(path, 'rb') as f:
-            return f.read()
+    public String put(String objectId, byte[] data) throws IOException {  // returns storage path
+        String path = String.format("/storage/%s/%s", objectId.substring(0, 2), objectId);
+        try (FileOutputStream fos = new FileOutputStream(path)) {
+            fos.write(data);
+        }
+        return path;
+    }
+
+    public byte[] get(String path) throws IOException {
+        return Files.readAllBytes(Paths.get(path));
+    }
+}
 ```
 
 `StorageObject.data_path` points to the backend; `metadata` lives in memory/DB.

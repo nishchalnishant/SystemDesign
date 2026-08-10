@@ -78,17 +78,20 @@ If you have to change existing code every time you add new functionality, you ri
 
 ### Bad Example (Violates OCP)
 
-```python
-import math
-
-class AreaCalculator:
-    def calculate_area(self, shape) -> float:
-        if isinstance(shape, Rectangle):
-            return shape.length * shape.width
-        elif isinstance(shape, Circle):
-            return math.pi * shape.radius * shape.radius
-        # To add Triangle, we MUST MODIFY this class!
-        return 0
+```java
+class AreaCalculator {
+    public double calculateArea(Object shape) {
+        if (shape instanceof Rectangle) {
+            Rectangle r = (Rectangle) shape;
+            return r.length * r.width;
+        } else if (shape instanceof Circle) {
+            Circle c = (Circle) shape;
+            return Math.PI * c.radius * c.radius;
+        }
+        // To add Triangle, we MUST MODIFY this class!
+        return 0;
+    }
+}
 ```
 
 **Problems:**
@@ -100,51 +103,69 @@ class AreaCalculator:
 
 ### Good Example (Follows OCP)
 
-```python
-import math
-from abc import ABC, abstractmethod
-from typing import List
+```java
+import java.util.List;
+
+// 1. Define an interface (Contract) — this is the stable abstraction
+interface Shape {
+    double calculateArea();
+}
 
 
-# 1. Define an abstract base class (Contract) — this is the stable abstraction
-class Shape(ABC):
-    @abstractmethod
-    def calculate_area(self) -> float:
-        pass
+// 2. Each shape owns its own calculation logic
+class Rectangle implements Shape {
+    private final double length;
+    private final double width;
+
+    public Rectangle(double length, double width) {
+        this.length = length;
+        this.width = width;
+    }
+
+    @Override
+    public double calculateArea() {
+        return length * width;
+    }
+}
 
 
-# 2. Each shape owns its own calculation logic
-class Rectangle(Shape):
-    def __init__(self, length: float, width: float):
-        self.length = length
-        self.width = width
+class Circle implements Shape {
+    private final double radius;
 
-    def calculate_area(self) -> float:
-        return self.length * self.width
+    public Circle(double radius) {
+        this.radius = radius;
+    }
 
-
-class Circle(Shape):
-    def __init__(self, radius: float):
-        self.radius = radius
-
-    def calculate_area(self) -> float:
-        return math.pi * self.radius * self.radius
+    @Override
+    public double calculateArea() {
+        return Math.PI * radius * radius;
+    }
+}
 
 
-# 3. Adding Triangle = zero changes to AreaCalculator
-class Triangle(Shape):
-    def __init__(self, base: float, height: float):
-        self.base = base
-        self.height = height
+// 3. Adding Triangle = zero changes to AreaCalculator
+class Triangle implements Shape {
+    private final double base;
+    private final double height;
 
-    def calculate_area(self) -> float:
-        return 0.5 * self.base * self.height
+    public Triangle(double base, double height) {
+        this.base = base;
+        this.height = height;
+    }
+
+    @Override
+    public double calculateArea() {
+        return 0.5 * base * height;
+    }
+}
 
 
-# 4. AreaCalculator never needs to change
-class AreaCalculator:
-    def calculate_total_area(self, shapes: List[Shape]) -> float:
-        return sum(shape.calculate_area() for shape in shapes)  # Polymorphism does the work
+// 4. AreaCalculator never needs to change
+class AreaCalculator {
+    public double calculateTotalArea(List<Shape> shapes) {
+        return shapes.stream().mapToDouble(Shape::calculateArea).sum(); // Polymorphism does the work
+    }
+}
 ```
 
 **Benefits:**
@@ -158,57 +179,73 @@ class AreaCalculator:
 
 ### Bad
 
-```python
-class NotificationSender:
-    def send(self, type: str, message: str):
-        if type == "email":
-            pass  # SMTP logic
-        elif type == "sms":
-            pass  # Twilio logic
-        elif type == "push":
-            pass  # FCM logic — had to modify this class to add push!
-        # Slack? Webhook? Modify again...
+```java
+class NotificationSender {
+    public void send(String type, String message) {
+        if (type.equals("email")) {
+            // SMTP logic
+        } else if (type.equals("sms")) {
+            // Twilio logic
+        } else if (type.equals("push")) {
+            // FCM logic — had to modify this class to add push!
+        }
+        // Slack? Webhook? Modify again...
+    }
+}
 ```
 
 ### Good
 
-```python
-from abc import ABC, abstractmethod
+```java
+interface NotificationChannel {
+    void send(String message);
+}
 
 
-class NotificationChannel(ABC):
-    @abstractmethod
-    def send(self, message: str):
-        pass
+class EmailChannel implements NotificationChannel {
+    @Override
+    public void send(String message) {
+        // SMTP logic
+    }
+}
 
 
-class EmailChannel(NotificationChannel):
-    def send(self, message: str):
-        pass  # SMTP logic
+class SMSChannel implements NotificationChannel {
+    @Override
+    public void send(String message) {
+        // Twilio logic
+    }
+}
 
 
-class SMSChannel(NotificationChannel):
-    def send(self, message: str):
-        pass  # Twilio logic
+class PushChannel implements NotificationChannel {
+    @Override
+    public void send(String message) {
+        // FCM logic
+    }
+}
 
 
-class PushChannel(NotificationChannel):
-    def send(self, message: str):
-        pass  # FCM logic
+// New channel? Just add a new class. NotificationSender never changes.
+class SlackChannel implements NotificationChannel {
+    @Override
+    public void send(String message) {
+        // Slack webhook logic
+    }
+}
 
 
-# New channel? Just add a new class. NotificationSender never changes.
-class SlackChannel(NotificationChannel):
-    def send(self, message: str):
-        pass  # Slack webhook logic
+class NotificationSender {
+    private final NotificationChannel channel;
 
+    public NotificationSender(NotificationChannel channel) {
+        this.channel = channel;
+    }
 
-class NotificationSender:
-    def __init__(self, channel: NotificationChannel):
-        self._channel = channel
-
-    def notify(self, message: str):
-        self._channel.send(message)  # Closed for modification
+    public void notify(String message) {
+        channel.send(message); // Closed for modification
+    }
+}
 ```
 
 ---

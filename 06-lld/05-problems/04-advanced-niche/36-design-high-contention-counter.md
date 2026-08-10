@@ -47,8 +47,8 @@ Design a counter that supports high-throughput concurrent increment operations w
 **You**: "What's the use case — request counter, like counter, vote counter?"
 **Interviewer**: "General purpose — think page view counter or rate limiter base counter."
 
-**You**: "Can we use Python's threading module?"
-**Interviewer**: "Yes — simulate the design. Discuss where Python's GIL helps and where it doesn't."
+**You**: "Can we use Java's `java.util.concurrent` primitives directly?"
+**Interviewer**: "Yes — use real `AtomicLong`/CAS. Discuss how this compares to Java's built-in `LongAdder`."
 
 ---
 
@@ -86,37 +86,36 @@ Design a counter that supports high-throughput concurrent increment operations w
 
 ```
 class NaiveCounter:
-- value: int
-- lock: threading.Lock
+- value: long
+- lock: Object (synchronized monitor)
 
-+ increment(delta=1)
-+ decrement(delta=1)
-+ get() -> int
++ increment(delta: long = 1): void
++ decrement(delta: long = 1): void
++ get(): long
 ```
 
 ### StripedCounter
 
 ```
 class StripedCounter:
-- cells: list[int]       # N cells, one per stripe
-- locks: list[Lock]      # one lock per cell
-- num_stripes: int
+- cells: long[]                 # N cells, one per stripe
+- locks: ReentrantLock[]        # one lock per cell
+- numStripes: int
 
-+ increment(delta=1)
-+ decrement(delta=1)
-+ get() -> int           # sum of all cells (may be slightly stale)
-+ reset()
++ increment(delta: long = 1): void
++ decrement(delta: long = 1): void
++ get(): long                   # sum of all cells (may be slightly stale)
++ reset(): void
 ```
 
-### CASCounter (lock-free simulation)
+### CASCounter (real CAS via AtomicLong)
 
 ```
 class CASCounter:
-- _value: int
-- _lock: Lock            # only for CAS simulation; real CAS uses CPU instruction
+- value: AtomicLong             # real hardware CAS, no lock needed
 
-+ increment(delta=1)
-+ get() -> int
++ increment(delta: long = 1): void
++ get(): long
 ```
 
 ---
@@ -125,23 +124,29 @@ class CASCounter:
 
 ### NaiveCounter (baseline — the bottleneck)
 
-```python
-class NaiveCounter:
-    def __init__(self):
-        self._value = 0
-        self._lock = threading.Lock()
+```java
+public class NaiveCounter {
+    private long value = 0;
+    private final Object lock = new Object();
 
-    def increment(self, delta=1):
-        with self._lock:
-            self._value += delta
+    public void increment(long delta) {
+        synchronized (lock) {
+            value += delta;
+        }
+    }
 
-    def decrement(self, delta=1):
-        with self._lock:
-            self._value -= delta
+    public void decrement(long delta) {
+        synchronized (lock) {
+            value -= delta;
+        }
+    }
 
-    def get(self):
-        with self._lock:
-            return self._value
+    public long get() {
+        synchronized (lock) {
+            return value;
+        }
+    }
+}
 ```
 
 **Problem**: Every increment acquires the same lock. Under 100 threads, 99 threads wait for the 1 holding the lock. Throughput = 1 increment / lock-acquisition-time, regardless of CPU count.
@@ -150,123 +155,186 @@ class NaiveCounter:
 
 Distribute increments across N independent cells. Threads are assigned a cell (by `thread_id % num_stripes` or randomly). Each cell has its own lock — threads on different stripes never contend. `get()` sums all cells.
 
-```python
-class StripedCounter:
-    def __init__(self, num_stripes=None):
-        cpu_count = os.cpu_count() or 4
-        self.num_stripes = num_stripes or cpu_count * 4
-        self.cells = [0] * self.num_stripes
-        self.locks = [threading.Lock() for _ in range(self.num_stripes)]
+```java
+import java.util.concurrent.locks.ReentrantLock;
 
-    def _stripe_index(self):
-        # Use thread identity to pick a stripe (consistent per-thread)
-        return threading.get_ident() % self.num_stripes
+public class StripedCounter {
+    private final int numStripes;
+    private final long[] cells;
+    private final ReentrantLock[] locks;
 
-    def increment(self, delta=1):
-        idx = self._stripe_index()
-        with self.locks[idx]:
-            self.cells[idx] += delta
+    public StripedCounter(int numStripes) {
+        int cpuCount = Runtime.getRuntime().availableProcessors();
+        this.numStripes = numStripes > 0 ? numStripes : cpuCount * 4;
+        this.cells = new long[this.numStripes];
+        this.locks = new ReentrantLock[this.numStripes];
+        for (int i = 0; i < this.numStripes; i++) {
+            locks[i] = new ReentrantLock();
+        }
+    }
 
-    def decrement(self, delta=1):
-        idx = self._stripe_index()
-        with self.locks[idx]:
-            self.cells[idx] -= delta
+    private int stripeIndex() {
+        // Use thread identity to pick a stripe (consistent per-thread)
+        long tid = Thread.currentThread().threadId();
+        return (int) (tid % numStripes);
+    }
 
-    def get(self):
-        # Sum without holding all locks (slightly stale but O(stripes))
-        return sum(self.cells)
+    public void increment(long delta) {
+        int idx = stripeIndex();
+        locks[idx].lock();
+        try {
+            cells[idx] += delta;
+        } finally {
+            locks[idx].unlock();
+        }
+    }
 
-    def get_exact(self):
-        # Hold all locks for a consistent snapshot
-        for lock in self.locks:
-            lock.acquire()
-        try:
-            return sum(self.cells)
-        finally:
-            for lock in self.locks:
-                lock.release()
+    public void decrement(long delta) {
+        int idx = stripeIndex();
+        locks[idx].lock();
+        try {
+            cells[idx] -= delta;
+        } finally {
+            locks[idx].unlock();
+        }
+    }
 
-    def reset(self):
-        for i, lock in enumerate(self.locks):
-            with lock:
-                self.cells[i] = 0
+    public long get() {
+        // Sum without holding all locks (slightly stale but O(stripes))
+        long total = 0;
+        for (long cell : cells) {
+            total += cell;
+        }
+        return total;
+    }
+
+    public long getExact() {
+        // Hold all locks for a consistent snapshot
+        for (ReentrantLock lock : locks) {
+            lock.lock();
+        }
+        try {
+            long total = 0;
+            for (long cell : cells) {
+                total += cell;
+            }
+            return total;
+        } finally {
+            for (ReentrantLock lock : locks) {
+                lock.unlock();
+            }
+        }
+    }
+
+    public void reset() {
+        for (int i = 0; i < numStripes; i++) {
+            locks[i].lock();
+            try {
+                cells[i] = 0;
+            } finally {
+                locks[i].unlock();
+            }
+        }
+    }
+}
 ```
 
 **Throughput**: 100 threads × 1 increment/lock-time, but contention is distributed. Effective throughput scales toward O(num_stripes × 1/lock-time).
 
 ### CASCounter (lock-free)
 
-```python
-class CASCounter:
-    def __init__(self):
-        self._value = 0
-        self._lock = threading.Lock()  # simulation only
+```java
+import java.util.concurrent.atomic.AtomicLong;
 
-    def _cas(self, expected, new_val):
-        with self._lock:
-            if self._value == expected:
-                self._value = new_val
-                return True
-            return False
+public class CASCounter {
+    // AtomicLong.compareAndSet is a real hardware CAS (LOCK CMPXCHG on x86) —
+    // no lock is used to simulate it, unlike a GIL-protected `+=` in Python.
+    private final AtomicLong value = new AtomicLong(0);
 
-    def increment(self, delta=1):
-        while True:
-            current = self._value
-            if self._cas(current, current + delta):
-                return
+    public void increment(long delta) {
+        while (true) {
+            long current = value.get();
+            if (value.compareAndSet(current, current + delta)) {
+                return;
+            }
+            // CAS failed — another thread updated concurrently; retry (spin)
+        }
+    }
 
-    def get(self):
-        return self._value
+    public long get() {
+        return value.get();
+    }
+}
 ```
 
-**Note**: In Python, `+=` on an integer is effectively atomic due to the GIL, but in Java/C++ without a lock, CAS is needed. The CASCounter demonstrates the pattern; in production Python you'd use `threading.Lock` or rely on the GIL.
+**Note**: In production Java you would simply call `value.addAndGet(delta)` (or `getAndAdd`), which performs the same CAS-retry loop internally via `Unsafe`/`VarHandle` intrinsics. The explicit `while` loop above exists to make the CAS pattern visible for the interview — it is not something you'd hand-write in real code. Java has no GIL: without `AtomicLong` or a lock, concurrent `value += delta` on a plain `long` field is a genuine, unguarded data race (lost updates), unlike Python where the GIL happens to serialize the bytecode for a bare `+=`.
 
 ### LongAdderCounter (Java LongAdder pattern)
 
 The Java `LongAdder` uses a CAS-protected base value plus a dynamic array of `Cell`s. Under low contention: CAS the base. Under contention (CAS failure): hash thread to a cell, increment that cell. `sum()` = base + sum(cells).
 
-```python
-class LongAdderCounter:
-    def __init__(self):
-        self._base = 0
-        self._base_lock = threading.Lock()
-        self._cells = []
-        self._cell_locks = []
-        self._cells_initialized = threading.Event()
-        self._num_cells = (os.cpu_count() or 4) * 2
+```java
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-    def increment(self, delta=1):
-        # Try base first (fast path for low contention)
-        if self._base_lock.acquire(blocking=False):
-            self._base += delta
-            self._base_lock.release()
-        else:
-            # Contention detected — use striped cells
-            self._ensure_cells()
-            idx = threading.get_ident() % self._num_cells
-            with self._cell_locks[idx]:
-                self._cells[idx] += delta
+public class LongAdderCounter {
+    private final AtomicLong base = new AtomicLong(0);
+    private volatile AtomicLongArray cells;   // lazily initialized, visible across threads
+    private final AtomicBoolean cellsInitialized = new AtomicBoolean(false);
+    private final int numCells;
 
-    def _ensure_cells(self):
-        if not self._cells:
-            self._cells = [0] * self._num_cells
-            self._cell_locks = [threading.Lock() for _ in range(self._num_cells)]
+    public LongAdderCounter() {
+        this.numCells = Runtime.getRuntime().availableProcessors() * 2;
+    }
 
-    def get(self):
-        with self._base_lock:
-            total = self._base
-        for i, lock in enumerate(self._cell_locks):
-            with lock:
-                total += self._cells[i]
-        return total
+    public void increment(long delta) {
+        // Fast path: try a lock-free CAS on the base (cheap under low contention)
+        long current = base.get();
+        if (base.compareAndSet(current, current + delta)) {
+            return;
+        }
+        // Contention detected — fall back to striped cells
+        ensureCells();
+        int idx = (int) (Thread.currentThread().threadId() % numCells);
+        cells.getAndAdd(idx, delta);
+    }
 
-    def reset(self):
-        with self._base_lock:
-            self._base = 0
-        for i, lock in enumerate(self._cell_locks):
-            with lock:
-                self._cells[i] = 0
+    private void ensureCells() {
+        if (cellsInitialized.compareAndSet(false, true)) {
+            cells = new AtomicLongArray(numCells);
+        }
+        // Busy-wait for the initializing thread to finish, in the rare race
+        // where a second thread reaches ensureCells() before `cells` is assigned.
+        while (cells == null) {
+            Thread.onSpinWait();
+        }
+    }
+
+    public long get() {
+        long total = base.get();
+        AtomicLongArray snapshot = cells;
+        if (snapshot != null) {
+            for (int i = 0; i < snapshot.length(); i++) {
+                total += snapshot.get(i);
+            }
+        }
+        return total;
+    }
+
+    public void reset() {
+        base.set(0);
+        AtomicLongArray snapshot = cells;
+        if (snapshot != null) {
+            for (int i = 0; i < snapshot.length(); i++) {
+                snapshot.set(i, 0);
+            }
+        }
+    }
+}
 ```
+
+**Judgment call**: the Python original's fast path uses `lock.acquire(blocking=False)` (a non-blocking mutex try-lock) to detect contention. The idiomatic Java analog isn't a `tryLock()` on a `ReentrantLock` — it's a failed `compareAndSet`, which is exactly what the real `java.util.concurrent.atomic.LongAdder` does internally (`Striped64.longAccumulate`). The port above follows Java's own `LongAdder` design rather than translating the Python mutex-based heuristic literally, since a failed CAS is the more precise and idiomatic "contention detected" signal on the JVM. In production you would simply use `java.util.concurrent.atomic.LongAdder` directly rather than hand-rolling this.
 
 ---
 
@@ -297,71 +365,84 @@ get():
 
 ## Deep Dive & Extensibility
 
-### 1. "How does Python's GIL affect this design?"
+### 1. "Does Java need any of this, or can threads just share a `long` field?"
 
-The GIL (Global Interpreter Lock) serializes Python bytecode execution — only one thread runs Python at a time. This means `counter += 1` is somewhat protected for simple Python integers. However:
-- GIL is released during I/O and C extensions — not reliable for pure correctness
-- The GIL doesn't eliminate all races in compound operations
-- Performance is still limited by GIL contention — `StripedCounter` reduces GIL acquisition frequency
-
-In Java/C++/Go (no GIL): CAS and striped counters are essential — not just optimization.
+Java has no GIL — the JVM runs threads with genuine parallelism across cores, so there is no accidental serialization to lean on. A bare `counter += 1` on a shared `long` (or even `volatile long`) from multiple threads is a real, unguarded data race: the read-modify-write is not atomic, and concurrent increments will silently lose updates. This is why `AtomicLong`, striped locks/cells, or `LongAdder` are not optional optimizations in Java the way they might appear to be a stylistic choice in a GIL'd interpreter — they are required for correctness under concurrent writers. `StripedCounter` and the CAS-based designs above exist specifically to reduce contention on the CAS/lock while still guaranteeing correctness.
 
 ### 2. "How would you build a distributed counter (across multiple machines)?"
 
 Three approaches with different consistency trade-offs:
 
 **Eventually consistent** (e.g., CRDT): each node maintains its own counter, periodically gossips with others, computes sum:
-```python
-# Each node: {node_id: local_count}
-# Global count = sum of all nodes' local counts
-# Merge: take max of each node's count (for increment-only)
+```java
+// Each node: Map<String, Long> nodeIdToLocalCount
+// Global count = sum of all nodes' local counts
+// Merge: take max of each node's count (for increment-only)
 ```
 
 **Redis INCR**: single Redis instance, atomic `INCR` command, O(1) and durable. Bottleneck at very high rates → use Redis Cluster or pipeline batched increments.
 
 **Kafka**: each increment is a message. Counter = total messages in a topic. Exact but with latency.
 
-### 3. "What if `get_exact()` is too expensive?"
+### 3. "What if `getExact()` is too expensive?"
 
 For approximate counts, skip locking during `get()`:
-```python
-def get(self):
-    return sum(self.cells)   # racy but approximately correct
+```java
+public long get() {
+    long total = 0;
+    for (long cell : cells) {
+        total += cell;   // racy but approximately correct
+    }
+    return total;
+}
 ```
 
 The worst case: one cell is in mid-update. The count is off by at most `delta` for that one operation — acceptable for page view counters, not for financial transactions.
 
 ### 4. "How would you implement a rate limiter using this counter?"
 
-```python
-class RateLimiter:
-    def __init__(self, max_per_second):
-        self.counter = StripedCounter()
-        self.max = max_per_second
-        self._reset_thread = threading.Thread(target=self._reset_loop, daemon=True)
-        self._reset_thread.start()
+```java
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
-    def allow(self):
-        if self.counter.get() >= self.max:
-            return False
-        self.counter.increment()
-        return True
+public class RateLimiter {
+    private final StripedCounter counter;
+    private final long max;
+    private final ScheduledExecutorService resetScheduler;
 
-    def _reset_loop(self):
-        while True:
-            time.sleep(1.0)
-            self.counter.reset()
+    public RateLimiter(long maxPerSecond) {
+        this.counter = new StripedCounter(0);   // 0 => default stripe count
+        this.max = maxPerSecond;
+        this.resetScheduler = Executors.newSingleThreadScheduledExecutor(
+            r -> {
+                Thread t = new Thread(r, "rate-limiter-reset");
+                t.setDaemon(true);
+                return t;
+            }
+        );
+        resetScheduler.scheduleAtFixedRate(counter::reset, 1, 1, TimeUnit.SECONDS);
+    }
+
+    public boolean allow() {
+        if (counter.get() >= max) {
+            return false;
+        }
+        counter.increment(1);
+        return true;
+    }
+}
 ```
 
 ---
 
 ## Interviewer Questions by Level
 
-**Junior**: `NaiveCounter` with a single lock. Explain why it's a bottleneck. Mention the GIL.
+**Junior**: `NaiveCounter` with a single lock. Explain why it's a bottleneck. Explain why Java needs explicit synchronization here (no GIL to fall back on).
 
 **Mid-level**: `StripedCounter` — N cells, N locks, thread → cell by hash. `get()` sums cells (approximately). Explain contention reduction factor.
 
-**Senior**: LongAdder pattern (fast path CAS on base, fall back to cells on contention). `get_exact()` requiring all locks. Distributed counter (CRDT, Redis INCR, Kafka). GIL implications in Python vs Java. Rate limiter application.
+**Senior**: LongAdder pattern (fast path CAS on base, fall back to cells on contention). `getExact()` requiring all locks. Distributed counter (CRDT, Redis INCR, Kafka). Why Java's real `LongAdder` exists and how it compares to hand-rolled CAS. Rate limiter application.
 
 ---
 

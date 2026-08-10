@@ -75,31 +75,33 @@ Try it before reading on.
 
 The first approach — a constructor with all fields:
 
-```python
-class User:
-    def __init__(self, name: str, email: str, age: int,
-                 address: str, phone: str, picture: str):
+```java
+class User {
+    public User(String name, String email, int age,
+                String address, String phone, String picture) {
         ...
+    }
+}
 
-# Caller:
-u = User("Alice", "alice@x.com", 0, None, None, None)
-#                                ^^  ^^^^  ^^^^  ^^^^
-#         what do these Nones mean? which is phone vs address?
+// Caller:
+User u = new User("Alice", "alice@x.com", 0, null, null, null);
+//                                         ^^  ^^^^  ^^^^  ^^^^
+//         what do these nulls mean? which is phone vs address?
 ```
 
 Or the telescoping constructor approach:
-```python
-# Need separate __init__ signatures or multiple factory methods for every combination
-u1 = User("Alice", "alice@x.com")
-u2 = User("Alice", "alice@x.com", age=30)
-u3 = User("Alice", "alice@x.com", age=30, address="123 Main St")
-# Still unreadable when positional; easy to swap arguments
+```java
+// Need separate overloaded constructors for every combination
+User u1 = new User("Alice", "alice@x.com");
+User u2 = new User("Alice", "alice@x.com", 30);
+User u3 = new User("Alice", "alice@x.com", 30, "123 Main St");
+// Still unreadable when positional; easy to swap arguments
 ```
 
 **What breaks**:
-1. **Unreadable callsites**: `User("Alice", "x@x.com", 0, None, None, None)` — what is the 5th `None`?
-2. **Constructor explosion**: N optional fields → up to 2^N combinations you might need to support.
-3. **Invalid state**: Nothing stops `User(None, None, -5, ...)` — the object is invalid from birth.
+1. **Unreadable callsites**: `new User("Alice", "x@x.com", 0, null, null, null)` — what is the 5th `null`?
+2. **Constructor explosion**: N optional fields → up to 2^N combinations you might need to support (overloaded constructors).
+3. **Invalid state**: Nothing stops `new User(null, null, -5, ...)` — the object is invalid from birth.
 4. **No immutability**: Setters let callers mutate after construction.
 
 ---
@@ -109,51 +111,66 @@ u3 = User("Alice", "alice@x.com", age=30, address="123 Main St")
 The constraint: **separate the step-by-step configuration from the final construction**.
 
 Step 1 — make the outer class take only a Builder in its constructor, with required fields enforced:
-```python
-class User:
-    def __init__(self, builder):
-        self.name  = builder.name   # required
-        self.email = builder.email  # required
-        self.age   = builder.age    # optional
-        self.phone = builder.phone  # optional
+```java
+class User {
+    private final String name;   // required
+    private final String email;  // required
+    private final Integer age;   // optional
+    private final String phone;  // optional
+
+    private User(Builder builder) {
+        this.name  = builder.name;
+        this.email = builder.email;
+        this.age   = builder.age;
+        this.phone = builder.phone;
+    }
+}
 ```
 
-Step 2 — inner `Builder` class holds the state during configuration:
-```python
-class Builder:
-    def __init__(self, name: str, email: str):
-        self.name  = name   # required → constructor param
-        self.email = email  # required → constructor param
-        self.age   = None
-        self.phone = None
+Step 2 — static nested `Builder` class holds the state during configuration:
+```java
+static class Builder {
+    private final String name;   // required → constructor param
+    private final String email;  // required → constructor param
+    private Integer age;
+    private String phone;
 
-    def age(self, a: int):
-        self.age = a
-        return self
+    public Builder(String name, String email) {
+        this.name  = name;
+        this.email = email;
+    }
 
-    def phone(self, p: str):
-        self.phone = p
-        return self
+    public Builder age(int age) {
+        this.age = age;
+        return this;
+    }
 
-    def build(self):
-        return User(self)
+    public Builder phone(String phone) {
+        this.phone = phone;
+        return this;
+    }
+
+    public User build() {
+        return new User(this);
+    }
+}
 ```
 
 Step 3 — callsite is now readable and validated:
-```python
-u = User.Builder("Alice", "alice@x.com") \
-    .age(30) \
-    .phone("555-1234") \
-    .build()
+```java
+User u = new User.Builder("Alice", "alice@x.com")
+    .age(30)
+    .phone("555-1234")
+    .build();
 ```
 
-That's the entire pattern — a fluent inner builder that returns `self` for chaining, and a `build()` that calls the outer constructor.
+That's the entire pattern — a fluent inner builder that returns `this` for chaining, and a `build()` that calls the outer (private) constructor.
 
 ---
 
 > **Purpose**: Separates the construction of a complex object from its representation, allowing step-by-step creation with full control over which parts are set.
 
-> **Analogy**: Building a custom PC. You specify: CPU=i9, RAM=32GB, Storage=1TB NVMe. The builder assembles it step by step. You don't call `Computer(i9, 32, 1000, True, False, None, ...)` and try to remember what the 7th argument means.
+> **Analogy**: Building a custom PC. You specify: CPU=i9, RAM=32GB, Storage=1TB NVMe. The builder assembles it step by step. You don't call `new Computer(i9, 32, 1000, true, false, null, ...)` and try to remember what the 7th argument means.
 
 ---
 
@@ -163,20 +180,22 @@ When an object has many optional fields, you end up with either:
 1. A constructor with too many parameters (unreadable, error-prone)
 2. Multiple overloaded constructors that grow out of control
 
-```python
-# Telescoping Constructor Anti-Pattern
-class BurgerMeal:
-    def __init__(self, bun, patty, cheese=None, side=None, drink=None):
+```java
+// Telescoping Constructor Anti-Pattern
+class BurgerMeal {
+    public BurgerMeal(String bun, String patty, Boolean cheese, String side, String drink) {
         ...
+    }
+}
 
-# Usage is confusing — what does False mean here?
-meal = BurgerMeal("wheat", "veg", None, None, False)
+// Usage is confusing — what does false mean here?
+BurgerMeal meal = new BurgerMeal("wheat", "veg", null, null, false);
 ```
 
 **Issues:**
 - Hard to read: you must remember parameter order and types
-- Unnecessary `None` values for optional fields
-- Risk of `AttributeError` if internals don't None-check
+- Unnecessary `null` values for optional fields
+- Risk of `NullPointerException` if internals don't null-check
 - Adding a new optional field means updating all call sites
 - No flexibility to set values step by step
 
@@ -184,69 +203,85 @@ meal = BurgerMeal("wheat", "veg", None, None, False)
 
 ## The Solution: Builder Pattern
 
-```python
-from typing import List, Optional
+```java
+import java.util.ArrayList;
+import java.util.List;
 
-class BurgerMeal:
-    # Private constructor — only the Builder creates BurgerMeal
-    def __init__(self, builder: "BurgerMeal.BurgerBuilder"):
-        # Required components
-        self.bun_type   = builder.bun_type
-        self.patty      = builder.patty
-        # Optional components
-        self.has_cheese = builder.has_cheese
-        self.toppings   = builder.toppings
-        self.side       = builder.side
-        self.drink      = builder.drink
+class BurgerMeal {
+    // Required components
+    private final String bunType;
+    private final String patty;
+    // Optional components
+    private final boolean hasCheese;
+    private final List<String> toppings;
+    private final String side;
+    private final String drink;
 
-    class BurgerBuilder:
-        def __init__(self, bun_type: str, patty: str):
-            # Required fields in constructor
-            self.bun_type   = bun_type
-            self.patty      = patty
-            # Optional fields with sane defaults
-            self.has_cheese: bool           = False
-            self.toppings:   List[str]      = []
-            self.side:       Optional[str]  = None
-            self.drink:      Optional[str]  = None
+    // Private constructor — only the Builder creates BurgerMeal
+    private BurgerMeal(BurgerBuilder builder) {
+        this.bunType   = builder.bunType;
+        this.patty     = builder.patty;
+        this.hasCheese = builder.hasCheese;
+        this.toppings  = builder.toppings;
+        this.side      = builder.side;
+        this.drink     = builder.drink;
+    }
 
-        def with_cheese(self, has_cheese: bool) -> "BurgerMeal.BurgerBuilder":
-            self.has_cheese = has_cheese
-            return self  # Returns builder for chaining
+    static class BurgerBuilder {
+        // Required fields in constructor
+        private final String bunType;
+        private final String patty;
+        // Optional fields with sane defaults
+        private boolean hasCheese = false;
+        private List<String> toppings = new ArrayList<>();
+        private String side;
+        private String drink;
 
-        def with_toppings(self, toppings: List[str]) -> "BurgerMeal.BurgerBuilder":
-            self.toppings = toppings
-            return self
+        public BurgerBuilder(String bunType, String patty) {
+            this.bunType = bunType;
+            this.patty   = patty;
+        }
 
-        def with_side(self, side: str) -> "BurgerMeal.BurgerBuilder":
-            self.side = side
-            return self
+        public BurgerBuilder withCheese(boolean hasCheese) {
+            this.hasCheese = hasCheese;
+            return this;  // Returns builder for chaining
+        }
 
-        def with_drink(self, drink: str) -> "BurgerMeal.BurgerBuilder":
-            self.drink = drink
-            return self
+        public BurgerBuilder withToppings(List<String> toppings) {
+            this.toppings = toppings;
+            return this;
+        }
 
-        def build(self) -> "BurgerMeal":
-            return BurgerMeal(self)
+        public BurgerBuilder withSide(String side) {
+            this.side = side;
+            return this;
+        }
 
-# Usage — readable, flexible, no Nones
-plain_burger = BurgerMeal.BurgerBuilder("wheat", "veg").build()
+        public BurgerBuilder withDrink(String drink) {
+            this.drink = drink;
+            return this;
+        }
 
-burger_with_cheese = (
-    BurgerMeal.BurgerBuilder("wheat", "veg")
-    .with_cheese(True)
-    .build()
-)
+        public BurgerMeal build() {
+            return new BurgerMeal(this);
+        }
+    }
+}
 
-toppings = ["lettuce", "onion", "jalapeno"]
-loaded_burger = (
-    BurgerMeal.BurgerBuilder("multigrain", "chicken")
-    .with_cheese(True)
-    .with_toppings(toppings)
-    .with_side("fries")
-    .with_drink("coke")
-    .build()
-)
+// Usage — readable, flexible, no nulls
+BurgerMeal plainBurger = new BurgerMeal.BurgerBuilder("wheat", "veg").build();
+
+BurgerMeal burgerWithCheese = new BurgerMeal.BurgerBuilder("wheat", "veg")
+    .withCheese(true)
+    .build();
+
+List<String> toppings = List.of("lettuce", "onion", "jalapeno");
+BurgerMeal loadedBurger = new BurgerMeal.BurgerBuilder("multigrain", "chicken")
+    .withCheese(true)
+    .withToppings(toppings)
+    .withSide("fries")
+    .withDrink("coke")
+    .build();
 ```
 
 ### Class Diagram
@@ -298,20 +333,20 @@ classDiagram
 
 ## Real-World Products Using Builder Pattern
 
-**HTTP Request Building** (httpx, requests):
-```python
-import httpx
+**HTTP Request Building** (OkHttp, Java's `HttpClient`):
+```java
+import okhttp3.Request;
 
-# httpx uses a similar builder-style approach
-response = httpx.get(
-    "https://api.example.com/users",
-    headers={"Authorization": f"Bearer {token}"},
-)
+// OkHttp's Request.Builder uses the same builder-style approach
+Request request = new Request.Builder()
+    .url("https://api.example.com/users")
+    .header("Authorization", "Bearer " + token)
+    .build();
 ```
 
 **Amazon Cart Configuration**: Items in a cart have quantity, size, color, delivery option, gift wrap, discount tags — all optional. Builder lets each combination be expressed clearly without constructor explosion.
 
-**io.StringIO / io.BytesIO** (Python standard library): Technically builder-like — you write to the buffer incrementally and call `getvalue()` at the end.
+**`StringBuilder` / `HttpRequest.newBuilder()`** (Java standard library): Technically builder-like — you append/configure incrementally and call `.toString()` or `.build()` at the end.
 
 ---
 
@@ -330,7 +365,7 @@ response = httpx.get(
 | Builder for 2-field class | Over-engineering a simple object | Just use a constructor |
 | Mutable `build()` target | Final object's fields can change after build | Don't expose setters on the built object |
 | Builder without validation in `build()` | Invalid objects created (e.g., negative price) | Add validation inside `build()` before constructing |
-| No required fields in builder constructor | Required fields are optional — allows incomplete objects | Put mandatory fields in the Builder `__init__` |
+| No required fields in builder constructor | Required fields are optional — allows incomplete objects | Put mandatory fields in the Builder's constructor |
 
 ---
 
@@ -354,4 +389,4 @@ response = httpx.get(
 - "When a class has many optional parameters, constructors become unreadable and error-prone. Builder gives a fluent API and enforces which fields are required vs optional. I'd use Builder for any object with 4+ optional configuration fields."
 
 **Q: "How do you enforce required fields in Builder?"**
-- "Put required fields in the Builder's `__init__`. Optional fields have `with_*()` methods. `build()` can also validate that constraints are met before constructing the final object."
+- "Put required fields in the Builder's constructor. Optional fields have `withX()` methods. `build()` can also validate that constraints are met before constructing the final object."

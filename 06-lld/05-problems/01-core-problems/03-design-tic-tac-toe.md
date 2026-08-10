@@ -163,32 +163,39 @@ class Game:
 - Move by wrong player — raise ValueError
 - Move after game ended — raise GameOverError
 
-```python
-def make_move(self, player: Player, row: int, col: int) -> GameState:
-    if self.state != GameState.IN_PROGRESS:
-        raise GameOverError("Game is already over")
+```java
+public GameState makeMove(Player player, int row, int col) {
+    if (this.state != GameState.IN_PROGRESS) {
+        throw new GameOverError("Game is already over");
+    }
 
-    if player != self.players[self.current_player_idx]:
-        raise ValueError(f"It's not {player.name}'s turn")
+    if (!player.equals(players.get(currentPlayerIdx))) {
+        throw new IllegalArgumentException("It's not " + player.getName() + "'s turn");
+    }
 
-    if not (0 <= row < self.board.size and 0 <= col < self.board.size):
-        raise IndexError(f"Position ({row},{col}) is out of bounds")
+    if (!(0 <= row && row < board.getSize() && 0 <= col && col < board.getSize())) {
+        throw new IndexOutOfBoundsException("Position (" + row + "," + col + ") is out of bounds");
+    }
 
-    if not self.board.is_cell_empty(row, col):
-        raise ValueError(f"Cell ({row},{col}) is already occupied")
+    if (!board.isCellEmpty(row, col)) {
+        throw new IllegalArgumentException("Cell (" + row + "," + col + ") is already occupied");
+    }
 
-    self.board.place(player.mark, row, col)
+    board.place(player.getMark(), row, col);
 
-    if self.win_checker.check(self.board, player.mark, row, col):
-        self.state = GameState.X_WINS if player.mark == Mark.X else GameState.O_WINS
-        return self.state
+    if (winChecker.check(board, player.getMark(), row, col)) {
+        this.state = player.getMark() == Mark.X ? GameState.X_WINS : GameState.O_WINS;
+        return this.state;
+    }
 
-    if self.board.is_full():
-        self.state = GameState.DRAW
-        return self.state
+    if (board.isFull()) {
+        this.state = GameState.DRAW;
+        return this.state;
+    }
 
-    self.current_player_idx = 1 - self.current_player_idx
-    return self.state
+    this.currentPlayerIdx = 1 - this.currentPlayerIdx;
+    return this.state;
+}
 ```
 
 ### Core Method: Board.place + O(1) win detection
@@ -203,36 +210,41 @@ def make_move(self, player: Player, row: int, col: int) -> GameState:
 **Win check:**
 - A win occurs if any counter reaches `size`
 
-```python
-def place(self, mark: Mark, row: int, col: int) -> None:
-    self.grid[row][col] = mark
-    self.row_counts[mark][row] += 1
-    self.col_counts[mark][col] += 1
-    if row == col:
-        self.diag_count[mark] += 1
-    if row + col == self.size - 1:
-        self.anti_diag_count[mark] += 1
-    self.move_count += 1
+```java
+public void place(Mark mark, int row, int col) {
+    grid[row][col] = mark;
+    rowCounts.get(mark)[row]++;
+    colCounts.get(mark)[col]++;
+    if (row == col) {
+        diagCount.merge(mark, 1, Integer::sum);
+    }
+    if (row + col == size - 1) {
+        antiDiagCount.merge(mark, 1, Integer::sum);
+    }
+    moveCount++;
+}
 
-def is_winner(self, mark: Mark, row: int, col: int) -> bool:
-    n = self.size
-    return (
-        self.row_counts[mark][row] == n or
-        self.col_counts[mark][col] == n or
-        self.diag_count[mark] == n or
-        self.anti_diag_count[mark] == n
-    )
+public boolean isWinner(Mark mark, int row, int col) {
+    int n = size;
+    return rowCounts.get(mark)[row] == n
+        || colCounts.get(mark)[col] == n
+        || diagCount.getOrDefault(mark, 0) == n
+        || antiDiagCount.getOrDefault(mark, 0) == n;
+}
 
-def is_full(self) -> bool:
-    return self.move_count == self.size * self.size
+public boolean isFull() {
+    return moveCount == size * size;
+}
 ```
 
 ### WinChecker (delegates to Board)
 
-```python
-class WinChecker:
-    def check(self, board: Board, mark: Mark, row: int, col: int) -> bool:
-        return board.is_winner(mark, row, col)
+```java
+public class WinChecker {
+    public boolean check(Board board, Mark mark, int row, int col) {
+        return board.isWinner(mark, row, col);
+    }
+}
 ```
 
 ---
@@ -273,24 +285,33 @@ Current counters track consecutive counts along a full line. For connect-K, you 
 
 Use a different approach — sliding window or DFS from the last move:
 
-```python
-def check_k_consecutive(board, mark, row, col, k):
-    directions = [(0,1), (1,0), (1,1), (1,-1)]  # right, down, diag, anti-diag
-    for dr, dc in directions:
-        count = 1
-        # extend in positive direction
-        r, c = row + dr, col + dc
-        while board.in_bounds(r, c) and board.grid[r][c] == mark:
-            count += 1
-            r, c = r + dr, c + dc
-        # extend in negative direction
-        r, c = row - dr, col - dc
-        while board.in_bounds(r, c) and board.grid[r][c] == mark:
-            count += 1
-            r, c = r - dr, c - dc
-        if count >= k:
-            return True
-    return False
+```java
+public boolean checkKConsecutive(Board board, Mark mark, int row, int col, int k) {
+    int[][] directions = {{0, 1}, {1, 0}, {1, 1}, {1, -1}}; // right, down, diag, anti-diag
+    for (int[] dir : directions) {
+        int dr = dir[0], dc = dir[1];
+        int count = 1;
+        // extend in positive direction
+        int r = row + dr, c = col + dc;
+        while (board.inBounds(r, c) && board.getGrid()[r][c] == mark) {
+            count++;
+            r += dr;
+            c += dc;
+        }
+        // extend in negative direction
+        r = row - dr;
+        c = col - dc;
+        while (board.inBounds(r, c) && board.getGrid()[r][c] == mark) {
+            count++;
+            r -= dr;
+            c -= dc;
+        }
+        if (count >= k) {
+            return true;
+        }
+    }
+    return false;
+}
 ```
 
 This is O(K) per move worst case — acceptable for games, and unavoidable when K < N since a partial line must be checked.
@@ -299,37 +320,55 @@ This is O(K) per move worst case — acceptable for games, and unavoidable when 
 
 Add a `MinimaxPlayer` that implements the same `Player` interface but computes its move:
 
-```python
-class MinimaxPlayer(Player):
-    def get_move(self, board: Board) -> tuple[int, int]:
-        best_score = float('-inf')
-        best_move = None
-        for row, col in board.empty_cells():
-            board.place(self.mark, row, col)
-            score = self._minimax(board, depth=0, is_maximizing=False)
-            board.undo(row, col)
-            if score > best_score:
-                best_score, best_move = score, (row, col)
-        return best_move
+```java
+public class MinimaxPlayer extends Player {
 
-    def _minimax(self, board, depth, is_maximizing):
-        winner = board.get_winner()
-        if winner == self.mark:
-            return 10 - depth
-        if winner is not None:
-            return depth - 10
-        if board.is_full():
-            return 0
-        if is_maximizing:
-            return max(
-                self._minimax(board_after_move, depth+1, False)
-                for move in board.empty_cells()
-            )
-        else:
-            return min(
-                self._minimax(board_after_move, depth+1, True)
-                for move in board.empty_cells()
-            )
+    public int[] getMove(Board board) {
+        int bestScore = Integer.MIN_VALUE;
+        int[] bestMove = null;
+        for (int[] cell : board.emptyCells()) {
+            int row = cell[0], col = cell[1];
+            board.place(getMark(), row, col);
+            int score = minimax(board, 0, false);
+            board.undo(row, col);
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = new int[] {row, col};
+            }
+        }
+        return bestMove;
+    }
+
+    private int minimax(Board board, int depth, boolean isMaximizing) {
+        Mark winner = board.getWinner();
+        if (winner == getMark()) {
+            return 10 - depth;
+        }
+        if (winner != null) {
+            return depth - 10;
+        }
+        if (board.isFull()) {
+            return 0;
+        }
+        if (isMaximizing) {
+            int best = Integer.MIN_VALUE;
+            for (int[] move : board.emptyCells()) {
+                board.place(getMark(), move[0], move[1]);
+                best = Math.max(best, minimax(board, depth + 1, false));
+                board.undo(move[0], move[1]);
+            }
+            return best;
+        } else {
+            int best = Integer.MAX_VALUE;
+            for (int[] move : board.emptyCells()) {
+                board.place(getOpponentMark(), move[0], move[1]);
+                best = Math.min(best, minimax(board, depth + 1, true));
+                board.undo(move[0], move[1]);
+            }
+            return best;
+        }
+    }
+}
 ```
 
 Add alpha-beta pruning to reduce the search tree from O(b^d) to O(b^(d/2)). For 3x3 this is overkill (only 9! = 362,880 states), but for N=5 it matters significantly.
@@ -338,28 +377,38 @@ Add alpha-beta pruning to reduce the search tree from O(b^d) to O(b^(d/2)). For 
 
 Replace grid mutations with a move stack:
 
-```python
-class Board:
-    def __init__(self):
-        ...
-        self.move_stack: list[tuple[Mark, int, int]] = []
+```java
+public class Board {
+    private final Deque<int[]> moveStack = new ArrayDeque<>(); // {markOrdinal, row, col}
 
-    def place(self, mark, row, col):
-        # same counter updates
-        self.move_stack.append((mark, row, col))
+    public Board() {
+        // ...
+    }
 
-    def undo(self):
-        if not self.move_stack:
-            raise ValueError("No moves to undo")
-        mark, row, col = self.move_stack.pop()
-        self.grid[row][col] = None
-        self.row_counts[mark][row] -= 1
-        self.col_counts[mark][col] -= 1
-        if row == col:
-            self.diag_count[mark] -= 1
-        if row + col == self.size - 1:
-            self.anti_diag_count[mark] -= 1
-        self.move_count -= 1
+    public void place(Mark mark, int row, int col) {
+        // same counter updates
+        moveStack.push(new int[] {mark.ordinal(), row, col});
+    }
+
+    public void undo() {
+        if (moveStack.isEmpty()) {
+            throw new IllegalStateException("No moves to undo");
+        }
+        int[] last = moveStack.pop();
+        Mark mark = Mark.values()[last[0]];
+        int row = last[1], col = last[2];
+        grid[row][col] = null;
+        rowCounts.get(mark)[row]--;
+        colCounts.get(mark)[col]--;
+        if (row == col) {
+            diagCount.merge(mark, -1, Integer::sum);
+        }
+        if (row + col == size - 1) {
+            antiDiagCount.merge(mark, -1, Integer::sum);
+        }
+        moveCount--;
+    }
+}
 ```
 
 In Game, `undo_move()` pops the move stack, reverts the board, and switches `current_player_idx` back. Counters unwind cleanly since they were incremented atomically.

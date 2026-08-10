@@ -9,7 +9,7 @@
 > - Chain of Responsibility (Validation): Before applying a coupon, it must pass a chain of checks: `ExpirationValidator` -> `MinimumCartValueValidator` -> `UserEligibilityValidator`.
 > - Composite Pattern (Stacking): If users can apply multiple coupons, create a `CompositeCoupon` that contains a list of coupons and applies them sequentially to the cart total.
 >
-> **Key takeaway:** E-commerce pricing rules change daily. Hardcoding `if (coupon == "SUMMER50")` is an instant fail. Use the Strategy pattern so the Marketing team can configure new coupons via database rows, mapped to your generic strategies.
+> **Key takeaway:** E-commerce pricing rules change daily. Hardcoding `if (coupon.equals("SUMMER50"))` is an instant fail. Use the Strategy pattern so the Marketing team can configure new coupons via database rows, mapped to your generic strategies.
 
 ---
 module: 06-lld
@@ -170,99 +170,125 @@ class CouponService:
 - Validation fails → return which rule failed
 - Stacking violation → reject second coupon of same type
 
-```python
-def apply_coupon(self, code, order, user_id):
-    coupon = self.coupon_repo.find_by_code(code)
-    if not coupon:
-        return DiscountResult.error("Coupon not found")
+```java
+public DiscountResult applyCoupon(String code, Order order, String userId) {
+    Coupon coupon = couponRepo.findByCode(code);
+    if (coupon == null) {
+        return DiscountResult.error("Coupon not found");
+    }
 
-    validation = self.validator_chain.validate(coupon, order, user_id)
-    if not validation.is_valid:
-        return DiscountResult.error(validation.reason)
+    ValidationResult validation = validatorChain.validate(coupon, order, userId);
+    if (!validation.isValid()) {
+        return DiscountResult.error(validation.getReason());
+    }
 
-    # Stacking check
-    if coupon.discount_type == DiscountType.FREE_SHIPPING:
-        if order.has_shipping_coupon():
-            return DiscountResult.error("Only one shipping coupon allowed")
-    else:
-        if order.has_product_coupon():
-            return DiscountResult.error("Only one product coupon allowed")
+    // Stacking check
+    if (coupon.getDiscountType() == DiscountType.FREE_SHIPPING) {
+        if (order.hasShippingCoupon()) {
+            return DiscountResult.error("Only one shipping coupon allowed");
+        }
+    } else {
+        if (order.hasProductCoupon()) {
+            return DiscountResult.error("Only one product coupon allowed");
+        }
+    }
 
-    strategy = self.strategies[coupon.discount_type]
-    discount_amount = strategy.calculate(coupon, order)
+    DiscountStrategy strategy = strategies.get(coupon.getDiscountType());
+    double discountAmount = strategy.calculate(coupon, order);
 
-    # Record usage
-    self.usage_repo.increment(user_id, coupon.code)
+    // Record usage
+    usageRepo.increment(userId, coupon.getCode());
 
-    return DiscountResult(
-        coupon_code=code,
-        discount_amount=discount_amount,
-        new_total=order.total - discount_amount
-    )
+    return new DiscountResult(
+        code,
+        discountAmount,
+        order.getTotal() - discountAmount
+    );
+}
 ```
 
 ### Validation Chain construction
 
-```python
-def build_validator_chain():
-    expiry = ExpiryRule()
-    min_order = MinOrderRule()
-    user_limit = UserLimitRule(usage_repo)
-    scope = ScopeRule()
+```java
+public ValidationRule buildValidatorChain() {
+    ValidationRule expiry = new ExpiryRule();
+    ValidationRule minOrder = new MinOrderRule();
+    ValidationRule userLimit = new UserLimitRule(usageRepo);
+    ValidationRule scope = new ScopeRule();
 
-    expiry.set_next(min_order).set_next(user_limit).set_next(scope)
-    return expiry
+    expiry.setNext(minOrder).setNext(userLimit).setNext(scope);
+    return expiry;
+}
 
-# Base class
-class ValidationRule:
-    def set_next(self, rule):
-        self.next_rule = rule
-        return rule
+// Base class
+public abstract class ValidationRule {
+    protected ValidationRule nextRule;
 
-    def validate(self, coupon, order, user_id):
-        if self.next_rule:
-            return self.next_rule.validate(coupon, order, user_id)
-        return ValidationResult.ok()
+    public ValidationRule setNext(ValidationRule rule) {
+        this.nextRule = rule;
+        return rule;
+    }
 
-class ExpiryRule(ValidationRule):
-    def validate(self, coupon, order, user_id):
-        if datetime.now() > coupon.expires_at:
-            return ValidationResult.fail("Coupon has expired")
-        return super().validate(coupon, order, user_id)
+    public ValidationResult validate(Coupon coupon, Order order, String userId) {
+        if (nextRule != null) {
+            return nextRule.validate(coupon, order, userId);
+        }
+        return ValidationResult.ok();
+    }
+}
 
-class MinOrderRule(ValidationRule):
-    def validate(self, coupon, order, user_id):
-        if order.subtotal < coupon.min_order_value:
+public class ExpiryRule extends ValidationRule {
+    @Override
+    public ValidationResult validate(Coupon coupon, Order order, String userId) {
+        if (LocalDateTime.now().isAfter(coupon.getExpiresAt())) {
+            return ValidationResult.fail("Coupon has expired");
+        }
+        return super.validate(coupon, order, userId);
+    }
+}
+
+public class MinOrderRule extends ValidationRule {
+    @Override
+    public ValidationResult validate(Coupon coupon, Order order, String userId) {
+        if (order.getSubtotal() < coupon.getMinOrderValue()) {
             return ValidationResult.fail(
-                f"Minimum order value ${coupon.min_order_value} required"
-            )
-        return super().validate(coupon, order, user_id)
+                String.format("Minimum order value $%.2f required", coupon.getMinOrderValue())
+            );
+        }
+        return super.validate(coupon, order, userId);
+    }
+}
 ```
 
 ### PercentageDiscount with scope
 
-```python
-class PercentageDiscount(DiscountStrategy):
-    def calculate(self, coupon, order):
-        applicable = self._get_applicable_amount(coupon, order)
-        return round(applicable * coupon.discount_value / 100, 2)
+```java
+public class PercentageDiscount implements DiscountStrategy {
+    @Override
+    public double calculate(Coupon coupon, Order order) {
+        double applicable = getApplicableAmount(coupon, order);
+        return Math.round(applicable * coupon.getDiscountValue() / 100.0 * 100.0) / 100.0;
+    }
 
-    def _get_applicable_amount(self, coupon, order):
-        if coupon.scope == CouponScope.ORDER:
-            return order.subtotal
-        elif coupon.scope == CouponScope.CATEGORY:
-            return sum(
-                item.price * item.quantity
-                for item in order.items
-                if item.category_id == coupon.scope_id
-            )
-        elif coupon.scope == CouponScope.PRODUCT:
-            return sum(
-                item.price * item.quantity
-                for item in order.items
-                if item.product_id == coupon.scope_id
-            )
-        return 0
+    private double getApplicableAmount(Coupon coupon, Order order) {
+        switch (coupon.getScope()) {
+            case ORDER:
+                return order.getSubtotal();
+            case CATEGORY:
+                return order.getItems().stream()
+                    .filter(item -> item.getCategoryId().equals(coupon.getScopeId()))
+                    .mapToDouble(item -> item.getPrice() * item.getQuantity())
+                    .sum();
+            case PRODUCT:
+                return order.getItems().stream()
+                    .filter(item -> item.getProductId().equals(coupon.getScopeId()))
+                    .mapToDouble(item -> item.getPrice() * item.getQuantity())
+                    .sum();
+            default:
+                return 0;
+        }
+    }
+}
 ```
 
 ---
@@ -298,20 +324,26 @@ apply_coupon("SAVE20", order, "alice"):
 
 Add `BOGODiscount(DiscountStrategy)`:
 
-```python
-class BOGODiscount(DiscountStrategy):
-    def calculate(self, coupon, order):
-        # Find items matching scope, sort by price desc
-        matching = sorted(
-            [i for i in order.items if self._matches_scope(coupon, i)],
-            key=lambda i: i.price, reverse=True
-        )
-        # Every other item is free
-        total_free = sum(
-            item.price for i, item in enumerate(matching)
-            if i % 2 == 1
-        )
-        return total_free
+```java
+public class BOGODiscount implements DiscountStrategy {
+    @Override
+    public double calculate(Coupon coupon, Order order) {
+        // Find items matching scope, sort by price desc
+        List<Item> matching = order.getItems().stream()
+            .filter(item -> matchesScope(coupon, item))
+            .sorted(Comparator.comparingDouble(Item::getPrice).reversed())
+            .collect(Collectors.toList());
+
+        // Every other item is free
+        double totalFree = 0;
+        for (int i = 0; i < matching.size(); i++) {
+            if (i % 2 == 1) {
+                totalFree += matching.get(i).getPrice();
+            }
+        }
+        return totalFree;
+    }
+}
 ```
 
 Register `DiscountType.BOGO → BOGODiscount` in the strategies dict. No other changes.
@@ -320,17 +352,25 @@ Register `DiscountType.BOGO → BOGODiscount` in the strategies dict. No other c
 
 Add a new `ValidationRule`:
 
-```python
-class FirstOrderRule(ValidationRule):
-    def __init__(self, order_repo):
-        self.order_repo = order_repo
+```java
+public class FirstOrderRule extends ValidationRule {
+    private final OrderRepository orderRepo;
 
-    def validate(self, coupon, order, user_id):
-        if coupon.requires_first_order:
-            count = self.order_repo.count_completed_orders(user_id)
-            if count > 0:
-                return ValidationResult.fail("Coupon valid for first order only")
-        return super().validate(coupon, order, user_id)
+    public FirstOrderRule(OrderRepository orderRepo) {
+        this.orderRepo = orderRepo;
+    }
+
+    @Override
+    public ValidationResult validate(Coupon coupon, Order order, String userId) {
+        if (coupon.requiresFirstOrder()) {
+            int count = orderRepo.countCompletedOrders(userId);
+            if (count > 0) {
+                return ValidationResult.fail("Coupon valid for first order only");
+            }
+        }
+        return super.validate(coupon, order, userId);
+    }
+}
 ```
 
 Insert into the chain: `user_limit.set_next(first_order).set_next(scope)`. Open/Closed — no existing rules change.
@@ -341,28 +381,47 @@ Insert into the chain: `user_limit.set_next(first_order).set_next(scope)`. Open/
 - Email domain check: one use per email domain
 - Payment method deduplication: same card = same user
 
-```python
-class PaymentDedupRule(ValidationRule):
-    def validate(self, coupon, order, user_id):
-        if coupon.limit_per_payment_method:
-            card_hash = hash(order.payment_method_last4)
-            usage = self.usage_repo.get_by_card(coupon.code, card_hash)
-            if usage >= coupon.max_uses_per_user:
-                return ValidationResult.fail("Coupon limit reached for this payment method")
-        return super().validate(coupon, order, user_id)
+```java
+public class PaymentDedupRule extends ValidationRule {
+    private final UserCouponUsageRepository usageRepo;
+
+    public PaymentDedupRule(UserCouponUsageRepository usageRepo) {
+        this.usageRepo = usageRepo;
+    }
+
+    @Override
+    public ValidationResult validate(Coupon coupon, Order order, String userId) {
+        if (coupon.isLimitPerPaymentMethod()) {
+            int cardHash = order.getPaymentMethodLast4().hashCode();
+            int usage = usageRepo.getByCard(coupon.getCode(), cardHash);
+            if (usage >= coupon.getMaxUsesPerUser()) {
+                return ValidationResult.fail("Coupon limit reached for this payment method");
+            }
+        }
+        return super.validate(coupon, order, userId);
+    }
+}
 ```
 
 ### 4. "How would you handle race conditions on total usage limit?"
 
 Two users simultaneously using the last slot of a coupon with `total_usage_limit=1`:
 
-```python
-# DB-level CAS
-UPDATE coupons
-SET total_used = total_used + 1
-WHERE code = ? AND total_used < total_usage_limit
+```java
+// DB-level CAS
+// UPDATE coupons
+// SET total_used = total_used + 1
+// WHERE code = ? AND total_used < total_usage_limit
 
-# If rows affected == 0: coupon exhausted
+// If rows affected == 0: coupon exhausted
+int rowsAffected = jdbcTemplate.update(
+    "UPDATE coupons SET total_used = total_used + 1 " +
+    "WHERE code = ? AND total_used < total_usage_limit",
+    code
+);
+if (rowsAffected == 0) {
+    throw new CouponExhaustedException("Coupon exhausted");
+}
 ```
 
 Or use Redis INCR and compare against limit — atomic, no race condition.
@@ -388,7 +447,7 @@ Or use Redis INCR and compare against limit — atomic, no race condition.
   **A**: `UserLimitRule` checks `usage_repo.get(user_id, coupon.code)`. Usage is incremented only after successful application. The DB increment is atomic — use transactions.
 
 - **Q**: What's the difference between scope ORDER, CATEGORY, and PRODUCT?
-  **A**: ORDER applies discount to the full subtotal. CATEGORY applies only to items in the specified category. PRODUCT applies only to the specific product. The `DiscountStrategy._get_applicable_amount` method filters accordingly.
+  **A**: ORDER applies discount to the full subtotal. CATEGORY applies only to items in the specified category. PRODUCT applies only to the specific product. The `getApplicableAmount` method filters accordingly.
 
 - **Q**: How do you handle a coupon that makes the order total negative?
   **A**: Cap discount at the order total: `discount = min(calculated_discount, order.subtotal)`. Coupon value can never exceed what the customer owes.

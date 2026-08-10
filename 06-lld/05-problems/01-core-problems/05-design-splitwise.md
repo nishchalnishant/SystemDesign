@@ -96,27 +96,29 @@ BalanceSheet is the central state. Every `add_expense` call updates net balances
 
 ### User
 
-```
-class User:
-- user_id: str
-- name: str
-- email: str
+```java
+class User {
+    private String userId;
+    private String name;
+    private String email;
+}
 ```
 
 ### Expense
 
-```
-class Expense:
-- expense_id: str
-- description: str
-- payer: User
-- total_amount: float
-- split: Split
-- participants: list[User]
-- timestamp: datetime
-- group: Group | None
+```java
+class Expense {
+    private String expenseId;
+    private String description;
+    private User payer;
+    private double totalAmount;
+    private Split split;
+    private List<User> participants;
+    private LocalDateTime timestamp;
+    private Group group;  // nullable
 
-+ get_shares() -> dict[User, float]  # who owes how much
+    public Map<User, Double> getShares() { ... }  // who owes how much
+}
 ```
 
 ### Split (abstract)
@@ -126,60 +128,68 @@ class Expense:
 | Compute each participant's share | calculate(participants, total_amount) -> dict[User, float] |
 | Validate input | validate(participants, inputs) — raises if invalid |
 
-```
-class Split:               # abstract
-+ calculate(participants: list[User], amount: float) -> dict[User, float]
-+ validate(participants: list[User]) -> None
+```java
+interface Split {
+    Map<User, Double> calculate(List<User> participants, double amount);
+    void validate(List<User> participants);
+}
 
-class EqualSplit(Split):
-# divides evenly; last person absorbs rounding
+class EqualSplit implements Split {
+    // divides evenly; last person absorbs rounding
+}
 
-class ExactSplit(Split):
-- amounts: dict[User, float]    # must sum to total_amount
+class ExactSplit implements Split {
+    private Map<User, Double> amounts;  // must sum to totalAmount
+}
 
-class PercentSplit(Split):
-- percentages: dict[User, float]  # must sum to 100.0
+class PercentSplit implements Split {
+    private Map<User, Double> percentages;  // must sum to 100.0
+}
 ```
 
 ### BalanceSheet
 
-```
-class BalanceSheet:
-# balances[(user_a_id, user_b_id)] = amount
-# positive means user_a owes user_b
-# always store with sorted tuple key to avoid duplicate entries
-- balances: dict[tuple[str, str], float]
+```java
+class BalanceSheet {
+    // balances[userAId + "#" + userBId] = amount   (sorted pair key)
+    // positive means userA owes userB
+    // always store with sorted key to avoid duplicate entries
+    private Map<String, Double> balances;
 
-+ update(debtor: User, creditor: User, amount: float) -> None
-+ get_balance(user_a: User, user_b: User) -> float
-+ get_all_balances(user: User) -> dict[User, float]
+    public void update(User debtor, User creditor, double amount) { ... }
+    public double getBalance(User userA, User userB) { ... }
+    public Map<User, Double> getAllBalances(User user) { ... }
+}
 ```
 
 ### Group
 
-```
-class Group:
-- group_id: str
-- name: str
-- members: list[User]
-- expenses: list[Expense]
-- balance_sheet: BalanceSheet
+```java
+class Group {
+    private String groupId;
+    private String name;
+    private List<User> members;
+    private List<Expense> expenses;
+    private BalanceSheet balanceSheet;
 
-+ add_member(user: User) -> None
-+ add_expense(expense: Expense) -> None
-+ get_balances(user: User) -> dict[User, float]
+    public void addMember(User user) { ... }
+    public void addExpense(Expense expense) { ... }
+    public Map<User, Double> getBalances(User user) { ... }
+}
 ```
 
 ### DebtSimplifier
 
-```
-class DebtSimplifier:
-+ simplify(balance_sheet: BalanceSheet, users: list[User]) -> list[Transaction]
+```java
+class DebtSimplifier {
+    public List<Transaction> simplify(BalanceSheet balanceSheet, List<User> users) { ... }
+}
 
-class Transaction:
-- from_user: User
-- to_user: User
-- amount: float
+class Transaction {
+    private User fromUser;
+    private User toUser;
+    private double amount;
+}
 ```
 
 ---
@@ -198,61 +208,78 @@ class Transaction:
 - Payer is also a participant — their share is already "paid", so no self-debt entry
 - Rounding in EqualSplit — last participant absorbs remainder
 
-```python
-def add_expense(self, payer: User, amount: float, split: Split,
-                participants: list[User], description: str) -> Expense:
-    split.validate(participants)
-    shares = split.calculate(participants, amount)
+```java
+public Expense addExpense(User payer, double amount, Split split,
+                           List<User> participants, String description) {
+    split.validate(participants);
+    Map<User, Double> shares = split.calculate(participants, amount);
 
-    expense = Expense(
-        expense_id=str(uuid.uuid4()),
-        description=description,
-        payer=payer,
-        total_amount=amount,
-        split=split,
-        participants=participants,
-        timestamp=datetime.now()
-    )
+    Expense expense = new Expense(
+        UUID.randomUUID().toString(),
+        description,
+        payer,
+        amount,
+        split,
+        participants,
+        LocalDateTime.now()
+    );
 
-    for participant, share in shares.items():
-        if participant != payer and share > 0:
-            self.balance_sheet.update(debtor=participant, creditor=payer, amount=share)
+    for (Map.Entry<User, Double> entry : shares.entrySet()) {
+        User participant = entry.getKey();
+        double share = entry.getValue();
+        if (!participant.equals(payer) && share > 0) {
+            balanceSheet.update(participant, payer, share);
+        }
+    }
 
-    self.expenses.append(expense)
-    return expense
+    expenses.add(expense);
+    return expense;
+}
 ```
 
 ### Core Method: EqualSplit.calculate
 
-```python
-def calculate(self, participants: list[User], amount: float) -> dict[User, float]:
-    n = len(participants)
-    base_share = int(amount * 100) // n  # in cents, integer division
-    remainder = int(amount * 100) - base_share * n
+```java
+@Override
+public Map<User, Double> calculate(List<User> participants, double amount) {
+    int n = participants.size();
+    long totalCents = Math.round(amount * 100);
+    long baseShare = totalCents / n;  // in cents, integer division
+    long remainder = totalCents - baseShare * n;
 
-    shares = {}
-    for i, user in enumerate(participants):
-        share_cents = base_share + (1 if i == n - 1 else 0) * remainder
-        shares[user] = share_cents / 100.0
-    return shares
+    Map<User, Double> shares = new LinkedHashMap<>();
+    for (int i = 0; i < n; i++) {
+        User user = participants.get(i);
+        long shareCents = baseShare + (i == n - 1 ? remainder : 0);
+        shares.put(user, shareCents / 100.0);
+    }
+    return shares;
+}
 ```
 
 ### Core Method: BalanceSheet.update
 
 The key insight: store only net balances, not every individual transaction.
 
-```python
-def update(self, debtor: User, creditor: User, amount: float) -> None:
-    key = tuple(sorted([debtor.user_id, creditor.user_id]))
-    # positive value: key[0] owes key[1]
-    current = self.balances.get(key, 0.0)
-    if key[0] == debtor.user_id:
-        self.balances[key] = current + amount
-    else:
-        self.balances[key] = current - amount
-    # Remove zero balances
-    if abs(self.balances[key]) < 0.01:
-        del self.balances[key]
+```java
+public void update(User debtor, User creditor, double amount) {
+    String idA = debtor.getUserId();
+    String idB = creditor.getUserId();
+    // sorted key: keyA <= keyB lexicographically
+    String keyA = idA.compareTo(idB) <= 0 ? idA : idB;
+    String keyB = idA.compareTo(idB) <= 0 ? idB : idA;
+    String key = keyA + "#" + keyB;
+
+    // positive value: keyA owes keyB
+    double current = balances.getOrDefault(key, 0.0);
+    double updated = keyA.equals(idA) ? current + amount : current - amount;
+    balances.put(key, updated);
+
+    // Remove zero balances
+    if (Math.abs(balances.get(key)) < 0.01) {
+        balances.remove(key);
+    }
+}
 ```
 
 ### Core Method: DebtSimplifier.simplify (min cash flow)
@@ -268,51 +295,70 @@ def update(self, debtor: User, creditor: User, amount: float) -> None:
 - User with net=0 — skip them entirely
 - Remaining net < 0.01 after floating point — treat as settled
 
-```python
-def simplify(self, balance_sheet: BalanceSheet,
-             users: list[User]) -> list[Transaction]:
-    # Compute net balance per user
-    net = {user: 0.0 for user in users}
-    for (uid_a, uid_b), amount in balance_sheet.balances.items():
-        user_a = self._find_user(users, uid_a)
-        user_b = self._find_user(users, uid_b)
-        if amount > 0:  # uid_a owes uid_b
-            net[user_a] -= amount
-            net[user_b] += amount
-        else:
-            net[user_a] += abs(amount)
-            net[user_b] -= abs(amount)
+```java
+public List<Transaction> simplify(BalanceSheet balanceSheet, List<User> users) {
+    // Compute net balance per user
+    Map<User, Double> net = new LinkedHashMap<>();
+    for (User user : users) {
+        net.put(user, 0.0);
+    }
+    for (Map.Entry<String, Double> entry : balanceSheet.getBalances().entrySet()) {
+        String[] parts = entry.getKey().split("#");
+        String uidA = parts[0];
+        String uidB = parts[1];
+        double amount = entry.getValue();
+        User userA = findUser(users, uidA);
+        User userB = findUser(users, uidB);
+        if (amount > 0) {  // uidA owes uidB
+            net.put(userA, net.get(userA) - amount);
+            net.put(userB, net.get(userB) + amount);
+        } else {
+            net.put(userA, net.get(userA) + Math.abs(amount));
+            net.put(userB, net.get(userB) - Math.abs(amount));
+        }
+    }
 
-    # Separate into creditors and debtors
-    creditors = []  # (amount, user) max-heap
-    debtors = []    # (amount, user) max-heap by absolute value
+    // Separate into creditors and debtors (both max-heaps by absolute balance)
+    PriorityQueue<Map.Entry<User, Double>> creditors =
+        new PriorityQueue<>((a, b) -> Double.compare(b.getValue(), a.getValue()));
+    PriorityQueue<Map.Entry<User, Double>> debtors =
+        new PriorityQueue<>((a, b) -> Double.compare(Math.abs(b.getValue()), Math.abs(a.getValue())));
 
-    for user, balance in net.items():
-        if balance > 0.01:
-            heapq.heappush(creditors, (-balance, user))
-        elif balance < -0.01:
-            heapq.heappush(debtors, (balance, user))
+    for (Map.Entry<User, Double> entry : net.entrySet()) {
+        double balance = entry.getValue();
+        if (balance > 0.01) {
+            creditors.add(new AbstractMap.SimpleEntry<>(entry.getKey(), balance));
+        } else if (balance < -0.01) {
+            debtors.add(new AbstractMap.SimpleEntry<>(entry.getKey(), balance));
+        }
+    }
 
-    transactions = []
-    while creditors and debtors:
-        cred_amount, creditor = heapq.heappop(creditors)
-        cred_amount = -cred_amount
-        debt_amount, debtor = heapq.heappop(debtors)
-        debt_amount = abs(debt_amount)
+    List<Transaction> transactions = new ArrayList<>();
+    while (!creditors.isEmpty() && !debtors.isEmpty()) {
+        Map.Entry<User, Double> creditorEntry = creditors.poll();
+        User creditor = creditorEntry.getKey();
+        double credAmount = creditorEntry.getValue();
 
-        settled = min(cred_amount, debt_amount)
-        transactions.append(Transaction(from_user=debtor, to_user=creditor,
-                                        amount=settled))
+        Map.Entry<User, Double> debtorEntry = debtors.poll();
+        User debtor = debtorEntry.getKey();
+        double debtAmount = Math.abs(debtorEntry.getValue());
 
-        remaining_cred = cred_amount - settled
-        remaining_debt = debt_amount - settled
+        double settled = Math.min(credAmount, debtAmount);
+        transactions.add(new Transaction(debtor, creditor, settled));
 
-        if remaining_cred > 0.01:
-            heapq.heappush(creditors, (-remaining_cred, creditor))
-        if remaining_debt > 0.01:
-            heapq.heappush(debtors, (-remaining_debt, debtor))
+        double remainingCred = credAmount - settled;
+        double remainingDebt = debtAmount - settled;
 
-    return transactions
+        if (remainingCred > 0.01) {
+            creditors.add(new AbstractMap.SimpleEntry<>(creditor, remainingCred));
+        }
+        if (remainingDebt > 0.01) {
+            debtors.add(new AbstractMap.SimpleEntry<>(debtor, -remainingDebt));
+        }
+    }
+
+    return transactions;
+}
 ```
 
 ---
@@ -380,17 +426,18 @@ The correct design: store both the full `Expense` history and the `BalanceSheet`
 
 Add a `RecurringExpense` entity:
 
-```python
-class RecurringExpense:
-    template: Expense           # prototype
-    frequency: Frequency        # WEEKLY, MONTHLY, etc.
-    start_date: date
-    end_date: date | None
-    next_due: date
-    is_active: bool
+```java
+class RecurringExpense {
+    private Expense template;        // prototype
+    private Frequency frequency;     // WEEKLY, MONTHLY, etc.
+    private LocalDate startDate;
+    private LocalDate endDate;       // nullable
+    private LocalDate nextDue;
+    private boolean isActive;
+}
 ```
 
-A background scheduler (cron job or APScheduler) runs daily. For each active `RecurringExpense` where `next_due <= today`, it calls `add_expense` using the template, then advances `next_due` by the frequency period.
+A background scheduler (cron job or Spring's `@Scheduled` / a `ScheduledExecutorService`) runs daily. For each active `RecurringExpense` where `next_due <= today`, it calls `add_expense` using the template, then advances `next_due` by the frequency period.
 
 The user sees recurring expenses in their history with a `recurring=True` flag. They can cancel a recurring expense (sets `is_active=False`) or edit the template (affects future occurrences only).
 
@@ -398,11 +445,13 @@ The user sees recurring expenses in their history with a `recurring=True` flag. 
 
 Add `currency: str` to `Expense` and a `CurrencyConverter` service:
 
-```python
-class CurrencyConverter:
-    def convert(self, amount: float, from_currency: str, to_currency: str) -> float:
-        rate = self.get_rate(from_currency, to_currency)  # from external API or cache
-        return amount * rate
+```java
+class CurrencyConverter {
+    public double convert(double amount, String fromCurrency, String toCurrency) {
+        double rate = getRate(fromCurrency, toCurrency);  // from external API or cache
+        return amount * rate;
+    }
+}
 ```
 
 BalanceSheet denominates all balances in a base currency (e.g., USD). On `add_expense`, convert each share to USD using the rate at expense creation time. Store the original currency and amount on `Expense` for display purposes.

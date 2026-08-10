@@ -68,28 +68,30 @@ Try it before reading on.
 
 The obvious approach — expose the internal collection directly:
 
-```python
-class VideoLibrary:
-    def __init__(self):
-        self._videos = []  # list (like ArrayList)
+```java
+class VideoLibrary {
+    private List<Video> videos = new ArrayList<>();  // list (like ArrayList)
 
-    def get_videos(self):
-        return self._videos  # exposes internal list
-
-
-class PlaylistLibrary:
-    def __init__(self):
-        from collections import deque
-        self._videos = deque()  # deque (like LinkedList)
-
-    def get_videos(self):
-        return self._videos  # exposes internal deque
+    List<Video> getVideos() {
+        return videos;  // exposes internal list
+    }
+}
 
 
-# Client must know the concrete type to iterate:
-vids = library.get_videos()
-for i in range(len(vids)):
-    process(vids[i])  # only works because we know it's a list
+class PlaylistLibrary {
+    private LinkedList<Video> videos = new LinkedList<>();  // linked list
+
+    LinkedList<Video> getVideos() {
+        return videos;  // exposes internal linked list
+    }
+}
+
+
+// Client must know the concrete type to iterate:
+List<Video> vids = library.getVideos();
+for (int i = 0; i < vids.size(); i++) {
+    process(vids.get(i));  // only works because we know it's a List
+}
 ```
 
 **What breaks**:
@@ -103,31 +105,31 @@ for i in range(len(vids)):
 
 The constraint: **the client must not know the internal structure; traversal interface must be identical regardless of storage type**.
 
-Step 1 — define an `Iterator` interface using Python's `__iter__`/`__next__` dunders:
-```python
-class PlaylistIterator:
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        raise StopIteration
+Step 1 — define an `Iterator` interface using Java's `Iterator<T>` contract:
+```java
+interface PlaylistIterator<T> {
+    boolean hasNext();
+    T next();
+}
 ```
 
 Step 2 — the collection creates and returns its own iterator (it knows its internal structure; the client does not need to):
-```python
-class VideoLibrary:
-    def __init__(self):
-        self._videos = []
+```java
+class VideoLibrary {
+    private List<Video> videos = new ArrayList<>();
 
-    def create_iterator(self):
-        return YouTubePlaylistIterator(self._videos)
+    PlaylistIterator<Video> createIterator() {
+        return new YouTubePlaylistIterator(videos);
+    }
+}
 ```
 
 Step 3 — the client only uses the iterator, regardless of the underlying structure:
-```python
-it = library.create_iterator()
-for video in it:
-    process(video)
+```java
+PlaylistIterator<Video> it = library.createIterator();
+while (it.hasNext()) {
+    process(it.next());
+}
 ```
 
 Changing `VideoLibrary` to use a `set` internally requires updating only the `create_iterator()` factory — the client is untouched.
@@ -160,9 +162,9 @@ The Iterator Pattern is a behavioral design pattern that entrusts the traversal 
 
 | Component | Role | Example |
 |---|---|---|
-| **Iterator Interface** | Defines `has_next()` and `next()` contract. | `PlaylistIterator` |
+| **Iterator Interface** | Defines `hasNext()` and `next()` contract. | `PlaylistIterator` |
 | **Concrete Iterator** | Implements traversal logic for a specific collection. | `YouTubePlaylistIterator` |
-| **Aggregate Interface** | Defines `create_iterator()` — the collection provides its own iterator. | `Playlist` |
+| **Aggregate Interface** | Defines `createIterator()` — the collection provides its own iterator. | `Playlist` |
 | **Concrete Aggregate** | The actual collection. Returns an iterator without exposing internals. | `YouTubePlaylist` |
 
 ---
@@ -171,32 +173,44 @@ The Iterator Pattern is a behavioral design pattern that entrusts the traversal 
 
 Direct exposure of the internal structure:
 
-```cpp
+```java
 // A simple Video class
 class Video {
-    string title;
-public:
-    Video(string t) : title(t) {}
-    string getTitle() const { return title; }
-};
+    private final String title;
+
+    Video(String title) {
+        this.title = title;
+    }
+
+    String getTitle() {
+        return title;
+    }
+}
 
 // YouTubePlaylist class
 class YouTubePlaylist {
-    vector<Video> videos;
-public:
-    void addVideo(const Video& video) { videos.push_back(video); }
-    vector<Video>& getVideos() { return videos; }  // Exposes internal structure
-};
+    private final List<Video> videos = new ArrayList<>();
+
+    void addVideo(Video video) {
+        videos.add(video);
+    }
+
+    List<Video> getVideos() {
+        return videos;  // Exposes internal structure
+    }
+}
 
 // Client Code
-int main() {
-    YouTubePlaylist playlist;
-    playlist.addVideo(Video("LLD Tutorial"));
-    playlist.addVideo(Video("System Design Basics"));
+public class Main {
+    public static void main(String[] args) {
+        YouTubePlaylist playlist = new YouTubePlaylist();
+        playlist.addVideo(new Video("LLD Tutorial"));
+        playlist.addVideo(new Video("System Design Basics"));
 
-    // Client is tightly coupled to vector<Video>
-    for (const Video& v : playlist.getVideos()) {
-        cout << v.getTitle() << endl;
+        // Client is tightly coupled to List<Video>
+        for (Video v : playlist.getVideos()) {
+            System.out.println(v.getTitle());
+        }
     }
 }
 ```
@@ -206,7 +220,7 @@ int main() {
 | Problem | Description |
 |---|---|
 | **Exposes internal structure** | `getVideos()` returns the raw list. Clients can modify it — breaks encapsulation. |
-| **Tight coupling to collection type** | Client code depends on `vector`. Change to `list` or custom tree breaks every caller. |
+| **Tight coupling to collection type** | Client code depends on `List`. Change to a custom tree breaks every caller. |
 | **No control over traversal** | Traversal logic is managed outside the class. Can't enforce custom order without changing client code. |
 | **Difficult multiple independent traversals** | Two parts of the program iterating the same playlist simultaneously requires manual index management. |
 
@@ -214,64 +228,77 @@ int main() {
 
 ## Solution: Iterator Pattern (Step 1 — Basic)
 
-```python
-# ========== Video class representing a single video ==========
-class Video:
-    def __init__(self, title):
-        self._title = title
+```java
+// ========== Video class representing a single video ==========
+class Video {
+    private final String title;
 
-    def get_title(self):
-        return self._title
+    Video(String title) {
+        this.title = title;
+    }
 
-
-# ========== YouTubePlaylist class (Aggregate) ==========
-class YouTubePlaylist:
-    def __init__(self):
-        self._videos = []
-
-    # Method to add video to playlist
-    def add_video(self, video):
-        self._videos.append(video)
-
-    # Method to expose internal video list
-    def get_videos(self):
-        return self._videos
+    String getTitle() {
+        return title;
+    }
+}
 
 
-# ========== Concrete Iterator class ==========
-class YouTubePlaylistIterator:
-    def __init__(self, videos):
-        self._videos = videos
-        self._position = 0
+// ========== YouTubePlaylist class (Aggregate) ==========
+class YouTubePlaylist {
+    private final List<Video> videos = new ArrayList<>();
 
-    def __iter__(self):
-        return self
+    // Method to add video to playlist
+    void addVideo(Video video) {
+        videos.add(video);
+    }
 
-    # Check if more videos are left to iterate
-    def has_next(self):
-        return self._position < len(self._videos)
-
-    # Return the next video in sequence
-    def __next__(self):
-        if self.has_next():
-            video = self._videos[self._position]
-            self._position += 1
-            return video
-        raise StopIteration
+    // Method to expose internal video list
+    List<Video> getVideos() {
+        return videos;
+    }
+}
 
 
-# ========== Main (Client code) ==========
-if __name__ == "__main__":
-    playlist = YouTubePlaylist()
-    playlist.add_video(Video("LLD Tutorial"))
-    playlist.add_video(Video("System Design Basics"))
+// ========== Concrete Iterator class ==========
+class YouTubePlaylistIterator implements Iterator<Video> {
+    private final List<Video> videos;
+    private int position = 0;
 
-    # Client directly creates the iterator using internal list (not ideal)
-    iterator = YouTubePlaylistIterator(playlist.get_videos())
+    YouTubePlaylistIterator(List<Video> videos) {
+        this.videos = videos;
+    }
 
-    # Use the iterator to loop through the playlist
-    while iterator.has_next():
-        print(iterator.__next__().get_title())
+    // Check if more videos are left to iterate
+    public boolean hasNext() {
+        return position < videos.size();
+    }
+
+    // Return the next video in sequence
+    public Video next() {
+        if (!hasNext()) {
+            throw new NoSuchElementException();
+        }
+        return videos.get(position++);
+    }
+}
+
+
+// ========== Main (Client code) ==========
+public class Main {
+    public static void main(String[] args) {
+        YouTubePlaylist playlist = new YouTubePlaylist();
+        playlist.addVideo(new Video("LLD Tutorial"));
+        playlist.addVideo(new Video("System Design Basics"));
+
+        // Client directly creates the iterator using internal list (not ideal)
+        YouTubePlaylistIterator iterator = new YouTubePlaylistIterator(playlist.getVideos());
+
+        // Use the iterator to loop through the playlist
+        while (iterator.hasNext()) {
+            System.out.println(iterator.next().getTitle());
+        }
+    }
+}
 ```
 
 **One issue remains**: The client still accesses `playlist.get_videos()` — the internal list is still exposed for creating the iterator. The collection should provide its own iterator.
@@ -280,77 +307,90 @@ if __name__ == "__main__":
 
 ## Refined Solution: Collection Provides Its Own Iterator
 
-```python
-from abc import ABC, abstractmethod
+```java
+// ========== Video class representing a single video ==========
+class Video {
+    private final String title;
+
+    Video(String title) {
+        this.title = title;
+    }
+
+    String getTitle() {
+        return title;
+    }
+}
 
 
-# ========== Video class representing a single video ==========
-class Video:
-    def __init__(self, title):
-        self._title = title
+// ================ Playlist interface ================
+// (acts as a contract for collections that are iterable)
+interface Playlist extends Iterable<Video> {
+    Iterator<Video> createIterator();
 
-    def get_title(self):
-        return self._title
-
-
-# ================ Playlist interface ================
-# (acts as a contract for collections that are iterable)
-class Playlist(ABC):
-    @abstractmethod
-    def create_iterator(self):
-        pass
+    default Iterator<Video> iterator() {
+        return createIterator();
+    }
+}
 
 
-# ========== Concrete Iterator class ==========
-# Implements the actual logic for traversing the YouTubePlaylist
-class YouTubePlaylistIterator:
-    def __init__(self, videos):
-        self._videos = videos
-        self._position = 0
+// ========== Concrete Iterator class ==========
+// Implements the actual logic for traversing the YouTubePlaylist
+class YouTubePlaylistIterator implements Iterator<Video> {
+    private final List<Video> videos;
+    private int position = 0;
 
-    def __iter__(self):
-        return self
+    YouTubePlaylistIterator(List<Video> videos) {
+        this.videos = videos;
+    }
 
-    # Check if more videos are left
-    def has_next(self):
-        return self._position < len(self._videos)
+    // Check if more videos are left
+    public boolean hasNext() {
+        return position < videos.size();
+    }
 
-    # Return the next video in the playlist
-    def __next__(self):
-        if self.has_next():
-            video = self._videos[self._position]
-            self._position += 1
-            return video
-        raise StopIteration
-
-
-# ========== YouTubePlaylist class (Aggregate) ==========
-# Implements Playlist to guarantee it provides an iterator
-class YouTubePlaylist(Playlist):
-    def __init__(self):
-        self._videos = []
-
-    # Method to add a video to the playlist
-    def add_video(self, video):
-        self._videos.append(video)
-
-    # Instead of exposing the list, return an iterator
-    def create_iterator(self):
-        return YouTubePlaylistIterator(self._videos)
+    // Return the next video in the playlist
+    public Video next() {
+        if (!hasNext()) {
+            throw new NoSuchElementException();
+        }
+        return videos.get(position++);
+    }
+}
 
 
-# ========== Main (Client code) ==========
-if __name__ == "__main__":
-    playlist = YouTubePlaylist()
-    playlist.add_video(Video("LLD Tutorial"))
-    playlist.add_video(Video("System Design Basics"))
+// ========== YouTubePlaylist class (Aggregate) ==========
+// Implements Playlist to guarantee it provides an iterator
+class YouTubePlaylist implements Playlist {
+    private final List<Video> videos = new ArrayList<>();
 
-    # Client asks for an iterator — no access to internal data structure
-    iterator = playlist.create_iterator()
+    // Method to add a video to the playlist
+    void addVideo(Video video) {
+        videos.add(video);
+    }
 
-    # Iterate through the playlist using the provided interface
-    for video in iterator:
-        print(video.get_title())
+    // Instead of exposing the list, return an iterator
+    public Iterator<Video> createIterator() {
+        return new YouTubePlaylistIterator(videos);
+    }
+}
+
+
+// ========== Main (Client code) ==========
+public class Main {
+    public static void main(String[] args) {
+        YouTubePlaylist playlist = new YouTubePlaylist();
+        playlist.addVideo(new Video("LLD Tutorial"));
+        playlist.addVideo(new Video("System Design Basics"));
+
+        // Client asks for an iterator — no access to internal data structure
+        Iterator<Video> iterator = playlist.createIterator();
+
+        // Iterate through the playlist using the provided interface
+        while (iterator.hasNext()) {
+            System.out.println(iterator.next().getTitle());
+        }
+    }
+}
 ```
 
 ### Class Diagram
@@ -405,8 +445,8 @@ classDiagram
 
 | Problem | Solution |
 |---|---|
-| **Exposes internal structure** | `YouTubePlaylist` no longer has `get_videos()`. The collection returns an iterator, not its internal list. |
-| **No standard traversal** | All traversal uses the consistent `has_next()` / `__next__()` interface, regardless of underlying structure. |
+| **Exposes internal structure** | `YouTubePlaylist` no longer has `getVideos()`. The collection returns an iterator, not its internal list. |
+| **No standard traversal** | All traversal uses the consistent `hasNext()` / `next()` interface, regardless of underlying structure. |
 | **Traversal logic spread across client** | Index/position tracking is inside `YouTubePlaylistIterator` — client code is clean. |
 | **Tight coupling to collection type** | Client depends only on `Playlist` and `YouTubePlaylistIterator` interfaces. Switch to `MusicPlaylist` (different internal structure) — client doesn't change. |
 | **Can't customize traversal** | Add `ReversePlaylistIterator` implementing the same iterator protocol. The collection just returns a different iterator. |
@@ -424,10 +464,9 @@ classDiagram
 
 ## Real-World Examples
 
-- **Python's `iter()` / `next()`**: Every iterable object in Python implements the iterator protocol via `__iter__` and `__next__`.
 - **Java's `Iterator<T>`**: `List`, `Set`, `Map.entrySet()` all implement `Iterable`. The `for-each` loop uses this iterator.
 - **Database Cursors**: A database cursor iterates over result rows without loading the entire result set into memory.
-- **File Readers**: `open(file).readlines()` or iterating a file object reads lines one at a time.
+- **File Readers**: `Files.lines(path)` or `BufferedReader.readLine()` reads lines one at a time.
 
 ---
 
@@ -435,14 +474,14 @@ classDiagram
 
 **Pros**
 - Hides internal structure — clients traverse without knowing how the collection is built.
-- Unified traversal interface — same `has_next()`/`__next__()` for any collection.
+- Unified traversal interface — same `hasNext()`/`next()` for any collection.
 - Supports multiple traversal strategies — forward, reverse, filtered, all as separate iterator classes.
 - Follows SRP (iteration logic separated) and OCP (new iterators without modifying collections).
 
 **Cons**
 - Adds extra classes/interfaces — more boilerplate for simple lists.
 - Can be overkill for small, simple data structures where a direct `for` loop is cleaner.
-- External iteration is manual — the client manages the `while iterator.has_next()` loop unless further abstracted.
+- External iteration is manual — the client manages the `while iterator.hasNext()` loop unless further abstracted.
 
 ---
 

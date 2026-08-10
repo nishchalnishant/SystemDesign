@@ -5,7 +5,7 @@
 >
 > **Key concepts:**
 > - Core Entities: `Mentor`, `Mentee`, `Session`, `Availability` (Time slots).
-> - Scheduling/Conflict Detection: The hardest part. You must check if a proposed session overlaps with any existing accepted sessions. Represent time as Unix timestamps and check if `new_start < exist_end && new_end > exist_start`.
+> - Scheduling/Conflict Detection: The hardest part. You must check if a proposed session overlaps with any existing accepted sessions. Represent time as `Instant` timestamps and check if `newStart.isBefore(existEnd) && newEnd.isAfter(existStart)`.
 > - Strategy Pattern (Matching): Finding a mentor involves ranking them by relevance. Implement strategies like `SkillMatchStrategy`, `RatingStrategy`, or `AvailabilityStrategy`.
 > - State Pattern: `Session` transitions from `REQUESTED` -> `ACCEPTED` -> `IN_PROGRESS` -> `COMPLETED`.
 >
@@ -153,89 +153,112 @@ class BookingService:
 - Two concurrent requests for the same slot (race condition)
 - Session length outside 30 min–2 hour range
 
-```python
-def book(self, mentor_id, mentee_id, start_at, end_at):
-    # Validate duration
-    duration_minutes = (end_at - start_at).total_seconds() / 60
-    if not (30 <= duration_minutes <= 120):
-        raise InvalidSlotError("Session must be 30–120 minutes")
+```java
+public Booking book(String mentorId, String menteeId, Instant startAt, Instant endAt) {
+    // Validate duration
+    long durationMinutes = Duration.between(startAt, endAt).toMinutes();
+    if (durationMinutes < 30 || durationMinutes > 120) {
+        throw new InvalidSlotError("Session must be 30–120 minutes");
+    }
 
-    # Validate slot is within availability
-    if not self.availability_service.is_slot_available(mentor_id, start_at, end_at):
-        raise SlotUnavailableError("Slot not within mentor's availability")
+    // Validate slot is within availability
+    if (!availabilityService.isSlotAvailable(mentorId, startAt, endAt)) {
+        throw new SlotUnavailableError("Slot not within mentor's availability");
+    }
 
-    # Conflict check + create — must be atomic
-    with self.booking_repo.transaction():
-        conflicts = self.booking_repo.find_conflicts(mentor_id, start_at, end_at)
-        if conflicts:
-            raise ConflictError("Time slot already booked")
+    // Conflict check + create — must be atomic
+    try (Transaction txn = bookingRepo.transaction()) {
+        List<Booking> conflicts = bookingRepo.findConflicts(mentorId, startAt, endAt);
+        if (!conflicts.isEmpty()) {
+            throw new ConflictError("Time slot already booked");
+        }
 
-        booking = Booking(
-            id=generate_id(),
-            mentor_id=mentor_id,
-            mentee_id=mentee_id,
-            start_at=start_at,
-            end_at=end_at,
-            status=BookingStatus.CONFIRMED,
-            created_at=datetime.utcnow()
-        )
-        self.booking_repo.save(booking)
-        return booking
+        Booking booking = new Booking(
+            generateId(),
+            mentorId,
+            menteeId,
+            startAt,
+            endAt,
+            BookingStatus.CONFIRMED,
+            Instant.now()
+        );
+        bookingRepo.save(booking);
+        return booking;
+    }
+}
 ```
 
 ### Conflict detection
 
-```python
-def find_conflicts(self, mentor_id, start_at, end_at):
-    # Overlapping if: existing.start < requested.end AND existing.end > requested.start
-    return [
-        b for b in self.get_active_bookings(mentor_id)
-        if b.start_at < end_at and b.end_at > start_at
-    ]
+```java
+public List<Booking> findConflicts(String mentorId, Instant startAt, Instant endAt) {
+    // Overlapping if: existing.start < requested.end AND existing.end > requested.start
+    List<Booking> conflicts = new ArrayList<>();
+    for (Booking b : getActiveBookings(mentorId)) {
+        if (b.getStartAt().isBefore(endAt) && b.getEndAt().isAfter(startAt)) {
+            conflicts.add(b);
+        }
+    }
+    return conflicts;
+}
 ```
 
 ### AvailabilityService: compute open slots
 
-```python
-def get_open_slots(self, mentor_id, from_date, to_date, slot_duration_minutes=60):
-    open_slots = []
-    current = from_date
+```java
+public List<TimeSlot> getOpenSlots(String mentorId, LocalDate fromDate, LocalDate toDate,
+                                    int slotDurationMinutes) {
+    List<TimeSlot> openSlots = new ArrayList<>();
+    LocalDate current = fromDate;
 
-    while current <= to_date:
-        windows = self._get_availability_windows(mentor_id, current)
-        booked = self.booking_repo.get_on_date(mentor_id, current)
+    while (!current.isAfter(toDate)) {
+        List<TimeWindow> windows = getAvailabilityWindows(mentorId, current);
+        List<Booking> booked = bookingRepo.getOnDate(mentorId, current);
 
-        for window in windows:
-            slot_start = window.start
-            while slot_start + timedelta(minutes=slot_duration_minutes) <= window.end:
-                slot_end = slot_start + timedelta(minutes=slot_duration_minutes)
-                if not self._conflicts_with_bookings(slot_start, slot_end, booked):
-                    open_slots.append(TimeSlot(slot_start, slot_end))
-                slot_start = slot_end
+        for (TimeWindow window : windows) {
+            Instant slotStart = window.getStart();
+            while (!slotStart.plus(Duration.ofMinutes(slotDurationMinutes)).isAfter(window.getEnd())) {
+                Instant slotEnd = slotStart.plus(Duration.ofMinutes(slotDurationMinutes));
+                if (!conflictsWithBookings(slotStart, slotEnd, booked)) {
+                    openSlots.add(new TimeSlot(slotStart, slotEnd));
+                }
+                slotStart = slotEnd;
+            }
+        }
 
-        current += timedelta(days=1)
+        current = current.plusDays(1);
+    }
 
-    return open_slots
+    return openSlots;
+}
+
+public List<TimeSlot> getOpenSlots(String mentorId, LocalDate fromDate, LocalDate toDate) {
+    return getOpenSlots(mentorId, fromDate, toDate, 60);
+}
 ```
 
 ### Cancellation
 
-```python
-def cancel(self, booking_id, cancelled_by):
-    booking = self.booking_repo.get(booking_id)
-    if not booking:
-        raise BookingNotFoundError()
-    if booking.status == BookingStatus.CANCELLED:
-        raise AlreadyCancelledError()
+```java
+public boolean cancel(String bookingId, String cancelledBy) {
+    Booking booking = bookingRepo.get(bookingId);
+    if (booking == null) {
+        throw new BookingNotFoundError();
+    }
+    if (booking.getStatus() == BookingStatus.CANCELLED) {
+        throw new AlreadyCancelledError();
+    }
 
-    hours_until_session = (booking.start_at - datetime.utcnow()).total_seconds() / 3600
-    if hours_until_session < 24:
-        raise CancellationWindowError("Cannot cancel within 24 hours of session")
+    long hoursUntilSession = Duration.between(Instant.now(), booking.getStartAt()).toHours();
+    if (hoursUntilSession < 24) {
+        throw new CancellationWindowError("Cannot cancel within 24 hours of session");
+    }
 
-    booking.status = BookingStatus.CANCELLED
-    booking.cancelled_at = datetime.utcnow()
-    self.booking_repo.save(booking)
-    return True
+    booking.setStatus(BookingStatus.CANCELLED);
+    booking.setCancelledAt(Instant.now());
+    bookingRepo.save(booking);
+    return true;
+}
 ```
 
 ---
@@ -281,38 +304,59 @@ Alternatively: SELECT FOR UPDATE locks the mentor's rows during the transaction 
 
 Store all times in UTC. At the API layer, convert to user's timezone for display:
 
-```python
-import pytz
+```java
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 
-def display_slot(slot, user_timezone_str):
-    tz = pytz.timezone(user_timezone_str)
-    local_start = slot.start_at.replace(tzinfo=pytz.utc).astimezone(tz)
-    local_end = slot.end_at.replace(tzinfo=pytz.utc).astimezone(tz)
-    return f"{local_start.strftime('%I:%M %p')} – {local_end.strftime('%I:%M %p')} {tz.zone}"
+public String displaySlot(TimeSlot slot, String userTimezoneStr) {
+    ZoneId tz = ZoneId.of(userTimezoneStr);
+    ZonedDateTime localStart = slot.getStartAt().atZone(tz);
+    ZonedDateTime localEnd = slot.getEndAt().atZone(tz);
+    DateTimeFormatter fmt = DateTimeFormatter.ofPattern("hh:mm a");
+    return String.format("%s – %s %s", localStart.format(fmt), localEnd.format(fmt), tz.getId());
+}
 ```
 
 Never store local times — always convert to UTC at input.
 
 ### 3. "How would you add automated matching (recommend mentors)?"
 
-```python
-class MentorMatcher:
-    def recommend(self, mentee, limit=5):
-        # Score each mentor by: expertise overlap + availability in mentee's preferred times
-        scores = []
-        for mentor in self.mentor_repo.get_all():
-            expertise_score = self._expertise_overlap(mentee.interests, mentor.expertise)
-            availability_score = self._availability_overlap(mentee.preferred_times, mentor)
-            scores.append((mentor, expertise_score * 0.7 + availability_score * 0.3))
-        scores.sort(key=lambda x: x[1], reverse=True)
-        return [m for m, _ in scores[:limit]]
+```java
+class MentorMatcher {
+    private final MentorRepository mentorRepo;
+
+    public MentorMatcher(MentorRepository mentorRepo) {
+        this.mentorRepo = mentorRepo;
+    }
+
+    public List<Mentor> recommend(Mentee mentee, int limit) {
+        // Score each mentor by: expertise overlap + availability in mentee's preferred times
+        List<AbstractMap.SimpleEntry<Mentor, Double>> scores = new ArrayList<>();
+        for (Mentor mentor : mentorRepo.getAll()) {
+            double expertiseScore = expertiseOverlap(mentee.getInterests(), mentor.getExpertise());
+            double availabilityScore = availabilityOverlap(mentee.getPreferredTimes(), mentor);
+            double totalScore = expertiseScore * 0.7 + availabilityScore * 0.3;
+            scores.add(new AbstractMap.SimpleEntry<>(mentor, totalScore));
+        }
+        scores.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+        return scores.stream()
+            .limit(limit)
+            .map(AbstractMap.SimpleEntry::getKey)
+            .collect(Collectors.toList());
+    }
+
+    public List<Mentor> recommend(Mentee mentee) {
+        return recommend(mentee, 5);
+    }
+}
 ```
 
 Inject `MentorMatcher` as a Strategy — swap for ML-based ranker without touching BookingService.
 
 ### 4. "How would you add group sessions (one mentor, many mentees)?"
 
-Extend `Booking` with `max_capacity: int` and `attendees: list[str]`. Change `find_conflicts` to only block when `len(attendees) >= max_capacity` (not on any overlap). `book` adds the mentee to `attendees` if capacity permits.
+Extend `Booking` with `maxCapacity: int` and `attendees: List<String>`. Change `findConflicts` to only block when `attendees.size() >= maxCapacity` (not on any overlap). `book` adds the mentee to `attendees` if capacity permits.
 
 ---
 
@@ -335,13 +379,13 @@ Extend `Booking` with `max_capacity: int` and `attendees: list[str]`. Change `fi
   **A**: Avoids DST ambiguity. Two users in different timezones refer to the same UTC time. Conversion to local time happens only at display, never in storage or comparison logic.
 
 - **Q**: How do you handle recurring availability + date overrides?
-  **A**: `_get_availability_windows(mentor_id, date)` first checks if a `DateOverride` exists for that date — if so, use it (or block if `is_blocked=True`). Otherwise, look up `RecurringAvailability` by day of week.
+  **A**: `getAvailabilityWindows(mentorId, date)` first checks if a `DateOverride` exists for that date — if so, use it (or block if `isBlocked` is `true`). Otherwise, look up `RecurringAvailability` by day of week.
 
 - **Q**: What prevents two mentees from booking the same slot?
   **A**: The conflict-check and booking-create must happen in the same transaction. In a DB, either a unique constraint on (mentor_id, start_at, end_at) or SELECT FOR UPDATE ensures only one succeeds.
 
 - **Q**: How would you allow a mentor to block time (vacation)?
-  **A**: `DateOverride` with `is_blocked=True`. `_get_availability_windows` returns empty for that date, so `get_open_slots` yields nothing and `is_slot_available` returns False.
+  **A**: `DateOverride` with `isBlocked = true`. `getAvailabilityWindows` returns empty for that date, so `getOpenSlots` yields nothing and `isSlotAvailable` returns `false`.
 
 ---
 

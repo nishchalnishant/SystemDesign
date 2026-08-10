@@ -198,196 +198,336 @@ class Bill:
 - check_in > check_out → raise `ValueError`
 - Room in MAINTENANCE → never returned even if no reservation
 
-```python
-import uuid
-from datetime import date, datetime
-from enum import Enum, auto
-from typing import Optional, List, Dict
-from abc import ABC, abstractmethod
+```java
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.UUID;
 
+enum RoomType {
+    SINGLE, DOUBLE, SUITE
+}
 
-class RoomType(Enum):
-    SINGLE = auto()
-    DOUBLE = auto()
-    SUITE = auto()
+enum RoomStatus {
+    AVAILABLE, RESERVED, OCCUPIED, MAINTENANCE
+}
 
+enum ReservationStatus {
+    CONFIRMED, CHECKED_IN, CHECKED_OUT, CANCELLED
+}
 
-class RoomStatus(Enum):
-    AVAILABLE = auto()
-    RESERVED = auto()
-    OCCUPIED = auto()
-    MAINTENANCE = auto()
+abstract class Room {
+    private final String roomId;
+    private final String roomNumber;
+    private final int floor;
+    private final RoomType roomType;
+    private RoomStatus status;
 
+    public Room(String roomId, String roomNumber, int floor, RoomType roomType) {
+        this.roomId = roomId;
+        this.roomNumber = roomNumber;
+        this.floor = floor;
+        this.roomType = roomType;
+        this.status = RoomStatus.AVAILABLE;
+    }
 
-class ReservationStatus(Enum):
-    CONFIRMED = auto()
-    CHECKED_IN = auto()
-    CHECKED_OUT = auto()
-    CANCELLED = auto()
+    public abstract double basePrice();
 
+    public boolean isAvailable() {
+        return status == RoomStatus.AVAILABLE;
+    }
 
-class Room(ABC):
-    def __init__(self, room_id: str, room_number: str, floor: int, room_type: RoomType):
-        self.room_id = room_id
-        self.room_number = room_number
-        self.floor = floor
-        self.room_type = room_type
-        self.status = RoomStatus.AVAILABLE
+    public String getRoomId() {
+        return roomId;
+    }
 
-    @abstractmethod
-    def base_price(self) -> float:
-        pass
+    public String getRoomNumber() {
+        return roomNumber;
+    }
 
-    def is_available(self) -> bool:
-        return self.status == RoomStatus.AVAILABLE
+    public int getFloor() {
+        return floor;
+    }
 
+    public RoomType getRoomType() {
+        return roomType;
+    }
 
-class SingleRoom(Room):
-    def __init__(self, room_id: str, room_number: str, floor: int):
-        super().__init__(room_id, room_number, floor, RoomType.SINGLE)
+    public RoomStatus getStatus() {
+        return status;
+    }
 
-    def base_price(self) -> float:
-        return 100.0
+    public void setStatus(RoomStatus status) {
+        this.status = status;
+    }
+}
 
+class SingleRoom extends Room {
+    public SingleRoom(String roomId, String roomNumber, int floor) {
+        super(roomId, roomNumber, floor, RoomType.SINGLE);
+    }
 
-class DoubleRoom(Room):
-    def __init__(self, room_id: str, room_number: str, floor: int):
-        super().__init__(room_id, room_number, floor, RoomType.DOUBLE)
+    @Override
+    public double basePrice() {
+        return 100.0;
+    }
+}
 
-    def base_price(self) -> float:
-        return 150.0
+class DoubleRoom extends Room {
+    public DoubleRoom(String roomId, String roomNumber, int floor) {
+        super(roomId, roomNumber, floor, RoomType.DOUBLE);
+    }
 
+    @Override
+    public double basePrice() {
+        return 150.0;
+    }
+}
 
-class Suite(Room):
-    def __init__(self, room_id: str, room_number: str, floor: int):
-        super().__init__(room_id, room_number, floor, RoomType.SUITE)
+class Suite extends Room {
+    public Suite(String roomId, String roomNumber, int floor) {
+        super(roomId, roomNumber, floor, RoomType.SUITE);
+    }
 
-    def base_price(self) -> float:
-        return 300.0
+    @Override
+    public double basePrice() {
+        return 300.0;
+    }
+}
 
+class Guest {
+    private final String guestId;
+    private final String name;
+    private final String email;
 
-class Guest:
-    def __init__(self, guest_id: str, name: str, email: str):
-        self.guest_id = guest_id
-        self.name = name
-        self.email = email
+    public Guest(String guestId, String name, String email) {
+        this.guestId = guestId;
+        this.name = name;
+        this.email = email;
+    }
 
+    public String getGuestId() {
+        return guestId;
+    }
 
-class Bill:
-    def __init__(self, reservation_id: str, room_number: str,
-                 nights: int, amount: float):
-        self.reservation_id = reservation_id
-        self.room_number = room_number
-        self.nights = nights
-        self.amount = amount
-        self.generated_at = datetime.utcnow()
+    public String getName() {
+        return name;
+    }
 
+    public String getEmail() {
+        return email;
+    }
+}
 
-class Reservation:
-    def __init__(self, reservation_id: str, guest: Guest, room: Room,
-                 check_in: date, check_out: date):
-        self.reservation_id = reservation_id
-        self.guest = guest
-        self.room = room
-        self.check_in = check_in
-        self.check_out = check_out
-        self.status = ReservationStatus.CONFIRMED
+class Bill {
+    private final String reservationId;
+    private final String roomNumber;
+    private final int nights;
+    private final double amount;
+    private final LocalDateTime generatedAt;
 
-    def nights(self) -> int:
-        return (self.check_out - self.check_in).days
+    public Bill(String reservationId, String roomNumber, int nights, double amount) {
+        this.reservationId = reservationId;
+        this.roomNumber = roomNumber;
+        this.nights = nights;
+        this.amount = amount;
+        this.generatedAt = LocalDateTime.now();
+    }
 
-    def check_in_guest(self) -> None:
-        if self.status != ReservationStatus.CONFIRMED:
-            raise ValueError(f"Cannot check in from status {self.status}")
-        self.status = ReservationStatus.CHECKED_IN
-        self.room.status = RoomStatus.OCCUPIED
+    public String getReservationId() {
+        return reservationId;
+    }
 
-    def check_out_guest(self) -> None:
-        if self.status != ReservationStatus.CHECKED_IN:
-            raise ValueError(f"Cannot check out from status {self.status}")
-        self.status = ReservationStatus.CHECKED_OUT
-        self.room.status = RoomStatus.AVAILABLE
+    public String getRoomNumber() {
+        return roomNumber;
+    }
 
-    def cancel(self) -> None:
-        if self.status in (ReservationStatus.CHECKED_OUT, ReservationStatus.CANCELLED):
-            raise ValueError(f"Cannot cancel from status {self.status}")
-        self.status = ReservationStatus.CANCELLED
-        if self.room.status == RoomStatus.RESERVED:
-            self.room.status = RoomStatus.AVAILABLE
+    public int getNights() {
+        return nights;
+    }
 
+    public double getAmount() {
+        return amount;
+    }
 
-class Hotel:
-    def __init__(self, name: str):
-        self.name = name
-        self.rooms: List[Room] = []
-        self.reservations: Dict[str, Reservation] = {}
+    public LocalDateTime getGeneratedAt() {
+        return generatedAt;
+    }
+}
 
-    def add_room(self, room: Room) -> None:
-        self.rooms.append(room)
+class Reservation {
+    private final String reservationId;
+    private final Guest guest;
+    private final Room room;
+    private final LocalDate checkIn;
+    private final LocalDate checkOut;
+    private ReservationStatus status;
 
-    def _has_conflict(self, room: Room, check_in: date, check_out: date) -> bool:
-        for res in self.reservations.values():
-            if res.room.room_id != room.room_id:
-                continue
-            if res.status in (ReservationStatus.CANCELLED, ReservationStatus.CHECKED_OUT):
-                continue
-            # Overlap: existing.check_in < check_out AND existing.check_out > check_in
-            if res.check_in < check_out and res.check_out > check_in:
-                return True
-        return False
+    public Reservation(String reservationId, Guest guest, Room room,
+                        LocalDate checkIn, LocalDate checkOut) {
+        this.reservationId = reservationId;
+        this.guest = guest;
+        this.room = room;
+        this.checkIn = checkIn;
+        this.checkOut = checkOut;
+        this.status = ReservationStatus.CONFIRMED;
+    }
 
-    def search_available_rooms(self, check_in: date, check_out: date,
-                                room_type: Optional[RoomType] = None) -> List[Room]:
-        if check_in >= check_out:
-            raise ValueError("check_in must be before check_out")
-        results = []
-        for room in self.rooms:
-            if room.status == RoomStatus.MAINTENANCE:
-                continue
-            if room_type and room.room_type != room_type:
-                continue
-            if not self._has_conflict(room, check_in, check_out):
-                results.append(room)
-        return results
+    public int nights() {
+        return (int) ChronoUnit.DAYS.between(checkIn, checkOut);
+    }
 
-    def create_reservation(self, guest: Guest, room: Room,
-                           check_in: date, check_out: date) -> Reservation:
-        if self._has_conflict(room, check_in, check_out):
-            raise ValueError(f"Room {room.room_number} is not available for these dates")
-        reservation = Reservation(
-            reservation_id=str(uuid.uuid4()),
-            guest=guest,
-            room=room,
-            check_in=check_in,
-            check_out=check_out
-        )
-        room.status = RoomStatus.RESERVED
-        self.reservations[reservation.reservation_id] = reservation
-        return reservation
+    public void checkInGuest() {
+        if (status != ReservationStatus.CONFIRMED) {
+            throw new IllegalStateException("Cannot check in from status " + status);
+        }
+        status = ReservationStatus.CHECKED_IN;
+        room.setStatus(RoomStatus.OCCUPIED);
+    }
 
-    def check_in(self, reservation_id: str) -> None:
-        res = self._get_reservation(reservation_id)
-        res.check_in_guest()
+    public void checkOutGuest() {
+        if (status != ReservationStatus.CHECKED_IN) {
+            throw new IllegalStateException("Cannot check out from status " + status);
+        }
+        status = ReservationStatus.CHECKED_OUT;
+        room.setStatus(RoomStatus.AVAILABLE);
+    }
 
-    def check_out(self, reservation_id: str) -> Bill:
-        res = self._get_reservation(reservation_id)
-        res.check_out_guest()
-        amount = res.room.base_price() * res.nights()
-        return Bill(
-            reservation_id=reservation_id,
-            room_number=res.room.room_number,
-            nights=res.nights(),
-            amount=amount
-        )
+    public void cancel() {
+        if (status == ReservationStatus.CHECKED_OUT || status == ReservationStatus.CANCELLED) {
+            throw new IllegalStateException("Cannot cancel from status " + status);
+        }
+        status = ReservationStatus.CANCELLED;
+        if (room.getStatus() == RoomStatus.RESERVED) {
+            room.setStatus(RoomStatus.AVAILABLE);
+        }
+    }
 
-    def cancel_reservation(self, reservation_id: str) -> None:
-        res = self._get_reservation(reservation_id)
-        res.cancel()
+    public String getReservationId() {
+        return reservationId;
+    }
 
-    def _get_reservation(self, reservation_id: str) -> Reservation:
-        if reservation_id not in self.reservations:
-            raise KeyError(f"Reservation {reservation_id} not found")
-        return self.reservations[reservation_id]
+    public Guest getGuest() {
+        return guest;
+    }
+
+    public Room getRoom() {
+        return room;
+    }
+
+    public LocalDate getCheckIn() {
+        return checkIn;
+    }
+
+    public LocalDate getCheckOut() {
+        return checkOut;
+    }
+
+    public ReservationStatus getStatus() {
+        return status;
+    }
+}
+
+class Hotel {
+    private final String name;
+    private final List<Room> rooms = new ArrayList<>();
+    private final Map<String, Reservation> reservations = new HashMap<>();
+
+    public Hotel(String name) {
+        this.name = name;
+    }
+
+    public void addRoom(Room room) {
+        rooms.add(room);
+    }
+
+    public List<Room> getRooms() {
+        return rooms;
+    }
+
+    public Map<String, Reservation> getReservations() {
+        return reservations;
+    }
+
+    private boolean hasConflict(Room room, LocalDate checkIn, LocalDate checkOut) {
+        for (Reservation res : reservations.values()) {
+            if (!res.getRoom().getRoomId().equals(room.getRoomId())) {
+                continue;
+            }
+            if (res.getStatus() == ReservationStatus.CANCELLED
+                    || res.getStatus() == ReservationStatus.CHECKED_OUT) {
+                continue;
+            }
+            // Overlap: existing.checkIn < checkOut AND existing.checkOut > checkIn
+            if (res.getCheckIn().isBefore(checkOut) && res.getCheckOut().isAfter(checkIn)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public List<Room> searchAvailableRooms(LocalDate checkIn, LocalDate checkOut, RoomType roomType) {
+        if (!checkIn.isBefore(checkOut)) {
+            throw new IllegalArgumentException("checkIn must be before checkOut");
+        }
+        List<Room> results = new ArrayList<>();
+        for (Room room : rooms) {
+            if (room.getStatus() == RoomStatus.MAINTENANCE) {
+                continue;
+            }
+            if (roomType != null && room.getRoomType() != roomType) {
+                continue;
+            }
+            if (!hasConflict(room, checkIn, checkOut)) {
+                results.add(room);
+            }
+        }
+        return results;
+    }
+
+    public Reservation createReservation(Guest guest, Room room,
+                                          LocalDate checkIn, LocalDate checkOut) {
+        if (hasConflict(room, checkIn, checkOut)) {
+            throw new IllegalStateException(
+                    "Room " + room.getRoomNumber() + " is not available for these dates");
+        }
+        Reservation reservation = new Reservation(
+                UUID.randomUUID().toString(), guest, room, checkIn, checkOut);
+        room.setStatus(RoomStatus.RESERVED);
+        reservations.put(reservation.getReservationId(), reservation);
+        return reservation;
+    }
+
+    public void checkIn(String reservationId) {
+        Reservation res = getReservation(reservationId);
+        res.checkInGuest();
+    }
+
+    public Bill checkOut(String reservationId) {
+        Reservation res = getReservation(reservationId);
+        res.checkOutGuest();
+        double amount = res.getRoom().basePrice() * res.nights();
+        return new Bill(reservationId, res.getRoom().getRoomNumber(), res.nights(), amount);
+    }
+
+    public void cancelReservation(String reservationId) {
+        Reservation res = getReservation(reservationId);
+        res.cancel();
+    }
+
+    private Reservation getReservation(String reservationId) {
+        Reservation res = reservations.get(reservationId);
+        if (res == null) {
+            throw new NoSuchElementException("Reservation " + reservationId + " not found");
+        }
+        return res;
+    }
+}
 ```
 
 ---
@@ -415,9 +555,10 @@ Equivalently, they do NOT overlap if `A_end <= B_start OR B_end <= A_start`.
 
 This handles all cases: B fully before A, B fully after A, partial overlaps, B inside A, A inside B.
 
-```python
-def overlaps(a_start: date, a_end: date, b_start: date, b_end: date) -> bool:
-    return a_start < b_end and a_end > b_start
+```java
+public boolean overlaps(LocalDate aStart, LocalDate aEnd, LocalDate bStart, LocalDate bEnd) {
+    return aStart.isBefore(bEnd) && aEnd.isAfter(bStart);
+}
 ```
 
 In SQL: `WHERE check_in < :check_out AND check_out > :check_in AND status NOT IN ('CANCELLED', 'CHECKED_OUT')`
@@ -426,78 +567,123 @@ In SQL: `WHERE check_in < :check_out AND check_out > :check_in AND status NOT IN
 
 Inject a `PricingStrategy` into `BillingService`. Strategies can account for season, occupancy rate, or day of week.
 
-```python
-class PricingStrategy(ABC):
-    @abstractmethod
-    def nightly_rate(self, room: Room, night: date) -> float:
-        pass
+```java
+interface PricingStrategy {
+    double nightlyRate(Room room, LocalDate night);
+}
 
-class StandardPricing(PricingStrategy):
-    def nightly_rate(self, room: Room, night: date) -> float:
-        return room.base_price()
+class StandardPricing implements PricingStrategy {
+    @Override
+    public double nightlyRate(Room room, LocalDate night) {
+        return room.basePrice();
+    }
+}
 
-class OccupancyPricing(PricingStrategy):
-    def __init__(self, hotel: Hotel):
-        self.hotel = hotel
+class OccupancyPricing implements PricingStrategy {
+    private final Hotel hotel;
 
-    def nightly_rate(self, room: Room, night: date) -> float:
-        occupied = sum(
-            1 for r in self.hotel.reservations.values()
-            if r.check_in <= night < r.check_out
-            and r.status not in (ReservationStatus.CANCELLED, ReservationStatus.CHECKED_OUT)
-        )
-        occupancy_rate = occupied / len(self.hotel.rooms)
-        multiplier = 1.0 + (occupancy_rate * 0.5)  # up to 50% surcharge
-        return room.base_price() * multiplier
+    public OccupancyPricing(Hotel hotel) {
+        this.hotel = hotel;
+    }
 
-class BillingService:
-    def __init__(self, strategy: PricingStrategy):
-        self.strategy = strategy
+    @Override
+    public double nightlyRate(Room room, LocalDate night) {
+        long occupied = hotel.getReservations().values().stream()
+                .filter(r -> !r.getCheckIn().isAfter(night) && r.getCheckOut().isAfter(night))
+                .filter(r -> r.getStatus() != ReservationStatus.CANCELLED
+                        && r.getStatus() != ReservationStatus.CHECKED_OUT)
+                .count();
+        double occupancyRate = (double) occupied / hotel.getRooms().size();
+        double multiplier = 1.0 + (occupancyRate * 0.5); // up to 50% surcharge
+        return room.basePrice() * multiplier;
+    }
+}
 
-    def generate_bill(self, reservation: Reservation) -> Bill:
-        total = 0.0
-        current = reservation.check_in
-        while current < reservation.check_out:
-            total += self.strategy.nightly_rate(reservation.room, current)
-            current = date(current.year, current.month, current.day + 1)
-        return Bill(reservation.reservation_id, reservation.room.room_number,
-                    reservation.nights(), total)
+class BillingService {
+    private final PricingStrategy strategy;
+
+    public BillingService(PricingStrategy strategy) {
+        this.strategy = strategy;
+    }
+
+    public Bill generateBill(Reservation reservation) {
+        double total = 0.0;
+        LocalDate current = reservation.getCheckIn();
+        while (current.isBefore(reservation.getCheckOut())) {
+            total += strategy.nightlyRate(reservation.getRoom(), current);
+            current = current.plusDays(1);
+        }
+        return new Bill(reservation.getReservationId(), reservation.getRoom().getRoomNumber(),
+                reservation.nights(), total);
+    }
+}
 ```
 
 ### 3. "How would you implement cancellation with refund tiers?"
 
-```python
-from datetime import date
+```java
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 
-def calculate_refund(reservation: Reservation, cancel_date: date) -> float:
-    days_until_checkin = (reservation.check_in - cancel_date).days
-    total = reservation.room.base_price() * reservation.nights()
-    if days_until_checkin >= 7:
-        return total          # full refund
-    elif days_until_checkin >= 3:
-        return total * 0.5    # 50% refund
-    elif days_until_checkin >= 1:
-        return total * 0.25   # 25% refund
-    else:
-        return 0.0            # no refund (same day or past)
+public double calculateRefund(Reservation reservation, LocalDate cancelDate) {
+    long daysUntilCheckin = ChronoUnit.DAYS.between(cancelDate, reservation.getCheckIn());
+    double total = reservation.getRoom().basePrice() * reservation.nights();
+    if (daysUntilCheckin >= 7) {
+        return total;          // full refund
+    } else if (daysUntilCheckin >= 3) {
+        return total * 0.5;    // 50% refund
+    } else if (daysUntilCheckin >= 1) {
+        return total * 0.25;   // 25% refund
+    } else {
+        return 0.0;            // no refund (same day or past)
+    }
+}
 ```
 
 ### 4. "How would you handle overbooking / waitlists?"
 
 Add a `Waitlist` per room. When a room becomes available (cancellation, check-out), notify the first waiter.
 
-```python
-from collections import deque
+```java
+import java.time.LocalDate;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
-class Waitlist:
-    def __init__(self):
-        self.queue: deque = deque()  # (guest, check_in, check_out)
+class WaitlistEntry {
+    private final Guest guest;
+    private final LocalDate checkIn;
+    private final LocalDate checkOut;
 
-    def add(self, guest: Guest, check_in: date, check_out: date) -> None:
-        self.queue.append((guest, check_in, check_out))
+    public WaitlistEntry(Guest guest, LocalDate checkIn, LocalDate checkOut) {
+        this.guest = guest;
+        this.checkIn = checkIn;
+        this.checkOut = checkOut;
+    }
 
-    def next(self):
-        return self.queue.popleft() if self.queue else None
+    public Guest getGuest() {
+        return guest;
+    }
+
+    public LocalDate getCheckIn() {
+        return checkIn;
+    }
+
+    public LocalDate getCheckOut() {
+        return checkOut;
+    }
+}
+
+class Waitlist {
+    private final Deque<WaitlistEntry> queue = new ArrayDeque<>();
+
+    public void add(Guest guest, LocalDate checkIn, LocalDate checkOut) {
+        queue.addLast(new WaitlistEntry(guest, checkIn, checkOut));
+    }
+
+    public WaitlistEntry next() {
+        return queue.isEmpty() ? null : queue.pollFirst();
+    }
+}
 ```
 
 On cancellation: check each waiting entry against the newly freed dates. If compatible, auto-create a reservation and notify the guest.
@@ -506,19 +692,30 @@ On cancellation: check each waiting entry against the newly freed dates. If comp
 
 Add a `HotelChain` (or `HotelRepository`) that holds a list of `Hotel` objects. The search API takes location as a parameter; use geolocation to find hotels near the user, then delegate `search_available_rooms` to each.
 
-```python
-class HotelChain:
-    def __init__(self):
-        self.hotels: List[Hotel] = []
+```java
+import java.time.LocalDate;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
-    def search(self, city: str, check_in: date, check_out: date,
-               room_type: Optional[RoomType] = None) -> List[tuple]:
-        results = []
-        for hotel in self.hotels:
-            if hotel.city == city:
-                rooms = hotel.search_available_rooms(check_in, check_out, room_type)
-                results.extend([(hotel, room) for room in rooms])
-        return results
+class HotelChain {
+    private final List<Hotel> hotels = new ArrayList<>();
+
+    public List<Map.Entry<Hotel, Room>> search(String city, LocalDate checkIn, LocalDate checkOut,
+                                                RoomType roomType) {
+        List<Map.Entry<Hotel, Room>> results = new ArrayList<>();
+        for (Hotel hotel : hotels) {
+            if (hotel.getCity().equals(city)) {
+                List<Room> rooms = hotel.searchAvailableRooms(checkIn, checkOut, roomType);
+                for (Room room : rooms) {
+                    results.add(new AbstractMap.SimpleEntry<>(hotel, room));
+                }
+            }
+        }
+        return results;
+    }
+}
 ```
 
 ---

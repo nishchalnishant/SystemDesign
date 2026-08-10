@@ -149,79 +149,100 @@ class LockerService:
 - No locker of appropriate size available → return None
 - Package size larger than LARGE → reject (out of scope)
 
-```python
-SIZE_ORDER = [LockerSize.SMALL, LockerSize.MEDIUM, LockerSize.LARGE]
+```java
+private static final List<LockerSize> SIZE_ORDER = List.of(
+    LockerSize.SMALL, LockerSize.MEDIUM, LockerSize.LARGE
+);
 
-def assign_locker(self, package, station_id):
-    station = self._get_station(station_id)
-    if not station:
-        return None
+public Optional<LockerAssignment> assignLocker(Package pkg, String stationId) {
+    Optional<LockerStation> stationOpt = getStation(stationId);
+    if (stationOpt.isEmpty()) {
+        return Optional.empty();
+    }
+    LockerStation station = stationOpt.get();
 
-    locker = self._find_best_locker(station, package.size)
-    if not locker:
-        return None
+    Optional<Locker> lockerOpt = findBestLocker(station, pkg.getSize());
+    if (lockerOpt.isEmpty()) {
+        return Optional.empty();
+    }
+    Locker locker = lockerOpt.get();
 
-    pin = self.pin_generator.generate()
-    expires_at = datetime.now() + timedelta(days=3)
+    String pin = pinGenerator.generate();
+    LocalDateTime expiresAt = LocalDateTime.now().plusDays(3);
 
-    locker.assign(package)
-    assignment = LockerAssignment(
-        pin=pin,
-        locker=locker,
-        package=package,
-        assigned_at=datetime.now(),
-        expires_at=expires_at,
-        retrieved=False
-    )
-    self.assignments[pin] = assignment
-    return assignment
+    locker.assign(pkg);
+    LockerAssignment assignment = new LockerAssignment(
+        pin,
+        locker,
+        pkg,
+        LocalDateTime.now(),
+        expiresAt,
+        false
+    );
+    assignments.put(pin, assignment);
+    return Optional.of(assignment);
+}
 
-def _find_best_locker(self, station, required_size):
-    required_index = SIZE_ORDER.index(required_size)
-    # Try each size from required upwards (smallest fit)
-    for size in SIZE_ORDER[required_index:]:
-        for locker in station.lockers:
-            if locker.size == size and locker.is_available():
-                return locker
-    return None
+private Optional<Locker> findBestLocker(LockerStation station, LockerSize requiredSize) {
+    int requiredIndex = SIZE_ORDER.indexOf(requiredSize);
+    // Try each size from required upwards (smallest fit)
+    for (LockerSize size : SIZE_ORDER.subList(requiredIndex, SIZE_ORDER.size())) {
+        for (Locker locker : station.getLockers()) {
+            if (locker.getSize() == size && locker.isAvailable()) {
+                return Optional.of(locker);
+            }
+        }
+    }
+    return Optional.empty();
+}
 ```
 
 ### Core Method: `retrieve_package`
 
-```python
-def retrieve_package(self, pin):
-    assignment = self.assignments.get(pin)
-    if not assignment:
-        raise InvalidPINError("PIN not found")
-    if assignment.retrieved:
-        raise InvalidPINError("Package already retrieved")
-    if datetime.now() > assignment.expires_at:
-        self._expire_assignment(assignment)
-        raise ExpiredPINError("PIN has expired")
+```java
+public Package retrievePackage(String pin) {
+    LockerAssignment assignment = assignments.get(pin);
+    if (assignment == null) {
+        throw new InvalidPINError("PIN not found");
+    }
+    if (assignment.isRetrieved()) {
+        throw new InvalidPINError("Package already retrieved");
+    }
+    if (LocalDateTime.now().isAfter(assignment.getExpiresAt())) {
+        expireAssignment(assignment);
+        throw new ExpiredPINError("PIN has expired");
+    }
 
-    package = assignment.package
-    assignment.locker.release()
-    assignment.retrieved = True
-    del self.assignments[pin]
-    return package
+    Package pkg = assignment.getPackage();
+    assignment.getLocker().release();
+    assignment.setRetrieved(true);
+    assignments.remove(pin);
+    return pkg;
+}
 ```
 
 ### Core Method: `expire_stale_assignments`
 
-```python
-def expire_stale_assignments(self):
-    now = datetime.now()
-    expired_pins = [
-        pin for pin, a in self.assignments.items()
-        if now > a.expires_at and not a.retrieved
-    ]
-    for pin in expired_pins:
-        self._expire_assignment(self.assignments[pin])
-        del self.assignments[pin]
+```java
+public void expireStaleAssignments() {
+    LocalDateTime now = LocalDateTime.now();
+    List<String> expiredPins = new ArrayList<>();
+    for (Map.Entry<String, LockerAssignment> entry : assignments.entrySet()) {
+        LockerAssignment a = entry.getValue();
+        if (now.isAfter(a.getExpiresAt()) && !a.isRetrieved()) {
+            expiredPins.add(entry.getKey());
+        }
+    }
+    for (String pin : expiredPins) {
+        expireAssignment(assignments.get(pin));
+        assignments.remove(pin);
+    }
+}
 
-def _expire_assignment(self, assignment):
-    assignment.locker.release()
-    # Trigger return-to-sender flow (out of scope here)
+private void expireAssignment(LockerAssignment assignment) {
+    assignment.getLocker().release();
+    // Trigger return-to-sender flow (out of scope here)
+}
 ```
 
 ---
@@ -257,64 +278,83 @@ retrieve_package("482910"):
 
 Use geohash to index stations by location. A geohash encodes (lat, lon) into a string where prefix similarity = geographic proximity.
 
-```python
-import geohash
+```java
+class LockerStationIndex {
+    private final Map<String, List<LockerStation>> geohashToStations = new HashMap<>();
 
-class LockerStationIndex:
-    def __init__(self):
-        self.geohash_to_stations = defaultdict(list)
+    public void addStation(LockerStation station) {
+        String gh = Geohash.encode(station.getLat(), station.getLon(), 6);
+        geohashToStations
+            .computeIfAbsent(gh, k -> new ArrayList<>())
+            .add(station);
+    }
 
-    def add_station(self, station):
-        gh = geohash.encode(station.lat, station.lon, precision=6)
-        self.geohash_to_stations[gh].append(station)
-
-    def find_nearest(self, lat, lon, k=3):
-        gh = geohash.encode(lat, lon, precision=6)
-        # Check exact prefix, then neighbors
-        candidates = []
-        for neighbor in geohash.neighbors(gh) + [gh]:
-            candidates.extend(self.geohash_to_stations.get(neighbor, []))
-        # Sort by actual Haversine distance
-        return sorted(candidates, key=lambda s: haversine(lat, lon, s.lat, s.lon))[:k]
+    public List<LockerStation> findNearest(double lat, double lon, int k) {
+        String gh = Geohash.encode(lat, lon, 6);
+        // Check exact prefix, then neighbors
+        List<LockerStation> candidates = new ArrayList<>();
+        List<String> cells = new ArrayList<>(Geohash.neighbors(gh));
+        cells.add(gh);
+        for (String neighbor : cells) {
+            candidates.addAll(geohashToStations.getOrDefault(neighbor, List.of()));
+        }
+        // Sort by actual Haversine distance
+        candidates.sort(Comparator.comparingDouble(
+            s -> haversine(lat, lon, s.getLat(), s.getLon())
+        ));
+        return candidates.subList(0, Math.min(k, candidates.size()));
+    }
+}
 ```
 
 ### 2. "What if the locker station has hundreds of lockers — how do you find available quickly?"
 
 Track available lockers per size in separate queues:
 
-```python
-class LockerStation:
-    def __init__(self):
-        self.available = {
-            LockerSize.SMALL: deque(),
-            LockerSize.MEDIUM: deque(),
-            LockerSize.LARGE: deque(),
-        }
+```java
+class LockerStation {
+    private final Map<LockerSize, Deque<Locker>> available = new EnumMap<>(LockerSize.class);
 
-    def get_available(self, size):
-        return self.available[size].popleft() if self.available[size] else None
+    public LockerStation() {
+        available.put(LockerSize.SMALL, new ArrayDeque<>());
+        available.put(LockerSize.MEDIUM, new ArrayDeque<>());
+        available.put(LockerSize.LARGE, new ArrayDeque<>());
+    }
 
-    def return_locker(self, locker):
-        self.available[locker.size].appendleft(locker)
+    public Optional<Locker> getAvailable(LockerSize size) {
+        Deque<Locker> queue = available.get(size);
+        return queue.isEmpty() ? Optional.empty() : Optional.of(queue.pollFirst());
+    }
+
+    public void returnLocker(Locker locker) {
+        available.get(locker.getSize()).offerFirst(locker);
+    }
+}
 ```
 
 Assignment is now O(1) per size tier — no scanning all lockers.
 
 ### 3. "How do you generate unique PINs that don't collide?"
 
-```python
-import secrets
+```java
+class PINGenerator {
+    private final Map<String, LockerAssignment> store; // the assignments map
+    private final SecureRandom random = new SecureRandom();
 
-class PINGenerator:
-    def __init__(self, store):
-        self.store = store  # the assignments dict
+    public PINGenerator(Map<String, LockerAssignment> store) {
+        this.store = store;
+    }
 
-    def generate(self):
-        for _ in range(10):
-            pin = str(secrets.randbelow(1_000_000)).zfill(6)
-            if pin not in self.store:
-                return pin
-        raise RuntimeError("Could not generate unique PIN")
+    public String generate() {
+        for (int i = 0; i < 10; i++) {
+            String pin = String.format("%06d", random.nextInt(1_000_000));
+            if (!store.containsKey(pin)) {
+                return pin;
+            }
+        }
+        throw new RuntimeException("Could not generate unique PIN");
+    }
+}
 ```
 
 6 digits = 1M combinations. At any time there are far fewer active assignments, so collision is negligible. For higher security, use `secrets.token_hex(3)` (6 hex chars).
@@ -323,19 +363,25 @@ class PINGenerator:
 
 Two couriers could simultaneously pick the same locker. Fix: optimistic locking on the locker's status.
 
-```python
-import threading
+```java
+class Locker {
+    private final ReentrantLock lock = new ReentrantLock();
+    private Package currentPackage;
+    private LockerStatus status;
 
-class Locker:
-    def __init__(self):
-        self._lock = threading.Lock()
-
-    def assign(self, package):
-        with self._lock:
-            if not self.is_available():
-                raise LockerOccupiedError()
-            self.current_package = package
-            self.status = LockerStatus.OCCUPIED
+    public void assign(Package pkg) {
+        lock.lock();
+        try {
+            if (!isAvailable()) {
+                throw new LockerOccupiedError();
+            }
+            this.currentPackage = pkg;
+            this.status = LockerStatus.OCCUPIED;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 ```
 
 Or use a DB-level compare-and-swap: `UPDATE lockers SET status='OCCUPIED' WHERE id=? AND status='AVAILABLE'`. Check affected rows == 1; if 0, retry with another locker.

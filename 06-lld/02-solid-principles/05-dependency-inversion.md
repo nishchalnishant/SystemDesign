@@ -82,24 +82,33 @@ When high-level business logic is directly wired to low-level implementation det
 
 ## Bad Design (Violates DIP)
 
-```python
-class MySQLDatabase:
-    def connect(self):
-        print("Connecting to MySQL...")
+```java
+class MySQLDatabase {
+    public void connect() {
+        System.out.println("Connecting to MySQL...");
+    }
 
-    def save(self, data: str):
-        print(f"Saving to MySQL: {data}")
+    public void save(String data) {
+        System.out.println("Saving to MySQL: " + data);
+    }
+}
 
 
-class Application:
-    def __init__(self):
-        self._database = MySQLDatabase()  # Hard dependency on concrete class
+class Application {
+    private final MySQLDatabase database;
 
-    def start(self):
-        self._database.connect()
+    public Application() {
+        this.database = new MySQLDatabase(); // Hard dependency on concrete class
+    }
 
-    def save_data(self, data: str):
-        self._database.save(data)  # Can't swap to PostgreSQL without changing Application
+    public void start() {
+        database.connect();
+    }
+
+    public void saveData(String data) {
+        database.save(data); // Can't swap to PostgreSQL without changing Application
+    }
+}
 ```
 
 **Problems:**
@@ -112,116 +121,150 @@ class Application:
 
 ## Good Design (Follows DIP)
 
-```python
-from abc import ABC, abstractmethod
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+// 1. Define the abstraction (the "socket standard")
+interface Database {
+    void connect();
+    void save(String data);
+}
 
 
-# 1. Define the abstraction (the "socket standard")
-class Database(ABC):
-    @abstractmethod
-    def connect(self): pass
+// 2. Low-level modules depend on the abstraction
+class MySQLDatabase implements Database {
+    @Override
+    public void connect() {
+        System.out.println("Connecting to MySQL...");
+    }
 
-    @abstractmethod
-    def save(self, data: str): pass
-
-
-# 2. Low-level modules depend on the abstraction
-class MySQLDatabase(Database):
-    def connect(self):
-        print("Connecting to MySQL...")
-
-    def save(self, data: str):
-        print(f"Saving to MySQL: {data}")
+    @Override
+    public void save(String data) {
+        System.out.println("Saving to MySQL: " + data);
+    }
+}
 
 
-class PostgreSQLDatabase(Database):
-    def connect(self):
-        print("Connecting to PostgreSQL...")
+class PostgreSQLDatabase implements Database {
+    @Override
+    public void connect() {
+        System.out.println("Connecting to PostgreSQL...");
+    }
 
-    def save(self, data: str):
-        print(f"Saving to PostgreSQL: {data}")
-
-
-# For tests: in-memory implementation
-class InMemoryDatabase(Database):
-    def __init__(self):
-        self._storage: list[str] = []
-
-    def connect(self):
-        pass  # No-op for in-memory
-
-    def save(self, data: str):
-        self._storage.append(data)
-        print(f"Saved to memory: {data}")
+    @Override
+    public void save(String data) {
+        System.out.println("Saving to PostgreSQL: " + data);
+    }
+}
 
 
-# 3. High-level module depends only on the abstraction
-class Application:
-    # Dependency is INJECTED — not created internally
-    def __init__(self, database: Database):
-        self._database = database
+// For tests: in-memory implementation
+class InMemoryDatabase implements Database {
+    private final List<String> storage = new ArrayList<>();
 
-    def start(self):
-        self._database.connect()
+    @Override
+    public void connect() {
+        // No-op for in-memory
+    }
 
-    def save_data(self, data: str):
-        self._database.save(data)
+    @Override
+    public void save(String data) {
+        storage.add(data);
+        System.out.println("Saved to memory: " + data);
+    }
+}
 
 
-# 4. Wiring happens at the composition root (main, DI container, etc.)
-if __name__ == "__main__":
-    # Production: use MySQL
-    app = Application(MySQLDatabase())
-    app.start()
+// 3. High-level module depends only on the abstraction
+class Application {
+    private final Database database;
 
-    # Test: use in-memory
-    test_app = Application(InMemoryDatabase())
-    test_app.save_data("test-record")
+    // Dependency is INJECTED — not created internally
+    public Application(Database database) {
+        this.database = database;
+    }
+
+    public void start() {
+        database.connect();
+    }
+
+    public void saveData(String data) {
+        database.save(data);
+    }
+}
+
+
+// 4. Wiring happens at the composition root (main, DI container, etc.)
+public class Main {
+    public static void main(String[] args) {
+        // Production: use MySQL
+        Application app = new Application(new MySQLDatabase());
+        app.start();
+
+        // Test: use in-memory
+        Application testApp = new Application(new InMemoryDatabase());
+        testApp.saveData("test-record");
+    }
+}
 ```
 
 ---
 
 ## Real-World Example: Notification Service
 
-```python
-from abc import ABC, abstractmethod
+```java
+// Bad: Hardwired to Gmail
+class OrderServiceBad {
+    private final GmailEmailSender emailSender;
+
+    public OrderServiceBad() {
+        this.emailSender = new GmailEmailSender();
+    }
+
+    public void placeOrder(Order order) {
+        // Process order...
+        emailSender.send(order.getEmail(), "Order confirmed");
+        // Now we're stuck on Gmail forever
+    }
+}
 
 
-# Bad: Hardwired to Gmail
-class OrderServiceBad:
-    def __init__(self):
-        self._email_sender = GmailEmailSender()
-
-    def place_order(self, order):
-        # Process order...
-        self._email_sender.send(order.email, "Order confirmed")
-        # Now we're stuck on Gmail forever
+// Good: Depends on abstraction
+interface EmailSender {
+    void send(String to, String message);
+}
 
 
-# Good: Depends on abstraction
-class EmailSender(ABC):
-    @abstractmethod
-    def send(self, to: str, message: str): pass
+class GmailEmailSender implements EmailSender {
+    @Override
+    public void send(String to, String message) {
+        // Gmail SMTP
+    }
+}
 
 
-class GmailEmailSender(EmailSender):
-    def send(self, to: str, message: str):
-        pass  # Gmail SMTP
+class SendGridEmailSender implements EmailSender {
+    @Override
+    public void send(String to, String message) {
+        // SendGrid API
+    }
+}
 
 
-class SendGridEmailSender(EmailSender):
-    def send(self, to: str, message: str):
-        pass  # SendGrid API
+class OrderService {
+    private final EmailSender emailSender;
 
+    public OrderService(EmailSender emailSender) {
+        this.emailSender = emailSender;
+    }
 
-class OrderService:
-    def __init__(self, email_sender: EmailSender):
-        self._email_sender = email_sender
-
-    def place_order(self, order):
-        # Process order...
-        self._email_sender.send(order.email, "Order confirmed")
-        # Switch to SendGrid? No change here. Just inject a different implementation.
+    public void placeOrder(Order order) {
+        // Process order...
+        emailSender.send(order.getEmail(), "Order confirmed");
+        // Switch to SendGrid? No change here. Just inject a different implementation.
+    }
+}
 ```
 
 ---
@@ -234,16 +277,20 @@ These are related but distinct:
 
 You can violate DIP even while using DI (if you inject concrete classes instead of interfaces).
 
-```python
-# DI without DIP — still wrong
-class Application:
-    def __init__(self, database: MySQLDatabase):  # Injecting concrete class
-        self._database = database
+```java
+// DI without DIP — still wrong
+class Application {
+    public Application(MySQLDatabase database) { // Injecting concrete class
+        this.database = database;
+    }
+}
 
-# DI with DIP — correct
-class Application:
-    def __init__(self, database: Database):  # Injecting abstraction
-        self._database = database
+// DI with DIP — correct
+class Application {
+    public Application(Database database) { // Injecting abstraction
+        this.database = database;
+    }
+}
 ```
 
 ---

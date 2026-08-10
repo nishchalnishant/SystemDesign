@@ -183,234 +183,361 @@ class Bank:
 - Dispenser cannot make exact change → decline (e.g., $30 when only $50s remain)
 - Bank debit succeeds but dispense fails → must rollback (credit account back)
 
-```python
-from enum import Enum, auto
-from typing import Optional, Dict
-from abc import ABC, abstractmethod
+```java
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
+enum TransactionType {
+    WITHDRAW,
+    DEPOSIT,
+    BALANCE
+}
 
-class TransactionType(Enum):
-    WITHDRAW = auto()
-    DEPOSIT = auto()
-    BALANCE = auto()
+class Card {
+    private final String cardNumber;
+    private final String accountId;
 
+    public Card(String cardNumber, String accountId) {
+        this.cardNumber = cardNumber;
+        this.accountId = accountId;
+    }
 
-class Card:
-    def __init__(self, card_number: str, account_id: str):
-        self.card_number = card_number
-        self.account_id = account_id
+    public String getCardNumber() {
+        return cardNumber;
+    }
 
+    public String getAccountId() {
+        return accountId;
+    }
+}
 
-class Account:
-    def __init__(self, account_id: str, balance: float, pin: str):
-        self.account_id = account_id
-        self.balance = balance
-        self._pin = pin  # stored as plain text here; use hash in production
+class Account {
+    private final String accountId;
+    private double balance;
+    private final String pin; // stored as plain text here; use hash in production
 
+    public Account(String accountId, double balance, String pin) {
+        this.accountId = accountId;
+        this.balance = balance;
+        this.pin = pin;
+    }
 
-class Bank:
-    def __init__(self):
-        self.accounts: Dict[str, Account] = {}
+    public String getAccountId() {
+        return accountId;
+    }
 
-    def add_account(self, account: Account) -> None:
-        self.accounts[account.account_id] = account
+    public double getBalance() {
+        return balance;
+    }
 
-    def validate_pin(self, card: Card, pin: str) -> bool:
-        account = self.accounts.get(card.account_id)
-        return account is not None and account._pin == pin
+    public void setBalance(double balance) {
+        this.balance = balance;
+    }
 
-    def get_balance(self, account_id: str) -> float:
-        return self.accounts[account_id].balance
+    public String getPin() {
+        return pin;
+    }
+}
 
-    def debit(self, account_id: str, amount: float) -> bool:
-        account = self.accounts[account_id]
-        if account.balance < amount:
-            return False
-        account.balance -= amount
-        return True
+class Bank {
+    private final Map<String, Account> accounts = new HashMap<>();
 
-    def credit(self, account_id: str, amount: float) -> None:
-        self.accounts[account_id].balance += amount
+    public void addAccount(Account account) {
+        accounts.put(account.getAccountId(), account);
+    }
 
+    public boolean validatePin(Card card, String pin) {
+        Account account = accounts.get(card.getAccountId());
+        return account != null && account.getPin().equals(pin);
+    }
 
-class CashDispenser:
-    def __init__(self):
-        self.denominations: Dict[int, int] = {100: 10, 50: 20, 20: 50, 10: 100}
+    public double getBalance(String accountId) {
+        return accounts.get(accountId).getBalance();
+    }
 
-    def can_dispense(self, amount: int) -> bool:
-        return self._calculate_bills(amount) is not None
+    public synchronized boolean debit(String accountId, double amount) {
+        Account account = accounts.get(accountId);
+        if (account.getBalance() < amount) {
+            return false;
+        }
+        account.setBalance(account.getBalance() - amount);
+        return true;
+    }
 
-    def _calculate_bills(self, amount: int) -> Optional[Dict[int, int]]:
-        """Greedy: largest denominations first."""
-        remaining = amount
-        bills_to_give: Dict[int, int] = {}
-        for denom in sorted(self.denominations.keys(), reverse=True):
-            if remaining <= 0:
-                break
-            count = min(remaining // denom, self.denominations[denom])
-            if count > 0:
-                bills_to_give[denom] = count
-                remaining -= denom * count
-        return bills_to_give if remaining == 0 else None
+    public synchronized void credit(String accountId, double amount) {
+        Account account = accounts.get(accountId);
+        account.setBalance(account.getBalance() + amount);
+    }
+}
 
-    def dispense(self, amount: int) -> Dict[int, int]:
-        bills = self._calculate_bills(amount)
-        if bills is None:
-            raise ValueError(f"Cannot dispense exactly ${amount}")
-        for denom, count in bills.items():
-            self.denominations[denom] -= count
-        return bills
+class CashDispenser {
+    private final Map<Integer, Integer> denominations = new HashMap<>();
 
-    def total_cash(self) -> int:
-        return sum(d * c for d, c in self.denominations.items())
+    public CashDispenser() {
+        denominations.put(100, 10);
+        denominations.put(50, 20);
+        denominations.put(20, 50);
+        denominations.put(10, 100);
+    }
 
+    public boolean canDispense(int amount) {
+        return calculateBills(amount) != null;
+    }
 
-class ATMState(ABC):
-    @abstractmethod
-    def insert_card(self, atm: 'ATM', card: Card) -> None:
-        pass
+    // Greedy: largest denominations first.
+    private Map<Integer, Integer> calculateBills(int amount) {
+        int remaining = amount;
+        Map<Integer, Integer> billsToGive = new TreeMap<>(Collections.reverseOrder());
+        List<Integer> denomsDesc = new ArrayList<>(denominations.keySet());
+        denomsDesc.sort(Collections.reverseOrder());
+        for (int denom : denomsDesc) {
+            if (remaining <= 0) {
+                break;
+            }
+            int count = Math.min(remaining / denom, denominations.get(denom));
+            if (count > 0) {
+                billsToGive.put(denom, count);
+                remaining -= denom * count;
+            }
+        }
+        return remaining == 0 ? billsToGive : null;
+    }
 
-    @abstractmethod
-    def enter_pin(self, atm: 'ATM', pin: str) -> None:
-        pass
+    public Map<Integer, Integer> dispense(int amount) {
+        Map<Integer, Integer> bills = calculateBills(amount);
+        if (bills == null) {
+            throw new IllegalArgumentException(String.format("Cannot dispense exactly $%d", amount));
+        }
+        for (Map.Entry<Integer, Integer> entry : bills.entrySet()) {
+            denominations.put(entry.getKey(), denominations.get(entry.getKey()) - entry.getValue());
+        }
+        return bills;
+    }
 
-    @abstractmethod
-    def withdraw(self, atm: 'ATM', amount: int) -> None:
-        pass
+    public int totalCash() {
+        int total = 0;
+        for (Map.Entry<Integer, Integer> entry : denominations.entrySet()) {
+            total += entry.getKey() * entry.getValue();
+        }
+        return total;
+    }
+}
 
-    @abstractmethod
-    def deposit(self, atm: 'ATM', amount: float) -> None:
-        pass
+abstract class ATMState {
+    public abstract void insertCard(ATM atm, Card card);
+    public abstract void enterPin(ATM atm, String pin);
+    public abstract void withdraw(ATM atm, int amount);
+    public abstract void deposit(ATM atm, double amount);
+    public abstract void ejectCard(ATM atm);
 
-    @abstractmethod
-    def eject_card(self, atm: 'ATM') -> None:
-        pass
+    protected void invalid(String action) {
+        throw new IllegalStateException(String.format("Cannot %s in current state", action));
+    }
+}
 
-    def _invalid(self, action: str) -> None:
-        raise ValueError(f"Cannot {action} in current state")
+class IdleState extends ATMState {
+    @Override
+    public void insertCard(ATM atm, Card card) {
+        atm.setCurrentCard(card);
+        atm.setPinAttempts(0);
+        System.out.println(String.format("Card %s inserted. Please enter PIN.", card.getCardNumber()));
+        atm.setState(new AuthenticatingState());
+    }
 
+    @Override
+    public void enterPin(ATM atm, String pin) { invalid("enter PIN without card"); }
+    @Override
+    public void withdraw(ATM atm, int amount) { invalid("withdraw without card"); }
+    @Override
+    public void deposit(ATM atm, double amount) { invalid("deposit without card"); }
+    @Override
+    public void ejectCard(ATM atm) { invalid("eject card when none inserted"); }
+}
 
-class IdleState(ATMState):
-    def insert_card(self, atm: 'ATM', card: Card) -> None:
-        atm.current_card = card
-        atm.pin_attempts = 0
-        print(f"Card {card.card_number} inserted. Please enter PIN.")
-        atm.set_state(AuthenticatingState())
+class AuthenticatingState extends ATMState {
+    private static final int MAX_ATTEMPTS = 3;
 
-    def enter_pin(self, atm, pin): self._invalid("enter PIN without card")
-    def withdraw(self, atm, amount): self._invalid("withdraw without card")
-    def deposit(self, atm, amount): self._invalid("deposit without card")
-    def eject_card(self, atm): self._invalid("eject card when none inserted")
+    @Override
+    public void insertCard(ATM atm, Card card) { invalid("insert another card"); }
 
+    @Override
+    public void enterPin(ATM atm, String pin) {
+        if (atm.getBank().validatePin(atm.getCurrentCard(), pin)) {
+            System.out.println("PIN accepted.");
+            atm.setState(new SelectingState());
+        } else {
+            atm.setPinAttempts(atm.getPinAttempts() + 1);
+            int remaining = MAX_ATTEMPTS - atm.getPinAttempts();
+            if (remaining <= 0) {
+                System.out.println("Too many incorrect attempts. Card retained.");
+                atm.setCurrentCard(null);
+                atm.setState(new IdleState());
+            } else {
+                System.out.println(String.format("Incorrect PIN. %d attempt(s) remaining.", remaining));
+            }
+        }
+    }
 
-class AuthenticatingState(ATMState):
-    MAX_ATTEMPTS = 3
+    @Override
+    public void withdraw(ATM atm, int amount) { invalid("withdraw before authenticating"); }
+    @Override
+    public void deposit(ATM atm, double amount) { invalid("deposit before authenticating"); }
 
-    def insert_card(self, atm, card): self._invalid("insert another card")
+    @Override
+    public void ejectCard(ATM atm) {
+        System.out.println("Card ejected.");
+        atm.setCurrentCard(null);
+        atm.setState(new IdleState());
+    }
+}
 
-    def enter_pin(self, atm: 'ATM', pin: str) -> None:
-        if atm.bank.validate_pin(atm.current_card, pin):
-            print("PIN accepted.")
-            atm.set_state(SelectingState())
-        else:
-            atm.pin_attempts += 1
-            remaining = self.MAX_ATTEMPTS - atm.pin_attempts
-            if remaining <= 0:
-                print("Too many incorrect attempts. Card retained.")
-                atm.current_card = None
-                atm.set_state(IdleState())
-            else:
-                print(f"Incorrect PIN. {remaining} attempt(s) remaining.")
+class SelectingState extends ATMState {
+    @Override
+    public void insertCard(ATM atm, Card card) { invalid("insert card mid-session"); }
+    @Override
+    public void enterPin(ATM atm, String pin) { invalid("re-enter PIN in session"); }
 
-    def withdraw(self, atm, amount): self._invalid("withdraw before authenticating")
-    def deposit(self, atm, amount): self._invalid("deposit before authenticating")
+    @Override
+    public void withdraw(ATM atm, int amount) {
+        atm.setState(new DispensingState());
+        atm.getState().withdraw(atm, amount);
+    }
 
-    def eject_card(self, atm: 'ATM') -> None:
-        print("Card ejected.")
-        atm.current_card = None
-        atm.set_state(IdleState())
+    @Override
+    public void deposit(ATM atm, double amount) {
+        atm.setState(new DispensingState());
+        atm.getState().deposit(atm, amount);
+    }
 
+    @Override
+    public void ejectCard(ATM atm) {
+        System.out.println("Card ejected. Thank you.");
+        atm.setCurrentCard(null);
+        atm.setState(new IdleState());
+    }
+}
 
-class SelectingState(ATMState):
-    def insert_card(self, atm, card): self._invalid("insert card mid-session")
-    def enter_pin(self, atm, pin): self._invalid("re-enter PIN in session")
+class DispensingState extends ATMState {
+    @Override
+    public void insertCard(ATM atm, Card card) { invalid("insert card during transaction"); }
+    @Override
+    public void enterPin(ATM atm, String pin) { invalid("enter PIN during transaction"); }
 
-    def withdraw(self, atm: 'ATM', amount: int) -> None:
-        atm.set_state(DispensingState())
-        atm.state.withdraw(atm, amount)
+    @Override
+    public void withdraw(ATM atm, int amount) {
+        String accountId = atm.getCurrentCard().getAccountId();
+        if (!atm.getCashDispenser().canDispense(amount)) {
+            System.out.println(String.format("ATM cannot dispense $%d with available bills.", amount));
+            atm.setState(new SelectingState());
+            return;
+        }
+        if (!atm.getBank().debit(accountId, amount)) {
+            System.out.println("Insufficient funds.");
+            atm.setState(new SelectingState());
+            return;
+        }
+        try {
+            Map<Integer, Integer> bills = atm.getCashDispenser().dispense(amount);
+            System.out.println("Dispensing: " + bills);
+        } catch (IllegalArgumentException e) {
+            // Rollback bank debit
+            atm.getBank().credit(accountId, amount);
+            System.out.println("Dispense failed. Transaction rolled back.");
+        }
+        atm.setState(new SelectingState());
+    }
 
-    def deposit(self, atm: 'ATM', amount: float) -> None:
-        atm.set_state(DispensingState())
-        atm.state.deposit(atm, amount)
+    @Override
+    public void deposit(ATM atm, double amount) {
+        atm.getBank().credit(atm.getCurrentCard().getAccountId(), amount);
+        System.out.println(String.format("Deposited $%.2f. New balance: $%.2f",
+                amount, atm.getBank().getBalance(atm.getCurrentCard().getAccountId())));
+        atm.setState(new SelectingState());
+    }
 
-    def eject_card(self, atm: 'ATM') -> None:
-        print("Card ejected. Thank you.")
-        atm.current_card = None
-        atm.set_state(IdleState())
+    @Override
+    public void ejectCard(ATM atm) { invalid("eject card during transaction"); }
+}
 
+class ATM {
+    private final Bank bank;
+    private final CashDispenser cashDispenser;
+    private Card currentCard;
+    private int pinAttempts;
+    private ATMState state;
 
-class DispensingState(ATMState):
-    def insert_card(self, atm, card): self._invalid("insert card during transaction")
-    def enter_pin(self, atm, pin): self._invalid("enter PIN during transaction")
+    public ATM(Bank bank, CashDispenser cashDispenser) {
+        this.bank = bank;
+        this.cashDispenser = cashDispenser;
+        this.currentCard = null;
+        this.pinAttempts = 0;
+        this.state = new IdleState();
+    }
 
-    def withdraw(self, atm: 'ATM', amount: int) -> None:
-        account_id = atm.current_card.account_id
-        if not atm.cash_dispenser.can_dispense(amount):
-            print(f"ATM cannot dispense ${amount} with available bills.")
-            atm.set_state(SelectingState())
-            return
-        if not atm.bank.debit(account_id, amount):
-            print("Insufficient funds.")
-            atm.set_state(SelectingState())
-            return
-        try:
-            bills = atm.cash_dispenser.dispense(amount)
-            print(f"Dispensing: {bills}")
-        except ValueError:
-            # Rollback bank debit
-            atm.bank.credit(account_id, amount)
-            print("Dispense failed. Transaction rolled back.")
-        atm.set_state(SelectingState())
+    public void setState(ATMState state) {
+        this.state = state;
+    }
 
-    def deposit(self, atm: 'ATM', amount: float) -> None:
-        atm.bank.credit(atm.current_card.account_id, amount)
-        print(f"Deposited ${amount}. New balance: ${atm.bank.get_balance(atm.current_card.account_id):.2f}")
-        atm.set_state(SelectingState())
+    public ATMState getState() {
+        return state;
+    }
 
-    def eject_card(self, atm, card=None): self._invalid("eject card during transaction")
+    public Bank getBank() {
+        return bank;
+    }
 
+    public CashDispenser getCashDispenser() {
+        return cashDispenser;
+    }
 
-class ATM:
-    def __init__(self, bank: Bank, cash_dispenser: CashDispenser):
-        self.bank = bank
-        self.cash_dispenser = cash_dispenser
-        self.current_card: Optional[Card] = None
-        self.pin_attempts: int = 0
-        self.state: ATMState = IdleState()
+    public Card getCurrentCard() {
+        return currentCard;
+    }
 
-    def set_state(self, state: ATMState) -> None:
-        self.state = state
+    public void setCurrentCard(Card card) {
+        this.currentCard = card;
+    }
 
-    def insert_card(self, card: Card) -> None:
-        self.state.insert_card(self, card)
+    public int getPinAttempts() {
+        return pinAttempts;
+    }
 
-    def enter_pin(self, pin: str) -> None:
-        self.state.enter_pin(self, pin)
+    public void setPinAttempts(int pinAttempts) {
+        this.pinAttempts = pinAttempts;
+    }
 
-    def withdraw(self, amount: int) -> None:
-        self.state.withdraw(self, amount)
+    public void insertCard(Card card) {
+        state.insertCard(this, card);
+    }
 
-    def deposit(self, amount: float) -> None:
-        self.state.deposit(self, amount)
+    public void enterPin(String pin) {
+        state.enterPin(this, pin);
+    }
 
-    def check_balance(self) -> None:
-        if self.current_card is None:
-            raise ValueError("No card inserted")
-        balance = self.bank.get_balance(self.current_card.account_id)
-        print(f"Balance: ${balance:.2f}")
+    public void withdraw(int amount) {
+        state.withdraw(this, amount);
+    }
 
-    def eject_card(self) -> None:
-        self.state.eject_card(self)
+    public void deposit(double amount) {
+        state.deposit(this, amount);
+    }
+
+    public void checkBalance() {
+        if (currentCard == null) {
+            throw new IllegalStateException("No card inserted");
+        }
+        double balance = bank.getBalance(currentCard.getAccountId());
+        System.out.println(String.format("Balance: $%.2f", balance));
+    }
+
+    public void ejectCard() {
+        state.ejectCard(this);
+    }
+}
 ```
 
 ---
@@ -437,16 +564,18 @@ Trace: User inserts card, enters wrong PIN once, then correct PIN, withdraws $15
 
 Without State, every method in ATM has a giant if/else:
 
-```python
-def withdraw(self, amount):
-    if self.status == "IDLE":
-        raise ValueError("No card")
-    elif self.status == "AUTHENTICATING":
-        raise ValueError("Not authenticated")
-    elif self.status == "SELECTING":
-        # do it
-    elif self.status == "DISPENSING":
-        raise ValueError("Already dispensing")
+```java
+void withdraw(int amount) {
+    if (status.equals("IDLE")) {
+        throw new IllegalStateException("No card");
+    } else if (status.equals("AUTHENTICATING")) {
+        throw new IllegalStateException("Not authenticated");
+    } else if (status.equals("SELECTING")) {
+        // do it
+    } else if (status.equals("DISPENSING")) {
+        throw new IllegalStateException("Already dispensing");
+    }
+}
 ```
 
 This violates Open/Closed Principle — adding a new state (e.g., "OutOfCash") requires touching every method. With State, each state class is self-contained. Adding a new state adds a new class only.
@@ -455,18 +584,24 @@ This violates Open/Closed Principle — adding a new state (e.g., "OutOfCash") r
 
 Greedy: sort bills largest to smallest, take as many of each as possible without exceeding the remaining amount.
 
-```python
-def _calculate_bills(self, amount: int) -> Optional[Dict[int, int]]:
-    remaining = amount
-    bills: Dict[int, int] = {}
-    for denom in sorted(self.denominations.keys(), reverse=True):
-        if remaining <= 0:
-            break
-        count = min(remaining // denom, self.denominations[denom])
-        if count > 0:
-            bills[denom] = count
-            remaining -= denom * count
-    return bills if remaining == 0 else None
+```java
+private Map<Integer, Integer> calculateBills(int amount) {
+    int remaining = amount;
+    Map<Integer, Integer> bills = new TreeMap<>(Collections.reverseOrder());
+    List<Integer> denomsDesc = new ArrayList<>(denominations.keySet());
+    denomsDesc.sort(Collections.reverseOrder());
+    for (int denom : denomsDesc) {
+        if (remaining <= 0) {
+            break;
+        }
+        int count = Math.min(remaining / denom, denominations.get(denom));
+        if (count > 0) {
+            bills.put(denom, count);
+            remaining -= denom * count;
+        }
+    }
+    return remaining == 0 ? bills : null;
+}
 ```
 
 Greedy works here because US denominations are canonical — each is a multiple of smaller ones. For arbitrary denominations, use dynamic programming (coin change problem).
@@ -498,13 +633,13 @@ This is the critical failure mode. The bank has debited the account but cash was
 
 **Approach**: Write an idempotent transaction log before any mutation.
 
-```python
-# Before debit:
-log_transaction(tx_id, account_id, amount, status="PENDING")
-# After debit:
-log_transaction(tx_id, status="DEBITED")
-# After dispense:
-log_transaction(tx_id, status="COMPLETE")
+```java
+// Before debit:
+logTransaction(txId, accountId, amount, "PENDING");
+// After debit:
+logTransaction(txId, "DEBITED");
+// After dispense:
+logTransaction(txId, "COMPLETE");
 ```
 
 On startup or reconnect, replay pending logs: if status is DEBITED but not COMPLETE, credit the account back (rollback) or retry dispense. This is the saga pattern for distributed transactions.
@@ -513,20 +648,24 @@ On startup or reconnect, replay pending logs: if status is DEBITED but not COMPL
 
 Add `daily_limit: float` and `withdrawn_today: float` + `last_reset: date` to `Account`.
 
-```python
-def debit(self, account_id: str, amount: float) -> bool:
-    account = self.accounts[account_id]
-    today = date.today()
-    if account.last_reset < today:
-        account.withdrawn_today = 0.0
-        account.last_reset = today
-    if account.withdrawn_today + amount > account.daily_limit:
-        return False  # daily limit exceeded
-    if account.balance < amount:
-        return False
-    account.balance -= amount
-    account.withdrawn_today += amount
-    return True
+```java
+public boolean debit(String accountId, double amount) {
+    Account account = accounts.get(accountId);
+    LocalDate today = LocalDate.now();
+    if (account.getLastReset().isBefore(today)) {
+        account.setWithdrawnToday(0.0);
+        account.setLastReset(today);
+    }
+    if (account.getWithdrawnToday() + amount > account.getDailyLimit()) {
+        return false; // daily limit exceeded
+    }
+    if (account.getBalance() < amount) {
+        return false;
+    }
+    account.setBalance(account.getBalance() - amount);
+    account.setWithdrawnToday(account.getWithdrawnToday() + amount);
+    return true;
+}
 ```
 
 ---

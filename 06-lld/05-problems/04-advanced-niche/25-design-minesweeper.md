@@ -160,30 +160,36 @@ class Game:
 - Flagged cell → no-op (player must unflag first)
 - Out of bounds → raise error
 
-```python
-def reveal(self, row, col):
-    if self.state != GameState.IN_PROGRESS:
-        return self.state
+```java
+public GameState reveal(int row, int col) {
+    if (this.state != GameState.IN_PROGRESS) {
+        return this.state;
+    }
 
-    cell = self.board.get_cell(row, col)
-    if cell.is_revealed() or cell.is_flagged():
-        return self.state
+    Cell cell = this.board.getCell(row, col);
+    if (cell.isRevealed() || cell.isFlagged()) {
+        return this.state;
+    }
 
-    # First-click safety
-    if self.first_move:
-        self.first_move = False
-        if cell.is_mine:
-            self.board.relocate_mine(row, col)
+    // First-click safety
+    if (this.firstMove) {
+        this.firstMove = false;
+        if (cell.isMine()) {
+            this.board.relocateMine(row, col);
+        }
+    }
 
-    result = self.board.reveal(row, col)
+    RevealResult result = this.board.reveal(row, col);
 
-    if result == RevealResult.MINE:
-        self.state = GameState.LOST
-        self.board.reveal_all_mines()
-    elif self.board.is_all_revealed():
-        self.state = GameState.WON
+    if (result == RevealResult.MINE) {
+        this.state = GameState.LOST;
+        this.board.revealAllMines();
+    } else if (this.board.isAllRevealed()) {
+        this.state = GameState.WON;
+    }
 
-    return self.state
+    return this.state;
+}
 ```
 
 ### Core Method: `Board.reveal` with BFS flood fill
@@ -198,71 +204,99 @@ def reveal(self, row, col):
 **Edge cases:**
 - Guard against revisiting cells in BFS (use visited set or check cell.is_revealed())
 
-```python
-def reveal(self, row, col):
-    cell = self.grid[row][col]
-    if cell.is_mine:
-        cell.state = CellState.REVEALED
-        return RevealResult.MINE
+```java
+public RevealResult reveal(int row, int col) {
+    Cell cell = this.grid[row][col];
+    if (cell.isMine()) {
+        cell.setState(CellState.REVEALED);
+        return RevealResult.MINE;
+    }
 
-    if cell.adjacent_mines > 0:
-        cell.state = CellState.REVEALED
-        return RevealResult.NUMBER
+    if (cell.getAdjacentMines() > 0) {
+        cell.setState(CellState.REVEALED);
+        return RevealResult.NUMBER;
+    }
 
-    # BFS flood fill for blank cells
-    self._flood_fill(row, col)
-    return RevealResult.BLANK
+    // BFS flood fill for blank cells
+    floodFill(row, col);
+    return RevealResult.BLANK;
+}
 
-def _flood_fill(self, start_row, start_col):
-    queue = deque([(start_row, start_col)])
-    visited = set()
+private static final int[][] DIRECTIONS = {
+    {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}
+};
 
-    while queue:
-        r, c = queue.popleft()
-        if (r, c) in visited:
-            continue
-        visited.add((r, c))
+private void floodFill(int startRow, int startCol) {
+    Deque<int[]> queue = new ArrayDeque<>();
+    queue.add(new int[]{startRow, startCol});
+    Set<Long> visited = new HashSet<>();
 
-        if not (0 <= r < self.rows and 0 <= c < self.cols):
-            continue
+    while (!queue.isEmpty()) {
+        int[] pos = queue.poll();
+        int r = pos[0], c = pos[1];
+        long key = (long) r * cols + c;
+        if (visited.contains(key)) {
+            continue;
+        }
+        visited.add(key);
 
-        cell = self.grid[r][c]
-        if cell.state == CellState.REVEALED or cell.is_mine:
-            continue
+        if (!(r >= 0 && r < this.rows && c >= 0 && c < this.cols)) {
+            continue;
+        }
 
-        cell.state = CellState.REVEALED
+        Cell cell = this.grid[r][c];
+        if (cell.getState() == CellState.REVEALED || cell.isMine()) {
+            continue;
+        }
 
-        if cell.adjacent_mines == 0:
-            for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
-                queue.append((r + dr, c + dc))
+        cell.setState(CellState.REVEALED);
+
+        if (cell.getAdjacentMines() == 0) {
+            for (int[] d : DIRECTIONS) {
+                queue.add(new int[]{r + d[0], c + d[1]});
+            }
+        }
+    }
+}
 ```
 
 ### Mine placement and adjacent counts
 
-```python
-def _place_mines(self, num_mines, exclude):
-    all_cells = [
-        (r, c)
-        for r in range(self.rows)
-        for c in range(self.cols)
-        if (r, c) not in exclude
-    ]
-    mine_positions = random.sample(all_cells, num_mines)
-    for r, c in mine_positions:
-        self.grid[r][c].is_mine = True
+```java
+private void placeMines(int numMines, Set<Long> exclude) {
+    List<int[]> allCells = new ArrayList<>();
+    for (int r = 0; r < this.rows; r++) {
+        for (int c = 0; c < this.cols; c++) {
+            long key = (long) r * cols + c;
+            if (!exclude.contains(key)) {
+                allCells.add(new int[]{r, c});
+            }
+        }
+    }
+    Collections.shuffle(allCells, new Random());
+    List<int[]> minePositions = allCells.subList(0, numMines);
+    for (int[] pos : minePositions) {
+        this.grid[pos[0]][pos[1]].setMine(true);
+    }
+}
 
-def _compute_adjacent_counts(self):
-    for r in range(self.rows):
-        for c in range(self.cols):
-            if not self.grid[r][c].is_mine:
-                count = sum(
-                    1
-                    for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
-                    if 0 <= r+dr < self.rows
-                    and 0 <= c+dc < self.cols
-                    and self.grid[r+dr][c+dc].is_mine
-                )
-                self.grid[r][c].adjacent_mines = count
+private void computeAdjacentCounts() {
+    for (int r = 0; r < this.rows; r++) {
+        for (int c = 0; c < this.cols; c++) {
+            if (!this.grid[r][c].isMine()) {
+                int count = 0;
+                for (int[] d : DIRECTIONS) {
+                    int nr = r + d[0], nc = c + d[1];
+                    if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols
+                            && this.grid[nr][nc].isMine()) {
+                        count++;
+                    }
+                }
+                this.grid[r][c].setAdjacentMines(count);
+            }
+        }
+    }
+}
 ```
 
 ---
@@ -300,26 +334,31 @@ Game.reveal(2, 2):
 
 ### 1. "BFS vs DFS for flood fill — which is better?"
 
-Both work. BFS (queue) is iterative and avoids Python's recursion stack limit. DFS (recursive) is simpler to write but risks `RecursionError` on large grids (e.g., 100×100 blank board = 10,000 recursive calls).
+Both work. BFS (queue) is iterative and avoids deep call-stack growth. DFS (recursive) is simpler to write but risks a `StackOverflowError` on large grids (e.g., 100×100 blank board = 10,000 recursive calls), since the JVM's default thread stack size is finite.
 
 **Recommendation**: BFS for production code.
 
-```python
-# DFS (recursive) — simpler but risky for large grids
-def _flood_fill_dfs(self, r, c, visited):
-    if (r, c) in visited or not self._in_bounds(r, c):
-        return
-    cell = self.grid[r][c]
-    if cell.state == CellState.REVEALED or cell.is_mine:
-        return
-    visited.add((r, c))
-    cell.state = CellState.REVEALED
-    if cell.adjacent_mines == 0:
-        for dr, dc in [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]:
-            self._flood_fill_dfs(r+dr, c+dc, visited)
+```java
+// DFS (recursive) — simpler but risky for large grids
+private void floodFillDfs(int r, int c, Set<Long> visited) {
+    if (!inBounds(r, c) || visited.contains((long) r * cols + c)) {
+        return;
+    }
+    Cell cell = this.grid[r][c];
+    if (cell.getState() == CellState.REVEALED || cell.isMine()) {
+        return;
+    }
+    visited.add((long) r * cols + c);
+    cell.setState(CellState.REVEALED);
+    if (cell.getAdjacentMines() == 0) {
+        for (int[] d : DIRECTIONS) {
+            floodFillDfs(r + d[0], c + d[1], visited);
+        }
+    }
+}
 ```
 
-To make DFS safe on large grids: use `sys.setrecursionlimit()` or convert to iterative with an explicit stack.
+To make DFS safe on large grids: increase the thread's stack size (`-Xss` JVM flag or `new Thread(runnable, name, stackSize)`), or convert to iterative with an explicit `Deque` used as a stack.
 
 ### 2. "How would you implement first-click safety?"
 
@@ -327,14 +366,17 @@ Two approaches:
 
 **A — Lazy placement**: Don't place mines until after the first click. Place mines excluding the clicked cell and its neighbors.
 
-```python
-def reveal(self, row, col):
-    if self.first_move:
-        self.first_move = False
-        exclude = {(row, col)} | self._neighbors(row, col)
-        self.board.place_mines_excluding(exclude)
-        self.board._compute_adjacent_counts()
-    # ... rest of reveal ...
+```java
+public GameState reveal(int row, int col) {
+    if (this.firstMove) {
+        this.firstMove = false;
+        Set<Long> exclude = new HashSet<>(neighbors(row, col));
+        exclude.add((long) row * cols + col);
+        this.board.placeMinesExcluding(exclude);
+        this.board.computeAdjacentCounts();
+    }
+    // ... rest of reveal ...
+}
 ```
 
 **B — Relocate**: Place mines upfront. If first click hits a mine, move that mine to a random non-mine cell.
@@ -345,34 +387,55 @@ Approach A is cleaner — board setup is deferred, no re-computation needed.
 
 Hint = reveal the cell with the highest probability of being safe. Use constraint propagation: for each numbered cell, if `adjacent_mines == count_of_flagged_adjacent`, all other adjacent hidden cells are safe.
 
-```python
-def get_hint(self):
-    for r in range(self.rows):
-        for c in range(self.cols):
-            cell = self.grid[r][c]
-            if cell.is_revealed() and cell.adjacent_mines > 0:
-                hidden = [n for n in self._neighbors(r,c) if self.grid[n[0]][n[1]].is_hidden()]
-                flagged = [n for n in self._neighbors(r,c) if self.grid[n[0]][n[1]].is_flagged()]
-                if len(flagged) == cell.adjacent_mines and hidden:
-                    return hidden[0]  # safe to reveal
-    return None  # no deterministic hint
+```java
+public Optional<int[]> getHint() {
+    for (int r = 0; r < this.rows; r++) {
+        for (int c = 0; c < this.cols; c++) {
+            Cell cell = this.grid[r][c];
+            if (cell.isRevealed() && cell.getAdjacentMines() > 0) {
+                List<int[]> neighbors = neighbors(r, c);
+                List<int[]> hidden = new ArrayList<>();
+                int flaggedCount = 0;
+                for (int[] n : neighbors) {
+                    Cell nCell = this.grid[n[0]][n[1]];
+                    if (nCell.isHidden()) {
+                        hidden.add(n);
+                    }
+                    if (nCell.isFlagged()) {
+                        flaggedCount++;
+                    }
+                }
+                if (flaggedCount == cell.getAdjacentMines() && !hidden.isEmpty()) {
+                    return Optional.of(hidden.get(0));  // safe to reveal
+                }
+            }
+        }
+    }
+    return Optional.empty();  // no deterministic hint
+}
 ```
 
 ### 4. "How would you validate the win condition efficiently?"
 
 Rather than scanning all cells after every reveal, track a counter:
 
-```python
-class Board:
-    def __init__(self):
-        self.unrevealed_non_mine_count = rows * cols - num_mines
+```java
+public class Board {
+    private int unrevealedNonMineCount;
 
-    def reveal_cell(self, cell):
-        cell.state = CellState.REVEALED
-        self.unrevealed_non_mine_count -= 1
+    public Board(int rows, int cols, int numMines) {
+        this.unrevealedNonMineCount = rows * cols - numMines;
+    }
 
-    def is_all_revealed(self):
-        return self.unrevealed_non_mine_count == 0
+    private void revealCell(Cell cell) {
+        cell.setState(CellState.REVEALED);
+        this.unrevealedNonMineCount--;
+    }
+
+    public boolean isAllRevealed() {
+        return this.unrevealedNonMineCount == 0;
+    }
+}
 ```
 
 `is_all_revealed()` is O(1) instead of O(rows × cols).
@@ -392,7 +455,7 @@ class Board:
 ## Common Interview Questions
 
 - **Q**: Why is BFS preferred over recursive DFS for flood fill?
-  **A**: Python's default recursion limit is 1000. A 30×30 all-blank board could generate 900 recursive calls. BFS uses an explicit queue — no stack overflow risk.
+  **A**: The JVM's default thread stack allows roughly a few thousand frames before `StackOverflowError`, depending on frame size. A 30×30 all-blank board could generate 900 recursive calls — within range, but not future-proof. BFS uses an explicit queue — no stack overflow risk regardless of grid size.
 
 - **Q**: How do you compute adjacent mine counts?
   **A**: After placing all mines, iterate every cell. For each non-mine cell, check its 8 neighbors and count how many are mines. Store the count in `cell.adjacent_mines`. O(rows × cols × 8) = O(n).

@@ -31,7 +31,7 @@ tags: [06-lld, lld, lock-free-queue, cas, aba-problem, michael-scott-queue]
 
 ## Understanding the Problem
 
-Design a lock-free FIFO queue that supports concurrent enqueue and dequeue operations without using mutexes or locks. In Python (which lacks real CAS), we discuss the algorithm and simulate it, noting where a real implementation would use `AtomicReference` (Java) or `std::atomic` (C++).
+Design a lock-free FIFO queue that supports concurrent enqueue and dequeue operations without using mutexes or locks, using Java's real hardware-backed CAS primitive (`AtomicStampedReference`) — the JVM equivalent of C++'s `std::atomic`.
 
 ---
 
@@ -40,8 +40,8 @@ Design a lock-free FIFO queue that supports concurrent enqueue and dequeue opera
 **You**: "What's the concurrency model — multiple producers, multiple consumers?"
 **Interviewer**: "MPMC — multiple producer, multiple consumer (the hardest case)."
 
-**You**: "Can we use Python's threading primitives for simulation?"
-**Interviewer**: "Yes — explain the lock-free algorithm in detail. Python simulation is acceptable."
+**You**: "Can we use Java's real atomic primitives directly?"
+**Interviewer**: "Yes — `AtomicStampedReference` gives you real CAS + versioning; use it directly rather than simulating."
 
 **You**: "Should we handle bounded capacity?"
 **Interviewer**: "Start with unbounded. Discuss bounded as extension."
@@ -65,7 +65,7 @@ Design a lock-free FIFO queue that supports concurrent enqueue and dequeue opera
 
 **Out of scope:**
 - Bounded capacity (follow-up)
-- Python GIL considerations
+- JVM memory-model / `volatile` ordering subtleties beyond what `AtomicStampedReference` already guarantees
 - Memory ordering (C++ memory_order) — mention at senior level
 
 ---
@@ -76,7 +76,7 @@ Design a lock-free FIFO queue that supports concurrent enqueue and dequeue opera
 |--------|---------------|
 | `Node` | Singly linked list node; holds value and atomic `next` pointer |
 | `LockFreeQueue` | Head (sentinel) + tail pointers; CAS-based enqueue/dequeue |
-| `AtomicRef` | Simulated atomic reference (wraps a value + version for ABA) |
+| `AtomicStampedReference<Node<T>>` | Real JVM atomic reference (wraps a reference + integer "stamp" version for ABA) |
 
 The Michael-Scott queue uses a **sentinel node** (dummy head). Head always points to the sentinel; Tail always points to the last real node (or the sentinel when empty). Both are atomic pointers updated via CAS.
 
@@ -87,47 +87,35 @@ The Michael-Scott queue uses a **sentinel node** (dummy head). Head always point
 ### Node
 
 ```
-class Node:
-- value: Any
-- next: AtomicRef   # AtomicRef[Optional[Node]]
+class Node<T>:
+- value: T
+- next: AtomicStampedReference<Node<T>>
 ```
 
-### AtomicRef (simulation)
+### AtomicStampedReference (real CAS + versioning)
 
-```python
-import threading
+```java
+import java.util.concurrent.atomic.AtomicStampedReference;
 
-class AtomicRef:
-    def __init__(self, value=None):
-        self._value = value
-        self._version = 0
-        self._lock = threading.Lock()   # internal lock for simulation only
-
-    def get(self):
-        with self._lock:
-            return self._value, self._version
-
-    def compare_and_set(self, expected_val, expected_ver, new_val):
-        with self._lock:
-            if self._value is expected_val and self._version == expected_ver:
-                self._value = new_val
-                self._version += 1
-                return True
-            return False
+// AtomicStampedReference<Node<T>> IS the real CAS + version primitive —
+// no hand-rolled lock-based simulation needed, unlike in Python.
+// get() returns the referent; get(int[] stampHolder) also fills in the version ("stamp").
+// compareAndSet(expectedRef, newRef, expectedStamp, newStamp) is a true
+// hardware-backed CAS (LOCK CMPXCHG under the hood on x86), not lock-emulated.
 ```
 
-In a real implementation (Java): `AtomicReference<Node>`. In C++: `std::atomic<Node*>` with ABA-safe tagged pointers or hazard pointers.
+In a real implementation (Java), this *is* the primitive: `AtomicStampedReference<Node<T>>`. In C++: `std::atomic<Node*>` with ABA-safe tagged pointers or hazard pointers.
 
 ### LockFreeQueue (Michael-Scott Algorithm)
 
 ```
-class LockFreeQueue:
-- head: AtomicRef   # points to sentinel node
-- tail: AtomicRef   # points to last node
+class LockFreeQueue<T>:
+- head: AtomicStampedReference<Node<T>>   # points to sentinel node
+- tail: AtomicStampedReference<Node<T>>   # points to last node
 
-+ enqueue(value)
-+ dequeue() -> Optional[Any]
-+ is_empty() -> bool
++ enqueue(value: T): void
++ dequeue(): T or null
++ isEmpty(): boolean
 ```
 
 ---
@@ -138,63 +126,105 @@ class LockFreeQueue:
 
 The key insight: `tail` may lag behind the actual last node. Both enqueue and dequeue must tolerate (and help advance) a lagging tail.
 
-```python
-class LockFreeQueue:
-    def __init__(self):
-        sentinel = Node(value=None, next=AtomicRef(None))
-        self.head = AtomicRef(sentinel)
-        self.tail = AtomicRef(sentinel)
+```java
+import java.util.concurrent.atomic.AtomicStampedReference;
 
-    def enqueue(self, value):
-        new_node = Node(value=value, next=AtomicRef(None))
-        while True:
-            tail_node, tail_ver = self.tail.get()
-            tail_next, tail_next_ver = tail_node.next.get()
+public class LockFreeQueue<T> {
 
-            # Consistency check: tail hasn't moved since we read it
-            current_tail, current_tail_ver = self.tail.get()
-            if tail_node is not current_tail or tail_ver != current_tail_ver:
-                continue   # tail moved — retry
+    private static class Node<T> {
+        final T value;
+        final AtomicStampedReference<Node<T>> next;
 
-            if tail_next is None:
-                # Tail is truly the last node — try to append
-                if tail_node.next.compare_and_set(None, tail_next_ver, new_node):
-                    # Advance tail — best effort (another thread may do it)
-                    self.tail.compare_and_set(tail_node, tail_ver, new_node)
-                    return
-            else:
-                # Tail is lagging — help advance it
-                self.tail.compare_and_set(tail_node, tail_ver, tail_next)
+        Node(T value) {
+            this.value = value;
+            this.next = new AtomicStampedReference<>(null, 0);
+        }
+    }
 
-    def dequeue(self):
-        while True:
-            head_node, head_ver = self.head.get()
-            tail_node, tail_ver = self.tail.get()
-            head_next, head_next_ver = head_node.next.get()
+    private final AtomicStampedReference<Node<T>> head;
+    private final AtomicStampedReference<Node<T>> tail;
 
-            # Consistency check
-            current_head, current_head_ver = self.head.get()
-            if head_node is not current_head or head_ver != current_head_ver:
-                continue
+    public LockFreeQueue() {
+        Node<T> sentinel = new Node<>(null);
+        this.head = new AtomicStampedReference<>(sentinel, 0);
+        this.tail = new AtomicStampedReference<>(sentinel, 0);
+    }
 
-            if head_node is tail_node:
-                # Queue appears empty OR tail is lagging
-                if head_next is None:
-                    return None   # truly empty
-                # Tail is lagging behind — help advance it
-                self.tail.compare_and_set(tail_node, tail_ver, head_next)
-            else:
-                # Read value before CAS (node may be reclaimed after CAS)
-                value = head_next.value
-                if self.head.compare_and_set(head_node, head_ver, head_next):
-                    return value
-                # CAS failed → another thread dequeued — retry
+    public void enqueue(T value) {
+        Node<T> newNode = new Node<>(value);
+        int[] tailStampHolder = new int[1];
+        int[] nextStampHolder = new int[1];
 
-    def is_empty(self):
-        head_node, _ = self.head.get()
-        _, _ = head_node.next.get()
-        head_next, _ = head_node.next.get()
-        return head_next is None
+        while (true) {
+            Node<T> tailNode = tail.get(tailStampHolder);
+            int tailVer = tailStampHolder[0];
+            Node<T> tailNext = tailNode.next.get(nextStampHolder);
+            int tailNextVer = nextStampHolder[0];
+
+            // Consistency check: tail hasn't moved since we read it
+            int[] recheckStamp = new int[1];
+            Node<T> currentTail = tail.get(recheckStamp);
+            if (tailNode != currentTail || tailVer != recheckStamp[0]) {
+                continue;   // tail moved — retry
+            }
+
+            if (tailNext == null) {
+                // Tail is truly the last node — try to append
+                if (tailNode.next.compareAndSet(null, newNode, tailNextVer, tailNextVer + 1)) {
+                    // Advance tail — best effort (another thread may do it)
+                    tail.compareAndSet(tailNode, newNode, tailVer, tailVer + 1);
+                    return;
+                }
+            } else {
+                // Tail is lagging — help advance it
+                tail.compareAndSet(tailNode, tailNext, tailVer, tailVer + 1);
+            }
+        }
+    }
+
+    public T dequeue() {
+        int[] headStampHolder = new int[1];
+        int[] tailStampHolder = new int[1];
+        int[] headNextStampHolder = new int[1];
+
+        while (true) {
+            Node<T> headNode = head.get(headStampHolder);
+            int headVer = headStampHolder[0];
+            Node<T> tailNode = tail.get(tailStampHolder);
+            int tailVer = tailStampHolder[0];
+            Node<T> headNext = headNode.next.get(headNextStampHolder);
+
+            // Consistency check
+            int[] recheckStamp = new int[1];
+            Node<T> currentHead = head.get(recheckStamp);
+            if (headNode != currentHead || headVer != recheckStamp[0]) {
+                continue;
+            }
+
+            if (headNode == tailNode) {
+                // Queue appears empty OR tail is lagging
+                if (headNext == null) {
+                    return null;   // truly empty
+                }
+                // Tail is lagging behind — help advance it
+                tail.compareAndSet(tailNode, headNext, tailVer, tailVer + 1);
+            } else {
+                // Read value before CAS (node may be reclaimed after CAS by GC)
+                T value = headNext.value;
+                if (head.compareAndSet(headNode, headNext, headVer, headVer + 1)) {
+                    return value;
+                }
+                // CAS failed → another thread dequeued — retry
+            }
+        }
+    }
+
+    public boolean isEmpty() {
+        Node<T> headNode = head.getReference();
+        Node<T> headNext = headNode.next.getReference();
+        return headNext == null;
+    }
+}
 ```
 
 ### The ABA Problem Explained
@@ -207,13 +237,13 @@ ABA occurs when:
 **Fix**: Tag each atomic reference with a version counter. CAS checks both the pointer AND the version. Even if the same node is re-used, the version is different — CAS fails.
 
 ```
-AtomicRef stores (value, version):
-  Before T2: head = (NodeA, version=5)
-  After T2:  head = (NodeA, version=6)   ← version changed
-  T1's CAS: expects (NodeA, version=5) → FAILS correctly
+AtomicStampedReference stores (reference, stamp):
+  Before T2: head = (NodeA, stamp=5)
+  After T2:  head = (NodeA, stamp=6)   ← stamp changed
+  T1's CAS: expects (NodeA, stamp=5) → FAILS correctly
 ```
 
-Our `AtomicRef` simulation already uses `_version` for this purpose. In Java: `AtomicStampedReference<Node>`. In C++: tagged pointer (store version in low bits of pointer).
+`AtomicStampedReference<Node<T>>` gives us exactly this for free. In C++: tagged pointer (store version in low bits of pointer).
 
 ---
 
@@ -292,7 +322,7 @@ In Java, GC handles this automatically (no manual reclamation).
 
 **Mid-level**: Explain CAS. Sketch the Michael-Scott algorithm. Sentinel node and why tail may lag. ABA problem and version counter fix.
 
-**Senior**: Full Michael-Scott implementation with AtomicRef + versioning. Memory reclamation (hazard pointers, epoch-based). Lock-free vs wait-free distinction. ABA problem and atomic tagged pointers.
+**Senior**: Full Michael-Scott implementation with `AtomicStampedReference` + versioning. Memory reclamation (hazard pointers, epoch-based). Lock-free vs wait-free distinction. ABA problem and atomic tagged pointers.
 
 ---
 

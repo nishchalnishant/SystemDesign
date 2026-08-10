@@ -97,22 +97,22 @@ Design a food delivery platform like Swiggy or DoorDash where users can browse r
 |-------------|---------------------------|
 | Identity | restaurant_id, name, cuisine |
 | Availability | is_open: bool |
-| Menu | menu_items: Dict[str, MenuItem] |
+| Menu | menu_items: Map<String, MenuItem> |
 
 ```
 class MenuItem:
-- item_id: str
-- name: str
-- price: float
-- is_available: bool
+- item_id: String
+- name: String
+- price: double
+- is_available: boolean
 
 class Restaurant:
-- restaurant_id: str
-- name: str
-- menu_items: Dict[str, MenuItem]
-- is_open: bool
-+ add_item(item: MenuItem) -> None
-+ get_menu() -> List[MenuItem]
+- restaurant_id: String
+- name: String
+- menu_items: Map<String, MenuItem>
+- is_open: boolean
++ add_item(item: MenuItem) -> void
++ get_menu() -> List<MenuItem>
 ```
 
 ### Cart and CartItem
@@ -121,18 +121,18 @@ class Restaurant:
 class CartItem:
 - item: MenuItem
 - quantity: int
-+ subtotal() -> float
++ subtotal() -> double
 
 class Cart:
-- cart_id: str
-- user_id: str
-- restaurant_id: str
-- items: Dict[str, CartItem]  # item_id -> CartItem
-+ add_item(item: MenuItem, quantity: int) -> None
-+ remove_item(item_id: str) -> None
-+ total() -> float
-+ clear() -> None
-+ is_empty() -> bool
+- cart_id: String
+- user_id: String
+- restaurant_id: String
+- items: Map<String, CartItem>  # item_id -> CartItem
++ add_item(item: MenuItem, quantity: int) -> void
++ remove_item(item_id: String) -> void
++ total() -> double
++ clear() -> void
++ is_empty() -> boolean
 ```
 
 ### Order
@@ -140,61 +140,61 @@ class Cart:
 | Requirement | What Order must track |
 |-------------|----------------------|
 | Identity | order_id |
-| Parties | user_id, restaurant_id, delivery_agent: Optional[DeliveryAgent] |
-| Snapshot | items: List[CartItem], total: float |
+| Parties | user_id, restaurant_id, delivery_agent: Optional<DeliveryAgent> |
+| Snapshot | items: List<CartItem>, total: double |
 | Lifecycle | status: OrderStatus |
 
 ```
-class OrderStatus(Enum):
+enum OrderStatus:
     PLACED, CONFIRMED, PREPARING, PICKED_UP, DELIVERED, CANCELLED
 
 class Order:
-- order_id: str
-- user_id: str
+- order_id: String
+- user_id: String
 - restaurant: Restaurant
-- items: List[CartItem]
-- total: float
+- items: List<CartItem>
+- total: double
 - status: OrderStatus
-- delivery_agent: Optional[DeliveryAgent]
-- created_at: datetime
-+ update_status(new_status: OrderStatus) -> None
-+ assign_agent(agent: DeliveryAgent) -> None
-+ cancel() -> None
+- delivery_agent: Optional<DeliveryAgent>
+- created_at: Instant
++ update_status(new_status: OrderStatus) -> void
++ assign_agent(agent: DeliveryAgent) -> void
++ cancel() -> void
 ```
 
 ### DeliveryAgent
 
 ```
-class AgentStatus(Enum):
+enum AgentStatus:
     AVAILABLE, BUSY, OFFLINE
 
 class DeliveryAgent:
-- agent_id: str
-- name: str
+- agent_id: String
+- name: String
 - status: AgentStatus
-- latitude: float
-- longitude: float
-+ accept_order(order: Order) -> None
-+ complete_delivery() -> None
+- latitude: double
+- longitude: double
++ accept_order(order: Order) -> void
++ complete_delivery() -> void
 ```
 
 ### DeliveryService and OrderService
 
 ```
 class DeliveryService:
-- agents: List[DeliveryAgent]
-+ assign_agent(order: Order) -> Optional[DeliveryAgent]
-- _find_nearest_available(order: Order) -> Optional[DeliveryAgent]
+- agents: List<DeliveryAgent>
++ assign_agent(order: Order) -> Optional<DeliveryAgent>
+- _find_nearest_available(order: Order) -> Optional<DeliveryAgent>
 
 class OrderService:
-- orders: Dict[str, Order]
-- carts: Dict[str, Cart]  # user_id -> Cart
+- orders: Map<String, Order>
+- carts: Map<String, Cart>  # user_id -> Cart
 - delivery_service: DeliveryService
 - notification_service: NotificationService
-+ add_to_cart(user_id, restaurant, item_id, quantity) -> None
++ add_to_cart(user_id, restaurant, item_id, quantity) -> void
 + place_order(user_id) -> Order
-+ update_order_status(order_id, new_status) -> None
-+ cancel_order(order_id) -> None
++ update_order_status(order_id, new_status) -> void
++ cancel_order(order_id) -> void
 + get_order(order_id) -> Order
 ```
 
@@ -217,235 +217,350 @@ class OrderService:
 - Restaurant closed at placement time → raise error
 - No available delivery agents → order stays CONFIRMED, retry assignment
 
-```python
-import uuid
-from datetime import datetime
-from enum import Enum, auto
-from typing import Optional, List, Dict
-import math
+```java
+import java.util.*;
+import java.time.Instant;
 
+enum OrderStatus {
+    PLACED, CONFIRMED, PREPARING, PICKED_UP, DELIVERED, CANCELLED
+}
 
-class OrderStatus(Enum):
-    PLACED = auto()
-    CONFIRMED = auto()
-    PREPARING = auto()
-    PICKED_UP = auto()
-    DELIVERED = auto()
-    CANCELLED = auto()
+enum AgentStatus {
+    AVAILABLE, BUSY, OFFLINE
+}
 
+class MenuItem {
+    private final String itemId;
+    private final String name;
+    private final double price;
+    private boolean available;
 
-class AgentStatus(Enum):
-    AVAILABLE = auto()
-    BUSY = auto()
-    OFFLINE = auto()
-
-
-class MenuItem:
-    def __init__(self, item_id: str, name: str, price: float):
-        self.item_id = item_id
-        self.name = name
-        self.price = price
-        self.is_available = True
-
-
-class Restaurant:
-    def __init__(self, restaurant_id: str, name: str):
-        self.restaurant_id = restaurant_id
-        self.name = name
-        self.menu_items: Dict[str, MenuItem] = {}
-        self.is_open = True
-
-    def add_item(self, item: MenuItem) -> None:
-        self.menu_items[item.item_id] = item
-
-    def get_item(self, item_id: str) -> MenuItem:
-        if item_id not in self.menu_items:
-            raise KeyError(f"Item {item_id} not found")
-        return self.menu_items[item_id]
-
-
-class CartItem:
-    def __init__(self, item: MenuItem, quantity: int):
-        self.item = item
-        self.quantity = quantity
-
-    def subtotal(self) -> float:
-        return self.item.price * self.quantity
-
-
-class Cart:
-    def __init__(self, user_id: str):
-        self.user_id = user_id
-        self.restaurant_id: Optional[str] = None
-        self.items: Dict[str, CartItem] = {}
-
-    def add_item(self, restaurant: Restaurant, item: MenuItem, quantity: int) -> None:
-        if self.restaurant_id and self.restaurant_id != restaurant.restaurant_id:
-            self.items.clear()
-            self.restaurant_id = None
-        self.restaurant_id = restaurant.restaurant_id
-        if item.item_id in self.items:
-            self.items[item.item_id].quantity += quantity
-        else:
-            self.items[item.item_id] = CartItem(item, quantity)
-
-    def remove_item(self, item_id: str) -> None:
-        self.items.pop(item_id, None)
-
-    def total(self) -> float:
-        return sum(ci.subtotal() for ci in self.items.values())
-
-    def clear(self) -> None:
-        self.items.clear()
-        self.restaurant_id = None
-
-    def is_empty(self) -> bool:
-        return len(self.items) == 0
-
-
-class DeliveryAgent:
-    def __init__(self, agent_id: str, name: str, lat: float, lng: float):
-        self.agent_id = agent_id
-        self.name = name
-        self.latitude = lat
-        self.longitude = lng
-        self.status = AgentStatus.AVAILABLE
-
-    def accept_order(self) -> None:
-        self.status = AgentStatus.BUSY
-
-    def complete_delivery(self) -> None:
-        self.status = AgentStatus.AVAILABLE
-
-
-class Order:
-    VALID_TRANSITIONS = {
-        OrderStatus.PLACED: {OrderStatus.CONFIRMED, OrderStatus.CANCELLED},
-        OrderStatus.CONFIRMED: {OrderStatus.PREPARING, OrderStatus.CANCELLED},
-        OrderStatus.PREPARING: {OrderStatus.PICKED_UP},
-        OrderStatus.PICKED_UP: {OrderStatus.DELIVERED},
-        OrderStatus.DELIVERED: set(),
-        OrderStatus.CANCELLED: set(),
+    public MenuItem(String itemId, String name, double price) {
+        this.itemId = itemId;
+        this.name = name;
+        this.price = price;
+        this.available = true;
     }
 
-    def __init__(self, order_id: str, user_id: str, restaurant: Restaurant,
-                 items: List[CartItem], total: float):
-        self.order_id = order_id
-        self.user_id = user_id
-        self.restaurant = restaurant
-        self.items = items
-        self.total = total
-        self.status = OrderStatus.PLACED
-        self.delivery_agent: Optional[DeliveryAgent] = None
-        self.created_at = datetime.utcnow()
+    public String getItemId() { return itemId; }
+    public String getName() { return name; }
+    public double getPrice() { return price; }
+    public boolean isAvailable() { return available; }
+    public void setAvailable(boolean available) { this.available = available; }
+}
 
-    def update_status(self, new_status: OrderStatus) -> None:
-        if new_status not in self.VALID_TRANSITIONS[self.status]:
-            raise ValueError(f"Cannot transition from {self.status} to {new_status}")
-        self.status = new_status
+class Restaurant {
+    private final String restaurantId;
+    private final String name;
+    private final Map<String, MenuItem> menuItems = new HashMap<>();
+    private boolean open = true;
+    private double latitude;
+    private double longitude;
 
-    def assign_agent(self, agent: DeliveryAgent) -> None:
-        self.delivery_agent = agent
+    public Restaurant(String restaurantId, String name) {
+        this.restaurantId = restaurantId;
+        this.name = name;
+    }
 
-    def cancel(self) -> None:
-        if self.status not in (OrderStatus.PLACED, OrderStatus.CONFIRMED):
-            raise ValueError(f"Cannot cancel order in status {self.status}")
-        self.status = OrderStatus.CANCELLED
-        if self.delivery_agent:
-            self.delivery_agent.complete_delivery()
+    public String getRestaurantId() { return restaurantId; }
+    public String getName() { return name; }
+    public boolean isOpen() { return open; }
+    public void setOpen(boolean open) { this.open = open; }
+    public double getLatitude() { return latitude; }
+    public double getLongitude() { return longitude; }
 
+    public void addItem(MenuItem item) {
+        menuItems.put(item.getItemId(), item);
+    }
 
-def haversine_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Approximate distance in km between two lat/lng points."""
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
-    return R * 2 * math.asin(math.sqrt(a))
+    public MenuItem getItem(String itemId) {
+        if (!menuItems.containsKey(itemId)) {
+            throw new NoSuchElementException("Item " + itemId + " not found");
+        }
+        return menuItems.get(itemId);
+    }
+}
 
+class CartItem {
+    private final MenuItem item;
+    private int quantity;
 
-class DeliveryService:
-    def __init__(self):
-        self.agents: List[DeliveryAgent] = []
+    public CartItem(MenuItem item, int quantity) {
+        this.item = item;
+        this.quantity = quantity;
+    }
 
-    def add_agent(self, agent: DeliveryAgent) -> None:
-        self.agents.append(agent)
+    public MenuItem getItem() { return item; }
+    public int getQuantity() { return quantity; }
+    public void setQuantity(int quantity) { this.quantity = quantity; }
 
-    def assign_agent(self, order: Order) -> Optional[DeliveryAgent]:
-        """Assigns nearest available agent. Returns None if no agent available."""
-        restaurant = order.restaurant
-        available = [a for a in self.agents if a.status == AgentStatus.AVAILABLE]
-        if not available:
-            return None
-        nearest = min(available, key=lambda a: haversine_distance(
-            restaurant.latitude if hasattr(restaurant, 'latitude') else 0,
-            restaurant.longitude if hasattr(restaurant, 'longitude') else 0,
-            a.latitude, a.longitude
-        ))
-        nearest.accept_order()
-        order.assign_agent(nearest)
-        return nearest
+    public double subtotal() {
+        return item.getPrice() * quantity;
+    }
+}
 
+class Cart {
+    private final String userId;
+    private String restaurantId;
+    private final Map<String, CartItem> items = new HashMap<>();
 
-class OrderService:
-    def __init__(self, delivery_service: DeliveryService):
-        self.orders: Dict[str, Order] = {}
-        self.carts: Dict[str, Cart] = {}
-        self.delivery_service = delivery_service
+    public Cart(String userId) {
+        this.userId = userId;
+    }
 
-    def _get_or_create_cart(self, user_id: str) -> Cart:
-        if user_id not in self.carts:
-            self.carts[user_id] = Cart(user_id)
-        return self.carts[user_id]
+    public String getUserId() { return userId; }
+    public Map<String, CartItem> getItems() { return items; }
 
-    def add_to_cart(self, user_id: str, restaurant: Restaurant,
-                    item_id: str, quantity: int) -> None:
-        item = restaurant.get_item(item_id)
-        if not item.is_available:
-            raise ValueError(f"Item {item.name} is not available")
-        cart = self._get_or_create_cart(user_id)
-        cart.add_item(restaurant, item, quantity)
+    public void addItem(Restaurant restaurant, MenuItem item, int quantity) {
+        if (restaurantId != null && !restaurantId.equals(restaurant.getRestaurantId())) {
+            items.clear();
+            restaurantId = null;
+        }
+        restaurantId = restaurant.getRestaurantId();
+        if (items.containsKey(item.getItemId())) {
+            CartItem existing = items.get(item.getItemId());
+            existing.setQuantity(existing.getQuantity() + quantity);
+        } else {
+            items.put(item.getItemId(), new CartItem(item, quantity));
+        }
+    }
 
-    def place_order(self, user_id: str, restaurant: Restaurant) -> Order:
-        cart = self._get_or_create_cart(user_id)
-        if cart.is_empty():
-            raise ValueError("Cart is empty")
-        if not restaurant.is_open:
-            raise ValueError("Restaurant is currently closed")
-        # Validate all items still available
-        unavailable = [ci.item.name for ci in cart.items.values()
-                       if not ci.item.is_available]
-        if unavailable:
-            raise ValueError(f"Unavailable items: {', '.join(unavailable)}")
-        order = Order(
-            order_id=str(uuid.uuid4()),
-            user_id=user_id,
-            restaurant=restaurant,
-            items=list(cart.items.values()),
-            total=cart.total()
-        )
-        self.orders[order.order_id] = order
-        cart.clear()
-        return order
+    public void removeItem(String itemId) {
+        items.remove(itemId);
+    }
 
-    def update_order_status(self, order_id: str, new_status: OrderStatus) -> None:
-        order = self._get_order(order_id)
-        order.update_status(new_status)
-        if new_status == OrderStatus.CONFIRMED:
-            agent = self.delivery_service.assign_agent(order)
-            if not agent:
-                print(f"No agent available for order {order_id}. Will retry.")
-        if new_status == OrderStatus.DELIVERED and order.delivery_agent:
-            order.delivery_agent.complete_delivery()
+    public double total() {
+        double sum = 0;
+        for (CartItem ci : items.values()) {
+            sum += ci.subtotal();
+        }
+        return sum;
+    }
 
-    def cancel_order(self, order_id: str) -> None:
-        order = self._get_order(order_id)
-        order.cancel()
+    public void clear() {
+        items.clear();
+        restaurantId = null;
+    }
 
-    def _get_order(self, order_id: str) -> Order:
-        if order_id not in self.orders:
-            raise KeyError(f"Order {order_id} not found")
-        return self.orders[order_id]
+    public boolean isEmpty() {
+        return items.isEmpty();
+    }
+}
+
+class DeliveryAgent {
+    private final String agentId;
+    private final String name;
+    private double latitude;
+    private double longitude;
+    private AgentStatus status;
+
+    public DeliveryAgent(String agentId, String name, double lat, double lng) {
+        this.agentId = agentId;
+        this.name = name;
+        this.latitude = lat;
+        this.longitude = lng;
+        this.status = AgentStatus.AVAILABLE;
+    }
+
+    public String getAgentId() { return agentId; }
+    public double getLatitude() { return latitude; }
+    public double getLongitude() { return longitude; }
+    public AgentStatus getStatus() { return status; }
+
+    public void acceptOrder() {
+        this.status = AgentStatus.BUSY;
+    }
+
+    public void completeDelivery() {
+        this.status = AgentStatus.AVAILABLE;
+    }
+}
+
+class Order {
+    private static final Map<OrderStatus, Set<OrderStatus>> VALID_TRANSITIONS = new HashMap<>();
+    static {
+        VALID_TRANSITIONS.put(OrderStatus.PLACED, EnumSet.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED));
+        VALID_TRANSITIONS.put(OrderStatus.CONFIRMED, EnumSet.of(OrderStatus.PREPARING, OrderStatus.CANCELLED));
+        VALID_TRANSITIONS.put(OrderStatus.PREPARING, EnumSet.of(OrderStatus.PICKED_UP));
+        VALID_TRANSITIONS.put(OrderStatus.PICKED_UP, EnumSet.of(OrderStatus.DELIVERED));
+        VALID_TRANSITIONS.put(OrderStatus.DELIVERED, EnumSet.noneOf(OrderStatus.class));
+        VALID_TRANSITIONS.put(OrderStatus.CANCELLED, EnumSet.noneOf(OrderStatus.class));
+    }
+
+    private final String orderId;
+    private final String userId;
+    private final Restaurant restaurant;
+    private final List<CartItem> items;
+    private final double total;
+    private OrderStatus status;
+    private DeliveryAgent deliveryAgent;
+    private final Instant createdAt;
+
+    public Order(String orderId, String userId, Restaurant restaurant,
+                 List<CartItem> items, double total) {
+        this.orderId = orderId;
+        this.userId = userId;
+        this.restaurant = restaurant;
+        this.items = items;
+        this.total = total;
+        this.status = OrderStatus.PLACED;
+        this.deliveryAgent = null;
+        this.createdAt = Instant.now();
+    }
+
+    public String getOrderId() { return orderId; }
+    public String getUserId() { return userId; }
+    public Restaurant getRestaurant() { return restaurant; }
+    public OrderStatus getStatus() { return status; }
+    public Optional<DeliveryAgent> getDeliveryAgent() { return Optional.ofNullable(deliveryAgent); }
+
+    public void updateStatus(OrderStatus newStatus) {
+        if (!VALID_TRANSITIONS.get(status).contains(newStatus)) {
+            throw new IllegalStateException("Cannot transition from " + status + " to " + newStatus);
+        }
+        this.status = newStatus;
+    }
+
+    public void assignAgent(DeliveryAgent agent) {
+        this.deliveryAgent = agent;
+    }
+
+    public void cancel() {
+        if (status != OrderStatus.PLACED && status != OrderStatus.CONFIRMED) {
+            throw new IllegalStateException("Cannot cancel order in status " + status);
+        }
+        this.status = OrderStatus.CANCELLED;
+        if (deliveryAgent != null) {
+            deliveryAgent.completeDelivery();
+        }
+    }
+}
+
+class DistanceUtil {
+    /** Approximate distance in km between two lat/lng points. */
+    public static double haversineDistance(double lat1, double lng1, double lat2, double lng2) {
+        double R = 6371;
+        double dlat = Math.toRadians(lat2 - lat1);
+        double dlng = Math.toRadians(lng2 - lng1);
+        double a = Math.pow(Math.sin(dlat / 2), 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.pow(Math.sin(dlng / 2), 2);
+        return R * 2 * Math.asin(Math.sqrt(a));
+    }
+}
+
+class DeliveryService {
+    private final List<DeliveryAgent> agents = new ArrayList<>();
+
+    public void addAgent(DeliveryAgent agent) {
+        agents.add(agent);
+    }
+
+    /** Assigns nearest available agent. Returns Optional.empty() if no agent available. */
+    public Optional<DeliveryAgent> assignAgent(Order order) {
+        Restaurant restaurant = order.getRestaurant();
+        List<DeliveryAgent> available = new ArrayList<>();
+        for (DeliveryAgent a : agents) {
+            if (a.getStatus() == AgentStatus.AVAILABLE) {
+                available.add(a);
+            }
+        }
+        if (available.isEmpty()) {
+            return Optional.empty();
+        }
+        DeliveryAgent nearest = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (DeliveryAgent a : available) {
+            double distance = DistanceUtil.haversineDistance(
+                    restaurant.getLatitude(), restaurant.getLongitude(),
+                    a.getLatitude(), a.getLongitude());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearest = a;
+            }
+        }
+        nearest.acceptOrder();
+        order.assignAgent(nearest);
+        return Optional.of(nearest);
+    }
+}
+
+class OrderService {
+    private final Map<String, Order> orders = new HashMap<>();
+    private final Map<String, Cart> carts = new HashMap<>();
+    private final DeliveryService deliveryService;
+
+    public OrderService(DeliveryService deliveryService) {
+        this.deliveryService = deliveryService;
+    }
+
+    private Cart getOrCreateCart(String userId) {
+        return carts.computeIfAbsent(userId, Cart::new);
+    }
+
+    public void addToCart(String userId, Restaurant restaurant, String itemId, int quantity) {
+        MenuItem item = restaurant.getItem(itemId);
+        if (!item.isAvailable()) {
+            throw new IllegalStateException("Item " + item.getName() + " is not available");
+        }
+        Cart cart = getOrCreateCart(userId);
+        cart.addItem(restaurant, item, quantity);
+    }
+
+    public Order placeOrder(String userId, Restaurant restaurant) {
+        Cart cart = getOrCreateCart(userId);
+        if (cart.isEmpty()) {
+            throw new IllegalStateException("Cart is empty");
+        }
+        if (!restaurant.isOpen()) {
+            throw new IllegalStateException("Restaurant is currently closed");
+        }
+        List<String> unavailable = new ArrayList<>();
+        for (CartItem ci : cart.getItems().values()) {
+            if (!ci.getItem().isAvailable()) {
+                unavailable.add(ci.getItem().getName());
+            }
+        }
+        if (!unavailable.isEmpty()) {
+            throw new IllegalStateException("Unavailable items: " + String.join(", ", unavailable));
+        }
+        Order order = new Order(
+                UUID.randomUUID().toString(),
+                userId,
+                restaurant,
+                new ArrayList<>(cart.getItems().values()),
+                cart.total()
+        );
+        orders.put(order.getOrderId(), order);
+        cart.clear();
+        return order;
+    }
+
+    public void updateOrderStatus(String orderId, OrderStatus newStatus) {
+        Order order = getOrder(orderId);
+        order.updateStatus(newStatus);
+        if (newStatus == OrderStatus.CONFIRMED) {
+            Optional<DeliveryAgent> agent = deliveryService.assignAgent(order);
+            if (agent.isEmpty()) {
+                System.out.println("No agent available for order " + orderId + ". Will retry.");
+            }
+        }
+        if (newStatus == OrderStatus.DELIVERED && order.getDeliveryAgent().isPresent()) {
+            order.getDeliveryAgent().get().completeDelivery();
+        }
+    }
+
+    public void cancelOrder(String orderId) {
+        Order order = getOrder(orderId);
+        order.cancel();
+    }
+
+    public Order getOrder(String orderId) {
+        if (!orders.containsKey(orderId)) {
+            throw new NoSuchElementException("Order " + orderId + " not found");
+        }
+        return orders.get(orderId);
+    }
+}
 ```
 
 ---
@@ -458,7 +573,7 @@ Trace: User places order, restaurant confirms, agent assigned, delivered.
 2. `place_order("u1", restaurant)` → Order(id="o1", status=PLACED), cart cleared
 3. `update_order_status("o1", CONFIRMED)` → order.status=CONFIRMED, nearest agent found (agent_a), agent_a.status=BUSY
 4. `update_order_status("o1", PREPARING)` → order.status=PREPARING (valid transition)
-5. `cancel_order("o1")` → raises ValueError: Cannot cancel in PREPARING
+5. `cancel_order("o1")` → throws IllegalStateException: Cannot cancel in PREPARING
 6. `update_order_status("o1", PICKED_UP)` → order.status=PICKED_UP
 7. `update_order_status("o1", DELIVERED)` → order.status=DELIVERED, agent_a.status=AVAILABLE
 
@@ -472,11 +587,11 @@ Use Haversine distance from the restaurant's location to each available agent's 
 
 For production at scale: index agent locations in a geospatial data structure (PostGIS, Redis GEOSEARCH, or a quadtree). Query returns agents within a radius in O(log n + k).
 
-```python
-# Redis GEOSEARCH approach (pseudocode):
-# On agent location update: GEOADD agents_geo lng lat agent_id
-# On assignment: GEOSEARCH agents_geo FROMLONLAT restaurant_lng restaurant_lat
-#                BYRADIUS 5 km ASC COUNT 1
+```java
+// Redis GEOSEARCH approach (pseudocode):
+// On agent location update: GEOADD agents_geo lng lat agent_id
+// On assignment: GEOSEARCH agents_geo FROMLONLAT restaurant_lng restaurant_lat
+//                BYRADIUS 5 km ASC COUNT 1
 ```
 
 ### 2. "Walk through the order status state machine."
@@ -489,8 +604,8 @@ PLACED → CONFIRMED → PREPARING → PICKED_UP → DELIVERED
 CANCELLED  CANCELLED
 ```
 
-Enforced via a transition table (dict of sets). Any invalid transition raises ValueError immediately. This is better than a series of if/else because:
-- Adding a new status = add one entry to the dict
+Enforced via a transition table (`Map<OrderStatus, Set<OrderStatus>>`). Any invalid transition throws `IllegalStateException` immediately. This is better than a series of if/else because:
+- Adding a new status = add one entry to the map
 - Transitions are data, not code — easy to audit
 
 ### 3. "Real-time tracking — polling vs WebSocket?"
@@ -509,46 +624,77 @@ On order PLACED or CONFIRMED, if the restaurant marks itself `is_open=False`:
 - Orders already in PREPARING or beyond: continue to completion (restaurant is physically making the food)
 - Orders in PLACED or CONFIRMED: cancel with a full refund, notify the user
 
-```python
-def restaurant_go_offline(self, restaurant_id: str) -> None:
-    restaurant = self.restaurants[restaurant_id]
-    restaurant.is_open = False
-    for order in self.orders.values():
-        if (order.restaurant.restaurant_id == restaurant_id
-                and order.status in (OrderStatus.PLACED, OrderStatus.CONFIRMED)):
-            order.cancel()
-            # trigger refund and user notification
+```java
+public void restaurantGoOffline(String restaurantId) {
+    Restaurant restaurant = restaurants.get(restaurantId);
+    restaurant.setOpen(false);
+    for (Order order : orders.values()) {
+        boolean matchesRestaurant = order.getRestaurant().getRestaurantId().equals(restaurantId);
+        boolean cancellable = order.getStatus() == OrderStatus.PLACED
+                || order.getStatus() == OrderStatus.CONFIRMED;
+        if (matchesRestaurant && cancellable) {
+            order.cancel();
+            // trigger refund and user notification
+        }
+    }
+}
 ```
 
 ### 5. "How would you implement ratings and reviews?"
 
 Add a `Review` entity linked to a completed Order. Enforce one review per order (not per user/restaurant pair — so the user can review every delivery).
 
-```python
-class Review:
-    def __init__(self, review_id: str, order_id: str, user_id: str,
-                 restaurant_rating: int, agent_rating: int, comment: str):
-        if not (1 <= restaurant_rating <= 5 and 1 <= agent_rating <= 5):
-            raise ValueError("Ratings must be 1-5")
-        self.review_id = review_id
-        self.order_id = order_id
-        self.user_id = user_id
-        self.restaurant_rating = restaurant_rating
-        self.agent_rating = agent_rating
-        self.comment = comment
-        self.created_at = datetime.utcnow()
+```java
+class Review {
+    private final String reviewId;
+    private final String orderId;
+    private final String userId;
+    private final int restaurantRating;
+    private final int agentRating;
+    private final String comment;
+    private final Instant createdAt;
 
-def submit_review(self, order_id: str, rest_rating: int,
-                  agent_rating: int, comment: str) -> Review:
-    order = self._get_order(order_id)
-    if order.status != OrderStatus.DELIVERED:
-        raise ValueError("Can only review completed orders")
-    if order_id in self.reviews:
-        raise ValueError("Order already reviewed")
-    review = Review(str(uuid.uuid4()), order_id, order.user_id,
-                    rest_rating, agent_rating, comment)
-    self.reviews[order_id] = review
-    return review
+    public Review(String reviewId, String orderId, String userId,
+                  int restaurantRating, int agentRating, String comment) {
+        if (!(restaurantRating >= 1 && restaurantRating <= 5
+                && agentRating >= 1 && agentRating <= 5)) {
+            throw new IllegalArgumentException("Ratings must be 1-5");
+        }
+        this.reviewId = reviewId;
+        this.orderId = orderId;
+        this.userId = userId;
+        this.restaurantRating = restaurantRating;
+        this.agentRating = agentRating;
+        this.comment = comment;
+        this.createdAt = Instant.now();
+    }
+
+    public String getReviewId() { return reviewId; }
+    public String getOrderId() { return orderId; }
+    public String getUserId() { return userId; }
+    public int getRestaurantRating() { return restaurantRating; }
+    public int getAgentRating() { return agentRating; }
+    public String getComment() { return comment; }
+    public Instant getCreatedAt() { return createdAt; }
+}
+
+// Inside OrderService (or a dedicated ReviewService):
+private final Map<String, Review> reviews = new HashMap<>();
+
+public Review submitReview(String orderId, int restRating,
+                            int agentRating, String comment) {
+    Order order = getOrder(orderId);
+    if (order.getStatus() != OrderStatus.DELIVERED) {
+        throw new IllegalStateException("Can only review completed orders");
+    }
+    if (reviews.containsKey(orderId)) {
+        throw new IllegalStateException("Order already reviewed");
+    }
+    Review review = new Review(UUID.randomUUID().toString(), orderId, order.getUserId(),
+            restRating, agentRating, comment);
+    reviews.put(orderId, review);
+    return review;
+}
 ```
 
 ---
@@ -584,7 +730,7 @@ def submit_review(self, order_id: str, rest_rating: int,
   A: The restaurant has already started cooking — food cost is incurred. The policy prevents waste. Some platforms allow cancellation with a partial fee.
 
 - **Q: How would you model a multi-restaurant cart?**  
-  A: Cart becomes a dict of restaurant_id → List[CartItem]. Placing the order creates one Order per restaurant. Delivery assignments are per-order. Checkout total aggregates across all sub-orders.
+  A: Cart becomes a `Map<String, List<CartItem>>` keyed by restaurant_id. Placing the order creates one Order per restaurant. Delivery assignments are per-order. Checkout total aggregates across all sub-orders.
 
 ---
 

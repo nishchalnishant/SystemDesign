@@ -78,21 +78,24 @@ Try it before reading on.
 ## Problem Without the Pattern
 
 Eager initialization wastes resources:
-```python
-class ReportService:
-    def __init__(self):
-        self._generator = HeavyReportGenerator()  # 3 seconds, 500MB — on every startup
+```java
+class ReportService {
+    private final HeavyReportGenerator generator = new HeavyReportGenerator(); // 3 seconds, 500MB — on every startup
 
-    def generate_report(self, user):
-        self._generator.generate()
+    void generateReport(User user) {
+        generator.generate();
+    }
+}
 ```
 
 Access control added inline violates SRP:
-```python
-def generate_report(self, user):
-    if not user.has_role("ADMIN"):
-        raise SecurityError("Denied")
-    self._generator.generate()  # now ReportService mixes generation + authorization
+```java
+void generateReport(User user) {
+    if (!user.hasRole("ADMIN")) {
+        throw new SecurityException("Denied");
+    }
+    generator.generate(); // now ReportService mixes generation + authorization
+}
 ```
 
 **What breaks**:
@@ -107,44 +110,51 @@ def generate_report(self, user):
 The constraint: **intercept the call before it reaches the real object — without the caller knowing**.
 
 Step 1 — define the interface both the real object and proxy implement:
-```python
-from abc import ABC, abstractmethod
-
-class ReportGenerator(ABC):
-    @abstractmethod
-    def generate(self):
-        pass
+```java
+interface ReportGenerator {
+    void generate();
+}
 ```
 
 Step 2a — **Virtual Proxy** (lazy init): defer construction until first use:
-```python
-class LazyReportProxy(ReportGenerator):
-    def __init__(self):
-        self._real = None
+```java
+class LazyReportProxy implements ReportGenerator {
+    private HeavyReportGenerator real;
 
-    def generate(self):
-        if self._real is None:
-            self._real = HeavyReportGenerator()  # init on first call only
-        self._real.generate()
+    @Override
+    public void generate() {
+        if (real == null) {
+            real = new HeavyReportGenerator(); // init on first call only
+        }
+        real.generate();
+    }
+}
 ```
 
 Step 2b — **Protection Proxy** (access control): check permissions before delegating:
-```python
-class SecureReportProxy(ReportGenerator):
-    def __init__(self, user):
-        self._real = HeavyReportGenerator()
-        self._current_user = user
+```java
+class SecureReportProxy implements ReportGenerator {
+    private final HeavyReportGenerator real = new HeavyReportGenerator();
+    private final User currentUser;
 
-    def generate(self):
-        if not self._current_user.has_role("ADMIN"):
-            raise SecurityError("Denied")
-        self._real.generate()
+    SecureReportProxy(User currentUser) {
+        this.currentUser = currentUser;
+    }
+
+    @Override
+    public void generate() {
+        if (!currentUser.hasRole("ADMIN")) {
+            throw new SecurityException("Denied");
+        }
+        real.generate();
+    }
+}
 ```
 
 Step 3 — the client holds `ReportGenerator` (the interface), never the concrete class:
-```python
-generator = LazyReportProxy()
-generator.generate()  # real object created here, not at startup
+```java
+ReportGenerator generator = new LazyReportProxy();
+generator.generate(); // real object created here, not at startup
 ```
 
 `HeavyReportGenerator` is never modified. The proxy is transparent to the caller.
@@ -177,54 +187,71 @@ Loading a high-res image from disk is expensive (1-2 seconds). We want the objec
 
 ## Implementation: Virtual Proxy (Lazy Loading)
 
-```python
-import time
-from abc import ABC, abstractmethod
+```java
+// Interface — Proxy and RealImage both implement this
+interface Image {
+    void display();
+}
 
-# Interface — Proxy and RealImage both implement this
-class Image(ABC):
-    @abstractmethod
-    def display(self):
-        pass
+// Real Object — expensive to create
+class RealImage implements Image {
+    private final String filename;
 
-# Real Object — expensive to create
-class RealImage(Image):
-    def __init__(self, filename: str):
-        self._filename = filename
-        self._load_from_disk()  # Expensive operation runs at construction
+    RealImage(String filename) {
+        this.filename = filename;
+        loadFromDisk(); // Expensive operation runs at construction
+    }
 
-    def _load_from_disk(self):
-        print(f"Loading {self._filename} from disk... (Heavy IO)")
-        time.sleep(1)  # Simulates disk latency
+    private void loadFromDisk() {
+        System.out.println("Loading " + filename + " from disk... (Heavy IO)");
+        try {
+            Thread.sleep(1000); // Simulates disk latency
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
 
-    def display(self):
-        print(f"Displaying {self._filename}")
+    @Override
+    public void display() {
+        System.out.println("Displaying " + filename);
+    }
+}
 
-# Proxy — lightweight, defers loading until needed
-class ProxyImage(Image):
-    def __init__(self, filename: str):
-        self._filename = filename
-        self._real_image = None  # None until actually needed
-        # No disk IO here — cheap to create
+// Proxy — lightweight, defers loading until needed
+class ProxyImage implements Image {
+    private final String filename;
+    private RealImage realImage; // null until actually needed
+    // No disk IO here — cheap to create
 
-    def display(self):
-        if self._real_image is None:
-            self._real_image = RealImage(self._filename)  # Load on first access
-        self._real_image.display()  # Second call: reuses cached RealImage
+    ProxyImage(String filename) {
+        this.filename = filename;
+    }
 
-# Client
-if __name__ == "__main__":
-    img = ProxyImage("photo_4k.jpg")
-    print("Image object created (no disk IO yet)")
+    @Override
+    public void display() {
+        if (realImage == null) {
+            realImage = new RealImage(filename); // Load on first access
+        }
+        realImage.display(); // Second call: reuses cached RealImage
+    }
+}
 
-    img.display()  # First call: loads from disk, then displays
-    img.display()  # Second call: reuses cached object — no disk IO
+// Client
+public class Main {
+    public static void main(String[] args) {
+        Image img = new ProxyImage("photo_4k.jpg");
+        System.out.println("Image object created (no disk IO yet)");
 
-# Output:
-# Image object created (no disk IO yet)
-# Loading photo_4k.jpg from disk... (Heavy IO)
-# Displaying photo_4k.jpg
-# Displaying photo_4k.jpg
+        img.display(); // First call: loads from disk, then displays
+        img.display(); // Second call: reuses cached object — no disk IO
+    }
+}
+
+// Output:
+// Image object created (no disk IO yet)
+// Loading photo_4k.jpg from disk... (Heavy IO)
+// Displaying photo_4k.jpg
+// Displaying photo_4k.jpg
 ```
 
 ### Class Diagram
@@ -264,82 +291,97 @@ classDiagram
 
 ## Protection Proxy: Access Control
 
-```python
-from abc import ABC, abstractmethod
+```java
+interface DocumentService {
+    void readDocument(String docId);
 
-class DocumentService(ABC):
-    @abstractmethod
-    def read_document(self, doc_id: str):
-        pass
+    void deleteDocument(String docId);
+}
 
-    @abstractmethod
-    def delete_document(self, doc_id: str):
-        pass
+class RealDocumentService implements DocumentService {
+    @Override
+    public void readDocument(String docId) {
+        System.out.println("Reading document: " + docId);
+    }
 
-class RealDocumentService(DocumentService):
-    def read_document(self, doc_id: str):
-        print(f"Reading document: {doc_id}")
+    @Override
+    public void deleteDocument(String docId) {
+        System.out.println("Deleting document: " + docId);
+    }
+}
 
-    def delete_document(self, doc_id: str):
-        print(f"Deleting document: {doc_id}")
+// Proxy that enforces role-based access
+class SecureDocumentProxy implements DocumentService {
+    private final RealDocumentService realService = new RealDocumentService();
+    private final String userRole;
 
-# Proxy that enforces role-based access
-class SecureDocumentProxy(DocumentService):
-    def __init__(self, user_role: str):
-        self._real_service = RealDocumentService()
-        self._user_role = user_role
+    SecureDocumentProxy(String userRole) {
+        this.userRole = userRole;
+    }
 
-    def read_document(self, doc_id: str):
-        # Everyone can read
-        print(f"[LOG] {self._user_role} reading {doc_id}")
-        self._real_service.read_document(doc_id)
+    @Override
+    public void readDocument(String docId) {
+        // Everyone can read
+        System.out.println("[LOG] " + userRole + " reading " + docId);
+        realService.readDocument(docId);
+    }
 
-    def delete_document(self, doc_id: str):
-        # Only admins can delete
-        if self._user_role != "ADMIN":
-            raise SecurityError("Only admins can delete documents")
-        print(f"[LOG] ADMIN deleting {doc_id}")
-        self._real_service.delete_document(doc_id)
+    @Override
+    public void deleteDocument(String docId) {
+        // Only admins can delete
+        if (!userRole.equals("ADMIN")) {
+            throw new SecurityException("Only admins can delete documents");
+        }
+        System.out.println("[LOG] ADMIN deleting " + docId);
+        realService.deleteDocument(docId);
+    }
+}
 
-# Usage
-admin_proxy = SecureDocumentProxy("ADMIN")
-admin_proxy.delete_document("doc-001")  # Allowed
+// Usage
+SecureDocumentProxy adminProxy = new SecureDocumentProxy("ADMIN");
+adminProxy.deleteDocument("doc-001"); // Allowed
 
-user_proxy = SecureDocumentProxy("USER")
-user_proxy.read_document("doc-001")    # Allowed
-user_proxy.delete_document("doc-001")  # SecurityError raised
+SecureDocumentProxy userProxy = new SecureDocumentProxy("USER");
+userProxy.readDocument("doc-001");    // Allowed
+userProxy.deleteDocument("doc-001");  // SecurityException thrown
 ```
 
 ---
 
 ## Caching Proxy
 
-```python
-from abc import ABC, abstractmethod
+```java
+import java.util.HashMap;
+import java.util.Map;
 
-class WeatherService(ABC):
-    @abstractmethod
-    def get_weather(self, city: str) -> str:
-        pass
+interface WeatherService {
+    String getWeather(String city);
+}
 
-class RealWeatherService(WeatherService):
-    def get_weather(self, city: str) -> str:
-        print(f"Fetching weather from API for: {city}")
-        # Expensive API call
-        return "Sunny, 25C"
+class RealWeatherService implements WeatherService {
+    @Override
+    public String getWeather(String city) {
+        System.out.println("Fetching weather from API for: " + city);
+        // Expensive API call
+        return "Sunny, 25C";
+    }
+}
 
-class CachingWeatherProxy(WeatherService):
-    def __init__(self):
-        self._real_service = RealWeatherService()
-        self._cache: dict[str, str] = {}
+class CachingWeatherProxy implements WeatherService {
+    private final RealWeatherService realService = new RealWeatherService();
+    private final Map<String, String> cache = new HashMap<>();
 
-    def get_weather(self, city: str) -> str:
-        if city in self._cache:
-            print(f"[CACHE HIT] {city}")
-            return self._cache[city]
-        result = self._real_service.get_weather(city)
-        self._cache[city] = result
-        return result
+    @Override
+    public String getWeather(String city) {
+        if (cache.containsKey(city)) {
+            System.out.println("[CACHE HIT] " + city);
+            return cache.get(city);
+        }
+        String result = realService.getWeather(city);
+        cache.put(city, result);
+        return result;
+    }
+}
 ```
 
 ---
@@ -359,7 +401,7 @@ class CachingWeatherProxy(WeatherService):
 ## When to Use in Interviews
 
 - When designing an API gateway: "The gateway is a Proxy — it adds auth, rate limiting, and logging before forwarding to the real service."
-- When discussing lazy loading (e.g., ORM): "Hibernate uses Virtual Proxies for lazy-loaded relations — the `Address` field on `User` is a proxy until you actually call `get_address()`."
+- When discussing lazy loading (e.g., ORM): "Hibernate uses Virtual Proxies for lazy-loaded relations — the `Address` field on `User` is a proxy until you actually call `getAddress()`."
 - When building a caching layer: "I'd add a Caching Proxy in front of the DB service. Same interface, but it intercepts calls and returns cached results when available."
 
 ---

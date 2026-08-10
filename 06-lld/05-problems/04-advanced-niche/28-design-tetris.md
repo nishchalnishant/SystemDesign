@@ -180,251 +180,380 @@ class Game:
 - Board completely empty after clear — no crash
 - Zero lines cleared — return 0, skip score update
 
-```python
-from enum import Enum
-from typing import Optional
-import random
+```java
+import java.util.*;
 
-SHAPES = {
-    'I': [
-        [(0,0),(0,1),(0,2),(0,3)],
-        [(0,2),(1,2),(2,2),(3,2)],
-        [(2,0),(2,1),(2,2),(2,3)],
-        [(0,1),(1,1),(2,1),(3,1)],
-    ],
-    'O': [
-        [(0,0),(0,1),(1,0),(1,1)],
-        [(0,0),(0,1),(1,0),(1,1)],
-        [(0,0),(0,1),(1,0),(1,1)],
-        [(0,0),(0,1),(1,0),(1,1)],
-    ],
-    'T': [
-        [(0,1),(1,0),(1,1),(1,2)],
-        [(0,1),(1,1),(1,2),(2,1)],
-        [(1,0),(1,1),(1,2),(2,1)],
-        [(0,1),(1,0),(1,1),(2,1)],
-    ],
-    'S': [
-        [(0,1),(0,2),(1,0),(1,1)],
-        [(0,1),(1,1),(1,2),(2,2)],
-        [(1,1),(1,2),(2,0),(2,1)],
-        [(0,0),(1,0),(1,1),(2,1)],
-    ],
-    'Z': [
-        [(0,0),(0,1),(1,1),(1,2)],
-        [(0,2),(1,1),(1,2),(2,1)],
-        [(1,0),(1,1),(2,1),(2,2)],
-        [(0,1),(1,0),(1,1),(2,0)],
-    ],
-    'L': [
-        [(0,2),(1,0),(1,1),(1,2)],
-        [(0,1),(1,1),(2,1),(2,2)],
-        [(1,0),(1,1),(1,2),(2,0)],
-        [(0,0),(0,1),(1,1),(2,1)],
-    ],
-    'J': [
-        [(0,0),(1,0),(1,1),(1,2)],
-        [(0,1),(0,2),(1,1),(2,1)],
-        [(1,0),(1,1),(1,2),(2,2)],
-        [(0,1),(1,1),(2,0),(2,1)],
-    ],
+enum GameState {
+    IDLE, RUNNING, GAME_OVER
 }
 
-COLORS = {
-    'I': 'cyan', 'O': 'yellow', 'T': 'purple',
-    'S': 'green', 'Z': 'red', 'L': 'orange', 'J': 'blue'
+enum PieceType {
+    I, O, T, S, Z, L, J
 }
 
+class Shapes {
+    // Each piece has 4 rotation states; each state is a list of (row, col) offsets.
+    static final Map<PieceType, int[][][]> SHAPES = new EnumMap<>(PieceType.class);
+    static final Map<PieceType, String> COLORS = new EnumMap<>(PieceType.class);
 
-class GameState(Enum):
-    IDLE = "idle"
-    RUNNING = "running"
-    GAME_OVER = "game_over"
+    static {
+        SHAPES.put(PieceType.I, new int[][][]{
+            {{0,0},{0,1},{0,2},{0,3}},
+            {{0,2},{1,2},{2,2},{3,2}},
+            {{2,0},{2,1},{2,2},{2,3}},
+            {{0,1},{1,1},{2,1},{3,1}},
+        });
+        SHAPES.put(PieceType.O, new int[][][]{
+            {{0,0},{0,1},{1,0},{1,1}},
+            {{0,0},{0,1},{1,0},{1,1}},
+            {{0,0},{0,1},{1,0},{1,1}},
+            {{0,0},{0,1},{1,0},{1,1}},
+        });
+        SHAPES.put(PieceType.T, new int[][][]{
+            {{0,1},{1,0},{1,1},{1,2}},
+            {{0,1},{1,1},{1,2},{2,1}},
+            {{1,0},{1,1},{1,2},{2,1}},
+            {{0,1},{1,0},{1,1},{2,1}},
+        });
+        SHAPES.put(PieceType.S, new int[][][]{
+            {{0,1},{0,2},{1,0},{1,1}},
+            {{0,1},{1,1},{1,2},{2,2}},
+            {{1,1},{1,2},{2,0},{2,1}},
+            {{0,0},{1,0},{1,1},{2,1}},
+        });
+        SHAPES.put(PieceType.Z, new int[][][]{
+            {{0,0},{0,1},{1,1},{1,2}},
+            {{0,2},{1,1},{1,2},{2,1}},
+            {{1,0},{1,1},{2,1},{2,2}},
+            {{0,1},{1,0},{1,1},{2,0}},
+        });
+        SHAPES.put(PieceType.L, new int[][][]{
+            {{0,2},{1,0},{1,1},{1,2}},
+            {{0,1},{1,1},{2,1},{2,2}},
+            {{1,0},{1,1},{1,2},{2,0}},
+            {{0,0},{0,1},{1,1},{2,1}},
+        });
+        SHAPES.put(PieceType.J, new int[][][]{
+            {{0,0},{1,0},{1,1},{1,2}},
+            {{0,1},{0,2},{1,1},{2,1}},
+            {{1,0},{1,1},{1,2},{2,2}},
+            {{0,1},{1,1},{2,0},{2,1}},
+        });
 
+        COLORS.put(PieceType.I, "cyan");
+        COLORS.put(PieceType.O, "yellow");
+        COLORS.put(PieceType.T, "purple");
+        COLORS.put(PieceType.S, "green");
+        COLORS.put(PieceType.Z, "red");
+        COLORS.put(PieceType.L, "orange");
+        COLORS.put(PieceType.J, "blue");
+    }
+}
 
-class Tetromino:
-    def __init__(self, piece_type: str):
-        self.piece_type = piece_type
-        self.rotations = SHAPES[piece_type]
-        self.rotation_index = 0
-        self.x = 3   # spawn near center column
-        self.y = 0   # spawn at top row
+class Tetromino {
+    private final PieceType pieceType;
+    private final int[][][] rotations;
+    private int rotationIndex;
+    private int x; // spawn near center column
+    private int y; // spawn at top row
 
-    def cells(self) -> list:
-        """Return absolute (row, col) board positions."""
-        shape = self.rotations[self.rotation_index]
-        return [(self.y + dr, self.x + dc) for dr, dc in shape]
+    public Tetromino(PieceType pieceType) {
+        this.pieceType = pieceType;
+        this.rotations = Shapes.SHAPES.get(pieceType);
+        this.rotationIndex = 0;
+        this.x = 3;
+        this.y = 0;
+    }
 
-    def rotate_cw(self):
-        self.rotation_index = (self.rotation_index + 1) % 4
+    /** Return absolute (row, col) board positions. */
+    public List<int[]> cells() {
+        int[][] shape = rotations[rotationIndex];
+        List<int[]> result = new ArrayList<>();
+        for (int[] offset : shape) {
+            result.add(new int[]{y + offset[0], x + offset[1]});
+        }
+        return result;
+    }
 
-    def rotate_ccw(self):
-        self.rotation_index = (self.rotation_index - 1) % 4
+    public void rotateCw() {
+        rotationIndex = (rotationIndex + 1) % 4;
+    }
 
-    def move(self, dx: int, dy: int):
-        self.x += dx
-        self.y += dy
+    public void rotateCcw() {
+        rotationIndex = (rotationIndex + 3) % 4;
+    }
 
+    public void move(int dx, int dy) {
+        x += dx;
+        y += dy;
+    }
 
-class TetrominoFactory:
-    TYPES = list(SHAPES.keys())
+    public PieceType getPieceType() { return pieceType; }
+    public int getRotationIndex() { return rotationIndex; }
+    public int getX() { return x; }
+    public int getY() { return y; }
+}
 
-    def create(self, piece_type: str) -> Tetromino:
-        if piece_type not in self.TYPES:
-            raise ValueError(f"Unknown piece type: {piece_type}")
-        return Tetromino(piece_type)
+class TetrominoFactory {
+    private static final List<PieceType> TYPES = Arrays.asList(PieceType.values());
+    private final Random random = new Random();
 
-    def random_piece(self) -> Tetromino:
-        return self.create(random.choice(self.TYPES))
+    public Tetromino create(PieceType pieceType) {
+        if (!TYPES.contains(pieceType)) {
+            throw new IllegalArgumentException("Unknown piece type: " + pieceType);
+        }
+        return new Tetromino(pieceType);
+    }
 
+    public Tetromino randomPiece() {
+        return create(TYPES.get(random.nextInt(TYPES.size())));
+    }
+}
 
-class PieceQueue:
-    def __init__(self, factory: TetrominoFactory, preview_size: int = 3):
-        self.factory = factory
-        self.preview_size = preview_size
-        self._queue: list = []
-        self._refill()
+class PieceQueue {
+    private final TetrominoFactory factory;
+    private final int previewSize;
+    private final Deque<Tetromino> queue = new ArrayDeque<>();
 
-    def _refill(self):
-        while len(self._queue) < self.preview_size + 1:
-            self._queue.append(self.factory.random_piece())
+    public PieceQueue(TetrominoFactory factory) {
+        this(factory, 3);
+    }
 
-    def next(self) -> Tetromino:
-        piece = self._queue.pop(0)
-        self._refill()
-        return piece
+    public PieceQueue(TetrominoFactory factory, int previewSize) {
+        this.factory = factory;
+        this.previewSize = previewSize;
+        refill();
+    }
 
-    def preview(self) -> list:
-        return self._queue[:self.preview_size]
+    private void refill() {
+        while (queue.size() < previewSize + 1) {
+            queue.addLast(factory.randomPiece());
+        }
+    }
 
+    public Tetromino next() {
+        Tetromino piece = queue.removeFirst();
+        refill();
+        return piece;
+    }
 
-class Board:
-    def __init__(self, rows: int = 20, cols: int = 10):
-        self.rows = rows
-        self.cols = cols
-        self.grid: list = [[None] * cols for _ in range(rows)]
+    public List<Tetromino> preview() {
+        List<Tetromino> list = new ArrayList<>(queue);
+        return list.subList(0, Math.min(previewSize, list.size()));
+    }
+}
 
-    def is_valid_position(self, piece: Tetromino, dx: int = 0, dy: int = 0) -> bool:
-        for row, col in piece.cells():
-            r, c = row + dy, col + dx
-            if not (0 <= r < self.rows and 0 <= c < self.cols):
-                return False
-            if self.grid[r][c] is not None:
-                return False
-        return True
+class Board {
+    private final int rows;
+    private final int cols;
+    private String[][] grid;
 
-    def lock_piece(self, piece: Tetromino):
-        color = COLORS[piece.piece_type]
-        for row, col in piece.cells():
-            self.grid[row][col] = color
+    public Board() {
+        this(20, 10);
+    }
 
-    def clear_lines(self) -> int:
-        full_rows = [r for r in range(self.rows)
-                     if all(cell is not None for cell in self.grid[r])]
-        if not full_rows:
-            return 0
-        new_grid = [row for r, row in enumerate(self.grid) if r not in full_rows]
-        empty_rows = [[None] * self.cols for _ in range(len(full_rows))]
-        self.grid = empty_rows + new_grid
-        return len(full_rows)
+    public Board(int rows, int cols) {
+        this.rows = rows;
+        this.cols = cols;
+        this.grid = new String[rows][cols];
+    }
 
-    def is_game_over(self) -> bool:
-        return any(self.grid[r][c] is not None
-                   for r in range(2) for c in range(self.cols))
+    public boolean isValidPosition(Tetromino piece, int dx, int dy) {
+        for (int[] cell : piece.cells()) {
+            int r = cell[0] + dy;
+            int c = cell[1] + dx;
+            if (r < 0 || r >= rows || c < 0 || c >= cols) {
+                return false;
+            }
+            if (grid[r][c] != null) {
+                return false;
+            }
+        }
+        return true;
+    }
 
-    def render(self, piece: Optional[Tetromino] = None) -> list:
-        display = [[cell or '.' for cell in row] for row in self.grid]
-        if piece:
-            color_char = COLORS[piece.piece_type][0].upper()
-            for row, col in piece.cells():
-                if 0 <= row < self.rows and 0 <= col < self.cols:
-                    display[row][col] = color_char
-        return display
+    public boolean isValidPosition(Tetromino piece) {
+        return isValidPosition(piece, 0, 0);
+    }
 
+    public void lockPiece(Tetromino piece) {
+        String color = Shapes.COLORS.get(piece.getPieceType());
+        for (int[] cell : piece.cells()) {
+            grid[cell[0]][cell[1]] = color;
+        }
+    }
 
-class ScoreTracker:
-    POINTS = {1: 100, 2: 300, 3: 500, 4: 800}
+    public int clearLines() {
+        List<Integer> fullRows = new ArrayList<>();
+        for (int r = 0; r < rows; r++) {
+            boolean full = true;
+            for (int c = 0; c < cols; c++) {
+                if (grid[r][c] == null) {
+                    full = false;
+                    break;
+                }
+            }
+            if (full) fullRows.add(r);
+        }
+        if (fullRows.isEmpty()) {
+            return 0;
+        }
 
-    def __init__(self):
-        self.score = 0
-        self.lines_cleared = 0
-        self.level = 1
+        String[][] newGrid = new String[rows][cols];
+        int writeRow = fullRows.size();
+        for (int r = 0; r < rows; r++) {
+            if (!fullRows.contains(r)) {
+                newGrid[writeRow++] = grid[r];
+            }
+        }
+        for (int r = 0; r < fullRows.size(); r++) {
+            newGrid[r] = new String[cols];
+        }
+        grid = newGrid;
+        return fullRows.size();
+    }
 
-    def add_lines(self, lines: int) -> int:
-        if lines == 0:
-            return 0
-        points = self.POINTS.get(lines, 0) * self.level
-        self.score += points
-        self.lines_cleared += lines
-        self.level = self.lines_cleared // 10 + 1
-        return points
+    public boolean isGameOver() {
+        for (int r = 0; r < 2; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (grid[r][c] != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
-    def drop_interval(self) -> float:
-        """Seconds between gravity ticks. Decreases with level."""
-        return max(0.05, 1.0 - (self.level - 1) * 0.1)
+    public char[][] render(Tetromino piece) {
+        char[][] display = new char[rows][cols];
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                display[r][c] = grid[r][c] != null ? grid[r][c].charAt(0) : '.';
+            }
+        }
+        if (piece != null) {
+            char colorChar = Character.toUpperCase(Shapes.COLORS.get(piece.getPieceType()).charAt(0));
+            for (int[] cell : piece.cells()) {
+                int row = cell[0], col = cell[1];
+                if (row >= 0 && row < rows && col >= 0 && col < cols) {
+                    display[row][col] = colorChar;
+                }
+            }
+        }
+        return display;
+    }
 
+    public int getRows() { return rows; }
+    public int getCols() { return cols; }
+}
 
-class Game:
-    def __init__(self):
-        self.board = Board()
-        self.factory = TetrominoFactory()
-        self.queue = PieceQueue(self.factory)
-        self.score_tracker = ScoreTracker()
-        self.state = GameState.IDLE
-        self.current_piece: Optional[Tetromino] = None
+class ScoreTracker {
+    private static final Map<Integer, Integer> POINTS = Map.of(1, 100, 2, 300, 3, 500, 4, 800);
 
-    def start(self):
-        self.state = GameState.RUNNING
-        self.spawn_piece()
+    private int score = 0;
+    private int linesCleared = 0;
+    private int level = 1;
 
-    def spawn_piece(self) -> bool:
-        piece = self.queue.next()
-        if not self.board.is_valid_position(piece):
-            self.state = GameState.GAME_OVER
-            return False
-        self.current_piece = piece
-        return True
+    public int addLines(int lines) {
+        if (lines == 0) {
+            return 0;
+        }
+        int points = POINTS.getOrDefault(lines, 0) * level;
+        score += points;
+        linesCleared += lines;
+        level = linesCleared / 10 + 1;
+        return points;
+    }
 
-    def tick(self):
-        """Called each gravity interval."""
-        if self.state != GameState.RUNNING or self.current_piece is None:
-            return
-        if self.board.is_valid_position(self.current_piece, dy=1):
-            self.current_piece.move(0, 1)
-        else:
-            self._lock_and_spawn()
+    /** Seconds between gravity ticks. Decreases with level. */
+    public double dropInterval() {
+        return Math.max(0.05, 1.0 - (level - 1) * 0.1);
+    }
 
-    def _lock_and_spawn(self):
-        self.board.lock_piece(self.current_piece)
-        lines = self.board.clear_lines()
-        self.score_tracker.add_lines(lines)
-        self.spawn_piece()
+    public int getScore() { return score; }
+    public void addScore(int delta) { score += delta; }
+    public int getLevel() { return level; }
+    public int getLinesCleared() { return linesCleared; }
+}
 
-    def move(self, dx: int):
-        if self.current_piece and self.board.is_valid_position(self.current_piece, dx=dx):
-            self.current_piece.move(dx, 0)
+class Game {
+    private final Board board = new Board();
+    private final TetrominoFactory factory = new TetrominoFactory();
+    private final PieceQueue queue = new PieceQueue(factory);
+    private final ScoreTracker scoreTracker = new ScoreTracker();
+    private GameState state = GameState.IDLE;
+    private Tetromino currentPiece;
 
-    def rotate_cw(self):
-        if self.current_piece is None:
-            return
-        self.current_piece.rotate_cw()
-        if not self.board.is_valid_position(self.current_piece):
-            self.current_piece.rotate_ccw()  # revert on collision
+    public void start() {
+        state = GameState.RUNNING;
+        spawnPiece();
+    }
 
-    def hard_drop(self):
-        if self.current_piece is None:
-            return
-        rows_dropped = 0
-        while self.board.is_valid_position(self.current_piece, dy=1):
-            self.current_piece.move(0, 1)
-            rows_dropped += 1
-        self.score_tracker.score += rows_dropped * 2  # hard drop bonus
-        self._lock_and_spawn()
+    public boolean spawnPiece() {
+        Tetromino piece = queue.next();
+        if (!board.isValidPosition(piece)) {
+            state = GameState.GAME_OVER;
+            return false;
+        }
+        currentPiece = piece;
+        return true;
+    }
 
-    def soft_drop(self):
-        if self.current_piece and self.board.is_valid_position(self.current_piece, dy=1):
-            self.current_piece.move(0, 1)
-            self.score_tracker.score += 1
+    /** Called each gravity interval. */
+    public void tick() {
+        if (state != GameState.RUNNING || currentPiece == null) {
+            return;
+        }
+        if (board.isValidPosition(currentPiece, 0, 1)) {
+            currentPiece.move(0, 1);
+        } else {
+            lockAndSpawn();
+        }
+    }
+
+    private void lockAndSpawn() {
+        board.lockPiece(currentPiece);
+        int lines = board.clearLines();
+        scoreTracker.addLines(lines);
+        spawnPiece();
+    }
+
+    public void move(int dx) {
+        if (currentPiece != null && board.isValidPosition(currentPiece, dx, 0)) {
+            currentPiece.move(dx, 0);
+        }
+    }
+
+    public void rotateCw() {
+        if (currentPiece == null) {
+            return;
+        }
+        currentPiece.rotateCw();
+        if (!board.isValidPosition(currentPiece)) {
+            currentPiece.rotateCcw(); // revert on collision
+        }
+    }
+
+    public void hardDrop() {
+        if (currentPiece == null) {
+            return;
+        }
+        int rowsDropped = 0;
+        while (board.isValidPosition(currentPiece, 0, 1)) {
+            currentPiece.move(0, 1);
+            rowsDropped++;
+        }
+        scoreTracker.addScore(rowsDropped * 2); // hard drop bonus
+        lockAndSpawn();
+    }
+
+    public void softDrop() {
+        if (currentPiece != null && board.isValidPosition(currentPiece, 0, 1)) {
+            currentPiece.move(0, 1);
+            scoreTracker.addScore(1);
+        }
+    }
+}
 ```
 
 ---
@@ -451,30 +580,37 @@ class Game:
 
 Basic rotation reverts immediately on collision. SRS tries up to 4 additional "wall kick" offset positions before reverting. Each piece type has a lookup table of kick offsets indexed by (from_rotation, to_rotation).
 
-```python
-# Wall kick offsets for J, L, S, T, Z (I-piece has different kicks)
-SRS_KICKS = {
-    (0, 1): [(0,0),(-1,0),(-1,1),(0,-2),(-1,-2)],
-    (1, 0): [(0,0),(1,0),(1,-1),(0,2),(1,2)],
-    (1, 2): [(0,0),(1,0),(1,-1),(0,2),(1,2)],
-    (2, 1): [(0,0),(-1,0),(-1,1),(0,-2),(-1,-2)],
-    (2, 3): [(0,0),(1,0),(1,1),(0,-2),(1,-2)],
-    (3, 2): [(0,0),(-1,0),(-1,-1),(0,2),(-1,2)],
-    (3, 0): [(0,0),(-1,0),(-1,-1),(0,2),(-1,2)],
-    (0, 3): [(0,0),(1,0),(1,1),(0,-2),(1,-2)],
+```java
+// Wall kick offsets for J, L, S, T, Z (I-piece has different kicks)
+class SrsKicks {
+    static final Map<List<Integer>, int[][]> KICKS = new HashMap<>();
+    static {
+        KICKS.put(List.of(0, 1), new int[][]{{0,0},{-1,0},{-1,1},{0,-2},{-1,-2}});
+        KICKS.put(List.of(1, 0), new int[][]{{0,0},{1,0},{1,-1},{0,2},{1,2}});
+        KICKS.put(List.of(1, 2), new int[][]{{0,0},{1,0},{1,-1},{0,2},{1,2}});
+        KICKS.put(List.of(2, 1), new int[][]{{0,0},{-1,0},{-1,1},{0,-2},{-1,-2}});
+        KICKS.put(List.of(2, 3), new int[][]{{0,0},{1,0},{1,1},{0,-2},{1,-2}});
+        KICKS.put(List.of(3, 2), new int[][]{{0,0},{-1,0},{-1,-1},{0,2},{-1,2}});
+        KICKS.put(List.of(3, 0), new int[][]{{0,0},{-1,0},{-1,-1},{0,2},{-1,2}});
+        KICKS.put(List.of(0, 3), new int[][]{{0,0},{1,0},{1,1},{0,-2},{1,-2}});
+    }
 }
 
-def rotate_cw_srs(self, board: Board):
-    old_index = self.rotation_index
-    new_index = (old_index + 1) % 4
-    self.rotation_index = new_index
-    kicks = SRS_KICKS.get((old_index, new_index), [(0, 0)])
-    for dx, dy in kicks:
-        if board.is_valid_position(self, dx=dx, dy=dy):
-            self.x += dx
-            self.y += dy
-            return  # kick succeeded
-    self.rotation_index = old_index  # all kicks failed, revert
+public void rotateCwSrs(Board board) {
+    int oldIndex = rotationIndex;
+    int newIndex = (oldIndex + 1) % 4;
+    rotationIndex = newIndex;
+    int[][] kicks = SrsKicks.KICKS.getOrDefault(List.of(oldIndex, newIndex), new int[][]{{0, 0}});
+    for (int[] kick : kicks) {
+        int dx = kick[0], dy = kick[1];
+        if (board.isValidPosition(this, dx, dy)) {
+            x += dx;
+            y += dy;
+            return; // kick succeeded
+        }
+    }
+    rotationIndex = oldIndex; // all kicks failed, revert
+}
 ```
 
 The practical impact: with SRS, a T-piece wedged against a wall can still rotate by kicking off the wall. Without it, the rotation silently fails.
@@ -483,17 +619,21 @@ The practical impact: with SRS, a T-piece wedged against a wall can still rotate
 
 `is_valid_position` accepts delta offsets `(dx, dy)` and tests hypothetical positions without mutating state. This avoids the move-then-revert pattern which could leave the piece in an invalid state if code throws mid-revert.
 
-```python
-def is_valid_position(self, piece: Tetromino, dx: int = 0, dy: int = 0) -> bool:
-    for row, col in piece.cells():
-        r, c = row + dy, col + dx
-        # Wall check
-        if not (0 <= r < self.rows and 0 <= c < self.cols):
-            return False
-        # Occupied cell check
-        if self.grid[r][c] is not None:
-            return False
-    return True
+```java
+public boolean isValidPosition(Tetromino piece, int dx, int dy) {
+    for (int[] cell : piece.cells()) {
+        int r = cell[0] + dy, c = cell[1] + dx;
+        // Wall check
+        if (r < 0 || r >= rows || c < 0 || c >= cols) {
+            return false;
+        }
+        // Occupied cell check
+        if (grid[r][c] != null) {
+            return false;
+        }
+    }
+    return true;
+}
 ```
 
 Edge case: I-piece at x=7 with horizontal orientation has cells at cols 7,8,9,10. `col=10 >= 10` (board.cols=10) fails, blocking the move right. This is correct — no partial blocking.
@@ -502,34 +642,52 @@ Edge case: I-piece at x=7 with horizontal orientation has cells at cols 7,8,9,10
 
 Add a `CLEARING` sub-state. When full lines are detected, store them and pause spawning for N frames. The renderer blinks those rows. After N frames, finalize the removal.
 
-```python
-class Board:
-    CLEAR_FRAMES = 8
+```java
+class Board {
+    static final int CLEAR_FRAMES = 8;
 
-    def __init__(self, ...):
-        self.clearing_rows: list = []
-        self.clear_frame: int = 0
+    private List<Integer> clearingRows = new ArrayList<>();
+    private int clearFrame = 0;
 
-    def detect_full_lines(self) -> list:
-        self.clearing_rows = [
-            r for r in range(self.rows)
-            if all(cell is not None for cell in self.grid[r])
-        ]
-        self.clear_frame = 0
-        return self.clearing_rows
+    public List<Integer> detectFullLines() {
+        clearingRows = new ArrayList<>();
+        for (int r = 0; r < rows; r++) {
+            boolean full = true;
+            for (int c = 0; c < cols; c++) {
+                if (grid[r][c] == null) {
+                    full = false;
+                    break;
+                }
+            }
+            if (full) clearingRows.add(r);
+        }
+        clearFrame = 0;
+        return clearingRows;
+    }
 
-    def tick_clear_animation(self) -> bool:
-        """Returns True when animation is done."""
-        self.clear_frame += 1
-        return self.clear_frame >= self.CLEAR_FRAMES
+    /** Returns true when animation is done. */
+    public boolean tickClearAnimation() {
+        clearFrame++;
+        return clearFrame >= CLEAR_FRAMES;
+    }
 
-    def finalize_clear(self) -> int:
-        count = len(self.clearing_rows)
-        new_grid = [row for r, row in enumerate(self.grid)
-                    if r not in self.clearing_rows]
-        self.grid = [[None] * self.cols for _ in range(count)] + new_grid
-        self.clearing_rows = []
-        return count
+    public int finalizeClear() {
+        int count = clearingRows.size();
+        String[][] newGrid = new String[rows][cols];
+        int writeRow = count;
+        for (int r = 0; r < rows; r++) {
+            if (!clearingRows.contains(r)) {
+                newGrid[writeRow++] = grid[r];
+            }
+        }
+        for (int r = 0; r < count; r++) {
+            newGrid[r] = new String[cols];
+        }
+        grid = newGrid;
+        clearingRows = new ArrayList<>();
+        return count;
+    }
+}
 ```
 
 Game loop: lock piece -> `detect_full_lines()` -> enter CLEARING state -> call `tick_clear_animation()` each frame -> on True, call `finalize_clear()` -> spawn next piece.
@@ -540,58 +698,81 @@ Game loop: lock piece -> `detect_full_lines()` -> enter CLEARING state -> call `
 
 For fair distribution, use a 7-bag randomizer: shuffle all 7 types, deal in order, reshuffle when exhausted. This guarantees at most 12 pieces between any two of the same type.
 
-```python
-from collections import deque
+```java
+class SevenBagQueue {
+    private final TetrominoFactory factory;
+    private final int previewSize;
+    private final List<PieceType> bag = new ArrayList<>();
+    private final Deque<Tetromino> queue = new ArrayDeque<>();
+    private final Random random = new Random();
 
-class SevenBagQueue:
-    def __init__(self, factory: TetrominoFactory, preview_size: int = 3):
-        self.factory = factory
-        self.preview_size = preview_size
-        self._bag: list = []
-        self._queue: deque = deque()
-        self._refill()
+    public SevenBagQueue(TetrominoFactory factory) {
+        this(factory, 3);
+    }
 
-    def _draw_from_bag(self) -> Tetromino:
-        if not self._bag:
-            self._bag = list(SHAPES.keys())
-            random.shuffle(self._bag)
-        return self.factory.create(self._bag.pop())
+    public SevenBagQueue(TetrominoFactory factory, int previewSize) {
+        this.factory = factory;
+        this.previewSize = previewSize;
+        refill();
+    }
 
-    def _refill(self):
-        while len(self._queue) < self.preview_size + 1:
-            self._queue.append(self._draw_from_bag())
+    private Tetromino drawFromBag() {
+        if (bag.isEmpty()) {
+            bag.addAll(Arrays.asList(PieceType.values()));
+            Collections.shuffle(bag, random);
+        }
+        return factory.create(bag.remove(bag.size() - 1));
+    }
 
-    def next(self) -> Tetromino:
-        piece = self._queue.popleft()
-        self._refill()
-        return piece
+    private void refill() {
+        while (queue.size() < previewSize + 1) {
+            queue.addLast(drawFromBag());
+        }
+    }
 
-    def preview(self) -> list:
-        return list(self._queue)[:self.preview_size]
+    public Tetromino next() {
+        Tetromino piece = queue.removeFirst();
+        refill();
+        return piece;
+    }
+
+    public List<Tetromino> preview() {
+        List<Tetromino> list = new ArrayList<>(queue);
+        return list.subList(0, Math.min(previewSize, list.size()));
+    }
+}
 ```
 
 ### 5. "Explain the scoring system and multipliers"
 
 Standard Tetris scoring: points = base[lines_cleared] * level. The base values jump non-linearly to reward clearing 4 lines (Tetris) at once.
 
-```python
-class ScoreTracker:
-    POINTS = {1: 100, 2: 300, 3: 500, 4: 800}
+```java
+class ScoreTracker {
+    static final Map<Integer, Integer> POINTS = Map.of(1, 100, 2, 300, 3, 500, 4, 800);
 
-    def add_lines(self, lines: int) -> int:
-        # Example: 4 lines at level 5 = 800 * 5 = 4000 points
-        points = self.POINTS.get(lines, 0) * self.level
-        self.score += points
-        self.lines_cleared += lines
-        # Level up every 10 lines
-        self.level = self.lines_cleared // 10 + 1
-        return points
+    private int score;
+    private int linesCleared;
+    private int level;
 
-    def soft_drop_bonus(self, rows: int):
-        self.score += rows * 1   # 1 point per row
+    public int addLines(int lines) {
+        // Example: 4 lines at level 5 = 800 * 5 = 4000 points
+        int points = POINTS.getOrDefault(lines, 0) * level;
+        score += points;
+        linesCleared += lines;
+        // Level up every 10 lines
+        level = linesCleared / 10 + 1;
+        return points;
+    }
 
-    def hard_drop_bonus(self, rows: int):
-        self.score += rows * 2   # 2 points per row (Tetris guideline)
+    public void softDropBonus(int rows) {
+        score += rows * 1; // 1 point per row
+    }
+
+    public void hardDropBonus(int rows) {
+        score += rows * 2; // 2 points per row (Tetris guideline)
+    }
+}
 ```
 
 The 4:1 ratio between double and tetris (300 vs 800 * 2 = 1600 relative) makes stacking for tetrises worth the risk.
@@ -616,8 +797,11 @@ The 4:1 ratio between double and tetris (300 vs 800 * 2 = 1600 relative) makes s
 - **Q: Why store 4 pre-computed rotations instead of computing them with a rotation matrix?**
   A: Pre-computation is simpler and faster. Matrix rotation introduces floating-point precision issues for integer grids. With only 7 pieces x 4 rotations, the lookup table is trivially small.
 
+- **Q: Why does `rotate_ccw` use `(rotationIndex + 3) % 4` instead of subtraction?**
+  A: Java's `%` operator can return negative results for negative operands (unlike Python's `%`, which always returns a non-negative result for a positive divisor). Adding 3 before taking mod 4 keeps the result non-negative without needing a branch or `Math.floorMod`.
+
 - **Q: How does line clearing shift rows down efficiently?**
-  A: Filter full rows from the grid list, then prepend the same number of empty rows at the top. This is O(rows) with simple Python list operations.
+  A: Filter full rows from the grid array, then prepend the same number of empty rows at the top. This is O(rows) with simple array copy operations.
 
 - **Q: How do you detect game over?**
   A: When `spawn_piece()` places a new piece and `is_valid_position()` returns False immediately — the spawn zone (top 2 rows) is blocked by locked pieces.

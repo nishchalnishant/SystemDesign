@@ -76,244 +76,305 @@ A comprehensive reference covering all key OOP concepts with Java examples, real
 6. IS-A Relationship (Inheritance-based)
 7. HAS-A Relationship (Composition)
 8. Static Methods
-9. Magic/Constructor Methods
+9. Constructors and `toString()`
 
 ---
 
 ## Java Code with Detailed Comments
 
-```python
-from abc import ABC, abstractmethod
+```java
+// ========================================================
+// 1. CLASS & OBJECT
+// ========================================================
+// A class is a blueprint for creating objects.
+// An object is an instance of a class with its own attributes and methods.
+// Example: An Animal class with name and species attributes.
+class Animal {
+    protected String name;        // accessible by subclasses
+    protected String species;
+
+    public Animal(String name, String species) {
+        this.name = name;
+        this.species = species;
+    }
+
+    public String makeSound() {
+        return "Some generic sound";
+    }
+
+    @Override
+    public String toString() {
+        return name + " is a " + species;
+    }
+}
 
 
-# ========================================================
-# 1. CLASS & OBJECT
-# ========================================================
-# A class is a blueprint for creating objects.
-# An object is an instance of a class with its own attributes and methods.
-# Example: An Animal class with name and species attributes.
-class Animal:
-    def __init__(self, name: str, species: str):
-        self.name = name        # accessible by subclasses (convention)
-        self.species = species
+// ========================================================
+// 2. ENCAPSULATION (DATA HIDING)
+// ========================================================
+// Encapsulation restricts direct access to data,
+// allowing controlled access through methods.
+// Example: A BankAccount where balance is private.
+class BankAccount {
+    private final String accountHolder;
+    private double balance;  // Private — cannot be set from outside directly
 
-    def make_sound(self) -> str:
-        return "Some generic sound"
+    public BankAccount(String accountHolder, double balance) {
+        this.accountHolder = accountHolder;
+        this.balance = balance;
+    }
 
-    def __str__(self) -> str:
-        return f"{self.name} is a {self.species}"
+    public String deposit(double amount) {
+        if (amount > 0) {
+            balance += amount;
+            return "Deposited " + amount + ", New Balance: " + balance;
+        }
+        return "Invalid deposit amount";
+    }
 
+    public String withdraw(double amount) {
+        if (amount > 0 && amount <= balance) {
+            balance -= amount;
+            return "Withdrew " + amount + ", Remaining Balance: " + balance;
+        }
+        return "Insufficient funds";
+    }
 
-# ========================================================
-# 2. ENCAPSULATION (DATA HIDING)
-# ========================================================
-# Encapsulation restricts direct access to data,
-# allowing controlled access through methods.
-# Example: A BankAccount where balance is private.
-class BankAccount:
-    def __init__(self, account_holder: str, balance: float):
-        self._account_holder = account_holder
-        self.__balance = balance  # Private — cannot be set from outside directly
-
-    def deposit(self, amount: float) -> str:
-        if amount > 0:
-            self.__balance += amount
-            return f"Deposited {amount}, New Balance: {self.__balance}"
-        return "Invalid deposit amount"
-
-    def withdraw(self, amount: float) -> str:
-        if 0 < amount <= self.__balance:
-            self.__balance -= amount
-            return f"Withdrew {amount}, Remaining Balance: {self.__balance}"
-        return "Insufficient funds"
-
-    def get_balance(self) -> float:
-        return self.__balance
+    public double getBalance() {
+        return balance;
+    }
+}
 
 
-# ========================================================
-# 3. ABSTRACTION (HIDING IMPLEMENTATION DETAILS)
-# ========================================================
-# Abstraction hides complex details and exposes only necessary functionality.
-# Abstract classes cannot be instantiated and force subclasses to implement required methods.
-class Vehicle(ABC):
-    @abstractmethod
-    def start_engine(self) -> str: ...
-
-    @abstractmethod
-    def stop_engine(self) -> str: ...
+// ========================================================
+// 3. ABSTRACTION (HIDING IMPLEMENTATION DETAILS)
+// ========================================================
+// Abstraction hides complex details and exposes only necessary functionality.
+// Abstract classes cannot be instantiated and force subclasses to implement required methods.
+abstract class Vehicle {
+    abstract String startEngine();
+    abstract String stopEngine();
+}
 
 
-class Car(Vehicle):
-    def start_engine(self) -> str:
-        return "Car engine started"
+class Car extends Vehicle {
+    @Override
+    String startEngine() {
+        return "Car engine started";
+    }
 
-    def stop_engine(self) -> str:
-        return "Car engine stopped"
-
-
-# ========================================================
-# 4. INHERITANCE (IS-A RELATIONSHIP)
-# ========================================================
-# Inheritance allows a class (child) to acquire properties and behaviors
-# of another class (parent). Promotes code reuse. Dog IS-A Animal.
-class Dog(Animal):
-    def __init__(self, name: str, breed: str):
-        super().__init__(name, "Dog")
-        self._breed = breed
-
-    def make_sound(self) -> str:
-        return "Bark!"
+    @Override
+    String stopEngine() {
+        return "Car engine stopped";
+    }
+}
 
 
-# ========================================================
-# 5. MULTIPLE INHERITANCE (via multiple base classes in Python)
-# ========================================================
-# A class can inherit from multiple bases.
-# Bird IS-A Animal and also CAN Fly.
-class Flying(ABC):
-    @abstractmethod
-    def fly(self) -> str: ...
+// ========================================================
+// 4. INHERITANCE (IS-A RELATIONSHIP)
+// ========================================================
+// Inheritance allows a class (child) to acquire properties and behaviors
+// of another class (parent). Promotes code reuse. Dog IS-A Animal.
+class Dog extends Animal {
+    private final String breed;
+
+    public Dog(String name, String breed) {
+        super(name, "Dog");
+        this.breed = breed;
+    }
+
+    @Override
+    public String makeSound() {
+        return "Bark!";
+    }
+}
 
 
-class Bird(Animal, Flying):
-    def __init__(self, name: str, species: str):
-        super().__init__(name, species)
-
-    def make_sound(self) -> str:
-        return "Chirp!"
-
-    def fly(self) -> str:
-        return "I can fly!"
-
-
-# ========================================================
-# 6. MULTILEVEL INHERITANCE
-# ========================================================
-# A class is derived from another derived class.
-# Puppy -> Dog -> Animal
-class Puppy(Dog):
-    def __init__(self, name: str, breed: str, age: int):
-        super().__init__(name, breed)
-        self._age = age
-
-    def is_cute(self) -> str:
-        return f"{self.name} is a cute {self._age}-month-old puppy!"
+// ========================================================
+// 5. MULTIPLE INHERITANCE (via interfaces in Java)
+// ========================================================
+// Java has no multiple class inheritance, but a class can implement multiple interfaces.
+// Bird IS-A Animal (extends) and also CAN Fly (implements).
+interface Flying {
+    String fly();
+}
 
 
-# ========================================================
-# 7. POLYMORPHISM (METHOD OVERRIDING)
-# ========================================================
-# Polymorphism: same method name, different behavior per class.
-class Cat(Animal):
-    def __init__(self, name: str):
-        super().__init__(name, "Cat")
+class Bird extends Animal implements Flying {
+    public Bird(String name, String species) {
+        super(name, species);
+    }
 
-    def make_sound(self) -> str:
-        return "Meow!"
+    @Override
+    public String makeSound() {
+        return "Chirp!";
+    }
 
-
-class Lion(Animal):
-    def __init__(self, name: str):
-        super().__init__(name, "Lion")
-
-    def make_sound(self) -> str:
-        return "Roar!"
+    @Override
+    public String fly() {
+        return "I can fly!";
+    }
+}
 
 
-# Polymorphism in action: one function, any Animal subtype
-def animal_sound(animal: Animal) -> str:
-    return animal.make_sound()
+// ========================================================
+// 6. MULTILEVEL INHERITANCE
+// ========================================================
+// A class is derived from another derived class.
+// Puppy -> Dog -> Animal
+class Puppy extends Dog {
+    private final int age;
+
+    public Puppy(String name, String breed, int age) {
+        super(name, breed);
+        this.age = age;
+    }
+
+    public String isCute() {
+        return name + " is a cute " + age + "-month-old puppy!";
+    }
+}
 
 
-# ========================================================
-# 8. COMPOSITION (HAS-A RELATIONSHIP)
-# ========================================================
-# Instead of inheritance, a class contains another class as a field.
-# CarWithEngine HAS-A Engine.
-class Engine:
-    def start(self) -> str:
-        return "Engine started"
+// ========================================================
+// 7. POLYMORPHISM (METHOD OVERRIDING)
+// ========================================================
+// Polymorphism: same method name, different behavior per class.
+class Cat extends Animal {
+    public Cat(String name) {
+        super(name, "Cat");
+    }
 
-    def stop(self) -> str:
-        return "Engine stopped"
-
-
-class CarWithEngine:
-    def __init__(self, model: str):
-        self._model = model
-        self._engine = Engine()  # Composition: Car owns an Engine
-
-    def start_car(self) -> str:
-        return f"{self._model}: {self._engine.start()}"
-
-    def stop_car(self) -> str:
-        return f"{self._model}: {self._engine.stop()}"
+    @Override
+    public String makeSound() {
+        return "Meow!";
+    }
+}
 
 
-# ========================================================
-# 9. STATIC METHODS
-# ========================================================
-# Static methods don't use instance attributes; called without an instance.
-class Utility:
-    @staticmethod
-    def greet() -> str:
-        return "Hello, welcome to OOP in Python!"
+class Lion extends Animal {
+    public Lion(String name) {
+        super(name, "Lion");
+    }
 
-    @staticmethod
-    def describe_class() -> str:
-        return "This is the Utility class."
+    @Override
+    public String makeSound() {
+        return "Roar!";
+    }
+}
 
 
-# Method Overloading equivalent (use *args in Python)
-def add(*args: int) -> int:
-    return sum(args)
+// Polymorphism in action: one method, any Animal subtype
+static String animalSound(Animal animal) {
+    return animal.makeSound();
+}
 
 
-# ========================================================
-# 10. DEMONSTRATION
-# ========================================================
-if __name__ == "__main__":
-    dog  = Dog("Buddy", "Golden Retriever")
-    cat  = Cat("Whiskers")
-    lion = Lion("Simba")
+// ========================================================
+// 8. COMPOSITION (HAS-A RELATIONSHIP)
+// ========================================================
+// Instead of inheritance, a class contains another class as a field.
+// CarWithEngine HAS-A Engine.
+class Engine {
+    public String start() {
+        return "Engine started";
+    }
 
-    # Polymorphism
-    print(animal_sound(dog))   # Bark!
-    print(animal_sound(cat))   # Meow!
-    print(animal_sound(lion))  # Roar!
+    public String stop() {
+        return "Engine stopped";
+    }
+}
 
-    # Encapsulation
-    account = BankAccount("Alice", 1000)
-    print(account.deposit(500))
-    print(account.withdraw(300))
-    print(f"Balance: {account.get_balance()}")
 
-    # Abstraction
-    car = Car()
-    print(car.start_engine())
-    print(car.stop_engine())
+class CarWithEngine {
+    private final String model;
+    private final Engine engine;
 
-    # Composition
-    my_car = CarWithEngine("Tesla Model X")
-    print(my_car.start_car())
-    print(my_car.stop_car())
+    public CarWithEngine(String model) {
+        this.model = model;
+        this.engine = new Engine();  // Composition: Car owns an Engine
+    }
 
-    # Multiple Inheritance
-    bird = Bird("Eagle", "Bird of Prey")
-    print(bird.fly())
+    public String startCar() {
+        return model + ": " + engine.start();
+    }
 
-    # Static Methods
-    print(Utility.greet())
-    print(Utility.describe_class())
+    public String stopCar() {
+        return model + ": " + engine.stop();
+    }
+}
 
-    # Multilevel Inheritance
-    puppy = Puppy("Max", "Labrador", 3)
-    print(puppy.is_cute())
 
-    # add() with different arg counts
-    print(add(5, 10))       # 15
-    print(add(5, 10, 20))   # 35
+// ========================================================
+// 9. STATIC METHODS
+// ========================================================
+// Static methods don't use instance attributes; called without an instance.
+class Utility {
+    public static String greet() {
+        return "Hello, welcome to OOP in Java!";
+    }
+
+    public static String describeClass() {
+        return "This is the Utility class.";
+    }
+}
+
+
+// Method Overloading — same name, different signatures, resolved at compile time
+static int add(int a, int b) {
+    return a + b;
+}
+
+static int add(int a, int b, int c) {
+    return a + b + c;
+}
+
+
+// ========================================================
+// 10. DEMONSTRATION
+// ========================================================
+public static void main(String[] args) {
+    Dog dog   = new Dog("Buddy", "Golden Retriever");
+    Cat cat   = new Cat("Whiskers");
+    Lion lion = new Lion("Simba");
+
+    // Polymorphism
+    System.out.println(animalSound(dog));   // Bark!
+    System.out.println(animalSound(cat));   // Meow!
+    System.out.println(animalSound(lion));  // Roar!
+
+    // Encapsulation
+    BankAccount account = new BankAccount("Alice", 1000);
+    System.out.println(account.deposit(500));
+    System.out.println(account.withdraw(300));
+    System.out.println("Balance: " + account.getBalance());
+
+    // Abstraction
+    Car car = new Car();
+    System.out.println(car.startEngine());
+    System.out.println(car.stopEngine());
+
+    // Composition
+    CarWithEngine myCar = new CarWithEngine("Tesla Model X");
+    System.out.println(myCar.startCar());
+    System.out.println(myCar.stopCar());
+
+    // Multiple Inheritance (via interface)
+    Bird bird = new Bird("Eagle", "Bird of Prey");
+    System.out.println(bird.fly());
+
+    // Static Methods
+    System.out.println(Utility.greet());
+    System.out.println(Utility.describeClass());
+
+    // Multilevel Inheritance
+    Puppy puppy = new Puppy("Max", "Labrador", 3);
+    System.out.println(puppy.isCute());
+
+    // add() with different arg counts (overloading)
+    System.out.println(add(5, 10));       // 15
+    System.out.println(add(5, 10, 20));   // 35
+}
 ```
 
 ---
@@ -354,33 +415,44 @@ Better approach: one authoritative record of your address. Every form references
 
 **Bad — Repeated Logic:**
 
-```python
-class OrderService:
-    def calculate_tax(self, amount: float) -> float:
-        return amount * 0.18  # Tax logic here
+```java
+class OrderService {
+    double calculateTax(double amount) {
+        return amount * 0.18;  // Tax logic here
+    }
+}
 
-class InvoiceService:
-    def calculate_tax(self, amount: float) -> float:
-        return amount * 0.18  # Same tax logic duplicated
+class InvoiceService {
+    double calculateTax(double amount) {
+        return amount * 0.18;  // Same tax logic duplicated
+    }
+}
 ```
 
 If the tax rate changes, you need to find and update every copy. You will miss one.
 
 **Good — Single Source of Truth:**
 
-```python
-TAX_RATE = 0.18
+```java
+class TaxCalculator {
+    static final double TAX_RATE = 0.18;
 
-def calculate_tax(amount: float) -> float:
-    return amount * TAX_RATE
+    static double calculateTax(double amount) {
+        return amount * TAX_RATE;
+    }
+}
 
-class OrderService:
-    def calculate_tax(self, amount: float) -> float:
-        return calculate_tax(amount)  # One reference
+class OrderService {
+    double calculateTax(double amount) {
+        return TaxCalculator.calculateTax(amount);  // One reference
+    }
+}
 
-class InvoiceService:
-    def calculate_tax(self, amount: float) -> float:
-        return calculate_tax(amount)  # Same reference
+class InvoiceService {
+    double calculateTax(double amount) {
+        return TaxCalculator.calculateTax(amount);  // Same reference
+    }
+}
 ```
 
 Now, when the tax rate changes, you update exactly one constant in one file.
@@ -397,34 +469,38 @@ A Swiss Army knife is clever. It has a blade, scissors, screwdriver, bottle open
 
 **Over-engineered:**
 
-```python
-from abc import ABC, abstractmethod
+```java
+// A "flexible" calculator using Strategy pattern and factory
+// for the sole purpose of adding two numbers
+interface Operation {
+    double execute(double a, double b);
+}
 
-# A "flexible" calculator using Strategy pattern and factory
-# for the sole purpose of adding two numbers
-class Operation(ABC):
-    @abstractmethod
-    def execute(self, a: float, b: float) -> float: ...
+class AddOperation implements Operation {
+    @Override
+    public double execute(double a, double b) {
+        return a + b;
+    }
+}
 
-class AddOperation(Operation):
-    def execute(self, a: float, b: float) -> float:
-        return a + b
+class CalculatorFactory {
+    static Operation getOperation(String opType) {
+        if (opType.equals("ADD")) {
+            return new AddOperation();
+        }
+        throw new IllegalArgumentException("Unknown operation: " + opType);
+    }
+}
 
-class CalculatorFactory:
-    @staticmethod
-    def get_operation(op_type: str) -> Operation:
-        if op_type == "ADD":
-            return AddOperation()
-        raise ValueError(f"Unknown operation: {op_type}")
-
-# Usage: CalculatorFactory.get_operation("ADD").execute(2, 3)
+// Usage: CalculatorFactory.getOperation("ADD").execute(2, 3)
 ```
 
 **KISS — just add the numbers:**
 
-```python
-def add(a: float, b: float) -> float:
-    return a + b
+```java
+static double add(double a, double b) {
+    return a + b;
+}
 ```
 
 Apply patterns only when the problem genuinely requires them. Premature abstraction creates complexity without value.
@@ -441,28 +517,31 @@ You do not own a car. You might buy one in five years. Building a garage right n
 
 **Violating YAGNI:**
 
-```python
-class UserService:
-    # Required now
-    def create_user(self, name: str, email: str): ...
+```java
+class UserService {
+    // Required now
+    User createUser(String name, String email) { /* ... */ return null; }
 
-    # "Maybe we'll need multi-tenancy someday"
-    def create_user_in_tenant(self, name: str, email: str, tenant_id: str): ...
+    // "Maybe we'll need multi-tenancy someday"
+    User createUserInTenant(String name, String email, String tenantId) { /* ... */ return null; }
 
-    # "Could be useful for enterprise clients"
-    def create_user_with_sso_token(self, name: str, email: str, sso_token: str): ...
+    // "Could be useful for enterprise clients"
+    User createUserWithSsoToken(String name, String email, String ssoToken) { /* ... */ return null; }
 
-    # "Might need LDAP integration"
-    def create_user_from_ldap(self, ldap_entry): ...
+    // "Might need LDAP integration"
+    User createUserFromLdap(Object ldapEntry) { /* ... */ return null; }
+}
 ```
 
 **YAGNI — implement what is needed:**
 
-```python
-class UserService:
-    def create_user(self, name: str, email: str):
-        # This is what the system needs right now
-        return User(name, email)
+```java
+class UserService {
+    User createUser(String name, String email) {
+        // This is what the system needs right now
+        return new User(name, email);
+    }
+}
 ```
 
 Add the LDAP integration when an enterprise customer actually requires it. Until then, it is dead code.
@@ -487,47 +566,55 @@ It should **not** call methods on objects returned by other method calls ("chain
 
 **Violation — reaching into strangers:**
 
-```python
-# Wrong: cashier is going customer → wallet → money → deduct
-def process_payment(customer, amount: float):
-    customer.get_wallet().get_money().deduct(amount)
+```java
+// Wrong: cashier is going customer → wallet → money → deduct
+void processPayment(Customer customer, double amount) {
+    customer.getWallet().getMoney().deduct(amount);
+}
 ```
 
-This tightly couples `process_payment` to the internal structure of `Customer`, `Wallet`, and `Money`. If `Wallet` is refactored, this breaks.
+This tightly couples `processPayment` to the internal structure of `Customer`, `Wallet`, and `Money`. If `Wallet` is refactored, this breaks.
 
 **Law of Demeter — talk only to your direct friend:**
 
-```python
-# Right: tell the customer to pay; the customer handles their own wallet
-def process_payment(customer, amount: float):
-    customer.pay(amount)
+```java
+// Right: tell the customer to pay; the customer handles their own wallet
+void processPayment(Customer customer, double amount) {
+    customer.pay(amount);
+}
 
-class Customer:
-    def __init__(self):
-        self._wallet = Wallet()
+class Customer {
+    private final Wallet wallet = new Wallet();
 
-    def pay(self, amount: float):
-        # Customer manages their own wallet
-        self._wallet.deduct(amount)
+    void pay(double amount) {
+        // Customer manages their own wallet
+        wallet.deduct(amount);
+    }
+}
 ```
 
-Now `process_payment` knows nothing about `Wallet`. If the internal structure of `Customer` changes, only `Customer` needs to change.
+Now `processPayment` knows nothing about `Wallet`. If the internal structure of `Customer` changes, only `Customer` needs to change.
 
 **Another Example:**
 
-```python
-# Violation: chaining through multiple objects
-city = order.get_customer().get_address().get_city()
+```java
+// Violation: chaining through multiple objects
+String city = order.getCustomer().getAddress().getCity();
 
-# Better: let Order expose what callers need
-city = order.get_customer_city()
+// Better: let Order expose what callers need
+String city = order.getCustomerCity();
 
-class Order:
-    def __init__(self, customer):
-        self._customer = customer
+class Order {
+    private final Customer customer;
 
-    def get_customer_city(self) -> str:
-        return self._customer.get_city()  # One level of delegation
+    Order(Customer customer) {
+        this.customer = customer;
+    }
+
+    String getCustomerCity() {
+        return customer.getCity();  // One level of delegation
+    }
+}
 ```
 
 ---

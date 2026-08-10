@@ -169,20 +169,24 @@ class RateLimiter:
 - First request ever — `last_refill_time` initialized at construction time, so elapsed = 0 on first call but bucket starts full
 - Very long gap since last request — tokens capped at capacity, not unbounded
 
-```python
-def allow(self) -> bool:
-    with self._lock:
-        self._refill()
-        if self.tokens >= 1:
-            self.tokens -= 1
-            return True
-        return False
+```java
+public boolean allow() {
+    synchronized (lock) {
+        refill();
+        if (tokens >= 1) {
+            tokens -= 1;
+            return true;
+        }
+        return false;
+    }
+}
 
-def _refill(self):
-    now = time.monotonic()
-    elapsed = now - self.last_refill_time
-    self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
-    self.last_refill_time = now
+private void refill() {
+    long now = System.nanoTime();
+    double elapsedSeconds = (now - lastRefillTime) / 1_000_000_000.0;
+    tokens = Math.min(capacity, tokens + elapsedSeconds * refillRate);
+    lastRefillTime = now;
+}
 ```
 
 ### Core Method: SlidingWindowLog.allow
@@ -197,17 +201,21 @@ def _refill(self):
 - Deque grows to max_requests and no old entries expire — correctly rejects
 - Burst at window boundary — sliding window handles this naturally (no reset artifact)
 
-```python
-def allow(self) -> bool:
-    with self._lock:
-        now = time.monotonic()
-        cutoff = now - self.window_seconds
-        while self.request_log and self.request_log[0] < cutoff:
-            self.request_log.popleft()
-        if len(self.request_log) < self.max_requests:
-            self.request_log.append(now)
-            return True
-        return False
+```java
+public boolean allow() {
+    synchronized (lock) {
+        double now = System.nanoTime() / 1_000_000_000.0;
+        double cutoff = now - windowSeconds;
+        while (!requestLog.isEmpty() && requestLog.peekFirst() < cutoff) {
+            requestLog.pollFirst();
+        }
+        if (requestLog.size() < maxRequests) {
+            requestLog.addLast(now);
+            return true;
+        }
+        return false;
+    }
+}
 ```
 
 ### Core Method: RateLimiter.allow
@@ -216,34 +224,41 @@ def allow(self) -> bool:
 1. Get or create the per-user algorithm instance (with a store-level lock for creation only)
 2. Delegate to the algorithm's `allow()` method (which has its own lock)
 
-```python
-def allow(self, user_id: str) -> bool:
-    algo = self._get_or_create(user_id)
-    return algo.allow()
+```java
+public boolean allow(String userId) {
+    RateLimitAlgorithm algo = getOrCreate(userId);
+    return algo.allow();
+}
 
-def _get_or_create(self, user_id: str) -> RateLimitAlgorithm:
-    if user_id in self.user_store:
-        return self.user_store[user_id]
-    with self._store_lock:
-        # double-check after acquiring lock
-        if user_id not in self.user_store:
-            self.user_store[user_id] = self.algorithm_factory()
-        return self.user_store[user_id]
+private RateLimitAlgorithm getOrCreate(String userId) {
+    RateLimitAlgorithm existing = userStore.get(userId);
+    if (existing != null) {
+        return existing;
+    }
+    synchronized (storeLock) {
+        // double-check after acquiring lock
+        return userStore.computeIfAbsent(userId, id -> algorithmFactory.get());
+    }
+}
 ```
 
 ### FixedWindow.allow
 
-```python
-def allow(self) -> bool:
-    with self._lock:
-        now = time.monotonic()
-        if now - self.window_start >= self.window_seconds:
-            self.window_start = now
-            self.count = 0
-        if self.count < self.max_requests:
-            self.count += 1
-            return True
-        return False
+```java
+public boolean allow() {
+    synchronized (lock) {
+        double now = System.nanoTime() / 1_000_000_000.0;
+        if (now - windowStart >= windowSeconds) {
+            windowStart = now;
+            count = 0;
+        }
+        if (count < maxRequests) {
+            count += 1;
+            return true;
+        }
+        return false;
+    }
+}
 ```
 
 ---
@@ -271,30 +286,46 @@ In a distributed system, each server has its own in-memory state — they don't 
 
 **Solution: centralized state with Redis.**
 
-```python
-class RedisTokenBucket(RateLimitAlgorithm):
-    def allow(self, user_id: str) -> bool:
-        key = f"rate:{user_id}"
-        pipe = self.redis.pipeline()
-        now = time.time()
+```java
+public class RedisTokenBucket implements RateLimitAlgorithm {
+    private final JedisPool redisPool;
+    private final int capacity;
+    private final double refillRate;
 
-        # Lua script for atomic check-and-decrement
-        lua_script = """
-        local tokens = tonumber(redis.call('GET', KEYS[1]) or ARGV[1])
-        local last = tonumber(redis.call('GET', KEYS[2]) or ARGV[2])
-        local elapsed = tonumber(ARGV[2]) - last
-        tokens = math.min(tonumber(ARGV[1]), tokens + elapsed * tonumber(ARGV[3]))
-        if tokens >= 1 then
-            tokens = tokens - 1
-            redis.call('SET', KEYS[1], tokens)
-            redis.call('SET', KEYS[2], ARGV[2])
-            return 1
-        end
-        return 0
-        """
-        result = self.redis.eval(lua_script, 2, key+":tokens", key+":time",
-                                 self.capacity, now, self.refill_rate)
-        return result == 1
+    private static final String LUA_SCRIPT =
+        "local tokens = tonumber(redis.call('GET', KEYS[1]) or ARGV[1]) " +
+        "local last = tonumber(redis.call('GET', KEYS[2]) or ARGV[2]) " +
+        "local elapsed = tonumber(ARGV[2]) - last " +
+        "tokens = math.min(tonumber(ARGV[1]), tokens + elapsed * tonumber(ARGV[3])) " +
+        "if tokens >= 1 then " +
+        "    tokens = tokens - 1 " +
+        "    redis.call('SET', KEYS[1], tokens) " +
+        "    redis.call('SET', KEYS[2], ARGV[2]) " +
+        "    return 1 " +
+        "end " +
+        "return 0";
+
+    public RedisTokenBucket(JedisPool redisPool, int capacity, double refillRate) {
+        this.redisPool = redisPool;
+        this.capacity = capacity;
+        this.refillRate = refillRate;
+    }
+
+    @Override
+    public boolean allow(String userId) {
+        String key = "rate:" + userId;
+        double now = System.currentTimeMillis() / 1000.0;
+
+        try (Jedis redis = redisPool.getResource()) {
+            Object result = redis.eval(
+                LUA_SCRIPT,
+                List.of(key + ":tokens", key + ":time"),
+                List.of(String.valueOf(capacity), String.valueOf(now), String.valueOf(refillRate))
+            );
+            return ((Long) result) == 1L;
+        }
+    }
+}
 ```
 
 The Lua script runs atomically on Redis, so no race condition between read and write. Downside: one Redis round-trip per request adds ~1ms latency. Use Redis Cluster for high availability.
@@ -319,20 +350,29 @@ Token Bucket naturally handles this: a user who hasn't made requests for 10 seco
 
 To **limit burst size** independently of sustained rate:
 
-```python
-class BurstLimitedTokenBucket(TokenBucket):
-    def __init__(self, capacity, refill_rate, max_burst):
-        super().__init__(capacity, refill_rate)
-        self.max_burst = max_burst  # max tokens consumable in one burst window
+```java
+public class BurstLimitedTokenBucket extends TokenBucket {
+    private final int maxBurst;  // max tokens consumable in one burst window
+    private int burstCount;
 
-    def allow(self):
-        with self._lock:
-            self._refill()
-            if self.tokens >= 1 and self._burst_count < self.max_burst:
-                self.tokens -= 1
-                self._burst_count += 1
-                return True
-            return False
+    public BurstLimitedTokenBucket(int capacity, double refillRate, int maxBurst) {
+        super(capacity, refillRate);
+        this.maxBurst = maxBurst;
+    }
+
+    @Override
+    public boolean allow() {
+        synchronized (lock) {
+            refill();
+            if (tokens >= 1 && burstCount < maxBurst) {
+                tokens -= 1;
+                burstCount += 1;
+                return true;
+            }
+            return false;
+        }
+    }
+}
 ```
 
 Alternatively, cap `capacity` equal to `max_burst` — simpler and achieves the same effect since tokens can never exceed capacity.
@@ -341,17 +381,26 @@ Alternatively, cap `capacity` equal to `max_burst` — simpler and achieves the 
 
 The key insight: the identifier is just a string key. Make it composable:
 
-```python
-class CompositeRateLimiter:
-    def __init__(self, limiters: list[tuple[Callable[[Request], str], RateLimiter]]):
-        # Each limiter is (key_extractor, rate_limiter) pair
-        self.limiters = limiters
+```java
+public class CompositeRateLimiter {
+    // Each entry is a (key extractor, rate limiter) pair
+    private final List<Map.Entry<Function<Request, String>, RateLimiter>> limiters;
 
-    def allow(self, request: Request) -> bool:
-        return all(
-            limiter.allow(extractor(request))
-            for extractor, limiter in self.limiters
-        )
+    public CompositeRateLimiter(List<Map.Entry<Function<Request, String>, RateLimiter>> limiters) {
+        this.limiters = limiters;
+    }
+
+    public boolean allow(Request request) {
+        for (Map.Entry<Function<Request, String>, RateLimiter> entry : limiters) {
+            Function<Request, String> extractor = entry.getKey();
+            RateLimiter limiter = entry.getValue();
+            if (!limiter.allow(extractor.apply(request))) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
 ```
 
 Configure three limiters: one keyed by IP (1000/min), one by user_id (100/min), one by API key (500/min). A request must pass all three. This is the same Strategy pattern with composition.
@@ -384,168 +433,212 @@ Configure three limiters: one keyed by IP (1000/min), one by user_id (100/min), 
 
 Runnable tests verifying thread-safety invariants of the Token Bucket implementation. No external deps — stdlib only.
 
-```python
-import threading
-import time
+```java
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
-# ── Minimal Token Bucket implementation (self-contained) ──
+// ── Minimal Token Bucket implementation (self-contained) ──
 
-class TokenBucket:
-    def __init__(self, capacity, refill_rate):
-        self.capacity = capacity
-        self.refill_rate = refill_rate   # tokens per second
-        self.tokens = float(capacity)
-        self._last_refill = time.monotonic()
-        self._lock = threading.Lock()
+class TokenBucket {
+    private final int capacity;
+    private final double refillRate;   // tokens per second
+    double tokens;
+    private long lastRefill;
+    final Object lock = new Object();
 
-    def _refill(self):
-        now = time.monotonic()
-        elapsed = now - self._last_refill
-        self._last_refill = now
-        self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
+    public TokenBucket(int capacity, double refillRate) {
+        this.capacity = capacity;
+        this.refillRate = refillRate;
+        this.tokens = capacity;
+        this.lastRefill = System.nanoTime();
+    }
 
-    def allow(self):
-        with self._lock:
-            self._refill()
-            if self.tokens >= 1:
-                self.tokens -= 1
-                return True
-            return False
+    private void refill() {
+        long now = System.nanoTime();
+        double elapsedSeconds = (now - lastRefill) / 1_000_000_000.0;
+        lastRefill = now;
+        tokens = Math.min(capacity, tokens + elapsedSeconds * refillRate);
+    }
 
-
-class RateLimiter:
-    def __init__(self, capacity, refill_rate):
-        self.capacity = capacity
-        self.refill_rate = refill_rate
-        self._store = {}
-        self._store_lock = threading.Lock()
-
-    def _get_or_create(self, user_id):
-        if user_id not in self._store:
-            with self._store_lock:
-                if user_id not in self._store:   # double-checked
-                    self._store[user_id] = TokenBucket(self.capacity, self.refill_rate)
-        return self._store[user_id]
-
-    def allow(self, user_id):
-        bucket = self._get_or_create(user_id)
-        return bucket.allow()
+    public boolean allow() {
+        synchronized (lock) {
+            refill();
+            if (tokens >= 1) {
+                tokens -= 1;
+                return true;
+            }
+            return false;
+        }
+    }
+}
 
 
-# ─────────────────────────────────────────────────────────────
-# TEST 1: Exact capacity enforcement under concurrency
-# 200 threads simultaneously call allow() for the same user
-# whose bucket has capacity=100. Exactly 100 must be allowed.
-# ─────────────────────────────────────────────────────────────
-def test_exact_capacity_enforcement():
-    limiter = RateLimiter(capacity=100, refill_rate=0)  # no refill during test
-    allowed = []
-    denied = []
-    lock = threading.Lock()
+class RateLimiter {
+    private final int capacity;
+    private final double refillRate;
+    final Map<String, TokenBucket> store = new HashMap<>();
+    private final Object storeLock = new Object();
 
-    def send_request():
-        result = limiter.allow("user-A")
-        with lock:
-            (allowed if result else denied).append(1)
+    public RateLimiter(int capacity, double refillRate) {
+        this.capacity = capacity;
+        this.refillRate = refillRate;
+    }
 
-    threads = [threading.Thread(target=send_request) for _ in range(200)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    TokenBucket getOrCreate(String userId) {
+        if (!store.containsKey(userId)) {
+            synchronized (storeLock) {
+                store.computeIfAbsent(userId, id -> new TokenBucket(capacity, refillRate));  // double-checked
+            }
+        }
+        return store.get(userId);
+    }
 
-    assert len(allowed) == 100, f"Expected 100 allowed, got {len(allowed)}"
-    assert len(denied)  == 100, f"Expected 100 denied, got {len(denied)}"
-    # No race: tokens never go negative
-    assert limiter._store["user-A"].tokens >= 0
-    print("PASS: test_exact_capacity_enforcement")
-
-
-# ─────────────────────────────────────────────────────────────
-# TEST 2: Per-user isolation
-# 10 users each fire 200 concurrent requests against a bucket
-# with capacity=100. Each user must see exactly 100 allowed,
-# and no user's count bleeds into another's.
-# ─────────────────────────────────────────────────────────────
-def test_per_user_isolation():
-    limiter = RateLimiter(capacity=100, refill_rate=0)
-    per_user_allowed = {f"user-{i}": [] for i in range(10)}
-    lock = threading.Lock()
-
-    def send_request(uid):
-        result = limiter.allow(uid)
-        with lock:
-            if result:
-                per_user_allowed[uid].append(1)
-
-    threads = []
-    for uid in per_user_allowed:
-        for _ in range(200):
-            threads.append(threading.Thread(target=send_request, args=(uid,)))
-
-    for t in threads: t.start()
-    for t in threads: t.join()
-
-    for uid, counts in per_user_allowed.items():
-        assert len(counts) == 100, f"{uid}: expected 100 allowed, got {len(counts)}"
-
-    print("PASS: test_per_user_isolation")
+    public boolean allow(String userId) {
+        TokenBucket bucket = getOrCreate(userId);
+        return bucket.allow();
+    }
+}
 
 
-# ─────────────────────────────────────────────────────────────
-# TEST 3: Refill replenishes tokens correctly
-# Start with capacity=10. Drain fully. Wait for refill.
-# After refill, exactly 10 more requests must succeed.
-# ─────────────────────────────────────────────────────────────
-def test_refill_replenishes():
-    limiter = RateLimiter(capacity=10, refill_rate=10)  # 10 tokens/sec
+public class RateLimiterConcurrencyTest {
 
-    # Drain all tokens
-    drained = [limiter.allow("user-B") for _ in range(10)]
-    assert all(drained), "Could not drain full capacity"
+    // ─────────────────────────────────────────────────────────────
+    // TEST 1: Exact capacity enforcement under concurrency
+    // 200 threads simultaneously call allow() for the same user
+    // whose bucket has capacity=100. Exactly 100 must be allowed.
+    // ─────────────────────────────────────────────────────────────
+    static void testExactCapacityEnforcement() throws InterruptedException {
+        RateLimiter limiter = new RateLimiter(100, 0);  // no refill during test
+        List<Integer> allowed = Collections.synchronizedList(new ArrayList<>());
+        List<Integer> denied = Collections.synchronizedList(new ArrayList<>());
 
-    # Immediately after drain, next request must fail
-    assert not limiter.allow("user-B"), "Expected denial after drain"
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            Thread t = new Thread(() -> {
+                boolean result = limiter.allow("user-A");
+                (result ? allowed : denied).add(1);
+            });
+            threads.add(t);
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
-    # Wait 1 second for full refill
-    time.sleep(1.1)
-
-    # Now should allow up to 10 again
-    refilled = [limiter.allow("user-B") for _ in range(10)]
-    assert all(refilled), f"Expected 10 allowed after refill, got {sum(refilled)}"
-
-    # 11th must fail (bucket refilled to capacity, not beyond)
-    assert not limiter.allow("user-B"), "Expected denial after second drain"
-    print("PASS: test_refill_replenishes")
-
-
-# ─────────────────────────────────────────────────────────────
-# TEST 4: No data race on bucket creation (_get_or_create)
-# 500 threads simultaneously ask for the same new user_id.
-# Only one TokenBucket object must be created (not 500 copies).
-# ─────────────────────────────────────────────────────────────
-def test_single_bucket_per_user():
-    limiter = RateLimiter(capacity=50, refill_rate=0)
-    bucket_ids = set()
-    lock = threading.Lock()
-
-    def touch():
-        bucket = limiter._get_or_create("new-user")
-        with lock:
-            bucket_ids.add(id(bucket))
-
-    threads = [threading.Thread(target=touch) for _ in range(500)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-
-    assert len(bucket_ids) == 1, f"Expected 1 bucket, got {len(bucket_ids)} (race in _get_or_create)"
-    print("PASS: test_single_bucket_per_user")
+        if (allowed.size() != 100) throw new AssertionError("Expected 100 allowed, got " + allowed.size());
+        if (denied.size() != 100) throw new AssertionError("Expected 100 denied, got " + denied.size());
+        // No race: tokens never go negative
+        if (limiter.store.get("user-A").tokens < 0) throw new AssertionError("Tokens went negative");
+        System.out.println("PASS: testExactCapacityEnforcement");
+    }
 
 
-if __name__ == "__main__":
-    test_exact_capacity_enforcement()
-    test_per_user_isolation()
-    test_refill_replenishes()
-    test_single_bucket_per_user()
-    print("All concurrency tests passed.")
+    // ─────────────────────────────────────────────────────────────
+    // TEST 2: Per-user isolation
+    // 10 users each fire 200 concurrent requests against a bucket
+    // with capacity=100. Each user must see exactly 100 allowed,
+    // and no user's count bleeds into another's.
+    // ─────────────────────────────────────────────────────────────
+    static void testPerUserIsolation() throws InterruptedException {
+        RateLimiter limiter = new RateLimiter(100, 0);
+        Map<String, List<Integer>> perUserAllowed = new ConcurrentHashMap<>();
+        for (int i = 0; i < 10; i++) {
+            perUserAllowed.put("user-" + i, Collections.synchronizedList(new ArrayList<>()));
+        }
+
+        List<Thread> threads = new ArrayList<>();
+        for (String uid : perUserAllowed.keySet()) {
+            for (int i = 0; i < 200; i++) {
+                Thread t = new Thread(() -> {
+                    boolean result = limiter.allow(uid);
+                    if (result) {
+                        perUserAllowed.get(uid).add(1);
+                    }
+                });
+                threads.add(t);
+            }
+        }
+
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
+
+        for (Map.Entry<String, List<Integer>> entry : perUserAllowed.entrySet()) {
+            if (entry.getValue().size() != 100) {
+                throw new AssertionError(entry.getKey() + ": expected 100 allowed, got " + entry.getValue().size());
+            }
+        }
+
+        System.out.println("PASS: testPerUserIsolation");
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
+    // TEST 3: Refill replenishes tokens correctly
+    // Start with capacity=10. Drain fully. Wait for refill.
+    // After refill, exactly 10 more requests must succeed.
+    // ─────────────────────────────────────────────────────────────
+    static void testRefillReplenishes() throws InterruptedException {
+        RateLimiter limiter = new RateLimiter(10, 10);  // 10 tokens/sec
+
+        // Drain all tokens
+        boolean allDrained = true;
+        for (int i = 0; i < 10; i++) {
+            allDrained &= limiter.allow("user-B");
+        }
+        if (!allDrained) throw new AssertionError("Could not drain full capacity");
+
+        // Immediately after drain, next request must fail
+        if (limiter.allow("user-B")) throw new AssertionError("Expected denial after drain");
+
+        // Wait 1 second for full refill
+        Thread.sleep(1100);
+
+        // Now should allow up to 10 again
+        int refilledCount = 0;
+        for (int i = 0; i < 10; i++) {
+            if (limiter.allow("user-B")) refilledCount++;
+        }
+        if (refilledCount != 10) throw new AssertionError("Expected 10 allowed after refill, got " + refilledCount);
+
+        // 11th must fail (bucket refilled to capacity, not beyond)
+        if (limiter.allow("user-B")) throw new AssertionError("Expected denial after second drain");
+        System.out.println("PASS: testRefillReplenishes");
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
+    // TEST 4: No data race on bucket creation (getOrCreate)
+    // 500 threads simultaneously ask for the same new user_id.
+    // Only one TokenBucket object must be created (not 500 copies).
+    // ─────────────────────────────────────────────────────────────
+    static void testSingleBucketPerUser() throws InterruptedException {
+        RateLimiter limiter = new RateLimiter(50, 0);
+        Set<Integer> bucketIds = Collections.synchronizedSet(new HashSet<>());
+
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            Thread t = new Thread(() -> {
+                TokenBucket bucket = limiter.getOrCreate("new-user");
+                bucketIds.add(System.identityHashCode(bucket));
+            });
+            threads.add(t);
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
+
+        if (bucketIds.size() != 1) {
+            throw new AssertionError("Expected 1 bucket, got " + bucketIds.size() + " (race in getOrCreate)");
+        }
+        System.out.println("PASS: testSingleBucketPerUser");
+    }
+
+
+    public static void main(String[] args) throws InterruptedException {
+        testExactCapacityEnforcement();
+        testPerUserIsolation();
+        testRefillReplenishes();
+        testSingleBucketPerUser();
+        System.out.println("All concurrency tests passed.");
+    }
+}
 ```
 
 **What each test verifies:**

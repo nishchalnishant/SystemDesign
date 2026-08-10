@@ -10,7 +10,7 @@
 >   - Singleton: to ensure only one Parking Lot instance exists.
 >   - Strategy: for dynamic pricing calculation (e.g., hourly rate vs flat rate).
 >   - Factory: to generate `Vehicle` objects or assign parking spots.
-> - Concurrency: Thread safety is critical when two vehicles try to enter simultaneously. The `assignSpot()` method must be synchronized or use concurrent data structures.
+> - Concurrency: Thread safety is critical when two vehicles try to enter simultaneously. The `assignSpot()` method must use `synchronized` or a `ReentrantLock`, or use concurrent data structures.
 >
 > **Key takeaway:** A solid Parking Lot design demonstrates your grasp of OOP fundamentals. Focus on separation of concerns — the `ParkingLot` delegates finding a spot to `ParkingFloor`, which checks its `ParkingSpot`s.
 
@@ -206,31 +206,40 @@ class ParkingLot:
 - Same license plate already parked — detect before assigning
 - Motorcycle in car spot — allowed if no motorcycle spots remain
 
-```python
-def park_vehicle(self, vehicle: Vehicle) -> Ticket:
-    with self._tickets_lock:
-        for ticket in self.active_tickets.values():
-            if ticket.vehicle.license_plate == vehicle.license_plate:
-                raise ValueError(f"Vehicle {vehicle.license_plate} already parked")
+```java
+public Ticket parkVehicle(Vehicle vehicle) {
+    synchronized (ticketsLock) {
+        for (Ticket ticket : activeTickets.values()) {
+            if (ticket.getVehicle().getLicensePlate().equals(vehicle.getLicensePlate())) {
+                throw new IllegalArgumentException(
+                    "Vehicle " + vehicle.getLicensePlate() + " already parked");
+            }
+        }
+    }
 
-    spot = None
-    for floor in self.floors:
-        spot = floor.find_and_assign(vehicle)
-        if spot is not None:
-            break
+    ParkingSpot spot = null;
+    for (Floor floor : floors) {
+        spot = floor.findAndAssign(vehicle);
+        if (spot != null) {
+            break;
+        }
+    }
 
-    if spot is None:
-        raise ParkingLotFullError("No available spot for this vehicle type")
+    if (spot == null) {
+        throw new ParkingLotFullError("No available spot for this vehicle type");
+    }
 
-    ticket = Ticket(
-        ticket_id=str(uuid.uuid4()),
-        vehicle=vehicle,
-        spot=spot,
-        entry_time=datetime.now()
-    )
-    with self._tickets_lock:
-        self.active_tickets[ticket.ticket_id] = ticket
-    return ticket
+    Ticket ticket = new Ticket(
+        UUID.randomUUID().toString(),
+        vehicle,
+        spot,
+        LocalDateTime.now()
+    );
+    synchronized (ticketsLock) {
+        activeTickets.put(ticket.getTicketId(), ticket);
+    }
+    return ticket;
+}
 ```
 
 ### Core Method: exit_vehicle
@@ -245,22 +254,26 @@ def park_vehicle(self, vehicle: Vehicle) -> Ticket:
 - Invalid ticket_id — raise KeyError
 - Double exit — ticket already removed on first call
 
-```python
-def exit_vehicle(self, ticket_id: str) -> float:
-    with self._tickets_lock:
-        ticket = self.active_tickets.pop(ticket_id, None)
-        if ticket is None:
-            raise KeyError(f"No active ticket: {ticket_id}")
+```java
+public double exitVehicle(String ticketId) {
+    Ticket ticket;
+    synchronized (ticketsLock) {
+        ticket = activeTickets.remove(ticketId);
+        if (ticket == null) {
+            throw new NoSuchElementException("No active ticket: " + ticketId);
+        }
+    }
 
-    ticket.exit_time = datetime.now()
-    fee = self.pricing_strategy.calculate(
-        ticket.entry_time, ticket.exit_time, ticket.spot.spot_type
-    )
-    ticket.fee = fee
+    ticket.setExitTime(LocalDateTime.now());
+    double fee = pricingStrategy.calculate(
+        ticket.getEntryTime(), ticket.getExitTime(), ticket.getSpot().getSpotType()
+    );
+    ticket.setFee(fee);
 
-    floor = self.floors[ticket.spot.floor_number]
-    floor.release_spot(ticket.spot)
-    return fee
+    Floor floor = floors.get(ticket.getSpot().getFloorNumber());
+    floor.releaseSpot(ticket.getSpot());
+    return fee;
+}
 ```
 
 ### Core Method: Floor.find_and_assign
@@ -270,38 +283,51 @@ def exit_vehicle(self, ticket_id: str) -> float:
 2. Iterate spots; for each unoccupied spot, check size compatibility
 3. Assign and update availability atomically, then release lock
 
-```python
-def find_and_assign(self, vehicle: Vehicle) -> ParkingSpot | None:
-    vehicle_rank = {VehicleType.MOTORCYCLE: 0, VehicleType.CAR: 1, VehicleType.TRUCK: 2}
-    spot_rank    = {SpotType.MOTORCYCLE: 0,   SpotType.CAR: 1,    SpotType.TRUCK: 2}
-    vehicle_size = vehicle_rank[vehicle.vehicle_type]
+```java
+public ParkingSpot findAndAssign(Vehicle vehicle) {
+    Map<VehicleType, Integer> vehicleRank = Map.of(
+        VehicleType.MOTORCYCLE, 0, VehicleType.CAR, 1, VehicleType.TRUCK, 2);
+    Map<SpotType, Integer> spotRank = Map.of(
+        SpotType.MOTORCYCLE, 0, SpotType.CAR, 1, SpotType.TRUCK, 2);
+    int vehicleSize = vehicleRank.get(vehicle.getVehicleType());
 
-    with self._lock:
-        for spot in self.spots:
-            if spot.is_occupied:
-                continue
-            if spot_rank[spot.spot_type] >= vehicle_size:
-                spot.assign(vehicle)
-                self.availability[spot.spot_type] -= 1
-                return spot
-    return None
+    synchronized (lock) {
+        for (ParkingSpot spot : spots) {
+            if (spot.isOccupied()) {
+                continue;
+            }
+            if (spotRank.get(spot.getSpotType()) >= vehicleSize) {
+                spot.assign(vehicle);
+                availability.merge(spot.getSpotType(), -1, Integer::sum);
+                return spot;
+            }
+        }
+    }
+    return null;
+}
 ```
 
 ### Pricing: HourlyPricing
 
-```python
-class HourlyPricing(PricingStrategy):
-    def __init__(self):
-        self.rates = {
-            SpotType.MOTORCYCLE: 2.0,
-            SpotType.CAR: 4.0,
-            SpotType.TRUCK: 8.0,
-        }
+```java
+public class HourlyPricing implements PricingStrategy {
+    private final Map<SpotType, Double> rates;
 
-    def calculate(self, entry_time, exit_time, spot_type):
-        duration_hours = (exit_time - entry_time).total_seconds() / 3600
-        hours = math.ceil(duration_hours)  # round up to nearest hour
-        return hours * self.rates[spot_type]
+    public HourlyPricing() {
+        this.rates = Map.of(
+            SpotType.MOTORCYCLE, 2.0,
+            SpotType.CAR, 4.0,
+            SpotType.TRUCK, 8.0
+        );
+    }
+
+    @Override
+    public double calculate(LocalDateTime entryTime, LocalDateTime exitTime, SpotType spotType) {
+        double durationHours = Duration.between(entryTime, exitTime).getSeconds() / 3600.0;
+        long hours = (long) Math.ceil(durationHours);  // round up to nearest hour
+        return hours * rates.get(spotType);
+    }
+}
 ```
 
 ---
@@ -332,19 +358,23 @@ class HourlyPricing(PricingStrategy):
 
 A single global lock is the simplest approach but serializes all entry/exit lanes. Better: **per-floor locks**. Floors are independent — two vehicles entering on different floors don't share any state.
 
-```python
-class Floor:
-    def __init__(self):
-        self._lock = threading.Lock()
+```java
+public class Floor {
+    private final Object lock = new Object();
 
-    def find_and_assign(self, vehicle):
-        with self._lock:
-            for spot in self.spots:
-                if not spot.is_occupied and spot.can_fit(vehicle):
-                    spot.assign(vehicle)
-                    self.availability[spot.spot_type] -= 1
-                    return spot
-        return None
+    public ParkingSpot findAndAssign(Vehicle vehicle) {
+        synchronized (lock) {
+            for (ParkingSpot spot : spots) {
+                if (!spot.isOccupied() && spot.canFit(vehicle)) {
+                    spot.assign(vehicle);
+                    availability.merge(spot.getSpotType(), -1, Integer::sum);
+                    return spot;
+                }
+            }
+        }
+        return null;
+    }
+}
 ```
 
 The `active_tickets` dict uses its own lock. This gives parallelism proportional to number of floors. For even finer granularity, use per-spot locks with CAS semantics, but that's rarely needed for parking lots (< thousands of spots).
@@ -353,20 +383,26 @@ The `active_tickets` dict uses its own lock. This gives parallelism proportional
 
 EV charging is an attribute, not a new size category. Add `has_charger: bool` to `ParkingSpot` and `needs_charging: bool` to `Vehicle`.
 
-```python
-def find_and_assign(self, vehicle):
-    with self._lock:
-        for spot in self.spots:
-            if spot.is_occupied:
-                continue
-            if not spot.can_fit(vehicle):
-                continue
-            if vehicle.needs_charging and not spot.has_charger:
-                continue
-            spot.assign(vehicle)
-            self.availability[spot.spot_type] -= 1
-            return spot
-    return None
+```java
+public ParkingSpot findAndAssign(Vehicle vehicle) {
+    synchronized (lock) {
+        for (ParkingSpot spot : spots) {
+            if (spot.isOccupied()) {
+                continue;
+            }
+            if (!spot.canFit(vehicle)) {
+                continue;
+            }
+            if (vehicle.needsCharging() && !spot.hasCharger()) {
+                continue;
+            }
+            spot.assign(vehicle);
+            availability.merge(spot.getSpotType(), -1, Integer::sum);
+            return spot;
+        }
+    }
+    return null;
+}
 ```
 
 Pricing: add `charge_start_time` to ParkingSpot. On exit, compute kWh from duration × charge rate, add to base parking fee. EV spots get a `charger_fee_per_kwh` field.
@@ -375,25 +411,31 @@ Pricing: add `charge_start_time` to ParkingSpot. On exit, compute kWh from durat
 
 Add a `Reservation` entity with a time window:
 
-```python
-class Reservation:
-    reservation_id: str
-    vehicle: Vehicle
-    spot: ParkingSpot
-    start_time: datetime
-    end_time: datetime
-    status: ReservationStatus  # PENDING, ACTIVE, CANCELLED, COMPLETED
+```java
+public class Reservation {
+    private String reservationId;
+    private Vehicle vehicle;
+    private ParkingSpot spot;
+    private LocalDateTime startTime;
+    private LocalDateTime endTime;
+    private ReservationStatus status;  // PENDING, ACTIVE, CANCELLED, COMPLETED
+}
 ```
 
 Each ParkingSpot holds `reservations: list[Reservation]` sorted by start_time. In `find_and_assign`, skip spots that have an overlapping reservation:
 
-```python
-def has_conflict(spot, start, end):
-    for r in spot.reservations:
-        if r.status not in (CANCELLED, COMPLETED):
-            if not (end <= r.start_time or start >= r.end_time):
-                return True
-    return False
+```java
+public boolean hasConflict(ParkingSpot spot, LocalDateTime start, LocalDateTime end) {
+    for (Reservation r : spot.getReservations()) {
+        if (r.getStatus() != ReservationStatus.CANCELLED
+                && r.getStatus() != ReservationStatus.COMPLETED) {
+            if (!(!end.isAfter(r.getStartTime()) || !start.isBefore(r.getEndTime()))) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 ```
 
 A background job (or lazy cleanup on each `find_and_assign` call) expires reservations whose end_time has passed with no vehicle arrival.
@@ -402,23 +444,39 @@ A background job (or lazy cleanup on each `find_and_assign` call) expires reserv
 
 Decorator/wrapper strategy that reads live occupancy at fee calculation time:
 
-```python
-class OccupancyBasedPricing(PricingStrategy):
-    def __init__(self, lot, base_strategy, surge_threshold=0.8, max_multiplier=2.0):
-        self.lot = lot
-        self.base = base_strategy
-        self.surge_threshold = surge_threshold
-        self.max_multiplier = max_multiplier
+```java
+public class OccupancyBasedPricing implements PricingStrategy {
+    private final ParkingLot lot;
+    private final PricingStrategy base;
+    private final double surgeThreshold;
+    private final double maxMultiplier;
 
-    def calculate(self, entry_time, exit_time, spot_type):
-        base_fee = self.base.calculate(entry_time, exit_time, spot_type)
-        occupancy = self.lot.get_occupancy_rate(spot_type)
-        if occupancy > self.surge_threshold:
-            surge = 1.0 + (occupancy - self.surge_threshold) / (1 - self.surge_threshold)
-            multiplier = min(surge, self.max_multiplier)
-        else:
-            multiplier = 1.0
-        return base_fee * multiplier
+    public OccupancyBasedPricing(ParkingLot lot, PricingStrategy base) {
+        this(lot, base, 0.8, 2.0);
+    }
+
+    public OccupancyBasedPricing(ParkingLot lot, PricingStrategy base,
+                                  double surgeThreshold, double maxMultiplier) {
+        this.lot = lot;
+        this.base = base;
+        this.surgeThreshold = surgeThreshold;
+        this.maxMultiplier = maxMultiplier;
+    }
+
+    @Override
+    public double calculate(LocalDateTime entryTime, LocalDateTime exitTime, SpotType spotType) {
+        double baseFee = base.calculate(entryTime, exitTime, spotType);
+        double occupancy = lot.getOccupancyRate(spotType);
+        double multiplier;
+        if (occupancy > surgeThreshold) {
+            double surge = 1.0 + (occupancy - surgeThreshold) / (1 - surgeThreshold);
+            multiplier = Math.min(surge, maxMultiplier);
+        } else {
+            multiplier = 1.0;
+        }
+        return baseFee * multiplier;
+    }
+}
 ```
 
 The multiplier is capped to prevent gouging. Occupancy rate = `occupied / total` for that spot type.
@@ -451,269 +509,364 @@ The multiplier is capped to prevent gouging. Occupancy rate = `occupied / total`
 
 Runnable tests that verify thread-safety invariants. No external deps — uses stdlib `threading` only.
 
-```python
-import threading
-import time
-import uuid
-from datetime import datetime
-from dataclasses import dataclass, field
-from enum import Enum
-import math
+```java
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
-# --- Minimal stubs to make the harness self-contained ---
+// --- Minimal stubs to make the harness self-contained ---
 
-class VehicleType(Enum):
-    MOTORCYCLE = "motorcycle"
-    CAR = "car"
-    TRUCK = "truck"
+enum VehicleType { MOTORCYCLE, CAR, TRUCK }
 
-class SpotType(Enum):
-    MOTORCYCLE = "motorcycle"
-    CAR = "car"
-    TRUCK = "truck"
+enum SpotType { MOTORCYCLE, CAR, TRUCK }
 
-class ParkingLotFullError(Exception):
-    pass
+class ParkingLotFullError extends RuntimeException {
+    public ParkingLotFullError(String message) { super(message); }
+}
 
-@dataclass
-class Vehicle:
-    license_plate: str
-    vehicle_type: VehicleType
+class Vehicle {
+    private final String licensePlate;
+    private final VehicleType vehicleType;
 
-@dataclass
-class ParkingSpot:
-    spot_id: str
-    spot_type: SpotType
-    floor_number: int
-    spot_number: int
-    is_occupied: bool = False
-    vehicle: Vehicle = None
+    public Vehicle(String licensePlate, VehicleType vehicleType) {
+        this.licensePlate = licensePlate;
+        this.vehicleType = vehicleType;
+    }
 
-    def assign(self, vehicle):
-        self.is_occupied = True
-        self.vehicle = vehicle
+    public String getLicensePlate() { return licensePlate; }
+    public VehicleType getVehicleType() { return vehicleType; }
+}
 
-    def release(self):
-        self.is_occupied = False
-        self.vehicle = None
+class ParkingSpot {
+    private final String spotId;
+    private final SpotType spotType;
+    private final int floorNumber;
+    private final int spotNumber;
+    private boolean occupied = false;
+    private Vehicle vehicle;
 
-@dataclass
-class Ticket:
-    ticket_id: str
-    vehicle: Vehicle
-    spot: ParkingSpot
-    entry_time: datetime
-    exit_time: datetime = None
-    fee: float = None
+    public ParkingSpot(String spotId, SpotType spotType, int floorNumber, int spotNumber) {
+        this.spotId = spotId;
+        this.spotType = spotType;
+        this.floorNumber = floorNumber;
+        this.spotNumber = spotNumber;
+    }
 
-class Floor:
-    def __init__(self, floor_number, spots):
-        self.floor_number = floor_number
-        self.spots = spots
-        self.availability = {st: sum(1 for s in spots if s.spot_type == st) for st in SpotType}
-        self._lock = threading.Lock()
+    public void assign(Vehicle vehicle) {
+        this.occupied = true;
+        this.vehicle = vehicle;
+    }
 
-    def find_and_assign(self, vehicle):
-        vehicle_rank = {VehicleType.MOTORCYCLE: 0, VehicleType.CAR: 1, VehicleType.TRUCK: 2}
-        spot_rank    = {SpotType.MOTORCYCLE: 0,   SpotType.CAR: 1,    SpotType.TRUCK: 2}
-        vehicle_size = vehicle_rank[vehicle.vehicle_type]
-        with self._lock:
-            for spot in self.spots:
-                if spot.is_occupied:
-                    continue
-                if spot_rank[spot.spot_type] >= vehicle_size:
-                    spot.assign(vehicle)
-                    self.availability[spot.spot_type] -= 1
-                    return spot
-        return None
+    public void release() {
+        this.occupied = false;
+        this.vehicle = null;
+    }
 
-    def release_spot(self, spot):
-        with self._lock:
-            spot.release()
-            self.availability[spot.spot_type] += 1
+    public String getSpotId() { return spotId; }
+    public SpotType getSpotType() { return spotType; }
+    public int getFloorNumber() { return floorNumber; }
+    public int getSpotNumber() { return spotNumber; }
+    public boolean isOccupied() { return occupied; }
+    public Vehicle getVehicle() { return vehicle; }
+}
 
-class ParkingLot:
-    _instance = None
-    _init_lock = threading.Lock()
+class Ticket {
+    private final String ticketId;
+    private final Vehicle vehicle;
+    private final ParkingSpot spot;
+    private final LocalDateTime entryTime;
+    private LocalDateTime exitTime;
+    private Double fee;
 
-    def __init__(self, floors, pricing_strategy):
-        self.floors = floors
-        self.pricing_strategy = pricing_strategy
-        self.active_tickets = {}
-        self._tickets_lock = threading.Lock()
+    public Ticket(String ticketId, Vehicle vehicle, ParkingSpot spot, LocalDateTime entryTime) {
+        this.ticketId = ticketId;
+        this.vehicle = vehicle;
+        this.spot = spot;
+        this.entryTime = entryTime;
+    }
 
-    @classmethod
-    def get_instance(cls, floors=None, pricing_strategy=None):
-        if cls._instance is None:
-            with cls._init_lock:
-                if cls._instance is None:
-                    cls._instance = cls(floors, pricing_strategy)
-        return cls._instance
+    public String getTicketId() { return ticketId; }
+    public Vehicle getVehicle() { return vehicle; }
+    public ParkingSpot getSpot() { return spot; }
+    public LocalDateTime getEntryTime() { return entryTime; }
+    public LocalDateTime getExitTime() { return exitTime; }
+    public void setExitTime(LocalDateTime exitTime) { this.exitTime = exitTime; }
+    public Double getFee() { return fee; }
+    public void setFee(Double fee) { this.fee = fee; }
+}
 
-    def park_vehicle(self, vehicle):
-        with self._tickets_lock:
-            for t in self.active_tickets.values():
-                if t.vehicle.license_plate == vehicle.license_plate:
-                    raise ValueError(f"Already parked: {vehicle.license_plate}")
-        spot = None
-        for floor in self.floors:
-            spot = floor.find_and_assign(vehicle)
-            if spot:
-                break
-        if spot is None:
-            raise ParkingLotFullError("No spot available")
-        ticket = Ticket(str(uuid.uuid4()), vehicle, spot, datetime.now())
-        with self._tickets_lock:
-            self.active_tickets[ticket.ticket_id] = ticket
-        return ticket
+class Floor {
+    final int floorNumber;
+    final List<ParkingSpot> spots;
+    final Map<SpotType, Integer> availability = new EnumMap<>(SpotType.class);
+    private final Object lock = new Object();
 
-    def exit_vehicle(self, ticket_id):
-        with self._tickets_lock:
-            ticket = self.active_tickets.pop(ticket_id, None)
-            if ticket is None:
-                raise KeyError(f"No active ticket: {ticket_id}")
-        ticket.exit_time = datetime.now()
-        fee = self.pricing_strategy.calculate(ticket.entry_time, ticket.exit_time, ticket.spot.spot_type)
-        ticket.fee = fee
-        self.floors[ticket.spot.floor_number].release_spot(ticket.spot)
-        return fee
+    public Floor(int floorNumber, List<ParkingSpot> spots) {
+        this.floorNumber = floorNumber;
+        this.spots = spots;
+        for (SpotType st : SpotType.values()) {
+            int count = 0;
+            for (ParkingSpot s : spots) {
+                if (s.getSpotType() == st) count++;
+            }
+            availability.put(st, count);
+        }
+    }
 
-class HourlyPricing:
-    rates = {SpotType.MOTORCYCLE: 2.0, SpotType.CAR: 4.0, SpotType.TRUCK: 8.0}
-    def calculate(self, entry, exit_, spot_type):
-        hours = math.ceil((exit_ - entry).total_seconds() / 3600)
-        return max(hours, 1) * self.rates[spot_type]
+    public ParkingSpot findAndAssign(Vehicle vehicle) {
+        Map<VehicleType, Integer> vehicleRank = Map.of(
+            VehicleType.MOTORCYCLE, 0, VehicleType.CAR, 1, VehicleType.TRUCK, 2);
+        Map<SpotType, Integer> spotRank = Map.of(
+            SpotType.MOTORCYCLE, 0, SpotType.CAR, 1, SpotType.TRUCK, 2);
+        int vehicleSize = vehicleRank.get(vehicle.getVehicleType());
+        synchronized (lock) {
+            for (ParkingSpot spot : spots) {
+                if (spot.isOccupied()) {
+                    continue;
+                }
+                if (spotRank.get(spot.getSpotType()) >= vehicleSize) {
+                    spot.assign(vehicle);
+                    availability.merge(spot.getSpotType(), -1, Integer::sum);
+                    return spot;
+                }
+            }
+        }
+        return null;
+    }
 
-# --- Helpers ---
+    public void releaseSpot(ParkingSpot spot) {
+        synchronized (lock) {
+            spot.release();
+            availability.merge(spot.getSpotType(), 1, Integer::sum);
+        }
+    }
+}
 
-def _make_lot(car_spots=50):
-    spots = [ParkingSpot(f"s{i}", SpotType.CAR, 0, i) for i in range(car_spots)]
-    floor = Floor(0, spots)
-    return ParkingLot([floor], HourlyPricing())
+class ParkingLot {
+    private static volatile ParkingLot instance;
+    private static final Object initLock = new Object();
 
+    final List<Floor> floors;
+    private final PricingStrategy pricingStrategy;
+    final Map<String, Ticket> activeTickets = new HashMap<>();
+    private final Object ticketsLock = new Object();
 
-# ─────────────────────────────────────────────────────────────
-# TEST 1: No double-booking under concurrent entry
-# 100 threads race to park in a lot with 50 car spots.
-# Exactly 50 must succeed; exactly 50 must get ParkingLotFullError.
-# No spot may have two vehicles assigned.
-# ─────────────────────────────────────────────────────────────
-def test_no_double_booking():
-    lot = _make_lot(car_spots=50)
-    succeeded = []
-    failed = []
-    lock = threading.Lock()
+    public ParkingLot(List<Floor> floors, PricingStrategy pricingStrategy) {
+        this.floors = floors;
+        this.pricingStrategy = pricingStrategy;
+    }
 
-    def park(i):
-        v = Vehicle(f"PLATE-{i}", VehicleType.CAR)
-        try:
-            ticket = lot.park_vehicle(v)
-            with lock:
-                succeeded.append(ticket)
-        except ParkingLotFullError:
-            with lock:
-                failed.append(i)
+    public static ParkingLot getInstance(List<Floor> floors, PricingStrategy pricingStrategy) {
+        if (instance == null) {
+            synchronized (initLock) {
+                if (instance == null) {
+                    instance = new ParkingLot(floors, pricingStrategy);
+                }
+            }
+        }
+        return instance;
+    }
 
-    threads = [threading.Thread(target=park, args=(i,)) for i in range(100)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    public Ticket parkVehicle(Vehicle vehicle) {
+        synchronized (ticketsLock) {
+            for (Ticket t : activeTickets.values()) {
+                if (t.getVehicle().getLicensePlate().equals(vehicle.getLicensePlate())) {
+                    throw new IllegalArgumentException("Already parked: " + vehicle.getLicensePlate());
+                }
+            }
+        }
+        ParkingSpot spot = null;
+        for (Floor floor : floors) {
+            spot = floor.findAndAssign(vehicle);
+            if (spot != null) break;
+        }
+        if (spot == null) {
+            throw new ParkingLotFullError("No spot available");
+        }
+        Ticket ticket = new Ticket(UUID.randomUUID().toString(), vehicle, spot, LocalDateTime.now());
+        synchronized (ticketsLock) {
+            activeTickets.put(ticket.getTicketId(), ticket);
+        }
+        return ticket;
+    }
 
-    assert len(succeeded) == 50, f"Expected 50 successes, got {len(succeeded)}"
-    assert len(failed) == 50, f"Expected 50 failures, got {len(failed)}"
+    public double exitVehicle(String ticketId) {
+        Ticket ticket;
+        synchronized (ticketsLock) {
+            ticket = activeTickets.remove(ticketId);
+            if (ticket == null) {
+                throw new NoSuchElementException("No active ticket: " + ticketId);
+            }
+        }
+        ticket.setExitTime(LocalDateTime.now());
+        double fee = pricingStrategy.calculate(ticket.getEntryTime(), ticket.getExitTime(), ticket.getSpot().getSpotType());
+        ticket.setFee(fee);
+        floors.get(ticket.getSpot().getFloorNumber()).releaseSpot(ticket.getSpot());
+        return fee;
+    }
+}
 
-    # No spot double-booked
-    occupied_spots = set()
-    for ticket in succeeded:
-        sid = ticket.spot.spot_id
-        assert sid not in occupied_spots, f"Double-booking: spot {sid}"
-        occupied_spots.add(sid)
+interface PricingStrategy {
+    double calculate(LocalDateTime entryTime, LocalDateTime exitTime, SpotType spotType);
+}
 
-    # Every assigned spot is actually occupied
-    for ticket in succeeded:
-        assert ticket.spot.is_occupied
-        assert ticket.spot.vehicle.license_plate == ticket.vehicle.license_plate
+class HourlyPricing implements PricingStrategy {
+    private static final Map<SpotType, Double> RATES = Map.of(
+        SpotType.MOTORCYCLE, 2.0, SpotType.CAR, 4.0, SpotType.TRUCK, 8.0);
 
-    print("PASS: test_no_double_booking")
+    @Override
+    public double calculate(LocalDateTime entry, LocalDateTime exit, SpotType spotType) {
+        long hours = (long) Math.ceil(Duration.between(entry, exit).getSeconds() / 3600.0);
+        return Math.max(hours, 1) * RATES.get(spotType);
+    }
+}
 
+// --- Helpers ---
 
-# ─────────────────────────────────────────────────────────────
-# TEST 2: Concurrent park + exit — spot recycled correctly
-# 10 vehicles park; then 10 threads exit them concurrently;
-# then 10 new vehicles try to park (must all succeed since spots freed).
-# ─────────────────────────────────────────────────────────────
-def test_concurrent_park_and_exit():
-    lot = _make_lot(car_spots=10)
+class ParkingLotConcurrencyTest {
 
-    tickets = []
-    for i in range(10):
-        t = lot.park_vehicle(Vehicle(f"A-{i}", VehicleType.CAR))
-        tickets.append(t)
+    static ParkingLot makeLot(int carSpots) {
+        List<ParkingSpot> spots = new ArrayList<>();
+        for (int i = 0; i < carSpots; i++) {
+            spots.add(new ParkingSpot("s" + i, SpotType.CAR, 0, i));
+        }
+        Floor floor = new Floor(0, spots);
+        return new ParkingLot(List.of(floor), new HourlyPricing());
+    }
 
-    # All 10 spots occupied
-    assert sum(1 for s in lot.floors[0].spots if s.is_occupied) == 10
+    // ─────────────────────────────────────────────────────────────
+    // TEST 1: No double-booking under concurrent entry
+    // 100 threads race to park in a lot with 50 car spots.
+    // Exactly 50 must succeed; exactly 50 must get ParkingLotFullError.
+    // No spot may have two vehicles assigned.
+    // ─────────────────────────────────────────────────────────────
+    static void testNoDoubleBooking() throws InterruptedException {
+        ParkingLot lot = makeLot(50);
+        List<Ticket> succeeded = Collections.synchronizedList(new ArrayList<>());
+        List<Integer> failed = Collections.synchronizedList(new ArrayList<>());
 
-    fees = []
-    fee_lock = threading.Lock()
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            final int idx = i;
+            Thread t = new Thread(() -> {
+                Vehicle v = new Vehicle("PLATE-" + idx, VehicleType.CAR);
+                try {
+                    Ticket ticket = lot.parkVehicle(v);
+                    succeeded.add(ticket);
+                } catch (ParkingLotFullError e) {
+                    failed.add(idx);
+                }
+            });
+            threads.add(t);
+        }
+        for (Thread t : threads) t.start();
+        for (Thread t : threads) t.join();
 
-    def exit_vehicle(ticket):
-        fee = lot.exit_vehicle(ticket.ticket_id)
-        with fee_lock:
-            fees.append(fee)
+        if (succeeded.size() != 50) throw new AssertionError("Expected 50 successes, got " + succeeded.size());
+        if (failed.size() != 50) throw new AssertionError("Expected 50 failures, got " + failed.size());
 
-    exit_threads = [threading.Thread(target=exit_vehicle, args=(t,)) for t in tickets]
-    for t in exit_threads: t.start()
-    for t in exit_threads: t.join()
+        // No spot double-booked
+        Set<String> occupiedSpots = new HashSet<>();
+        for (Ticket ticket : succeeded) {
+            String sid = ticket.getSpot().getSpotId();
+            if (occupiedSpots.contains(sid)) throw new AssertionError("Double-booking: spot " + sid);
+            occupiedSpots.add(sid);
+        }
 
-    assert len(fees) == 10, "Not all exits completed"
-    assert sum(1 for s in lot.floors[0].spots if s.is_occupied) == 0, "Spots not freed"
+        // Every assigned spot is actually occupied
+        for (Ticket ticket : succeeded) {
+            if (!ticket.getSpot().isOccupied()) throw new AssertionError("Spot not occupied");
+            if (!ticket.getSpot().getVehicle().getLicensePlate().equals(ticket.getVehicle().getLicensePlate())) {
+                throw new AssertionError("Vehicle mismatch");
+            }
+        }
 
-    # Re-park 10 more vehicles — must succeed
-    new_tickets = []
-    for i in range(10):
-        t = lot.park_vehicle(Vehicle(f"B-{i}", VehicleType.CAR))
-        new_tickets.append(t)
-    assert len(new_tickets) == 10
+        System.out.println("PASS: testNoDoubleBooking");
+    }
 
-    print("PASS: test_concurrent_park_and_exit")
+    // ─────────────────────────────────────────────────────────────
+    // TEST 2: Concurrent park + exit — spot recycled correctly
+    // 10 vehicles park; then 10 threads exit them concurrently;
+    // then 10 new vehicles try to park (must all succeed since spots freed).
+    // ─────────────────────────────────────────────────────────────
+    static void testConcurrentParkAndExit() throws InterruptedException {
+        ParkingLot lot = makeLot(10);
 
+        List<Ticket> tickets = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            tickets.add(lot.parkVehicle(new Vehicle("A-" + i, VehicleType.CAR)));
+        }
 
-# ─────────────────────────────────────────────────────────────
-# TEST 3: Duplicate license plate rejection under concurrency
-# Two threads simultaneously try to park the same license plate.
-# Exactly one must succeed; the other must get ValueError.
-# ─────────────────────────────────────────────────────────────
-def test_duplicate_plate_rejected():
-    lot = _make_lot(car_spots=10)
-    results = []
-    lock = threading.Lock()
+        // All 10 spots occupied
+        long occupiedCount = lot.floors.get(0).spots.stream().filter(ParkingSpot::isOccupied).count();
+        if (occupiedCount != 10) throw new AssertionError("Expected 10 occupied");
 
-    def park():
-        v = Vehicle("SAME-PLATE", VehicleType.CAR)
-        try:
-            ticket = lot.park_vehicle(v)
-            with lock:
-                results.append(("ok", ticket))
-        except ValueError as e:
-            with lock:
-                results.append(("dup", str(e)))
+        List<Double> fees = Collections.synchronizedList(new ArrayList<>());
 
-    t1 = threading.Thread(target=park)
-    t2 = threading.Thread(target=park)
-    t1.start(); t2.start()
-    t1.join(); t2.join()
+        List<Thread> exitThreads = new ArrayList<>();
+        for (Ticket t : tickets) {
+            Thread th = new Thread(() -> {
+                double fee = lot.exitVehicle(t.getTicketId());
+                fees.add(fee);
+            });
+            exitThreads.add(th);
+        }
+        for (Thread t : exitThreads) t.start();
+        for (Thread t : exitThreads) t.join();
 
-    oks   = [r for r in results if r[0] == "ok"]
-    dups  = [r for r in results if r[0] == "dup"]
-    assert len(oks) == 1,  f"Expected 1 success, got {len(oks)}"
-    assert len(dups) == 1, f"Expected 1 duplicate rejection, got {len(dups)}"
-    print("PASS: test_duplicate_plate_rejected")
+        if (fees.size() != 10) throw new AssertionError("Not all exits completed");
+        occupiedCount = lot.floors.get(0).spots.stream().filter(ParkingSpot::isOccupied).count();
+        if (occupiedCount != 0) throw new AssertionError("Spots not freed");
 
+        // Re-park 10 more vehicles — must succeed
+        List<Ticket> newTickets = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            newTickets.add(lot.parkVehicle(new Vehicle("B-" + i, VehicleType.CAR)));
+        }
+        if (newTickets.size() != 10) throw new AssertionError("Expected 10 new tickets");
 
-if __name__ == "__main__":
-    test_no_double_booking()
-    test_concurrent_park_and_exit()
-    test_duplicate_plate_rejected()
-    print("All concurrency tests passed.")
+        System.out.println("PASS: testConcurrentParkAndExit");
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // TEST 3: Duplicate license plate rejection under concurrency
+    // Two threads simultaneously try to park the same license plate.
+    // Exactly one must succeed; the other must get IllegalArgumentException.
+    // ─────────────────────────────────────────────────────────────
+    static void testDuplicatePlateRejected() throws InterruptedException {
+        ParkingLot lot = makeLot(10);
+        List<String[]> results = Collections.synchronizedList(new ArrayList<>());
+
+        Runnable park = () -> {
+            Vehicle v = new Vehicle("SAME-PLATE", VehicleType.CAR);
+            try {
+                Ticket ticket = lot.parkVehicle(v);
+                results.add(new String[]{"ok", ticket.getTicketId()});
+            } catch (IllegalArgumentException e) {
+                results.add(new String[]{"dup", e.getMessage()});
+            }
+        };
+
+        Thread t1 = new Thread(park);
+        Thread t2 = new Thread(park);
+        t1.start(); t2.start();
+        t1.join(); t2.join();
+
+        long oks = results.stream().filter(r -> r[0].equals("ok")).count();
+        long dups = results.stream().filter(r -> r[0].equals("dup")).count();
+        if (oks != 1) throw new AssertionError("Expected 1 success, got " + oks);
+        if (dups != 1) throw new AssertionError("Expected 1 duplicate rejection, got " + dups);
+        System.out.println("PASS: testDuplicatePlateRejected");
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        testNoDoubleBooking();
+        testConcurrentParkAndExit();
+        testDuplicatePlateRejected();
+        System.out.println("All concurrency tests passed.");
+    }
+}
 ```
 
 **What each test verifies:**

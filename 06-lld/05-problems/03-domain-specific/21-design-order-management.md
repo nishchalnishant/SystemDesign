@@ -120,7 +120,7 @@ class OrderItem:
 | Requirement | What Order must track |
 |-------------|------------------------|
 | Identity | order_id, user_id, idempotency_key |
-| Line items | items: list[OrderItem] |
+| Line items | items: List<OrderItem> |
 | Lifecycle | status, timestamps per transition |
 | Shipping | tracking_number (set on ship) |
 
@@ -129,10 +129,10 @@ class Order:
 - order_id: str
 - user_id: str
 - idempotency_key: str
-- items: list[OrderItem]
+- items: List<OrderItem>
 - status: OrderStatus
 - created_at: datetime
-- tracking_number: Optional[str]
+- tracking_number: String (nullable)
 + total() -> float
 + can_cancel() -> bool
 ```
@@ -145,7 +145,7 @@ class Order:
 
 ```
 class Inventory:
-- stock: dict[str, dict]   # product_id -> {available, reserved}
+- stock: Map<String, Stock>   # product_id -> {available, reserved}
 + reserve(product_id, qty) -> bool
 + release(product_id, qty)
 + deduct(product_id, qty)
@@ -156,12 +156,12 @@ class Inventory:
 
 ```
 class OrderService:
-- orders: dict[str, Order]
-- idempotency_map: dict[str, Order]
+- orders: Map<String, Order>
+- idempotency_map: Map<String, Order>
 - inventory: Inventory
 - payment_service: PaymentService
 - shipping_service: ShippingService
-- observers: list[OrderObserver]
+- observers: List<OrderObserver>
 + place_order(user_id, items, idempotency_key) -> Order
 + confirm_order(order_id) -> Order
 + ship_order(order_id, tracking) -> Order
@@ -189,191 +189,243 @@ class OrderService:
 - Empty items list — raise immediately.
 - Negative quantity — validate before touching inventory.
 
-```python
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum, auto
-from typing import Optional
-import uuid
+```java
+import java.time.Instant;
+import java.util.*;
 
+enum OrderStatus {
+    PLACED, CONFIRMED, SHIPPED, DELIVERED, CANCELLED, FAILED
+}
 
-class OrderStatus(Enum):
-    PLACED    = auto()
-    CONFIRMED = auto()
-    SHIPPED   = auto()
-    DELIVERED = auto()
-    CANCELLED = auto()
-    FAILED    = auto()
+class OrderItem {
+    private final String productId;
+    private final int quantity;
+    private final double unitPrice;
 
+    public OrderItem(String productId, int quantity, double unitPrice) {
+        this.productId = productId;
+        this.quantity = quantity;
+        this.unitPrice = unitPrice;
+    }
 
-@dataclass
-class OrderItem:
-    product_id: str
-    quantity: int
-    unit_price: float
+    public String getProductId() { return productId; }
+    public int getQuantity() { return quantity; }
+    public double getUnitPrice() { return unitPrice; }
 
-    def subtotal(self) -> float:
-        return self.quantity * self.unit_price
+    public double subtotal() { return quantity * unitPrice; }
+}
 
+class Order {
+    private final String orderId;
+    private final String userId;
+    private final String idempotencyKey;
+    private final List<OrderItem> items;
+    private OrderStatus status = OrderStatus.PLACED;
+    private final Instant createdAt = Instant.now();
+    private String trackingNumber;
 
-@dataclass
-class Order:
-    order_id: str
-    user_id: str
-    idempotency_key: str
-    items: list[OrderItem]
-    status: OrderStatus = OrderStatus.PLACED
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    tracking_number: Optional[str] = None
+    public Order(String orderId, String userId, String idempotencyKey, List<OrderItem> items) {
+        this.orderId = orderId;
+        this.userId = userId;
+        this.idempotencyKey = idempotencyKey;
+        this.items = items;
+    }
 
-    def total(self) -> float:
-        return sum(item.subtotal() for item in self.items)
+    public String getOrderId() { return orderId; }
+    public String getUserId() { return userId; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public List<OrderItem> getItems() { return items; }
+    public OrderStatus getStatus() { return status; }
+    public void setStatus(OrderStatus status) { this.status = status; }
+    public Instant getCreatedAt() { return createdAt; }
+    public String getTrackingNumber() { return trackingNumber; }
+    public void setTrackingNumber(String trackingNumber) { this.trackingNumber = trackingNumber; }
 
-    def can_cancel(self) -> bool:
-        return self.status in (OrderStatus.PLACED, OrderStatus.CONFIRMED)
+    public double total() {
+        return items.stream().mapToDouble(OrderItem::subtotal).sum();
+    }
 
+    public boolean canCancel() {
+        return status == OrderStatus.PLACED || status == OrderStatus.CONFIRMED;
+    }
+}
 
-class Inventory:
-    def __init__(self):
-        self._stock: dict[str, dict] = {}  # {available: int, reserved: int}
+class Inventory {
+    private static class Stock {
+        int available;
+        int reserved;
+        Stock(int available, int reserved) { this.available = available; this.reserved = reserved; }
+    }
 
-    def add_product(self, product_id: str, quantity: int):
-        self._stock[product_id] = {"available": quantity, "reserved": 0}
+    private final Map<String, Stock> stock = new HashMap<>();
 
-    def reserve(self, product_id: str, qty: int) -> bool:
-        s = self._stock.get(product_id)
-        if not s or s["available"] < qty:
-            return False
-        s["available"] -= qty
-        s["reserved"] += qty
-        return True
+    public void addProduct(String productId, int quantity) {
+        stock.put(productId, new Stock(quantity, 0));
+    }
 
-    def release(self, product_id: str, qty: int):
-        s = self._stock[product_id]
-        s["reserved"] -= qty
-        s["available"] += qty
+    public boolean reserve(String productId, int qty) {
+        Stock s = stock.get(productId);
+        if (s == null || s.available < qty) {
+            return false;
+        }
+        s.available -= qty;
+        s.reserved += qty;
+        return true;
+    }
 
-    def deduct(self, product_id: str, qty: int):
-        s = self._stock[product_id]
-        s["reserved"] -= qty  # already moved out of available
+    public void release(String productId, int qty) {
+        Stock s = stock.get(productId);
+        s.reserved -= qty;
+        s.available += qty;
+    }
 
-    def get_available(self, product_id: str) -> int:
-        return self._stock.get(product_id, {}).get("available", 0)
+    public void deduct(String productId, int qty) {
+        Stock s = stock.get(productId);
+        s.reserved -= qty;  // already moved out of available
+    }
 
+    public int getAvailable(String productId) {
+        Stock s = stock.get(productId);
+        return s == null ? 0 : s.available;
+    }
+}
 
-class PaymentService:
-    def charge(self, user_id: str, amount: float) -> bool:
-        print(f"Charging {user_id} ${amount:.2f}")
-        return True  # stub
+class PaymentService {
+    public boolean charge(String userId, double amount) {
+        System.out.printf("Charging %s $%.2f%n", userId, amount);
+        return true;  // stub
+    }
+}
 
+class ShippingService {
+    public String createShipment(String orderId) {
+        return "TRACK-" + orderId.substring(0, 8).toUpperCase();
+    }
+}
 
-class ShippingService:
-    def create_shipment(self, order_id: str) -> str:
-        return f"TRACK-{order_id[:8].upper()}"
+interface OrderObserver {
+    void onStatusChange(Order order);
+}
 
+class EmailObserver implements OrderObserver {
+    @Override
+    public void onStatusChange(Order order) {
+        System.out.printf("Email: order %s is now %s%n", order.getOrderId(), order.getStatus());
+    }
+}
 
-class OrderObserver:
-    def on_status_change(self, order: Order):
-        pass
+class OrderService {
+    private final Map<String, Order> orders = new HashMap<>();
+    private final Map<String, Order> idempotencyMap = new HashMap<>();
+    private final Inventory inventory = new Inventory();
+    private final PaymentService paymentService = new PaymentService();
+    private final ShippingService shippingService = new ShippingService();
+    private final List<OrderObserver> observers = new ArrayList<>();
 
+    public Map<String, Order> getOrders() {
+        return orders;
+    }
 
-class EmailObserver(OrderObserver):
-    def on_status_change(self, order: Order):
-        print(f"Email: order {order.order_id} is now {order.status.name}")
+    public void addObserver(OrderObserver obs) {
+        observers.add(obs);
+    }
 
+    private void notifyObservers(Order order) {
+        for (OrderObserver obs : observers) {
+            obs.onStatusChange(order);
+        }
+    }
 
-class OrderService:
-    def __init__(self):
-        self.orders: dict[str, Order] = {}
-        self.idempotency_map: dict[str, Order] = {}
-        self.inventory = Inventory()
-        self.payment_service = PaymentService()
-        self.shipping_service = ShippingService()
-        self.observers: list[OrderObserver] = []
+    public Order placeOrder(String userId, List<OrderItem> items, String idempotencyKey) {
+        if (idempotencyMap.containsKey(idempotencyKey)) {
+            return idempotencyMap.get(idempotencyKey);
+        }
 
-    def add_observer(self, obs: OrderObserver):
-        self.observers.append(obs)
+        if (items.isEmpty()) {
+            throw new IllegalArgumentException("Order must have at least one item");
+        }
 
-    def _notify(self, order: Order):
-        for obs in self.observers:
-            obs.on_status_change(order)
+        List<OrderItem> reserved = new ArrayList<>();
+        try {
+            for (OrderItem item : items) {
+                if (!inventory.reserve(item.getProductId(), item.getQuantity())) {
+                    throw new IllegalStateException("Insufficient stock for " + item.getProductId());
+                }
+                reserved.add(item);
+            }
+        } catch (IllegalStateException e) {
+            for (OrderItem item : reserved) {
+                inventory.release(item.getProductId(), item.getQuantity());
+            }
+            throw e;
+        }
 
-    def place_order(self, user_id: str, items: list[OrderItem],
-                    idempotency_key: str) -> Order:
-        if idempotency_key in self.idempotency_map:
-            return self.idempotency_map[idempotency_key]
+        Order order = new Order(UUID.randomUUID().toString(), userId, idempotencyKey, items);
+        orders.put(order.getOrderId(), order);
+        idempotencyMap.put(idempotencyKey, order);
+        notifyObservers(order);
+        return order;
+    }
 
-        if not items:
-            raise ValueError("Order must have at least one item")
+    public Order confirmOrder(String orderId) {
+        Order order = orders.get(orderId);
+        if (order.getStatus() != OrderStatus.PLACED) {
+            throw new IllegalStateException("Can only confirm a PLACED order");
+        }
 
-        reserved = []
-        try:
-            for item in items:
-                if not self.inventory.reserve(item.product_id, item.quantity):
-                    raise ValueError(f"Insufficient stock for {item.product_id}")
-                reserved.append(item)
-        except ValueError:
-            for item in reserved:
-                self.inventory.release(item.product_id, item.quantity)
-            raise
+        boolean charged = paymentService.charge(order.getUserId(), order.total());
+        if (!charged) {
+            for (OrderItem item : order.getItems()) {
+                inventory.release(item.getProductId(), item.getQuantity());
+            }
+            order.setStatus(OrderStatus.FAILED);
+            notifyObservers(order);
+            throw new IllegalStateException("Payment failed");
+        }
 
-        order = Order(
-            order_id=str(uuid.uuid4()),
-            user_id=user_id,
-            idempotency_key=idempotency_key,
-            items=items,
-        )
-        self.orders[order.order_id] = order
-        self.idempotency_map[idempotency_key] = order
-        self._notify(order)
-        return order
+        for (OrderItem item : order.getItems()) {
+            inventory.deduct(item.getProductId(), item.getQuantity());
+        }
 
-    def confirm_order(self, order_id: str) -> Order:
-        order = self.orders[order_id]
-        if order.status != OrderStatus.PLACED:
-            raise ValueError("Can only confirm a PLACED order")
+        order.setStatus(OrderStatus.CONFIRMED);
+        notifyObservers(order);
+        return order;
+    }
 
-        charged = self.payment_service.charge(order.user_id, order.total())
-        if not charged:
-            for item in order.items:
-                self.inventory.release(item.product_id, item.quantity)
-            order.status = OrderStatus.FAILED
-            self._notify(order)
-            raise ValueError("Payment failed")
+    public Order shipOrder(String orderId, String tracking) {
+        Order order = orders.get(orderId);
+        if (order.getStatus() != OrderStatus.CONFIRMED) {
+            throw new IllegalStateException("Can only ship a CONFIRMED order");
+        }
+        order.setTrackingNumber(tracking != null ? tracking : shippingService.createShipment(orderId));
+        order.setStatus(OrderStatus.SHIPPED);
+        notifyObservers(order);
+        return order;
+    }
 
-        for item in order.items:
-            self.inventory.deduct(item.product_id, item.quantity)
+    public Order deliverOrder(String orderId) {
+        Order order = orders.get(orderId);
+        if (order.getStatus() != OrderStatus.SHIPPED) {
+            throw new IllegalStateException("Can only deliver a SHIPPED order");
+        }
+        order.setStatus(OrderStatus.DELIVERED);
+        notifyObservers(order);
+        return order;
+    }
 
-        order.status = OrderStatus.CONFIRMED
-        self._notify(order)
-        return order
-
-    def ship_order(self, order_id: str, tracking: Optional[str] = None) -> Order:
-        order = self.orders[order_id]
-        if order.status != OrderStatus.CONFIRMED:
-            raise ValueError("Can only ship a CONFIRMED order")
-        order.tracking_number = tracking or self.shipping_service.create_shipment(order_id)
-        order.status = OrderStatus.SHIPPED
-        self._notify(order)
-        return order
-
-    def deliver_order(self, order_id: str) -> Order:
-        order = self.orders[order_id]
-        if order.status != OrderStatus.SHIPPED:
-            raise ValueError("Can only deliver a SHIPPED order")
-        order.status = OrderStatus.DELIVERED
-        self._notify(order)
-        return order
-
-    def cancel_order(self, order_id: str) -> Order:
-        order = self.orders[order_id]
-        if not order.can_cancel():
-            raise ValueError("Cannot cancel order in status: " + order.status.name)
-        for item in order.items:
-            self.inventory.release(item.product_id, item.quantity)
-        order.status = OrderStatus.CANCELLED
-        self._notify(order)
-        return order
+    public Order cancelOrder(String orderId) {
+        Order order = orders.get(orderId);
+        if (!order.canCancel()) {
+            throw new IllegalStateException("Cannot cancel order in status: " + order.getStatus());
+        }
+        for (OrderItem item : order.getItems()) {
+            inventory.release(item.getProductId(), item.getQuantity());
+        }
+        order.setStatus(OrderStatus.CANCELLED);
+        notifyObservers(order);
+        return order;
+    }
+}
 ```
 
 ---
@@ -395,13 +447,18 @@ Scenario: User places an order for 2 units of Product A (stock=5), then cancels.
 
 Reserve at order placement so the customer sees accurate availability. Deduct only at payment confirmation to avoid holding stock for unpaid orders indefinitely. Release on payment failure, cancellation, or timeout.
 
-```python
-# Timeout-based release: a background job
-def release_expired_placements(service: OrderService, ttl_minutes: int = 15):
-    cutoff = datetime.utcnow() - timedelta(minutes=ttl_minutes)
-    for order in list(service.orders.values()):
-        if order.status == OrderStatus.PLACED and order.created_at < cutoff:
-            service.cancel_order(order.order_id)
+```java
+import java.time.Duration;
+
+// Timeout-based release: a background job
+void releaseExpiredPlacements(OrderService service, int ttlMinutes) {
+    Instant cutoff = Instant.now().minus(Duration.ofMinutes(ttlMinutes));
+    for (Order order : new ArrayList<>(service.getOrders().values())) {
+        if (order.getStatus() == OrderStatus.PLACED && order.getCreatedAt().isBefore(cutoff)) {
+            service.cancelOrder(order.getOrderId());
+        }
+    }
+}
 ```
 
 ### 2. "What if payment fails after inventory is reserved?"
@@ -424,29 +481,42 @@ If Step 3 fails, the Saga runs compensations 2 and 1 in reverse. Unlike 2PC, no 
 
 Client generates a UUID `idempotency_key` and sends it with every attempt. The server stores `idempotency_key → Order` in a map. On duplicate request, return the stored Order unchanged. Key must be stored durably (DB) for crash safety in production.
 
-```python
-if idempotency_key in self.idempotency_map:
-    return self.idempotency_map[idempotency_key]
+```java
+if (idempotencyMap.containsKey(idempotencyKey)) {
+    return idempotencyMap.get(idempotencyKey);
+}
 ```
 
 ### 5. "How would you model returns and refunds?"
 
 Add a `Return` entity linked to an Order. A return can only be initiated for DELIVERED orders within a window (e.g., 30 days). The return flow mirrors the order saga in reverse: create_return → approve_return → refund_payment → restock_inventory.
 
-```python
-class ReturnStatus(Enum):
-    REQUESTED = auto()
-    APPROVED  = auto()
-    REFUNDED  = auto()
-    REJECTED  = auto()
+```java
+enum ReturnStatus {
+    REQUESTED, APPROVED, REFUNDED, REJECTED
+}
 
-@dataclass
-class Return:
-    return_id: str
-    order: Order
-    items: list[OrderItem]   # subset of original items
-    reason: str
-    status: ReturnStatus = ReturnStatus.REQUESTED
+class Return {
+    private final String returnId;
+    private final Order order;
+    private final List<OrderItem> items;   // subset of original items
+    private final String reason;
+    private ReturnStatus status = ReturnStatus.REQUESTED;
+
+    public Return(String returnId, Order order, List<OrderItem> items, String reason) {
+        this.returnId = returnId;
+        this.order = order;
+        this.items = items;
+        this.reason = reason;
+    }
+
+    public String getReturnId() { return returnId; }
+    public Order getOrder() { return order; }
+    public List<OrderItem> getItems() { return items; }
+    public String getReason() { return reason; }
+    public ReturnStatus getStatus() { return status; }
+    public void setStatus(ReturnStatus status) { this.status = status; }
+}
 ```
 
 ---

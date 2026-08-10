@@ -69,42 +69,48 @@ Try it before reading on.
 ## Problem Without the Pattern
 
 Option A — add methods to each class:
-```python
-class Item:
-    def calculate_tax(self):
-        pass
+```java
+abstract class Item {
+    abstract double calculateTax();
+    abstract double calculateShipping();
+}
 
-    def calculate_shipping(self):
-        pass
+class Food extends Item {
+    private double price, weight;
 
-class Food(Item):
-    def calculate_tax(self):
-        return self._price * 0.05
+    double calculateTax() {
+        return price * 0.05;
+    }
 
-    def calculate_shipping(self):
-        return self._weight * 0.5
+    double calculateShipping() {
+        return weight * 0.5;
+    }
+}
 
-# ... same for Electronics, Clothing
+// ... same for Electronics, Clothing
 ```
 
-Adding a 3rd operation (e.g., `calculate_insurance()`) means editing `Item`, `Food`, `Electronics`, `Clothing` — all four files.
+Adding a 3rd operation (e.g., `calculateInsurance()`) means editing `Item`, `Food`, `Electronics`, `Clothing` — all four files.
 
-Option B — centralise with `isinstance`:
-```python
-class TaxCalculator:
-    def calculate(self, item):
-        if isinstance(item, Food):
-            return item.get_price() * 0.05
-        elif isinstance(item, Electronics):
-            return item.get_price() * 0.18
-        elif isinstance(item, Clothing):
-            return item.get_price() * 0.12
-        raise ValueError("Unknown item type")
+Option B — centralise with `instanceof`:
+```java
+class TaxCalculator {
+    double calculate(Item item) {
+        if (item instanceof Food) {
+            return ((Food) item).getPrice() * 0.05;
+        } else if (item instanceof Electronics) {
+            return ((Electronics) item).getPrice() * 0.18;
+        } else if (item instanceof Clothing) {
+            return ((Clothing) item).getPrice() * 0.12;
+        }
+        throw new IllegalArgumentException("Unknown item type");
+    }
+}
 ```
 
 **What breaks**:
 1. **OCP violation (Option A)**: New operations require editing every class in the hierarchy.
-2. **Fragile casting (Option B)**: `isinstance` chains break at runtime when a new `Item` subtype is added without updating the calculator.
+2. **Fragile casting (Option B)**: `instanceof` chains break at runtime when a new `Item` subtype is added without updating the calculator.
 3. **Operations are scattered (Option A)** or **type knowledge leaks into the operation (Option B)**.
 
 ---
@@ -114,61 +120,63 @@ class TaxCalculator:
 The constraint: **add new operations without touching the item hierarchy; let the type dispatch happen via polymorphism, not runtime type checks**.
 
 Step 1 — define a `Visitor` interface with one method per concrete type:
-```python
-from abc import ABC, abstractmethod
-
-class ItemVisitor(ABC):
-    @abstractmethod
-    def visit_food(self, food):
-        pass
-
-    @abstractmethod
-    def visit_electronics(self, electronics):
-        pass
-
-    @abstractmethod
-    def visit_clothing(self, clothing):
-        pass
+```java
+interface ItemVisitor {
+    double visitFood(Food food);
+    double visitElectronics(Electronics electronics);
+    double visitClothing(Clothing clothing);
+}
 ```
 
 Step 2 — each `Item` accepts a visitor, calling the correct method (this is **double dispatch** — type resolved via polymorphism):
-```python
-class Item(ABC):
-    @abstractmethod
-    def accept(self, visitor):
-        pass
+```java
+interface Item {
+    double accept(ItemVisitor visitor);
+}
 
-class Food(Item):
-    def accept(self, v):
-        return v.visit_food(self)  # calls visit_food
+class Food implements Item {
+    public double accept(ItemVisitor v) {
+        return v.visitFood(this);  // calls visitFood
+    }
+}
 
-class Electronics(Item):
-    def accept(self, v):
-        return v.visit_electronics(self)  # calls visit_electronics
+class Electronics implements Item {
+    public double accept(ItemVisitor v) {
+        return v.visitElectronics(this);  // calls visitElectronics
+    }
+}
 ```
 
 Step 3 — each operation is a separate `Visitor` class:
-```python
-class TaxVisitor(ItemVisitor):
-    def visit_food(self, f):
-        return f.get_price() * 0.05
+```java
+class TaxVisitor implements ItemVisitor {
+    public double visitFood(Food f) {
+        return f.getPrice() * 0.05;
+    }
 
-    def visit_electronics(self, e):
-        return e.get_price() * 0.18
+    public double visitElectronics(Electronics e) {
+        return e.getPrice() * 0.18;
+    }
 
-    def visit_clothing(self, c):
-        return c.get_price() * 0.12
+    public double visitClothing(Clothing c) {
+        return c.getPrice() * 0.12;
+    }
+}
 
 
-class ShippingVisitor(ItemVisitor):
-    def visit_food(self, f):
-        return f.get_weight() * 0.5
+class ShippingVisitor implements ItemVisitor {
+    public double visitFood(Food f) {
+        return f.getWeight() * 0.5;
+    }
 
-    def visit_electronics(self, e):
-        return 15.0  # flat rate
+    public double visitElectronics(Electronics e) {
+        return 15.0;  // flat rate
+    }
 
-    def visit_clothing(self, c):
-        return c.get_weight() * 0.3
+    public double visitClothing(Clothing c) {
+        return c.getWeight() * 0.3;
+    }
+}
 ```
 
 Adding `InsuranceVisitor` is one new class. Adding `Jewelry` to the hierarchy requires updating every `Visitor` — that is an explicit trade-off: operations are easy to add, types are harder to add.
@@ -189,9 +197,9 @@ A tax inspector visits a restaurant, a retail store, and a tech startup. Each ty
 
 The inspector (Visitor) knows how to calculate taxes for each type of business. The businesses (Elements) don't calculate their own taxes — they just `accept(inspector)` and the inspector applies the right logic for that business type.
 
-**Key insight**: If you want to add a new operation (say, audit compliance checks), you create a new inspector class (`ComplianceAuditorVisitor`) with `visit_restaurant()`, `visit_retail_store()`, `visit_tech_startup()` methods. The business classes themselves never change. The inspector knows the rules; the business just opens its doors.
+**Key insight**: If you want to add a new operation (say, audit compliance checks), you create a new inspector class (`ComplianceAuditorVisitor`) with `visitRestaurant()`, `visitRetailStore()`, `visitTechStartup()` methods. The business classes themselves never change. The inspector knows the rules; the business just opens its doors.
 
-This is **double dispatch**: the business (`accept(visitor)`) dispatches to the visitor, and the visitor (`visit(self)`) dispatches to the correct `visit_*()` method based on the element's type.
+This is **double dispatch**: the business (`accept(visitor)`) dispatches to the visitor, and the visitor (`visit(this)`) dispatches to the correct `visit*()` method based on the element's type.
 
 ---
 
@@ -204,8 +212,8 @@ The Visitor Pattern lets you add new operations to existing class hierarchies wi
 | Component | Role | Example |
 |---|---|---|
 | **Element Interface** | Defines `accept(visitor)` method. | `Item` |
-| **Concrete Element** | Implements `accept()`, calls `visitor.visit_*(this)`. | `PhysicalProduct`, `DigitalProduct`, `GiftCard` |
-| **Visitor Interface** | Defines `visit_*()` methods for each element type. | `ItemVisitor` |
+| **Concrete Element** | Implements `accept()`, calls `visitor.visit*(this)`. | `PhysicalProduct`, `DigitalProduct`, `GiftCard` |
+| **Visitor Interface** | Defines `visit*()` methods for each element type. | `ItemVisitor` |
 | **Concrete Visitor** | Implements the actual operation for each element type. | `InvoiceVisitor`, `ShippingCostVisitor` |
 
 ---
@@ -214,56 +222,71 @@ The Visitor Pattern lets you add new operations to existing class hierarchies wi
 
 Without Visitor, operations are scattered into element classes or require `isinstance` checks:
 
-```python
-# Class representing a Physical Product
-class PhysicalProduct:
-    # Method to print invoice for physical product
-    def print_invoice(self):
-        print("Printing invoice for Physical Product...")
+```java
+import java.util.*;
 
-    # Method to calculate shipping cost for physical product
-    def calculate_shipping_cost(self):
-        print("Calculating shipping cost for Physical Product...")
-        return 10.0  # Example shipping cost
+// Class representing a Physical Product
+class PhysicalProduct {
+    // Method to print invoice for physical product
+    void printInvoice() {
+        System.out.println("Printing invoice for Physical Product...");
+    }
 
-
-# Class representing a Digital Product
-class DigitalProduct:
-    # Method to print invoice for digital product
-    def print_invoice(self):
-        print("Printing invoice for Digital Product...")
-
-    # No shipping cost for digital product
+    // Method to calculate shipping cost for physical product
+    double calculateShippingCost() {
+        System.out.println("Calculating shipping cost for Physical Product...");
+        return 10.0;  // Example shipping cost
+    }
+}
 
 
-# Class representing a Gift Card Product
-class GiftCard:
-    # Method to print invoice for gift card
-    def print_invoice(self):
-        print("Printing invoice for Gift Card...")
+// Class representing a Digital Product
+class DigitalProduct {
+    // Method to print invoice for digital product
+    void printInvoice() {
+        System.out.println("Printing invoice for Digital Product...");
+    }
 
-    # Method to calculate discount for gift card
-    def calculate_discount(self):
-        print("Calculating discount for Gift Card...")
-        return 5.0  # Example discount
+    // No shipping cost for digital product
+}
 
 
-if __name__ == "__main__":
-    cart = [PhysicalProduct(), DigitalProduct(), GiftCard()]
+// Class representing a Gift Card Product
+class GiftCard {
+    // Method to print invoice for gift card
+    void printInvoice() {
+        System.out.println("Printing invoice for Gift Card...");
+    }
 
-    # Loop through cart and perform actions based on product type
-    for item in cart:
-        if isinstance(item, PhysicalProduct):
-            item.print_invoice()
-            shipping_cost = item.calculate_shipping_cost()
-            print(f"Shipping cost: {shipping_cost}\n")
-        elif isinstance(item, DigitalProduct):
-            item.print_invoice()
-            print("No shipping cost for Digital Product.\n")
-        elif isinstance(item, GiftCard):
-            item.print_invoice()
-            discount = item.calculate_discount()
-            print(f"Discount applied: {discount}\n")
+    // Method to calculate discount for gift card
+    double calculateDiscount() {
+        System.out.println("Calculating discount for Gift Card...");
+        return 5.0;  // Example discount
+    }
+}
+
+
+public class Main {
+    public static void main(String[] args) {
+        List<Object> cart = List.of(new PhysicalProduct(), new DigitalProduct(), new GiftCard());
+
+        // Loop through cart and perform actions based on product type
+        for (Object item : cart) {
+            if (item instanceof PhysicalProduct p) {
+                p.printInvoice();
+                double shippingCost = p.calculateShippingCost();
+                System.out.println("Shipping cost: " + shippingCost + "\n");
+            } else if (item instanceof DigitalProduct d) {
+                d.printInvoice();
+                System.out.println("No shipping cost for Digital Product.\n");
+            } else if (item instanceof GiftCard g) {
+                g.printInvoice();
+                double discount = g.calculateDiscount();
+                System.out.println("Discount applied: " + discount + "\n");
+            }
+        }
+    }
+}
 ```
 
 **Issues**:
@@ -279,116 +302,142 @@ if __name__ == "__main__":
 
 ## Solution: Visitor Pattern
 
-```python
-from abc import ABC, abstractmethod
+```java
+import java.util.*;
+
+// ======= Element Interface ==========
+interface Item {
+    void accept(ItemVisitor visitor);
+}
 
 
-# ======= Element Interface ==========
-class Item(ABC):
-    @abstractmethod
-    def accept(self, visitor):
-        pass
+// ======= Concrete elements ===========
+class PhysicalProduct implements Item {
+    private final String name;
+    private final double weight;
+
+    PhysicalProduct(String name, double weight) {
+        this.name = name;
+        this.weight = weight;
+    }
+
+    String getName() {
+        return name;
+    }
+
+    double getWeight() {
+        return weight;
+    }
+
+    public void accept(ItemVisitor visitor) {
+        visitor.visitPhysicalProduct(this);  // First dispatch: calls visitor's method for PhysicalProduct
+    }
+}
 
 
-# ======= Concrete elements ===========
-class PhysicalProduct(Item):
-    def __init__(self, name, weight):
-        self._name = name
-        self._weight = weight
+class DigitalProduct implements Item {
+    private final String name;
+    private final int downloadSizeInMB;
 
-    def get_name(self):
-        return self._name
+    DigitalProduct(String name, int downloadSizeInMB) {
+        this.name = name;
+        this.downloadSizeInMB = downloadSizeInMB;
+    }
 
-    def get_weight(self):
-        return self._weight
+    String getName() {
+        return name;
+    }
 
-    def accept(self, visitor):
-        visitor.visit_physical_product(self)  # First dispatch: calls visitor's method for PhysicalProduct
+    int getDownloadSizeInMB() {
+        return downloadSizeInMB;
+    }
 
-
-class DigitalProduct(Item):
-    def __init__(self, name, download_size_in_mb):
-        self._name = name
-        self._download_size_in_mb = download_size_in_mb
-
-    def get_name(self):
-        return self._name
-
-    def get_download_size_in_mb(self):
-        return self._download_size_in_mb
-
-    def accept(self, visitor):
-        visitor.visit_digital_product(self)  # First dispatch: calls visitor's method for DigitalProduct
+    public void accept(ItemVisitor visitor) {
+        visitor.visitDigitalProduct(this);  // First dispatch: calls visitor's method for DigitalProduct
+    }
+}
 
 
-class GiftCard(Item):
-    def __init__(self, code, amount):
-        self._code = code
-        self._amount = amount
+class GiftCard implements Item {
+    private final String code;
+    private final int amount;
 
-    def get_code(self):
-        return self._code
+    GiftCard(String code, int amount) {
+        this.code = code;
+        this.amount = amount;
+    }
 
-    def get_amount(self):
-        return self._amount
+    String getCode() {
+        return code;
+    }
 
-    def accept(self, visitor):
-        visitor.visit_gift_card(self)  # First dispatch: calls visitor's method for GiftCard
+    int getAmount() {
+        return amount;
+    }
 
-
-# ======== Visitor Interface ============
-class ItemVisitor(ABC):
-    @abstractmethod
-    def visit_physical_product(self, item):
-        pass
-
-    @abstractmethod
-    def visit_digital_product(self, item):
-        pass
-
-    @abstractmethod
-    def visit_gift_card(self, item):
-        pass
+    public void accept(ItemVisitor visitor) {
+        visitor.visitGiftCard(this);  // First dispatch: calls visitor's method for GiftCard
+    }
+}
 
 
-# ============ Concrete Visitors ==============
-class InvoiceVisitor(ItemVisitor):
-    def visit_physical_product(self, item):
-        print(f"Invoice: {item.get_name()} - Shipping to customer")
-
-    def visit_digital_product(self, item):
-        print(f"Invoice: {item.get_name()} - Email with download link")
-
-    def visit_gift_card(self, item):
-        print(f"Invoice: Gift Card - Code: {item.get_code()}")
+// ======== Visitor Interface ============
+interface ItemVisitor {
+    void visitPhysicalProduct(PhysicalProduct item);
+    void visitDigitalProduct(DigitalProduct item);
+    void visitGiftCard(GiftCard item);
+}
 
 
-class ShippingCostVisitor(ItemVisitor):
-    def visit_physical_product(self, item):
-        print(f"Shipping cost for {item.get_name()}: Rs. {item.get_weight() * 10}")
+// ============ Concrete Visitors ==============
+class InvoiceVisitor implements ItemVisitor {
+    public void visitPhysicalProduct(PhysicalProduct item) {
+        System.out.println("Invoice: " + item.getName() + " - Shipping to customer");
+    }
 
-    def visit_digital_product(self, item):
-        print(f"{item.get_name()} is digital -- No shipping cost.")
+    public void visitDigitalProduct(DigitalProduct item) {
+        System.out.println("Invoice: " + item.getName() + " - Email with download link");
+    }
 
-    def visit_gift_card(self, item):
-        print("GiftCard delivery via email -- No shipping cost.")
+    public void visitGiftCard(GiftCard item) {
+        System.out.println("Invoice: Gift Card - Code: " + item.getCode());
+    }
+}
 
 
-# Client Code
-if __name__ == "__main__":
-    items = [
-        PhysicalProduct("Shoes", 1.2),
-        DigitalProduct("Ebook", 100),
-        GiftCard("TUF500", 500),
-    ]
+class ShippingCostVisitor implements ItemVisitor {
+    public void visitPhysicalProduct(PhysicalProduct item) {
+        System.out.println("Shipping cost for " + item.getName() + ": Rs. " + (item.getWeight() * 10));
+    }
 
-    invoice_generator = InvoiceVisitor()
-    shipping_calculator = ShippingCostVisitor()
+    public void visitDigitalProduct(DigitalProduct item) {
+        System.out.println(item.getName() + " is digital -- No shipping cost.");
+    }
 
-    for item in items:
-        item.accept(invoice_generator)
-        item.accept(shipping_calculator)
-        print()
+    public void visitGiftCard(GiftCard item) {
+        System.out.println("GiftCard delivery via email -- No shipping cost.");
+    }
+}
+
+
+// Client Code
+public class Main {
+    public static void main(String[] args) {
+        List<Item> items = List.of(
+                new PhysicalProduct("Shoes", 1.2),
+                new DigitalProduct("Ebook", 100),
+                new GiftCard("TUF500", 500));
+
+        ItemVisitor invoiceGenerator = new InvoiceVisitor();
+        ItemVisitor shippingCalculator = new ShippingCostVisitor();
+
+        for (Item item : items) {
+            item.accept(invoiceGenerator);
+            item.accept(shippingCalculator);
+            System.out.println();
+        }
+    }
+}
 ```
 
 ### Class Diagram
@@ -482,11 +531,11 @@ Normal method calls use **single dispatch** — the method called depends on the
 Visitor uses **double dispatch** — the method called depends on the types of TWO objects:
 
 1. **First dispatch**: `item.accept(visitor)` — dispatches based on the concrete type of `item` (e.g., `PhysicalProduct.accept()`).
-2. **Second dispatch**: Inside `accept()`, `visitor.visit_physical_product(self)` — dispatches based on the concrete type of `visitor` (e.g., `InvoiceVisitor.visit_physical_product()`).
+2. **Second dispatch**: Inside `accept()`, `visitor.visitPhysicalProduct(this)` — dispatches based on the concrete type of `visitor` (e.g., `InvoiceVisitor.visitPhysicalProduct()`).
 
-Result: The correct `visit_*()` method is called based on both the element type AND the visitor type. No `isinstance`, no casting.
+Result: The correct `visit*()` method is called based on both the element type AND the visitor type. No `instanceof`, no casting.
 
-Note: Python does not have method overloading, so the Visitor pattern uses distinct method names per element type (e.g., `visit_physical_product`, `visit_digital_product`) rather than overloaded `visit()` methods as in Java.
+Note: this example uses distinct method names per element type (`visitPhysicalProduct`, `visitDigitalProduct`, ...). Java *does* support overloading, so you could instead declare a single overloaded `visit(PhysicalProduct)`, `visit(DigitalProduct)`, `visit(GiftCard)` set — the JDK's own `FileVisitor` and `ElementVisitor` favor distinct names for clarity, which is why this example keeps them distinct too.
 
 ---
 

@@ -169,207 +169,326 @@ class RequestForwarder:
 - Multiple concurrent requests on the same tunnel — each gets its own request_id/Future
 - Response arrives for a request_id that already timed out — discard it
 
-```python
-import uuid
-import time
-import threading
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional
+```java
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
+public enum TunnelStatus {
+    ACTIVE, CLOSED
+}
 
-class TunnelStatus(Enum):
-    ACTIVE = "active"
-    CLOSED = "closed"
+public final class HttpRequest {
+    private final String method;
+    private final String path;
+    private final Map<String, String> headers;
+    private final String body;
+    private final String host;
 
+    public HttpRequest(String method, String path, Map<String, String> headers, String body, String host) {
+        this.method = method;
+        this.path = path;
+        this.headers = headers;
+        this.body = body;
+        this.host = host != null ? host : "";
+    }
 
-@dataclass
-class HttpRequest:
-    method: str
-    path: str
-    headers: dict
-    body: str
-    host: str = ""
+    public String getMethod() { return method; }
+    public String getPath() { return path; }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getBody() { return body; }
+    public String getHost() { return host; }
+}
 
+public final class HttpResponse {
+    private final int statusCode;
+    private final Map<String, String> headers;
+    private final String body;
 
-@dataclass
-class HttpResponse:
-    status_code: int
-    headers: dict
-    body: str
+    public HttpResponse(int statusCode, Map<String, String> headers, String body) {
+        this.statusCode = statusCode;
+        this.headers = headers;
+        this.body = body;
+    }
 
+    public int getStatusCode() { return statusCode; }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getBody() { return body; }
+}
 
-class Connection:
-    """
-    Represents the persistent connection from tunnel server to tunnel client.
-    In a real implementation this wraps a WebSocket or raw TCP socket.
-    """
-    def __init__(self, conn_id: str):
-        self.conn_id = conn_id
-        self._alive = True
-        # In real code: socket or asyncio StreamWriter
+/**
+ * Represents the persistent connection from tunnel server to tunnel client.
+ * In a real implementation this wraps a WebSocket or raw TCP socket.
+ */
+public class Connection {
+    private final String connId;
+    private volatile boolean alive = true;
+    // In real code: a Socket or Netty Channel
 
-    def send(self, data: dict):
-        """Send a serialized request to the tunnel client."""
-        if not self._alive:
-            raise ConnectionError("Connection is closed")
-        # Real: self._socket.send(json.dumps(data).encode())
-        print(f"[Connection {self.conn_id}] Sending: {data}")
+    public Connection(String connId) {
+        this.connId = connId;
+    }
 
-    def is_alive(self) -> bool:
-        return self._alive
+    /** Send a serialized request to the tunnel client. */
+    public void send(Map<String, Object> data) {
+        if (!alive) {
+            throw new IllegalStateException("Connection is closed");
+        }
+        // Real: socket.getOutputStream().write(toJson(data).getBytes());
+        System.out.println("[Connection " + connId + "] Sending: " + data);
+    }
 
-    def close(self):
-        self._alive = False
+    public boolean isAlive() { return alive; }
 
+    public void close() { alive = false; }
+}
 
-class Tunnel:
-    def __init__(self, tunnel_id: str, subdomain: str, local_port: int, connection: Connection):
-        self.tunnel_id = tunnel_id
-        self.subdomain = subdomain
-        self.local_port = local_port
-        self.connection = connection
-        self.status = TunnelStatus.ACTIVE
-        self._pending: dict = {}   # request_id -> threading.Event + response holder
-        self._lock = threading.Lock()
+public class Tunnel {
+    private final String tunnelId;
+    private final String subdomain;
+    private final int localPort;
+    private final Connection connection;
+    private volatile TunnelStatus status;
+    private final Map<String, PendingRequest> pending = new HashMap<>(); // request_id -> pending entry
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def send_request(self, request: HttpRequest, timeout: float = 30.0) -> HttpResponse:
-        """Forward request over persistent connection; block until response."""
-        request_id = str(uuid.uuid4())
-        event = threading.Event()
-        response_holder = [None]
+    private static final class PendingRequest {
+        final Object monitor = new Object();
+        volatile boolean completed = false;
+        volatile HttpResponse response;
+    }
 
-        with self._lock:
-            self._pending[request_id] = (event, response_holder)
+    public Tunnel(String tunnelId, String subdomain, int localPort, Connection connection) {
+        this.tunnelId = tunnelId;
+        this.subdomain = subdomain;
+        this.localPort = localPort;
+        this.connection = connection;
+        this.status = TunnelStatus.ACTIVE;
+    }
 
-        payload = {
-            "request_id": request_id,
-            "method": request.method,
-            "path": request.path,
-            "headers": request.headers,
-            "body": request.body,
-            "local_port": self.local_port,
+    /** Forward request over persistent connection; block until response. */
+    public HttpResponse sendRequest(HttpRequest request, double timeoutSeconds) {
+        String requestId = UUID.randomUUID().toString();
+        PendingRequest pendingRequest = new PendingRequest();
+
+        lock.lock();
+        try {
+            pending.put(requestId, pendingRequest);
+        } finally {
+            lock.unlock();
         }
 
-        try:
-            self.connection.send(payload)
-        except ConnectionError:
-            with self._lock:
-                self._pending.pop(request_id, None)
-            return HttpResponse(502, {}, "Bad Gateway: tunnel connection lost")
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("request_id", requestId);
+        payload.put("method", request.getMethod());
+        payload.put("path", request.getPath());
+        payload.put("headers", request.getHeaders());
+        payload.put("body", request.getBody());
+        payload.put("local_port", localPort);
 
-        completed = event.wait(timeout=timeout)
+        try {
+            connection.send(payload);
+        } catch (IllegalStateException e) {
+            lock.lock();
+            try {
+                pending.remove(requestId);
+            } finally {
+                lock.unlock();
+            }
+            return new HttpResponse(502, Collections.emptyMap(), "Bad Gateway: tunnel connection lost");
+        }
 
-        with self._lock:
-            self._pending.pop(request_id, None)
+        boolean completed;
+        synchronized (pendingRequest.monitor) {
+            long deadline = System.currentTimeMillis() + (long) (timeoutSeconds * 1000);
+            while (!pendingRequest.completed) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) break;
+                try {
+                    pendingRequest.monitor.wait(remaining);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            completed = pendingRequest.completed;
+        }
 
-        if not completed:
-            return HttpResponse(504, {}, "Gateway Timeout: local server did not respond")
+        lock.lock();
+        try {
+            pending.remove(requestId);
+        } finally {
+            lock.unlock();
+        }
 
-        return response_holder[0]
+        if (!completed) {
+            return new HttpResponse(504, Collections.emptyMap(), "Gateway Timeout: local server did not respond");
+        }
 
-    def receive_response(self, request_id: str, response: HttpResponse):
-        """Called when client sends back a response for a pending request."""
-        with self._lock:
-            entry = self._pending.get(request_id)
-        if entry is None:
-            return  # request already timed out; discard
-        event, response_holder = entry
-        response_holder[0] = response
-        event.set()
+        return pendingRequest.response;
+    }
 
-    def close(self):
-        self.status = TunnelStatus.CLOSED
-        self.connection.close()
-        # Fail all pending requests
-        with self._lock:
-            for request_id, (event, response_holder) in self._pending.items():
-                response_holder[0] = HttpResponse(502, {}, "Tunnel closed")
-                event.set()
-            self._pending.clear()
+    /** Called when client sends back a response for a pending request. */
+    public void receiveResponse(String requestId, HttpResponse response) {
+        PendingRequest entry;
+        lock.lock();
+        try {
+            entry = pending.get(requestId);
+        } finally {
+            lock.unlock();
+        }
+        if (entry == null) {
+            return; // request already timed out; discard
+        }
+        synchronized (entry.monitor) {
+            entry.response = response;
+            entry.completed = true;
+            entry.monitor.notifyAll();
+        }
+    }
 
+    public void close() {
+        status = TunnelStatus.CLOSED;
+        connection.close();
+        // Fail all pending requests
+        lock.lock();
+        try {
+            for (PendingRequest entry : pending.values()) {
+                synchronized (entry.monitor) {
+                    entry.response = new HttpResponse(502, Collections.emptyMap(), "Tunnel closed");
+                    entry.completed = true;
+                    entry.monitor.notifyAll();
+                }
+            }
+            pending.clear();
+        } finally {
+            lock.unlock();
+        }
+    }
 
-class SubdomainGenerator:
-    BASE_DOMAIN = "tunnel.example.com"
+    public String getTunnelId() { return tunnelId; }
+    public String getSubdomain() { return subdomain; }
+    public int getLocalPort() { return localPort; }
+    public Connection getConnection() { return connection; }
+    public TunnelStatus getStatus() { return status; }
+}
 
-    def generate(self) -> str:
-        return uuid.uuid4().hex[:8]   # e.g., "a3f9c012"
+public class SubdomainGenerator {
+    public static final String BASE_DOMAIN = "tunnel.example.com";
 
-    def public_url(self, subdomain: str) -> str:
-        return f"https://{subdomain}.{self.BASE_DOMAIN}"
+    public String generate() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 8); // e.g., "a3f9c012"
+    }
 
+    public String publicUrl(String subdomain) {
+        return String.format("https://%s.%s", subdomain, BASE_DOMAIN);
+    }
+}
 
-class TunnelRegistry:
-    def __init__(self):
-        self._by_id: dict = {}         # tunnel_id -> Tunnel
-        self._by_subdomain: dict = {}  # subdomain -> tunnel_id
-        self._lock = threading.Lock()
+public class TunnelRegistry {
+    private final Map<String, Tunnel> byId = new HashMap<>();        // tunnel_id -> Tunnel
+    private final Map<String, String> bySubdomain = new HashMap<>(); // subdomain -> tunnel_id
+    private final ReentrantLock lock = new ReentrantLock();
 
-    def add(self, tunnel: Tunnel):
-        with self._lock:
-            self._by_id[tunnel.tunnel_id] = tunnel
-            self._by_subdomain[tunnel.subdomain] = tunnel.tunnel_id
+    public void add(Tunnel tunnel) {
+        lock.lock();
+        try {
+            byId.put(tunnel.getTunnelId(), tunnel);
+            bySubdomain.put(tunnel.getSubdomain(), tunnel.getTunnelId());
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def remove(self, tunnel_id: str):
-        with self._lock:
-            tunnel = self._by_id.pop(tunnel_id, None)
-            if tunnel:
-                self._by_subdomain.pop(tunnel.subdomain, None)
+    public void remove(String tunnelId) {
+        lock.lock();
+        try {
+            Tunnel tunnel = byId.remove(tunnelId);
+            if (tunnel != null) {
+                bySubdomain.remove(tunnel.getSubdomain());
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def find_by_subdomain(self, subdomain: str) -> Optional[Tunnel]:
-        with self._lock:
-            tid = self._by_subdomain.get(subdomain)
-            return self._by_id.get(tid) if tid else None
+    public Tunnel findBySubdomain(String subdomain) {
+        lock.lock();
+        try {
+            String tid = bySubdomain.get(subdomain);
+            return tid != null ? byId.get(tid) : null;
+        } finally {
+            lock.unlock();
+        }
+    }
 
-    def find_by_id(self, tunnel_id: str) -> Optional[Tunnel]:
-        with self._lock:
-            return self._by_id.get(tunnel_id)
+    public Tunnel findById(String tunnelId) {
+        lock.lock();
+        try {
+            return byId.get(tunnelId);
+        } finally {
+            lock.unlock();
+        }
+    }
+}
 
+public class TunnelServer {
+    private final TunnelRegistry registry = new TunnelRegistry();
+    private final SubdomainGenerator subdomainGen = new SubdomainGenerator();
+    private final double requestTimeout;
 
-class TunnelServer:
-    def __init__(self, request_timeout: float = 30.0):
-        self.registry = TunnelRegistry()
-        self.subdomain_gen = SubdomainGenerator()
-        self.request_timeout = request_timeout
+    public TunnelServer(double requestTimeout) {
+        this.requestTimeout = requestTimeout;
+    }
 
-    def register_tunnel(self, local_port: int, connection: Connection) -> str:
-        """Called when a tunnel client connects. Returns the public URL."""
-        subdomain = self.subdomain_gen.generate()
-        tunnel_id = str(uuid.uuid4())
-        tunnel = Tunnel(tunnel_id, subdomain, local_port, connection)
-        self.registry.add(tunnel)
-        public_url = self.subdomain_gen.public_url(subdomain)
-        print(f"Tunnel created: {public_url} -> localhost:{local_port}")
-        return public_url
+    /** Called when a tunnel client connects. Returns the public URL. */
+    public String registerTunnel(int localPort, Connection connection) {
+        String subdomain = subdomainGen.generate();
+        String tunnelId = UUID.randomUUID().toString();
+        Tunnel tunnel = new Tunnel(tunnelId, subdomain, localPort, connection);
+        registry.add(tunnel);
+        String publicUrl = subdomainGen.publicUrl(subdomain);
+        System.out.println("Tunnel created: " + publicUrl + " -> localhost:" + localPort);
+        return publicUrl;
+    }
 
-    def handle_incoming(self, request: HttpRequest) -> HttpResponse:
-        """Entry point for all public HTTP traffic."""
-        subdomain = self._extract_subdomain(request.host)
-        if not subdomain:
-            return HttpResponse(400, {}, "Bad Request: missing or invalid Host header")
+    /** Entry point for all public HTTP traffic. */
+    public HttpResponse handleIncoming(HttpRequest request) {
+        String subdomain = extractSubdomain(request.getHost());
+        if (subdomain == null) {
+            return new HttpResponse(400, Collections.emptyMap(), "Bad Request: missing or invalid Host header");
+        }
 
-        tunnel = self.registry.find_by_subdomain(subdomain)
-        if tunnel is None:
-            return HttpResponse(404, {}, "Tunnel not found")
+        Tunnel tunnel = registry.findBySubdomain(subdomain);
+        if (tunnel == null) {
+            return new HttpResponse(404, Collections.emptyMap(), "Tunnel not found");
+        }
 
-        if tunnel.status != TunnelStatus.ACTIVE:
-            return HttpResponse(503, {}, "Tunnel is not active")
+        if (tunnel.getStatus() != TunnelStatus.ACTIVE) {
+            return new HttpResponse(503, Collections.emptyMap(), "Tunnel is not active");
+        }
 
-        return tunnel.send_request(request, timeout=self.request_timeout)
+        return tunnel.sendRequest(request, requestTimeout);
+    }
 
-    def close_tunnel(self, tunnel_id: str):
-        tunnel = self.registry.find_by_id(tunnel_id)
-        if tunnel:
-            tunnel.close()
-            self.registry.remove(tunnel_id)
+    public void closeTunnel(String tunnelId) {
+        Tunnel tunnel = registry.findById(tunnelId);
+        if (tunnel != null) {
+            tunnel.close();
+            registry.remove(tunnelId);
+        }
+    }
 
-    def _extract_subdomain(self, host: str) -> Optional[str]:
-        # host = "abc123.tunnel.example.com"
-        # Returns "abc123"
-        base = SubdomainGenerator.BASE_DOMAIN
-        if host.endswith(f".{base}"):
-            return host[: -(len(base) + 1)]
-        return None
+    private String extractSubdomain(String host) {
+        // host = "abc123.tunnel.example.com"
+        // Returns "abc123"
+        String base = SubdomainGenerator.BASE_DOMAIN;
+        if (host != null && host.endsWith("." + base)) {
+            return host.substring(0, host.length() - (base.length() + 1));
+        }
+        return null;
+    }
+}
 ```
 
 ---
@@ -400,14 +519,27 @@ HTTP tunneling operates at the application layer: the tunnel server understands 
 
 TCP tunneling operates at the transport layer: raw bytes are forwarded without interpretation. This supports any protocol (databases, SSH, custom binary protocols) but the server cannot inspect or modify traffic.
 
-```python
-class TCPTunnel:
-    """Forwards raw bytes — no HTTP awareness."""
-    def forward_bytes(self, data: bytes) -> bytes:
-        # Send raw bytes to client, receive raw bytes back
-        request_id = str(uuid.uuid4())
-        self.connection.send_raw(data, request_id)
-        return self._wait_for_raw_response(request_id)
+```java
+/** Forwards raw bytes — no HTTP awareness. */
+public class TCPTunnel {
+    private final Connection connection;
+
+    public TCPTunnel(Connection connection) {
+        this.connection = connection;
+    }
+
+    public byte[] forwardBytes(byte[] data) {
+        // Send raw bytes to client, receive raw bytes back
+        String requestId = UUID.randomUUID().toString();
+        connection.sendRaw(data, requestId);
+        return waitForRawResponse(requestId);
+    }
+
+    private byte[] waitForRawResponse(String requestId) {
+        // Blocks until the raw response for requestId arrives
+        throw new UnsupportedOperationException("not implemented");
+    }
+}
 ```
 
 For TCP tunneling, the public server listens on a port (not a subdomain) and the tunnel identifies by port number rather than hostname.
@@ -416,14 +548,16 @@ For TCP tunneling, the public server listens on a port (not a subdomain) and the
 
 The public tunnel server needs a wildcard DNS record: `*.tunnel.example.com -> server_ip`. The server holds a wildcard TLS certificate for `*.tunnel.example.com`. When a request arrives, the `Host` header contains the full hostname. The server parses the subdomain prefix and looks it up in the TunnelRegistry.
 
-```python
-def _extract_subdomain(self, host: str) -> Optional[str]:
-    # Strip port if present: "abc123.tunnel.example.com:443"
-    host = host.split(":")[0]
-    base = "tunnel.example.com"
-    if host.endswith(f".{base}") and host != base:
-        return host[:-(len(base) + 1)]
-    return None
+```java
+private String extractSubdomain(String host) {
+    // Strip port if present: "abc123.tunnel.example.com:443"
+    host = host.split(":")[0];
+    String base = "tunnel.example.com";
+    if (host.endsWith("." + base) && !host.equals(base)) {
+        return host.substring(0, host.length() - (base.length() + 1));
+    }
+    return null;
+}
 ```
 
 For collision avoidance, the SubdomainGenerator should check the registry before returning a new subdomain and retry if already taken.
@@ -432,61 +566,112 @@ For collision avoidance, the SubdomainGenerator should check the registry before
 
 When the local server is slow, the tunnel server holds the response in memory (buffered in the Future). For very large responses, streaming is better: instead of buffering the full response, send chunks back to the caller as they arrive.
 
-```python
-class StreamingTunnel(Tunnel):
-    def send_request_streaming(self, request: HttpRequest):
-        """Returns an iterator of response chunks."""
-        request_id = str(uuid.uuid4())
-        chunk_queue = queue.Queue()
+```java
+public class StreamingTunnel extends Tunnel {
+    private final Map<String, BlockingQueue<byte[]>> pendingStreams = new ConcurrentHashMap<>();
+    private static final byte[] SENTINEL = new byte[0];
 
-        with self._lock:
-            self._pending_streams[request_id] = chunk_queue
+    public StreamingTunnel(String tunnelId, String subdomain, int localPort, Connection connection) {
+        super(tunnelId, subdomain, localPort, connection);
+    }
 
-        self.connection.send({**self._serialize(request), "request_id": request_id, "streaming": True})
+    /** Returns an iterator of response chunks. */
+    public Iterator<byte[]> sendRequestStreaming(HttpRequest request) {
+        String requestId = UUID.randomUUID().toString();
+        BlockingQueue<byte[]> chunkQueue = new LinkedBlockingQueue<>();
+        pendingStreams.put(requestId, chunkQueue);
 
-        def chunk_iterator():
-            while True:
-                chunk = chunk_queue.get(timeout=30)
-                if chunk is None:  # sentinel
-                    break
-                yield chunk
+        Map<String, Object> payload = new LinkedHashMap<>(serialize(request));
+        payload.put("request_id", requestId);
+        payload.put("streaming", true);
+        getConnection().send(payload);
 
-        return chunk_iterator()
+        return new Iterator<byte[]>() {
+            private byte[] next = advance();
 
-    def receive_chunk(self, request_id: str, chunk: bytes, done: bool):
-        q = self._pending_streams.get(request_id)
-        if q:
-            q.put(chunk)
-            if done:
-                q.put(None)  # sentinel
+            private byte[] advance() {
+                try {
+                    byte[] chunk = chunkQueue.poll(30, TimeUnit.SECONDS);
+                    return (chunk == null || chunk == SENTINEL) ? null : chunk;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+
+            @Override
+            public boolean hasNext() { return next != null; }
+
+            @Override
+            public byte[] next() {
+                byte[] current = next;
+                next = advance();
+                return current;
+            }
+        };
+    }
+
+    public void receiveChunk(String requestId, byte[] chunk, boolean done) {
+        BlockingQueue<byte[]> q = pendingStreams.get(requestId);
+        if (q != null) {
+            q.add(chunk);
+            if (done) {
+                q.add(SENTINEL);
+            }
+        }
+    }
+
+    private Map<String, Object> serialize(HttpRequest request) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("method", request.getMethod());
+        map.put("path", request.getPath());
+        map.put("headers", request.getHeaders());
+        map.put("body", request.getBody());
+        return map;
+    }
+}
 ```
 
 ### 4. "How do you implement rate limiting per tunnel?"
 
 Each Tunnel maintains a token bucket or sliding window counter. Before forwarding a request, check if the rate limit is exceeded.
 
-```python
-class RateLimitedTunnel(Tunnel):
-    def __init__(self, *args, requests_per_second: int = 10, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.rps = requests_per_second
-        self._timestamps: list = []   # sliding window
-        self._ratelimit_lock = threading.Lock()
+```java
+public class RateLimitedTunnel extends Tunnel {
+    private final int requestsPerSecond;
+    private final List<Long> timestamps = new ArrayList<>(); // sliding window, millis
+    private final ReentrantLock rateLimitLock = new ReentrantLock();
 
-    def _check_rate_limit(self) -> bool:
-        now = time.time()
-        with self._ratelimit_lock:
-            # Remove timestamps older than 1 second
-            self._timestamps = [t for t in self._timestamps if now - t < 1.0]
-            if len(self._timestamps) >= self.rps:
-                return False
-            self._timestamps.append(now)
-            return True
+    public RateLimitedTunnel(String tunnelId, String subdomain, int localPort,
+                              Connection connection, int requestsPerSecond) {
+        super(tunnelId, subdomain, localPort, connection);
+        this.requestsPerSecond = requestsPerSecond;
+    }
 
-    def send_request(self, request: HttpRequest, timeout: float = 30.0) -> HttpResponse:
-        if not self._check_rate_limit():
-            return HttpResponse(429, {"Retry-After": "1"}, "Too Many Requests")
-        return super().send_request(request, timeout)
+    private boolean checkRateLimit() {
+        long now = System.currentTimeMillis();
+        rateLimitLock.lock();
+        try {
+            // Remove timestamps older than 1 second
+            timestamps.removeIf(t -> now - t >= 1000);
+            if (timestamps.size() >= requestsPerSecond) {
+                return false;
+            }
+            timestamps.add(now);
+            return true;
+        } finally {
+            rateLimitLock.unlock();
+        }
+    }
+
+    @Override
+    public HttpResponse sendRequest(HttpRequest request, double timeoutSeconds) {
+        if (!checkRateLimit()) {
+            return new HttpResponse(429, Map.of("Retry-After", "1"), "Too Many Requests");
+        }
+        return super.sendRequest(request, timeoutSeconds);
+    }
+}
 ```
 
 ### 5. "How do you support WebSocket tunneling?"
@@ -496,19 +681,23 @@ WebSocket connections are upgraded HTTP connections. The tunnel server needs to:
 2. Complete the WebSocket handshake on behalf of the client
 3. Forward all subsequent WebSocket frames bidirectionally through the persistent tunnel connection
 
-```python
-def handle_incoming(self, request: HttpRequest) -> HttpResponse:
-    if request.headers.get("Upgrade", "").lower() == "websocket":
-        return self._handle_websocket_upgrade(request)
-    return self._handle_http(request)
+```java
+public HttpResponse handleIncoming(HttpRequest request) {
+    String upgrade = request.getHeaders().getOrDefault("Upgrade", "");
+    if (upgrade.equalsIgnoreCase("websocket")) {
+        return handleWebSocketUpgrade(request);
+    }
+    return handleHttp(request);
+}
 
-def _handle_websocket_upgrade(self, request: HttpRequest):
-    tunnel = self.registry.find_by_subdomain(self._extract_subdomain(request.host))
-    # Complete WS handshake: send 101 Switching Protocols to caller
-    # Then enter bidirectional frame relay mode
-    # Each WS frame from public side -> tunnel connection -> local server
-    # Each WS frame from local server -> tunnel connection -> public side
-    pass
+private HttpResponse handleWebSocketUpgrade(HttpRequest request) {
+    Tunnel tunnel = registry.findBySubdomain(extractSubdomain(request.getHost()));
+    // Complete WS handshake: send 101 Switching Protocols to caller
+    // Then enter bidirectional frame relay mode
+    // Each WS frame from public side -> tunnel connection -> local server
+    // Each WS frame from local server -> tunnel connection -> public side
+    throw new UnsupportedOperationException("not implemented");
+}
 ```
 
 ---
