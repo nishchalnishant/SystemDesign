@@ -89,7 +89,7 @@ Carrying forward from Steps 1–4:
 - **Observer**, only if the requirements later add "notify the rider's app in real time as driver location updates" — not justified yet by the current requirements list, so it's *not* added at this stage. Note it as a "would add if requirements expand" instead of building it preemptively.
 - No Factory needed — there's no varying sub-type of `Driver` or `Rider` being constructed from input; a plain constructor suffices. Resist the urge to add one anyway.
 
-This is 1 confirmed pattern (Strategy) plus 1 conditionally-justified one (Singleton) plus one explicitly deferred (Observer) — a realistic, defensible output. Compare against how solved problems in `05-problems/` combine patterns via the [table in 06-lld/README.md](../README.md).
+This is 1 confirmed pattern (Strategy) plus 1 conditionally-justified one (Singleton) plus one explicitly deferred (Observer) — a realistic, defensible output. Compare against how solved problems in `06-problems/` combine patterns via the [table in 06-lld/README.md](../README.md).
 
 ---
 

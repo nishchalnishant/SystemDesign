@@ -380,5 +380,5 @@ This concept is used by **1 problem** in this repo:
 
 **Low-Level Design**
 
-- [Design a Logger Library](../../05-problems/03-domain-specific/19-design-logger-library.md)
+- [Design a Logger Library](../../06-problems/03-domain-specific/19-design-logger-library.md)
 

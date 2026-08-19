@@ -71,7 +71,7 @@ Silence is the main way this process fails to land, even when the internal reaso
 | "How would this scale to 10x traffic?" | This is usually a segue into HLD, not LLD — answer briefly (e.g., "the capacity check would move from an in-memory counter to an atomic DB decrement or a distributed lock") and offer to go deeper if they want, without abandoning the LLD diagram. |
 | "What if we needed to support two membership tiers with different booking privileges?" | Re-run Step 5's table: does behavior differ per tier (not just a label)? If yes, that's a live Strategy/State candidate you didn't need before — show you can extend the existing diagram rather than restarting it. |
 | "How do you handle the race condition on the last spot?" | Name the specific mechanism (synchronized block, atomic counter, DB-level optimistic lock/unique constraint) — see [concurrency-patterns.md](../04-concurrency/concurrency-patterns.md) and [thread-safe-singleton.md](../04-concurrency/thread-safe-singleton.md) for the vocabulary. |
-| "Can you code the X method?" | Pick the method most central to the "tricky part" of the problem (per the difficulty callouts in [05-problems](../05-problems/) solved examples) — that's almost always what they want to see coded, not boilerplate getters. |
+| "Can you code the X method?" | Pick the method most central to the "tricky part" of the problem (per the difficulty callouts in [06-problems](../06-problems/) solved examples) — that's almost always what they want to see coded, not boilerplate getters. |
 
 ---
 

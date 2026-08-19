@@ -410,13 +410,13 @@ This concept is used by **9 problems** in this repo — a representative selecti
 
 **Low-Level Design**
 
-- [Design Chess](../../05-problems/02-frequent-problems/07-design-chess.md)
-- [Design Snake and Ladder](../../05-problems/02-frequent-problems/08-design-snake-and-ladder.md)
-- [Design a Hotel Management System](../../05-problems/02-frequent-problems/11-design-hotel-management.md)
-- [Design Locker Service](../../05-problems/02-frequent-problems/15-design-locker-service.md)
-- [Design Notification System](../../05-problems/02-frequent-problems/16-design-notification-system.md)
-- [Design a Library Management System](../../05-problems/03-domain-specific/20-design-library-management.md)
-- [Design a Ride Sharing System](../../05-problems/03-domain-specific/22-design-ride-sharing.md)
-- [Design Minesweeper](../../05-problems/04-advanced-niche/25-design-minesweeper.md)
+- [Design Chess](../../06-problems/02-frequent-problems/07-design-chess.md)
+- [Design Snake and Ladder](../../06-problems/02-frequent-problems/08-design-snake-and-ladder.md)
+- [Design a Hotel Management System](../../06-problems/02-frequent-problems/11-design-hotel-management.md)
+- [Design Locker Service](../../06-problems/02-frequent-problems/15-design-locker-service.md)
+- [Design Notification System](../../06-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design a Library Management System](../../06-problems/03-domain-specific/20-design-library-management.md)
+- [Design a Ride Sharing System](../../06-problems/03-domain-specific/22-design-ride-sharing.md)
+- [Design Minesweeper](../../06-problems/04-advanced-niche/25-design-minesweeper.md)
 - …and 1 more
 

@@ -443,5 +443,5 @@ This concept is used by **1 problem** in this repo:
 
 **Low-Level Design**
 
-- [Design HTTP Tunneling Service](../../05-problems/04-advanced-niche/30-design-tunneling-service.md)
+- [Design HTTP Tunneling Service](../../06-problems/04-advanced-niche/30-design-tunneling-service.md)
 

@@ -1,7 +1,7 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** A timed drill set — problem prompts only, no solutions — to practice running the 5-step process yourself. Self-check by comparing your output against the closest solved problem in [05-problems](../05-problems/), not by reading a provided answer.
+> **What this covers:** A timed drill set — problem prompts only, no solutions — to practice running the 5-step process yourself. Self-check by comparing your output against the closest solved problem in [06-problems](../06-problems/), not by reading a provided answer.
 >
 > **How to use this:** Set a timer per the difficulty tier (20/30/40 min). Produce the actual artifacts — written requirements list, class table, diagram, method table, pattern list with justifications — not just mental notes. Then compare against the pointed-to solved problem and note *where your reasoning diverged and why*, not just whether the final class names matched.
 >
@@ -33,9 +33,9 @@ Reading the process is necessary but not sufficient — the skill is running it 
 
 Run the full process but keep scope small — these are meant to build speed on Steps 1-3.
 
-1. **Design a Tic-Tac-Toe game** for two players on an NxN board. Self-check: [03-design-tic-tac-toe.md](../05-problems/01-core-problems/03-design-tic-tac-toe.md)
-2. **Design a Vending Machine** that dispenses items based on selection and payment, with a defined set of states (idle, selecting, dispensing, out-of-stock). Self-check: [04-design-vending-machine.md](../05-problems/01-core-problems/04-design-vending-machine.md)
-3. **Design an ATM** that handles PIN validation, balance inquiry, withdrawal with denomination dispensing, and insufficient-funds/insufficient-cash cases. Self-check: [12-design-atm.md](../05-problems/02-frequent-problems/12-design-atm.md)
+1. **Design a Tic-Tac-Toe game** for two players on an NxN board. Self-check: [03-design-tic-tac-toe.md](../06-problems/01-core-problems/03-design-tic-tac-toe.md)
+2. **Design a Vending Machine** that dispenses items based on selection and payment, with a defined set of states (idle, selecting, dispensing, out-of-stock). Self-check: [04-design-vending-machine.md](../06-problems/01-core-problems/04-design-vending-machine.md)
+3. **Design an ATM** that handles PIN validation, balance inquiry, withdrawal with denomination dispensing, and insufficient-funds/insufficient-cash cases. Self-check: [12-design-atm.md](../06-problems/02-frequent-problems/12-design-atm.md)
 
 ---
 
@@ -43,10 +43,10 @@ Run the full process but keep scope small — these are meant to build speed on 
 
 These have a dominant pattern signal — good for practicing Step 5's justification discipline.
 
-4. **Design a Rate Limiter** as a library that can be configured with different limiting algorithms (fixed window, sliding window, token bucket) without the calling code changing. Self-check: [02-design-rate-limiter.md](../05-problems/01-core-problems/02-design-rate-limiter.md)
-5. **Design an Elevator System** for a building with multiple elevators and floors, optimizing request handling as elevators move. Self-check: [09-design-elevator-system.md](../05-problems/02-frequent-problems/09-design-elevator-system.md)
-6. **Design a Notification System** that can send via email, SMS, or push, with the delivery channel selectable per notification and new channels addable later. Self-check: [16-design-notification-system.md](../05-problems/02-frequent-problems/16-design-notification-system.md)
-7. **Design a Logger Library** where log messages pass through a configurable sequence of handlers (e.g., level filter → formatter → sink), each able to stop or forward the message. Self-check: [19-design-logger-library.md](../05-problems/03-domain-specific/19-design-logger-library.md)
+4. **Design a Rate Limiter** as a library that can be configured with different limiting algorithms (fixed window, sliding window, token bucket) without the calling code changing. Self-check: [02-design-rate-limiter.md](../06-problems/01-core-problems/02-design-rate-limiter.md)
+5. **Design an Elevator System** for a building with multiple elevators and floors, optimizing request handling as elevators move. Self-check: [09-design-elevator-system.md](../06-problems/02-frequent-problems/09-design-elevator-system.md)
+6. **Design a Notification System** that can send via email, SMS, or push, with the delivery channel selectable per notification and new channels addable later. Self-check: [16-design-notification-system.md](../06-problems/02-frequent-problems/16-design-notification-system.md)
+7. **Design a Logger Library** where log messages pass through a configurable sequence of handlers (e.g., level filter → formatter → sink), each able to stop or forward the message. Self-check: [19-design-logger-library.md](../06-problems/03-domain-specific/19-design-logger-library.md)
 
 ---
 
@@ -54,10 +54,10 @@ These have a dominant pattern signal — good for practicing Step 5's justificat
 
 Closer to a real onsite round — ambiguous scope, likely 2+ patterns, and a concurrency wrinkle to reason about explicitly.
 
-8. **Design Splitwise** — users split group expenses in various ways (equal, exact amounts, percentages), and the system settles up debts with the minimum number of transactions. Self-check: [05-design-splitwise.md](../05-problems/01-core-problems/05-design-splitwise.md)
-9. **Design a Coupon/Discount System** where multiple coupons can apply to an order, some stack and some are mutually exclusive, and eligibility rules vary per coupon type. Self-check: [17-design-coupon-system.md](../05-problems/02-frequent-problems/17-design-coupon-system.md)
-10. **Design a Ride-Sharing Service** matching riders to nearby available drivers, with trip lifecycle and swappable fare calculation, under concurrent ride requests. Self-check: [22-design-ride-sharing.md](../05-problems/03-domain-specific/22-design-ride-sharing.md)
-11. **Design a Concurrent LRU Cache** as a thread-safe library used by multiple callers simultaneously, supporting O(1) get/put. Self-check: [35-design-concurrent-lru-cache.md](../05-problems/04-advanced-niche/35-design-concurrent-lru-cache.md)
+8. **Design Splitwise** — users split group expenses in various ways (equal, exact amounts, percentages), and the system settles up debts with the minimum number of transactions. Self-check: [05-design-splitwise.md](../06-problems/01-core-problems/05-design-splitwise.md)
+9. **Design a Coupon/Discount System** where multiple coupons can apply to an order, some stack and some are mutually exclusive, and eligibility rules vary per coupon type. Self-check: [17-design-coupon-system.md](../06-problems/02-frequent-problems/17-design-coupon-system.md)
+10. **Design a Ride-Sharing Service** matching riders to nearby available drivers, with trip lifecycle and swappable fare calculation, under concurrent ride requests. Self-check: [22-design-ride-sharing.md](../06-problems/03-domain-specific/22-design-ride-sharing.md)
+11. **Design a Concurrent LRU Cache** as a thread-safe library used by multiple callers simultaneously, supporting O(1) get/put. Self-check: [35-design-concurrent-lru-cache.md](../06-problems/04-advanced-niche/35-design-concurrent-lru-cache.md)
 
 ---
 
@@ -80,4 +80,4 @@ Don't just check "did I get the same class names." Ask:
 - Did I add a class or interface the solved version didn't need? Was that over-engineering, or a genuinely different valid interpretation of ambiguous scope?
 - Did the solved version use a pattern I missed? Re-read the relevant row in [05-spotting-the-pattern.md](05-spotting-the-pattern.md) — was the triggering phrase in the requirements something I under-weighted?
 
-**This is the end of the methodology sequence.** Return to [00 README](README.md) for the full map, or go straight to [05-problems](../05-problems/) for more solved reference material once drills feel fast.
+**This is the end of the methodology sequence.** Return to [00 README](README.md) for the full map, or go straight to [06-problems](../06-problems/) for more solved reference material once drills feel fast.

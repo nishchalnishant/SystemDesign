@@ -25,7 +25,7 @@ tags: [06-lld, methodology, uml, design-patterns, tutorial]
 ---
 # LLD Methodology — Learning How to Think, Not What to Memorize
 
-You already have the reference material in this repo: [OOP fundamentals](../01-oop-fundamentals/), [SOLID](../02-solid-principles/), [23 design patterns](../03-design-patterns/), [concurrency patterns](../04-concurrency/), and [36 fully solved problems](../05-problems/). That material answers "what is the Strategy pattern" and "how was Parking Lot solved." It does not answer the harder question:
+You already have the reference material in this repo: [OOP fundamentals](../01-oop-fundamentals/), [SOLID](../02-solid-principles/), [23 design patterns](../03-design-patterns/), [concurrency patterns](../04-concurrency/), and [36 fully solved problems](../06-problems/). That material answers "what is the Strategy pattern" and "how was Parking Lot solved." It does not answer the harder question:
 
 **Given a problem you've never seen, how do you produce the class diagram yourself?**
 
@@ -35,7 +35,7 @@ That's what this folder is for. It is a process, not a reference — five mechan
 
 ## Why memorizing 36 solutions doesn't transfer
 
-If you've read the 36 problems in `05-problems/` and still freeze on a new prompt, it's because you memorized outputs (Parking Lot uses Singleton + Strategy) instead of the process that generated them. The interviewer's problem will never be exactly Parking Lot. It will be *shaped* like Parking Lot — shared inventory, allocation under constraints, pluggable pricing — and shape is what the process below extracts, regardless of the surface domain (parking spots vs. hotel rooms vs. warehouse bins).
+If you've read the 36 problems in `06-problems/` and still freeze on a new prompt, it's because you memorized outputs (Parking Lot uses Singleton + Strategy) instead of the process that generated them. The interviewer's problem will never be exactly Parking Lot. It will be *shaped* like Parking Lot — shared inventory, allocation under constraints, pluggable pricing — and shape is what the process below extracts, regardless of the surface domain (parking spots vs. hotel rooms vs. warehouse bins).
 
 ---
 
@@ -78,7 +78,7 @@ Steps 2 and 3 interleave in practice — you'll often revise your noun list once
 | Learning OOP vocabulary from scratch | [01-oop-fundamentals](../01-oop-fundamentals/) first, then come back here |
 | Comfortable with OOP but can't produce a diagram from a prompt | Start here, at [01-problem-decomposition.md](01-problem-decomposition.md) |
 | Mid-design and unsure which pattern fits | Jump straight to [05-spotting-the-pattern.md](05-spotting-the-pattern.md) |
-| About to practice a new problem | [08-practice-drills.md](08-practice-drills.md), then self-check against the matching entry in [05-problems](../05-problems/) |
+| About to practice a new problem | [08-practice-drills.md](08-practice-drills.md), then self-check against the matching entry in [06-problems](../06-problems/) |
 | About to walk into an interview | [07-interview-playbook.md](07-interview-playbook.md) |
 
 Every step doc links out to the specific SOLID principle, pattern doc, or UML notation it depends on — you don't need to pre-read those folders cover to cover. Follow the links when you hit them.

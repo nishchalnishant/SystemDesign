@@ -353,6 +353,6 @@ This concept is used by **2 problems** in this repo:
 
 **Low-Level Design**
 
-- [Design Chess](../05-problems/02-frequent-problems/07-design-chess.md)
-- [Design Coupon System](../05-problems/02-frequent-problems/17-design-coupon-system.md)
+- [Design Chess](../06-problems/02-frequent-problems/07-design-chess.md)
+- [Design Coupon System](../06-problems/02-frequent-problems/17-design-coupon-system.md)
 

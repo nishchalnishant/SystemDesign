@@ -7,7 +7,7 @@
 > - Four relationship questions, asked in order, for every class pair: (1) Is it IS-A or HAS-A? (2) If HAS-A, does the part's lifecycle depend on the whole? (3) Can the part be shared across multiple wholes? (4) What's the cardinality on each side?
 > - Composition (filled diamond) = part dies with whole, not shared. Aggregation (hollow diamond) = part outlives whole, can be shared. Association = a plain "uses/knows about" link, often via a method parameter, no ownership implied.
 > - Default to composition or association; reach for inheritance only when LSP holds (see [Liskov Substitution](../02-solid-principles/03-liskov-substitution.md)) — prefer composition over inheritance when in doubt.
-> - Draw the diagram as boxes with a 3-part layout (name / fields / methods) connected by typed arrows — the notation itself is documented in [uml-diagrams.md](../uml-diagrams.md).
+> - Draw the diagram as boxes with a 3-part layout (name / fields / methods) connected by typed arrows — the notation itself is documented in [uml-diagrams.md](../01-oop-fundamentals/uml-diagrams.md).
 >
 > **Key takeaway:** The relationship type isn't a UML trivia question — it dictates real code (does the constructor take the object or create it? does deleting the parent cascade-delete the child?). Get the relationship right and the code follows almost mechanically.
 
@@ -19,7 +19,7 @@ tags: [06-lld, methodology, uml, relationships, class-diagram]
 ---
 # Step 3 — Relationships & UML
 
-You have a list of classified classes from [02-nouns-to-classes.md](02-nouns-to-classes.md). Now you connect them. This step is where "I know what a composition arrow looks like" (declarative knowledge, covered in [uml-diagrams.md](../uml-diagrams.md)) turns into "I know which arrow this specific pair needs" (the actual interview skill).
+You have a list of classified classes from [02-nouns-to-classes.md](02-nouns-to-classes.md). Now you connect them. This step is where "I know what a composition arrow looks like" (declarative knowledge, covered in [uml-diagrams.md](../01-oop-fundamentals/uml-diagrams.md)) turns into "I know which arrow this specific pair needs" (the actual interview skill).
 
 ---
 
@@ -55,7 +55,7 @@ Run every plausible pair of classes through this in order. Stop at the first "ye
     └── NO → There's probably no direct relationship — don't draw one
 ```
 
-Full notation reference (arrow styles, multiplicity syntax) lives in [uml-diagrams.md](../uml-diagrams.md) — this doc is about *deciding which one applies*, not the drawing syntax itself.
+Full notation reference (arrow styles, multiplicity syntax) lives in [uml-diagrams.md](../01-oop-fundamentals/uml-diagrams.md) — this doc is about *deciding which one applies*, not the drawing syntax itself.
 
 ### Why Q2 vs Q3 trips people up
 

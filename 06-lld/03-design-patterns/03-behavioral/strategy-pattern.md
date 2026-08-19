@@ -378,13 +378,13 @@ This concept is used by **27 problems** in this repo — a representative select
 
 **Low-Level Design**
 
-- [Design a Parking Lot](../../05-problems/01-core-problems/01-design-parking-lot.md)
-- [Design a Rate Limiter](../../05-problems/01-core-problems/02-design-rate-limiter.md)
-- [Design Splitwise](../../05-problems/01-core-problems/05-design-splitwise.md)
-- [Design BookMyShow](../../05-problems/02-frequent-problems/06-design-bookmyshow.md)
-- [Design Chess](../../05-problems/02-frequent-problems/07-design-chess.md)
-- [Design Snake and Ladder](../../05-problems/02-frequent-problems/08-design-snake-and-ladder.md)
-- [Design Elevator System](../../05-problems/02-frequent-problems/09-design-elevator-system.md)
-- [Design a Nested Comment System](../../05-problems/02-frequent-problems/10-design-comment-system.md)
+- [Design a Parking Lot](../../06-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Rate Limiter](../../06-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design Splitwise](../../06-problems/01-core-problems/05-design-splitwise.md)
+- [Design BookMyShow](../../06-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Chess](../../06-problems/02-frequent-problems/07-design-chess.md)
+- [Design Snake and Ladder](../../06-problems/02-frequent-problems/08-design-snake-and-ladder.md)
+- [Design Elevator System](../../06-problems/02-frequent-problems/09-design-elevator-system.md)
+- [Design a Nested Comment System](../../06-problems/02-frequent-problems/10-design-comment-system.md)
 - …and 19 more
 

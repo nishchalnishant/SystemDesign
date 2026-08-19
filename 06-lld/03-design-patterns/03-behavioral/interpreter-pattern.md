@@ -406,6 +406,6 @@ This concept is used by problems involving expression evaluation and rules:
 
 **Low-Level Design**
 
-- [Design a Coupon System](../../05-problems/02-frequent-problems/17-design-coupon-system.md)
-- [Design a Search Engine](../../05-problems/04-advanced-niche/27-design-search-engine.md)
-- [Design a Logger Library](../../05-problems/03-domain-specific/19-design-logger-library.md)
+- [Design a Coupon System](../../06-problems/02-frequent-problems/17-design-coupon-system.md)
+- [Design a Search Engine](../../06-problems/04-advanced-niche/27-design-search-engine.md)
+- [Design a Logger Library](../../06-problems/03-domain-specific/19-design-logger-library.md)

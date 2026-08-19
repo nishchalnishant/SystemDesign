@@ -339,13 +339,13 @@ This concept is used by **12 problems** in this repo — a representative select
 
 **Low-Level Design**
 
-- [Design a Rate Limiter](../05-problems/01-core-problems/02-design-rate-limiter.md)
-- [Design BookMyShow](../05-problems/02-frequent-problems/06-design-bookmyshow.md)
-- [Design a Food Delivery System](../05-problems/02-frequent-problems/14-design-food-delivery.md)
-- [Design Notification System](../05-problems/02-frequent-problems/16-design-notification-system.md)
-- [Design Mentorship Platform](../05-problems/03-domain-specific/18-design-mentorship-platform.md)
-- [Design a Logger Library](../05-problems/03-domain-specific/19-design-logger-library.md)
-- [Design a Ride Sharing System](../05-problems/03-domain-specific/22-design-ride-sharing.md)
-- [Design a Pub-Sub Messaging System](../05-problems/03-domain-specific/23-design-pub-sub.md)
+- [Design a Rate Limiter](../06-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design BookMyShow](../06-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design a Food Delivery System](../06-problems/02-frequent-problems/14-design-food-delivery.md)
+- [Design Notification System](../06-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design Mentorship Platform](../06-problems/03-domain-specific/18-design-mentorship-platform.md)
+- [Design a Logger Library](../06-problems/03-domain-specific/19-design-logger-library.md)
+- [Design a Ride Sharing System](../06-problems/03-domain-specific/22-design-ride-sharing.md)
+- [Design a Pub-Sub Messaging System](../06-problems/03-domain-specific/23-design-pub-sub.md)
 - …and 4 more
 

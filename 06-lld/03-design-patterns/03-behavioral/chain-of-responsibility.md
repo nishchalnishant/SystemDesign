@@ -414,8 +414,8 @@ This concept is used by **4 problems** in this repo:
 
 **Low-Level Design**
 
-- [Design an ATM System](../../05-problems/02-frequent-problems/12-design-atm.md)
-- [Design Notification System](../../05-problems/02-frequent-problems/16-design-notification-system.md)
-- [Design Coupon System](../../05-problems/02-frequent-problems/17-design-coupon-system.md)
-- [Design a Logger Library](../../05-problems/03-domain-specific/19-design-logger-library.md)
+- [Design an ATM System](../../06-problems/02-frequent-problems/12-design-atm.md)
+- [Design Notification System](../../06-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design Coupon System](../../06-problems/02-frequent-problems/17-design-coupon-system.md)
+- [Design a Logger Library](../../06-problems/03-domain-specific/19-design-logger-library.md)
 

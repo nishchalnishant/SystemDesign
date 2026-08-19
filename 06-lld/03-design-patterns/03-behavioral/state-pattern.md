@@ -451,13 +451,13 @@ This concept is used by **15 problems** in this repo — a representative select
 
 **Low-Level Design**
 
-- [Design Tic-Tac-Toe](../../05-problems/01-core-problems/03-design-tic-tac-toe.md)
-- [Design a Vending Machine](../../05-problems/01-core-problems/04-design-vending-machine.md)
-- [Design BookMyShow](../../05-problems/02-frequent-problems/06-design-bookmyshow.md)
-- [Design Elevator System](../../05-problems/02-frequent-problems/09-design-elevator-system.md)
-- [Design a Hotel Management System](../../05-problems/02-frequent-problems/11-design-hotel-management.md)
-- [Design an ATM System](../../05-problems/02-frequent-problems/12-design-atm.md)
-- [Design a Food Delivery System](../../05-problems/02-frequent-problems/14-design-food-delivery.md)
-- [Design Mentorship Platform](../../05-problems/03-domain-specific/18-design-mentorship-platform.md)
+- [Design Tic-Tac-Toe](../../06-problems/01-core-problems/03-design-tic-tac-toe.md)
+- [Design a Vending Machine](../../06-problems/01-core-problems/04-design-vending-machine.md)
+- [Design BookMyShow](../../06-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Elevator System](../../06-problems/02-frequent-problems/09-design-elevator-system.md)
+- [Design a Hotel Management System](../../06-problems/02-frequent-problems/11-design-hotel-management.md)
+- [Design an ATM System](../../06-problems/02-frequent-problems/12-design-atm.md)
+- [Design a Food Delivery System](../../06-problems/02-frequent-problems/14-design-food-delivery.md)
+- [Design Mentorship Platform](../../06-problems/03-domain-specific/18-design-mentorship-platform.md)
 - …and 7 more
 

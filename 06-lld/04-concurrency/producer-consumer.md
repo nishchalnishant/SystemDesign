@@ -267,10 +267,10 @@ This concept is used by **6 problems** in this repo:
 
 **Low-Level Design**
 
-- [Design Elevator System](../05-problems/02-frequent-problems/09-design-elevator-system.md)
-- [Design Notification System](../05-problems/02-frequent-problems/16-design-notification-system.md)
-- [Design a Pub-Sub Messaging System](../05-problems/03-domain-specific/23-design-pub-sub.md)
-- [Design Search Engine (Inverted Index)](../05-problems/04-advanced-niche/27-design-search-engine.md)
-- [Design Download Manager](../05-problems/04-advanced-niche/32-design-download-manager.md)
-- [Design Lock-Free Queue](../05-problems/04-advanced-niche/34-design-lock-free-queue.md)
+- [Design Elevator System](../06-problems/02-frequent-problems/09-design-elevator-system.md)
+- [Design Notification System](../06-problems/02-frequent-problems/16-design-notification-system.md)
+- [Design a Pub-Sub Messaging System](../06-problems/03-domain-specific/23-design-pub-sub.md)
+- [Design Search Engine (Inverted Index)](../06-problems/04-advanced-niche/27-design-search-engine.md)
+- [Design Download Manager](../06-problems/04-advanced-niche/32-design-download-manager.md)
+- [Design Lock-Free Queue](../06-problems/04-advanced-niche/34-design-lock-free-queue.md)
 

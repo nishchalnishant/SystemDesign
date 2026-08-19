@@ -380,7 +380,7 @@ This concept is used by several problems in this repo:
 
 **Low-Level Design**
 
-- [Design a Text Editor](../../05-problems/04-advanced-niche/31-design-text-editor.md)
-- [Design a Version Control System](../../05-problems/04-advanced-niche/29-design-version-control.md)
-- [Design Chess](../../05-problems/02-frequent-problems/07-design-chess.md)
-- [Design Tic-Tac-Toe](../../05-problems/01-core-problems/03-design-tic-tac-toe.md)
+- [Design a Text Editor](../../06-problems/04-advanced-niche/31-design-text-editor.md)
+- [Design a Version Control System](../../06-problems/04-advanced-niche/29-design-version-control.md)
+- [Design Chess](../../06-problems/02-frequent-problems/07-design-chess.md)
+- [Design Tic-Tac-Toe](../../06-problems/01-core-problems/03-design-tic-tac-toe.md)

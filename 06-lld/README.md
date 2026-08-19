@@ -1,7 +1,7 @@
 > [!NOTE]
 > **📋 5-Minute Summary**
 >
-> **What this covers:** Complete Low-Level Design (LLD) interview preparation — OOP fundamentals, SOLID principles, 16 design patterns, concurrency, and 36 LLD problems with full class diagrams and code.
+> **What this covers:** Complete Low-Level Design (LLD) interview preparation — OOP fundamentals, SOLID principles, 16 design patterns, concurrency, and 44 LLD problems with full class diagrams and code.
 >
 > **Learning path (follow this order):**
 > - Step 0 — Methodology (start here if you know the reference material but can't originate a design): the process for turning a fresh prompt into classes, UML, and pattern choices
@@ -9,7 +9,8 @@
 > - Step 2 — SOLID Principles (1 week): SRP → OCP → LSP → ISP → DIP in order; each builds on the previous
 > - Step 3 — Design Patterns (pair with problems): 16 patterns across Creational, Structural, Behavioral; read pattern when problem needs it
 > - Step 4 — Concurrency Patterns: thread-safe singleton, producer-consumer, futures; needed for concurrent LLD problems
-> - Step 5 — LLD Problems (36 problems): Parking Lot → Rate Limiter → Tic-Tac-Toe → Vending Machine → Splitwise → BookMyShow etc.
+> - Step 5 — Architecture & Data: clean architecture, API design, database schema design for LLD
+> - Step 6 — LLD Problems (44 problems): Parking Lot → Rate Limiter → Tic-Tac-Toe → Vending Machine → Splitwise → BookMyShow etc.
 >
 > **Key takeaway:** Don't read all patterns upfront — pair each pattern with the problem that needs it; the README maps patterns to problems; the LLD interview is about translating requirements into clean class hierarchies.
 
@@ -53,7 +54,12 @@ SRP tells you when a class is doing too much. OCP tells you how to extend it wit
 - [producer-consumer.md](04-concurrency/producer-consumer.md)
 - [thread-safe-singleton.md](04-concurrency/thread-safe-singleton.md)
 
-**Step 5 — Problems** (Tier 1 → Tier 2 → Tier 3)
+**Step 5 — Architecture and Data** (Bridging LLD and HLD)
+- [Clean Architecture](05-architecture-and-data/01-clean-architecture.md)
+- [API Design for LLD](05-architecture-and-data/02-api-design-for-lld.md)
+- [Database Schema Design for LLD](05-architecture-and-data/03-database-schema-design.md)
+
+**Step 6 — Problems** (Tier 1 → Tier 2 → Tier 3)
 
 > **Legend**:
 > - **Tier 1** (80-100%): Must implement from scratch 3+ times. These appear in almost every LLD round.
@@ -66,11 +72,11 @@ SRP tells you when a class is doing too much. OCP tells you how to extend it wit
 
 | Rank | Problem | Freq | Key Patterns | The Tricky Part |
 |------|---------|------|--------------|-----------------|
-| 1 | [Design Parking Lot](05-problems/01-core-problems/01-design-parking-lot.md) | 95% | Singleton, Factory, Strategy | Thread-safe spot allocation across floors |
-| 2 | [Design Rate Limiter](05-problems/01-core-problems/02-design-rate-limiter.md) | 90% | Token Bucket, Decorator | Thread-safe counter without synchronization bottleneck |
-| 3 | [Design Tic-Tac-Toe](05-problems/01-core-problems/03-design-tic-tac-toe.md) | 85% | Game Loop | Win detection in O(1) using row/col/diag counters |
-| 4 | [Design Vending Machine](05-problems/01-core-problems/04-design-vending-machine.md) | 85% | State Pattern | State transitions are exhaustive — draw the FSM first |
-| 5 | [Design Splitwise](05-problems/01-core-problems/05-design-splitwise.md) | 80% | Strategy, Graph | Debt simplification: greedy min-cash-flow algorithm |
+| 1 | [Design Parking Lot](06-problems/01-core-problems/01-design-parking-lot.md) | 95% | Singleton, Factory, Strategy | Thread-safe spot allocation across floors |
+| 2 | [Design Rate Limiter](06-problems/01-core-problems/02-design-rate-limiter.md) | 90% | Token Bucket, Decorator | Thread-safe counter without synchronization bottleneck |
+| 3 | [Design Tic-Tac-Toe](06-problems/01-core-problems/03-design-tic-tac-toe.md) | 85% | Game Loop | Win detection in O(1) using row/col/diag counters |
+| 4 | [Design Vending Machine](06-problems/01-core-problems/04-design-vending-machine.md) | 85% | State Pattern | State transitions are exhaustive — draw the FSM first |
+| 5 | [Design Splitwise](06-problems/01-core-problems/05-design-splitwise.md) | 80% | Strategy, Graph | Debt simplification: greedy min-cash-flow algorithm |
 
 ---
 
@@ -78,16 +84,16 @@ SRP tells you when a class is doing too much. OCP tells you how to extend it wit
 
 | Rank | Problem | Freq | Key Patterns | The Tricky Part |
 |------|---------|------|--------------|-----------------|
-| 6 | [Design Snake & Ladder](05-problems/02-frequent-problems/08-design-snake-and-ladder.md) | 75% | Observer, Strategy | Board is a graph; snakes/ladders are edges |
-| 7 | [Design Elevator System](05-problems/02-frequent-problems/09-design-elevator-system.md) | 75% | State Pattern | SCAN/LOOK scheduling; request batching by direction |
-| 8 | [Design Comment System](05-problems/02-frequent-problems/10-design-comment-system.md) | 70% | Composite | Nested comments as a tree; materialized path for DB |
-| 9 | [Design Hotel Management](05-problems/02-frequent-problems/11-design-hotel-management.md) | 70% | Factory, Singleton | Concurrency on booking: optimistic lock on room row |
-| 10 | [Design LRU Cache](05-problems/02-frequent-problems/13-design-lru-cache.md) | 65% | LinkedHashMap / DLL+HashMap | O(1) get AND put requires doubly-linked list + HashMap together |
-| 11 | [Design Locker Service](05-problems/02-frequent-problems/15-design-locker-service.md) | 65% | Inheritance | Locker size matching; geohash for nearest-locker lookup |
-| 12 | [Design Coupon System](05-problems/02-frequent-problems/17-design-coupon-system.md) | 60% | Composite, Chain of Responsibility | Stacking rules: which coupons combine, which are exclusive |
-| 13 | [Design Mentorship Platform](05-problems/03-domain-specific/18-design-mentorship-platform.md) | 55% | Factory | Booking conflict detection: interval overlap check |
-| 14 | [Design Logger Library](05-problems/03-domain-specific/19-design-logger-library.md) | 50% | Chain of Responsibility, Singleton | Log levels as a chain; each handler decides pass-through |
-| 15 | [Design Minesweeper](05-problems/04-advanced-niche/25-design-minesweeper.md) | 45% | Flood Fill | BFS from revealed cell; stop at cells adjacent to mines |
+| 6 | [Design Snake & Ladder](06-problems/02-frequent-problems/08-design-snake-and-ladder.md) | 75% | Observer, Strategy | Board is a graph; snakes/ladders are edges |
+| 7 | [Design Elevator System](06-problems/02-frequent-problems/09-design-elevator-system.md) | 75% | State Pattern | SCAN/LOOK scheduling; request batching by direction |
+| 8 | [Design Comment System](06-problems/02-frequent-problems/10-design-comment-system.md) | 70% | Composite | Nested comments as a tree; materialized path for DB |
+| 9 | [Design Hotel Management](06-problems/02-frequent-problems/11-design-hotel-management.md) | 70% | Factory, Singleton | Concurrency on booking: optimistic lock on room row |
+| 10 | [Design LRU Cache](06-problems/02-frequent-problems/13-design-lru-cache.md) | 65% | LinkedHashMap / DLL+HashMap | O(1) get AND put requires doubly-linked list + HashMap together |
+| 11 | [Design Locker Service](06-problems/02-frequent-problems/15-design-locker-service.md) | 65% | Inheritance | Locker size matching; geohash for nearest-locker lookup |
+| 12 | [Design Coupon System](06-problems/02-frequent-problems/17-design-coupon-system.md) | 60% | Composite, Chain of Responsibility | Stacking rules: which coupons combine, which are exclusive |
+| 13 | [Design Mentorship Platform](06-problems/03-domain-specific/18-design-mentorship-platform.md) | 55% | Factory | Booking conflict detection: interval overlap check |
+| 14 | [Design Logger Library](06-problems/03-domain-specific/19-design-logger-library.md) | 50% | Chain of Responsibility, Singleton | Log levels as a chain; each handler decides pass-through |
+| 15 | [Design Minesweeper](06-problems/04-advanced-niche/25-design-minesweeper.md) | 45% | Flood Fill | BFS from revealed cell; stop at cells adjacent to mines |
 
 ---
 
@@ -95,14 +101,14 @@ SRP tells you when a class is doing too much. OCP tells you how to extend it wit
 
 | Rank | Problem | Freq | Key Algorithm | Why It Matters |
 |------|---------|------|---------------|----------------|
-| 16 | [Design S3 Object Storage](05-problems/04-advanced-niche/26-design-s3-object-storage.md) | 40% | Composite Pattern | File system as tree; metadata vs. data separation |
-| 17 | [Design Search Engine](05-problems/04-advanced-niche/27-design-search-engine.md) | 35% | Inverted Index, Trie | Tokenization pipeline; prefix search vs. full-text search |
-| 18 | [Design Tetris](05-problems/04-advanced-niche/28-design-tetris.md) | 30% | Matrix rotation, Factory | Rotation as 90° transpose + reverse; piece factory |
-| 19 | [Design Version Control](05-problems/04-advanced-niche/29-design-version-control.md) | 25% | DAG, SHA-1 hashing | Commits as a DAG; content-addressed storage via hash |
-| 20 | [Design Tunneling Service](05-problems/04-advanced-niche/30-design-tunneling-service.md) | 20% | Reverse Proxy, Sockets | Bidirectional socket relay; port multiplexing |
-| 21 | [Design Text Editor](05-problems/04-advanced-niche/31-design-text-editor.md) | 20% | Gap Buffer, Command | Gap Buffer for O(1) insert/delete at cursor; Command for undo |
-| 22 | [Design Download Manager](05-problems/04-advanced-niche/32-design-download-manager.md) | 15% | HTTP Range, multi-threading | Parallel chunk download; merge and verify checksum |
-| 23 | [Design Unlock Pattern](05-problems/04-advanced-niche/33-design-unlock-pattern.md) | 10% | DFS/Backtracking | Validate knight-move jumps; required intermediate points |
+| 16 | [Design S3 Object Storage](06-problems/04-advanced-niche/26-design-s3-object-storage.md) | 40% | Composite Pattern | File system as tree; metadata vs. data separation |
+| 17 | [Design Search Engine](06-problems/04-advanced-niche/27-design-search-engine.md) | 35% | Inverted Index, Trie | Tokenization pipeline; prefix search vs. full-text search |
+| 18 | [Design Tetris](06-problems/04-advanced-niche/28-design-tetris.md) | 30% | Matrix rotation, Factory | Rotation as 90° transpose + reverse; piece factory |
+| 19 | [Design Version Control](06-problems/04-advanced-niche/29-design-version-control.md) | 25% | DAG, SHA-1 hashing | Commits as a DAG; content-addressed storage via hash |
+| 20 | [Design Tunneling Service](06-problems/04-advanced-niche/30-design-tunneling-service.md) | 20% | Reverse Proxy, Sockets | Bidirectional socket relay; port multiplexing |
+| 21 | [Design Text Editor](06-problems/04-advanced-niche/31-design-text-editor.md) | 20% | Gap Buffer, Command | Gap Buffer for O(1) insert/delete at cursor; Command for undo |
+| 22 | [Design Download Manager](06-problems/04-advanced-niche/32-design-download-manager.md) | 15% | HTTP Range, multi-threading | Parallel chunk download; merge and verify checksum |
+| 23 | [Design Unlock Pattern](06-problems/04-advanced-niche/33-design-unlock-pattern.md) | 10% | DFS/Backtracking | Validate knight-move jumps; required intermediate points |
 
 ---
 

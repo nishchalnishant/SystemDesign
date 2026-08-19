@@ -598,11 +598,11 @@ This concept is used by **7 problems** in this repo:
 
 **Low-Level Design**
 
-- [Design a Vending Machine](../../05-problems/01-core-problems/04-design-vending-machine.md)
-- [Design an Order Management System](../../05-problems/03-domain-specific/21-design-order-management.md)
-- [Design a Pub-Sub Messaging System](../../05-problems/03-domain-specific/23-design-pub-sub.md)
-- [Design Tetris](../../05-problems/04-advanced-niche/28-design-tetris.md)
-- [Design Version Control System](../../05-problems/04-advanced-niche/29-design-version-control.md)
-- [Design Text Editor](../../05-problems/04-advanced-niche/31-design-text-editor.md)
-- [Design Download Manager](../../05-problems/04-advanced-niche/32-design-download-manager.md)
+- [Design a Vending Machine](../../06-problems/01-core-problems/04-design-vending-machine.md)
+- [Design an Order Management System](../../06-problems/03-domain-specific/21-design-order-management.md)
+- [Design a Pub-Sub Messaging System](../../06-problems/03-domain-specific/23-design-pub-sub.md)
+- [Design Tetris](../../06-problems/04-advanced-niche/28-design-tetris.md)
+- [Design Version Control System](../../06-problems/04-advanced-niche/29-design-version-control.md)
+- [Design Text Editor](../../06-problems/04-advanced-niche/31-design-text-editor.md)
+- [Design Download Manager](../../06-problems/04-advanced-niche/32-design-download-manager.md)
 

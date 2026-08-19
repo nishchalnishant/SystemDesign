@@ -541,13 +541,13 @@ This concept is used by **18 problems** in this repo — a representative select
 
 **Low-Level Design**
 
-- [Design a Parking Lot](../05-problems/01-core-problems/01-design-parking-lot.md)
-- [Design a Rate Limiter](../05-problems/01-core-problems/02-design-rate-limiter.md)
-- [Design BookMyShow](../05-problems/02-frequent-problems/06-design-bookmyshow.md)
-- [Design Elevator System](../05-problems/02-frequent-problems/09-design-elevator-system.md)
-- [Design an LRU Cache](../05-problems/02-frequent-problems/13-design-lru-cache.md)
-- [Design a Food Delivery System](../05-problems/02-frequent-problems/14-design-food-delivery.md)
-- [Design Locker Service](../05-problems/02-frequent-problems/15-design-locker-service.md)
-- [Design a Logger Library](../05-problems/03-domain-specific/19-design-logger-library.md)
+- [Design a Parking Lot](../06-problems/01-core-problems/01-design-parking-lot.md)
+- [Design a Rate Limiter](../06-problems/01-core-problems/02-design-rate-limiter.md)
+- [Design BookMyShow](../06-problems/02-frequent-problems/06-design-bookmyshow.md)
+- [Design Elevator System](../06-problems/02-frequent-problems/09-design-elevator-system.md)
+- [Design an LRU Cache](../06-problems/02-frequent-problems/13-design-lru-cache.md)
+- [Design a Food Delivery System](../06-problems/02-frequent-problems/14-design-food-delivery.md)
+- [Design Locker Service](../06-problems/02-frequent-problems/15-design-locker-service.md)
+- [Design a Logger Library](../06-problems/03-domain-specific/19-design-logger-library.md)
 - …and 10 more
 
