@@ -315,6 +315,298 @@ of the construction **from the builder** which performed the job.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`BuilderDemo.java`). Note the two
+products — `Car` and `Manual` — deliberately share **no** common interface, which is what
+distinguishes Builder from the other creational patterns.
+
+```java
+// ─── Supporting types ─────────────────────────────────────────────────
+enum CarType { CITY_CAR, SPORTS_CAR, SUV }
+
+class Engine {
+    private final String type;
+    private final double volume;
+
+    Engine(String type, double volume) {
+        this.type = type;
+        this.volume = volume;
+    }
+
+    @Override
+    public String toString() {
+        return type + " (" + volume + "L)";
+    }
+}
+
+class GPSNavigator {
+    private final String route;
+
+    GPSNavigator() { this.route = "default route: 221b Baker St, London"; }
+    GPSNavigator(String route) { this.route = route; }
+
+    @Override
+    public String toString() { return route; }
+}
+
+// ─── Product 1: the car ───────────────────────────────────────────────
+class Car {
+    private CarType type;
+    private int seats;
+    private Engine engine;
+    private boolean tripComputer;
+    private GPSNavigator gpsNavigator;
+
+    void setType(CarType type)              { this.type = type; }
+    void setSeats(int seats)                { this.seats = seats; }
+    void setEngine(Engine engine)           { this.engine = engine; }
+    void setTripComputer(boolean on)        { this.tripComputer = on; }
+    void setGPSNavigator(GPSNavigator gps)  { this.gpsNavigator = gps; }
+
+    @Override
+    public String toString() {
+        return "Car{type=" + type + ", seats=" + seats + ", engine=" + engine
+             + ", tripComputer=" + tripComputer + ", gps=" + gpsNavigator + "}";
+    }
+}
+
+// ─── Product 2: the manual (unrelated to Car!) ────────────────────────
+class Manual {
+    private final StringBuilder text = new StringBuilder();
+
+    void addType(CarType type)      { text.append("Type of car: ").append(type).append('\n'); }
+    void addSeats(int seats)        { text.append("Seat count: ").append(seats).append('\n'); }
+    void addEngine(Engine engine)   { text.append("Engine: ").append(engine).append('\n'); }
+
+    void addTripComputer(boolean on) {
+        text.append(on ? "Trip Computer: installed. Press MENU to cycle readouts.\n"
+                       : "Trip Computer: not installed.\n");
+    }
+
+    void addGPS(GPSNavigator gps) {
+        text.append(gps != null ? "GPS Navigator: installed. " + gps + "\n"
+                                : "GPS Navigator: not installed.\n");
+    }
+
+    String print() { return text.toString(); }
+}
+
+// ─── Builder interface ────────────────────────────────────────────────
+// Declares one method per part of the product. Note there is NO
+// getProduct() here — the products don't share a type, so the return
+// type can't be expressed in a statically-typed language.
+interface Builder {
+    void reset();
+    void setType(CarType type);
+    void setSeats(int seats);
+    void setEngine(Engine engine);
+    void setTripComputer(boolean tripComputer);
+    void setGPSNavigator(GPSNavigator gps);
+}
+
+// ─── Concrete builder: builds real cars ───────────────────────────────
+class CarBuilder implements Builder {
+    private Car car;
+
+    CarBuilder() { reset(); }
+
+    @Override public void reset()                          { this.car = new Car(); }
+    @Override public void setType(CarType type)            { car.setType(type); }
+    @Override public void setSeats(int seats)              { car.setSeats(seats); }
+    @Override public void setEngine(Engine engine)         { car.setEngine(engine); }
+    @Override public void setTripComputer(boolean on)      { car.setTripComputer(on); }
+    @Override public void setGPSNavigator(GPSNavigator g)  { car.setGPSNavigator(g); }
+
+    /**
+     * Concrete builders declare their own result-fetching method,
+     * because different builders return entirely different products.
+     * Resetting afterwards leaves the builder ready for the next product.
+     */
+    Car getProduct() {
+        Car product = this.car;
+        reset();
+        return product;
+    }
+}
+
+// ─── Concrete builder: builds manuals with the same steps ─────────────
+class CarManualBuilder implements Builder {
+    private Manual manual;
+
+    CarManualBuilder() { reset(); }
+
+    @Override public void reset()                          { this.manual = new Manual(); }
+    @Override public void setType(CarType type)            { manual.addType(type); }
+    @Override public void setSeats(int seats)              { manual.addSeats(seats); }
+    @Override public void setEngine(Engine engine)         { manual.addEngine(engine); }
+    @Override public void setTripComputer(boolean on)      { manual.addTripComputer(on); }
+    @Override public void setGPSNavigator(GPSNavigator g)  { manual.addGPS(g); }
+
+    Manual getProduct() {
+        Manual product = this.manual;
+        reset();
+        return product;
+    }
+}
+
+// ─── Director ─────────────────────────────────────────────────────────
+// Knows the *recipes* — which steps, in which order. It is not aware of
+// concrete builders or products, so it can never fetch the result.
+// Strictly optional: the client may drive a builder directly.
+class Director {
+
+    void constructSportsCar(Builder builder) {
+        builder.reset();
+        builder.setType(CarType.SPORTS_CAR);
+        builder.setSeats(2);
+        builder.setEngine(new Engine("V8", 3.0));
+        builder.setTripComputer(true);
+        builder.setGPSNavigator(new GPSNavigator());
+    }
+
+    void constructSUV(Builder builder) {
+        builder.reset();
+        builder.setType(CarType.SUV);
+        builder.setSeats(7);
+        builder.setEngine(new Engine("Diesel", 2.5));
+        builder.setTripComputer(true);
+        builder.setGPSNavigator(new GPSNavigator("off-road route: Rubicon Trail"));
+    }
+
+    void constructCityCar(Builder builder) {
+        builder.reset();
+        builder.setType(CarType.CITY_CAR);
+        builder.setSeats(4);
+        builder.setEngine(new Engine("Inline-3", 1.2));
+        builder.setTripComputer(false);
+        builder.setGPSNavigator(null);
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class BuilderDemo {
+    public static void main(String[] args) {
+        Director director = new Director();
+
+        // Same recipe, first builder → a Car.
+        CarBuilder carBuilder = new CarBuilder();
+        director.constructSportsCar(carBuilder);
+        Car car = carBuilder.getProduct();
+        System.out.println("Built: " + car);
+
+        // Same recipe, different builder → a Manual.
+        CarManualBuilder manualBuilder = new CarManualBuilder();
+        director.constructSportsCar(manualBuilder);
+        Manual manual = manualBuilder.getProduct();
+        System.out.println("\nManual:\n" + manual.print());
+
+        // The client can also skip the director and drive the builder
+        // directly for a one-off, fine-tuned configuration.
+        carBuilder.reset();
+        carBuilder.setType(CarType.CITY_CAR);
+        carBuilder.setSeats(2);
+        carBuilder.setEngine(new Engine("Electric", 0.0));
+        carBuilder.setTripComputer(true);
+        carBuilder.setGPSNavigator(new GPSNavigator("home"));
+        System.out.println("Custom: " + carBuilder.getProduct());
+    }
+}
+```
+
+**Output**
+
+```
+Built: Car{type=SPORTS_CAR, seats=2, engine=V8 (3.0L), tripComputer=true, gps=default route: 221b Baker St, London}
+
+Manual:
+Type of car: SPORTS_CAR
+Seat count: 2
+Engine: V8 (3.0L)
+Trip Computer: installed. Press MENU to cycle readouts.
+GPS Navigator: installed. default route: 221b Baker St, London
+
+Custom: Car{type=CITY_CAR, seats=2, engine=Electric (0.0L), tripComputer=true, gps=home}
+```
+
+### Notes on the Java translation
+
+- `getProduct()` lives **only on the concrete builders**, never on the `Builder` interface —
+  exactly as the pseudocode comment warns. `Car` and `Manual` have no common supertype, so no
+  single return type could be declared.
+- The director receives the builder as a **method parameter** here. The alternative from the
+  pseudocode (`setBuilder()` storing it in a field) works equally well; passing it per-call makes
+  the director stateless and thread-safe.
+- Calling `reset()` at the end of `getProduct()` means one builder instance can produce many
+  products in sequence without leaking state between them.
+
+### The fluent variant (what you'll actually write in Java)
+
+Most real Java code uses the **fluent / method-chaining** form, with a `static` nested builder
+class and an immutable product. This is the form popularized by *Effective Java* Item 2, and it
+is what an interviewer usually means by "use a builder":
+
+```java
+public final class Pizza {
+    private final int size;                 // required
+    private final boolean cheese;           // optional
+    private final boolean pepperoni;        // optional
+    private final boolean mushrooms;        // optional
+
+    private Pizza(Builder b) {              // private: only the builder can construct
+        this.size      = b.size;
+        this.cheese    = b.cheese;
+        this.pepperoni = b.pepperoni;
+        this.mushrooms = b.mushrooms;
+    }
+
+    @Override
+    public String toString() {
+        return "Pizza{size=" + size + ", cheese=" + cheese
+             + ", pepperoni=" + pepperoni + ", mushrooms=" + mushrooms + "}";
+    }
+
+    public static class Builder {
+        private final int size;             // required → constructor arg
+        private boolean cheese    = false;  // optional → sensible defaults
+        private boolean pepperoni = false;
+        private boolean mushrooms = false;
+
+        public Builder(int size) {
+            if (size < 6 || size > 18) {
+                throw new IllegalArgumentException("size out of range: " + size);
+            }
+            this.size = size;
+        }
+
+        public Builder cheese()    { this.cheese = true;    return this; }
+        public Builder pepperoni() { this.pepperoni = true; return this; }
+        public Builder mushrooms() { this.mushrooms = true; return this; }
+
+        public Pizza build() {
+            return new Pizza(this);         // validate cross-field invariants here
+        }
+    }
+}
+
+// Usage — reads like a sentence, and Pizza is immutable once built:
+Pizza p = new Pizza.Builder(12).cheese().mushrooms().build();
+```
+
+**Why this beats a telescoping constructor:** with 4 optional fields you would otherwise need
+16 constructor overloads, and `new Pizza(12, true, false, true)` at the call site tells the
+reader nothing. It also beats the JavaBeans setter approach because the object is never visible
+in a partially-initialized, inconsistent state — and can be `final`/immutable.
+
+### Where this appears in the JDK & ecosystem
+
+- `java.lang.StringBuilder.append()` / `StringBuffer` (the canonical chained builder)
+- `java.util.stream.Stream.builder()`, `Calendar.Builder`, `Locale.Builder`
+- `java.net.http.HttpRequest.newBuilder()...build()` (Java 11+)
+- Lombok's `@Builder`; Protocol Buffers' generated `newBuilder()`; Guava's `ImmutableList.builder()`
+
+---
+
 ## Applicability
 
 ### ▸ Use the Builder pattern to get rid of a "telescopic constructor".

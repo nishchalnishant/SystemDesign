@@ -258,6 +258,305 @@ The client code (GUI elements, command history, etc.) isn't coupled to concrete 
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`CommandDemo.java`), with a
+working undo stack.
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+// ─── Receiver: where the real work happens ────────────────────────────
+class Editor {
+    String text = "";
+    int selectionStart = 0;
+    int selectionEnd = 0;
+
+    String getSelection() {
+        return text.substring(selectionStart, Math.min(selectionEnd, text.length()));
+    }
+
+    void deleteSelection() {
+        text = text.substring(0, selectionStart)
+             + text.substring(Math.min(selectionEnd, text.length()));
+        selectionEnd = selectionStart;
+    }
+
+    void replaceSelection(String replacement) {
+        String tail = text.substring(Math.min(selectionEnd, text.length()));
+        text = text.substring(0, selectionStart) + replacement + tail;
+        selectionStart = selectionStart + replacement.length();
+        selectionEnd = selectionStart;
+    }
+
+    void select(int start, int end) {
+        selectionStart = start;
+        selectionEnd = end;
+    }
+}
+
+// ─── Command: the base class ──────────────────────────────────────────
+abstract class Command {
+    protected final Application app;
+    protected final Editor editor;
+    private String backup;
+
+    Command(Application app, Editor editor) {
+        this.app = app;
+        this.editor = editor;
+    }
+
+    void saveBackup() {
+        backup = editor.text;
+    }
+
+    void undo() {
+        editor.text = backup;
+    }
+
+    /** @return true if the command changed state and belongs in history. */
+    abstract boolean execute();
+}
+
+// ─── Concrete commands ────────────────────────────────────────────────
+class CopyCommand extends Command {
+    CopyCommand(Application app, Editor editor) {
+        super(app, editor);
+    }
+
+    @Override
+    boolean execute() {
+        app.clipboard = editor.getSelection();
+        return false;                       // read-only: not undoable
+    }
+}
+
+class CutCommand extends Command {
+    CutCommand(Application app, Editor editor) {
+        super(app, editor);
+    }
+
+    @Override
+    boolean execute() {
+        if (editor.getSelection().isEmpty()) {
+            return false;
+        }
+        saveBackup();
+        app.clipboard = editor.getSelection();
+        editor.deleteSelection();
+        return true;                        // mutating: push to history
+    }
+}
+
+class PasteCommand extends Command {
+    PasteCommand(Application app, Editor editor) {
+        super(app, editor);
+    }
+
+    @Override
+    boolean execute() {
+        if (app.clipboard == null || app.clipboard.isEmpty()) {
+            return false;
+        }
+        saveBackup();
+        editor.replaceSelection(app.clipboard);
+        return true;
+    }
+}
+
+/** Undo is itself a command — it just isn't recorded. */
+class UndoCommand extends Command {
+    UndoCommand(Application app, Editor editor) {
+        super(app, editor);
+    }
+
+    @Override
+    boolean execute() {
+        app.undo();
+        return false;
+    }
+}
+
+// ─── The history is just a stack ──────────────────────────────────────
+class CommandHistory {
+    private final Deque<Command> history = new ArrayDeque<>();
+
+    void push(Command c) {
+        history.push(c);
+    }
+
+    Command pop() {
+        return history.isEmpty() ? null : history.pop();
+    }
+
+    int size() {
+        return history.size();
+    }
+}
+
+// ─── Invoker / sender ─────────────────────────────────────────────────
+class Application {
+    String clipboard = "";
+    final Editor activeEditor = new Editor();
+    final CommandHistory history = new CommandHistory();
+
+    /** Execute, then record only if the command reports a state change. */
+    void executeCommand(Command command) {
+        if (command.execute()) {
+            history.push(command);
+        }
+    }
+
+    /**
+     * Pop the most recent command and let it undo itself. Note we do
+     * NOT know its concrete class — and don't need to.
+     */
+    void undo() {
+        Command command = history.pop();
+        if (command != null) {
+            command.undo();
+        }
+    }
+}
+
+// ─── Demo ─────────────────────────────────────────────────────────────
+public class CommandDemo {
+    public static void main(String[] args) {
+        Application app = new Application();
+        Editor editor = app.activeEditor;
+        editor.text = "Hello wonderful world";
+
+        show(app, "initial");
+
+        // Ctrl+X over "wonderful "
+        editor.select(6, 16);
+        app.executeCommand(new CutCommand(app, editor));
+        show(app, "after Cut of 'wonderful '");
+
+        // Ctrl+V at the end
+        editor.select(editor.text.length(), editor.text.length());
+        app.executeCommand(new PasteCommand(app, editor));
+        show(app, "after Paste at end");
+
+        // Ctrl+C — changes nothing, so it must NOT enter the history
+        editor.select(0, 5);
+        app.executeCommand(new CopyCommand(app, editor));
+        show(app, "after Copy of 'Hello' (history unchanged)");
+
+        // Ctrl+Z, Ctrl+Z
+        app.executeCommand(new UndoCommand(app, editor));
+        show(app, "after Undo");
+        app.executeCommand(new UndoCommand(app, editor));
+        show(app, "after Undo");
+    }
+
+    static void show(Application app, String label) {
+        System.out.printf("%-42s text=\"%s\" | clipboard=\"%s\" | history=%d%n",
+                label, app.activeEditor.text, app.clipboard, app.history.size());
+    }
+}
+```
+
+**Output**
+
+```
+initial                                    text="Hello wonderful world" | clipboard="" | history=0
+after Cut of 'wonderful '                  text="Hello world" | clipboard="wonderful " | history=1
+after Paste at end                         text="Hello worldwonderful " | clipboard="wonderful " | history=2
+after Copy of 'Hello' (history unchanged)  text="Hello worldwonderful " | clipboard="Hello" | history=2
+after Undo                                 text="Hello world" | clipboard="Hello" | history=1
+after Undo                                 text="Hello wonderful world" | clipboard="Hello" | history=0
+```
+
+The history goes 0 → 1 → 2 → **2** → 1 → 0. Copy executed but was never recorded, because
+`execute()` returned `false`. Two undos walk the text back to exactly its original value.
+
+### Notes on the Java translation
+
+- **The boolean return from `execute()` is the whole history policy.** Mutating commands say
+  `true`; read-only ones say `false`. The invoker needs no knowledge of what any command does.
+- `undo()` lives on the base class because every command undoes the same way here — restore the
+  text snapshot. This is the **Memento** pattern quietly embedded inside Command; see
+  [05-memento.md](05-memento.md).
+- `app.undo()` pops a `Command` and calls `undo()` on it with **no type check and no cast**. Adding
+  a new command type requires zero changes to `Application`.
+- Snapshotting the entire document is fine for a demo but doesn't scale. Real editors store an
+  *inverse operation* per command (`InsertCommand.undo()` = delete that range) instead of a full
+  copy.
+
+### The lambda form: what you'll actually write in modern Java
+
+A command with one method is a functional interface, so most Java code skips the class hierarchy:
+
+```java
+@FunctionalInterface
+interface Action {
+    void run();
+}
+
+Map<String, Action> shortcuts = Map.of(
+    "Ctrl+C", () -> app.executeCommand(new CopyCommand(app, editor)),
+    "Ctrl+X", () -> app.executeCommand(new CutCommand(app, editor)),
+    "Ctrl+Z", app::undo
+);
+
+shortcuts.get("Ctrl+X").run();
+```
+
+`Runnable`, `Callable<V>`, `Supplier<T>`, and `Consumer<T>` are all pre-built command interfaces.
+Use a **class** when the command needs state (a backup for undo, parameters, a name for logging);
+use a **lambda** when it's a one-shot call.
+
+### What else the pattern buys you
+
+Because an operation is now an object, you can do things to it that you cannot do to a method call:
+
+- **Queue it** — put commands on a work queue and run them on a thread pool
+- **Serialize it** — write the command to disk or send it over the network (this is how
+  event-sourcing and CQRS work; a command log *is* the database)
+- **Retry it** — keep the object around and call `execute()` again after a failure
+- **Schedule it** — run it later, or at a fixed rate
+- **Macro-record it** — a `MacroCommand` holding a `List<Command>` replays a whole sequence:
+
+```java
+class MacroCommand extends Command {
+    private final List<Command> commands;
+
+    MacroCommand(Application app, Editor editor, List<Command> commands) {
+        super(app, editor);
+        this.commands = commands;
+    }
+
+    @Override
+    boolean execute() {
+        boolean changed = false;
+        for (Command c : commands) changed |= c.execute();
+        return changed;
+    }
+
+    @Override
+    void undo() {
+        // Undo in REVERSE order — this is essential.
+        for (int i = commands.size() - 1; i >= 0; i--) commands.get(i).undo();
+    }
+}
+```
+
+Note the reverse-order undo: it is the single most commonly missed detail in Command implementations.
+
+### Where this appears in the JDK and ecosystem
+
+- `java.lang.Runnable` — the archetypal command interface
+- `java.util.concurrent.Callable<V>` and everything `ExecutorService.submit()` accepts
+- `javax.swing.Action` / `AbstractAction` — Swing's explicit Command implementation, shared between
+  a menu item, a toolbar button, and a keystroke
+- `java.util.concurrent.ThreadPoolExecutor` — the queue holds commands
+- `Thread(Runnable)` itself
+- Event sourcing, CQRS, database transaction logs, and every "undo" feature ever shipped
+
+---
+
 ## Applicability
 
 ### ▸ Use the Command pattern when you want to parametrize objects with operations.

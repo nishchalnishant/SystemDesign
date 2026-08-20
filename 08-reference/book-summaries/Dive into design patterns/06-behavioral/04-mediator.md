@@ -200,6 +200,302 @@ In this example, the whole **authentication dialog acts as the mediator**. It kn
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`MediatorDemo.java`).
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+// ─── Mediator interface ───────────────────────────────────────────────
+// One method. Components report *what happened*, not what should be done.
+interface Mediator {
+    void notify(Component sender, String event);
+}
+
+// ─── Base component ───────────────────────────────────────────────────
+// Knows the mediator interface only — never a sibling component.
+abstract class Component {
+    protected Mediator dialog;
+    protected boolean visible = true;
+    private final String name;
+
+    Component(String name) { this.name = name; }
+
+    void setMediator(Mediator dialog) { this.dialog = dialog; }
+    String getName()      { return name; }
+    boolean isVisible()   { return visible; }
+    void hide()           { this.visible = false; }
+    void show()           { this.visible = true; }
+
+    void click() {
+        System.out.println("[" + name + "] clicked");
+        dialog.notify(this, "click");
+    }
+
+    void keypress(char c) {
+        dialog.notify(this, "keypress");
+    }
+}
+
+// ─── Concrete components ──────────────────────────────────────────────
+class Button extends Component {
+    Button(String name) { super(name); }
+}
+
+class Textbox extends Component {
+    private String text = "";
+
+    Textbox(String name) { super(name); }
+
+    String getText()             { return text; }
+    void setText(String text)    { this.text = text; }
+}
+
+class Checkbox extends Component {
+    private boolean checked = false;
+
+    Checkbox(String name) { super(name); }
+
+    boolean isChecked() { return checked; }
+
+    void check() {
+        checked = !checked;
+        System.out.println("[" + getName() + "] toggled -> " + checked);
+        dialog.notify(this, "check");
+    }
+}
+
+// ─── Concrete mediator: holds ALL the cross-component logic ───────────
+class AuthenticationDialog implements Mediator {
+    private String title;
+    private final Checkbox loginOrRegisterChkBx = new Checkbox("switch-mode");
+    private final Textbox loginUsername    = new Textbox("login.username");
+    private final Textbox loginPassword    = new Textbox("login.password");
+    private final Textbox registrationUsername = new Textbox("reg.username");
+    private final Textbox registrationPassword = new Textbox("reg.password");
+    private final Textbox registrationEmail    = new Textbox("reg.email");
+    private final Button okBtn     = new Button("OK");
+    private final Button cancelBtn = new Button("Cancel");
+
+    AuthenticationDialog() {
+        title = "Log in";
+        for (Component c : List.of(loginOrRegisterChkBx, loginUsername, loginPassword,
+                registrationUsername, registrationPassword, registrationEmail,
+                okBtn, cancelBtn)) {
+            c.setMediator(this);
+        }
+        registrationUsername.hide();
+        registrationPassword.hide();
+        registrationEmail.hide();
+    }
+
+    /** Every cross-component rule in the dialog lives here — and only here. */
+    @Override
+    public void notify(Component sender, String event) {
+        if (sender == loginOrRegisterChkBx && event.equals("check")) {
+            if (loginOrRegisterChkBx.isChecked()) {
+                title = "Register";
+                loginUsername.hide();
+                loginPassword.hide();
+                registrationUsername.show();
+                registrationPassword.show();
+                registrationEmail.show();
+            } else {
+                title = "Log in";
+                loginUsername.show();
+                loginPassword.show();
+                registrationUsername.hide();
+                registrationPassword.hide();
+                registrationEmail.hide();
+            }
+            System.out.println("    mediator: dialog is now \"" + title + "\"");
+            render();
+            return;
+        }
+
+        if (sender == okBtn && event.equals("click")) {
+            if (loginOrRegisterChkBx.isChecked()) {
+                boolean created = createUser(registrationUsername.getText(),
+                        registrationPassword.getText(),
+                        registrationEmail.getText());
+                System.out.println("    mediator: registration "
+                        + (created ? "succeeded" : "failed"));
+            } else {
+                boolean found = tryLogin(loginUsername.getText(),
+                        loginPassword.getText());
+                System.out.println("    mediator: login "
+                        + (found ? "succeeded" : "failed — no such user"));
+            }
+            return;
+        }
+
+        if (sender == cancelBtn && event.equals("click")) {
+            System.out.println("    mediator: dialog closed");
+        }
+    }
+
+    // ── Fake backend ──
+    private final List<String> users = new ArrayList<>(List.of("anna"));
+
+    private boolean tryLogin(String user, String password) {
+        return users.contains(user) && !password.isEmpty();
+    }
+
+    private boolean createUser(String user, String password, String email) {
+        if (user.isEmpty() || email.isEmpty()) return false;
+        users.add(user);
+        return true;
+    }
+
+    void render() {
+        StringBuilder sb = new StringBuilder("    visible fields: ");
+        for (Component c : List.of(loginUsername, loginPassword,
+                registrationUsername, registrationPassword, registrationEmail)) {
+            if (c.isVisible()) sb.append(c.getName()).append(' ');
+        }
+        System.out.println(sb.toString().stripTrailing());
+    }
+
+    // Accessors so the demo can type into the fields.
+    Checkbox modeSwitch()   { return loginOrRegisterChkBx; }
+    Textbox loginUser()     { return loginUsername; }
+    Textbox loginPass()     { return loginPassword; }
+    Textbox regUser()       { return registrationUsername; }
+    Textbox regPass()       { return registrationPassword; }
+    Textbox regEmail()      { return registrationEmail; }
+    Button ok()             { return okBtn; }
+    Button cancel()         { return cancelBtn; }
+}
+
+public class MediatorDemo {
+    public static void main(String[] args) {
+        AuthenticationDialog dialog = new AuthenticationDialog();
+
+        System.out.println("--- Log-in mode (default) ---");
+        dialog.render();
+        dialog.loginUser().setText("anna");
+        dialog.loginPass().setText("s3cret");
+        dialog.ok().click();
+
+        System.out.println();
+        System.out.println("--- A wrong user ---");
+        dialog.loginUser().setText("mallory");
+        dialog.ok().click();
+
+        System.out.println();
+        System.out.println("--- Switch to Register mode ---");
+        dialog.modeSwitch().check();
+        dialog.regUser().setText("bob");
+        dialog.regPass().setText("hunter2");
+        dialog.regEmail().setText("bob@example.com");
+        dialog.ok().click();
+
+        System.out.println();
+        System.out.println("--- Switch back and log in as the new user ---");
+        dialog.modeSwitch().check();
+        dialog.loginUser().setText("bob");
+        dialog.loginPass().setText("hunter2");
+        dialog.ok().click();
+
+        System.out.println();
+        dialog.cancel().click();
+    }
+}
+```
+
+**Output**
+
+```
+--- Log-in mode (default) ---
+    visible fields: login.username login.password
+[OK] clicked
+    mediator: login succeeded
+
+--- A wrong user ---
+[OK] clicked
+    mediator: login failed — no such user
+
+--- Switch to Register mode ---
+[switch-mode] toggled -> true
+    mediator: dialog is now "Register"
+    visible fields: reg.username reg.password reg.email
+[OK] clicked
+    mediator: registration succeeded
+
+--- Switch back and log in as the new user ---
+[switch-mode] toggled -> false
+    mediator: dialog is now "Log in"
+    visible fields: login.username login.password
+[OK] clicked
+    mediator: login succeeded
+
+[Cancel] clicked
+    mediator: dialog closed
+```
+
+### Notes on the Java translation
+
+- **`Component` holds a `Mediator`, never a sibling.** Grep the component classes: `Button`,
+  `Textbox`, and `Checkbox` do not mention each other once. That is the whole point — the checkbox
+  hides three textboxes without knowing textboxes exist.
+- **`notify(sender, event)` is the entire protocol.** Components announce facts (`"click"`,
+  `"check"`); deciding what those facts *mean* is the mediator's job.
+- **`sender == component` identity comparison** matches the book's dispatch. Real code usually
+  prefers an event enum or a `Map<Component, Handler>` to avoid the growing `if` chain — which is
+  this pattern's known weak spot (see below).
+- The components are now **reusable**: drop `Textbox` into a different dialog with a different
+  mediator and it works unchanged.
+
+### The God-object risk
+
+All the coupling didn't vanish — it moved. `AuthenticationDialog.notify()` accumulates every rule in
+the dialog, and in a large screen it becomes a monster. Mitigations:
+
+- Split one big mediator into several per-region mediators.
+- Replace the `if` chain with a dispatch table:
+
+```java
+private final Map<String, Runnable> handlers = Map.of(
+    "switch-mode:check", this::onModeToggled,
+    "OK:click",          this::onOkClicked,
+    "Cancel:click",      this::onCancelClicked
+);
+
+@Override
+public void notify(Component sender, String event) {
+    handlers.getOrDefault(sender.getName() + ":" + event, () -> {}).run();
+}
+```
+
+### Mediator vs. Observer vs. Facade
+
+| | Direction | Who knows whom | Purpose |
+|---|---|---|---|
+| **Mediator** | many ↔ many, routed through a hub | components know the mediator; the mediator knows all | eliminate direct component-to-component links |
+| **Observer** | one → many, broadcast | subject knows a list of listeners it never inspects | notify anyone interested that state changed |
+| **Facade** | one → many, one-way | facade knows the subsystem; the subsystem is unaware | simplify a complex subsystem's entry point |
+
+The distinction that matters: a **Facade** is one-directional and its subsystem doesn't know it
+exists; a **Mediator** is bidirectional and its components hold a reference back to it. And Mediator
+is often *implemented* with Observer — make `Mediator` a publish/subscribe channel and components
+subscribe to event names rather than being compared by identity. See [`06-observer.md`](06-observer.md).
+
+### Where this appears in the JDK and frameworks
+
+- `java.util.concurrent.ExecutorService` — mediates between task submitters and worker threads;
+  neither side knows the other
+- `java.util.Timer` — mediates between scheduled `TimerTask`s
+- `java.util.concurrent.CountDownLatch` / `CyclicBarrier` — coordinate threads that never reference
+  each other
+- Swing/JavaFX controllers, and Android `Activity`/`Fragment` classes — the classic
+  mediator-becomes-God-object case
+- Spring's `ApplicationEventPublisher`, and Message brokers (Kafka, RabbitMQ) — mediators at the
+  system scale
+
+---
+
 ## Applicability
 
 ### ▸ Use the Mediator pattern when it's hard to change some of the classes because they are tightly coupled to a bunch of other classes.

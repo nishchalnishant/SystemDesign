@@ -188,6 +188,297 @@ requests the same video multiple times.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`ProxyDemo.java`). The
+"downloads" are simulated with `Thread.sleep`, so the timings in the output are real and the
+cache's effect is measurable.
+
+```java
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// ─── The Service Interface — shared by real service AND proxy ─────────
+// This is what makes the substitution invisible to the client.
+interface ThirdPartyYouTubeLib {
+    List<String> listVideos();
+    String getVideoInfo(String id);
+    void downloadVideo(String id);
+}
+
+// ─── The Real Service (slow, third-party, unmodifiable) ───────────────
+class ThirdPartyYouTubeClass implements ThirdPartyYouTubeLib {
+
+    @Override
+    public List<String> listVideos() {
+        experienceNetworkLatency();
+        System.out.println("    [network] fetched video list from YouTube");
+        return List.of("catz", "dogz", "birdz");
+    }
+
+    @Override
+    public String getVideoInfo(String id) {
+        experienceNetworkLatency();
+        System.out.println("    [network] fetched metadata for '" + id + "'");
+        return "Video metadata for " + id;
+    }
+
+    @Override
+    public void downloadVideo(String id) {
+        experienceNetworkLatency();
+        System.out.println("    [network] downloaded video '" + id + "'");
+    }
+
+    private void experienceNetworkLatency() {
+        try {
+            Thread.sleep(200);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+
+// ─── The Proxy: caching + lazy initialization ─────────────────────────
+class CachedYouTubeClass implements ThirdPartyYouTubeLib {
+    private ThirdPartyYouTubeLib service;          // created lazily
+    private List<String> listCache;
+    private final Map<String, String> videoCache = new HashMap<>();
+    private final Map<String, Boolean> downloadExists = new HashMap<>();
+
+    boolean needReset = false;
+
+    /**
+     * LAZY INITIALIZATION: the expensive service object is not built
+     * until something actually needs it. If every call is a cache hit,
+     * it is never built at all.
+     */
+    private ThirdPartyYouTubeLib service() {
+        if (service == null) {
+            System.out.println("    [proxy] creating the real service (first use)");
+            service = new ThirdPartyYouTubeClass();
+        }
+        return service;
+    }
+
+    @Override
+    public List<String> listVideos() {
+        if (listCache == null || needReset) {
+            listCache = service().listVideos();
+        } else {
+            System.out.println("    [proxy] CACHE HIT for video list");
+        }
+        return listCache;
+    }
+
+    @Override
+    public String getVideoInfo(String id) {
+        String cached = videoCache.get(id);
+        if (cached == null || needReset) {
+            cached = service().getVideoInfo(id);
+            videoCache.put(id, cached);
+        } else {
+            System.out.println("    [proxy] CACHE HIT for metadata '" + id + "'");
+        }
+        return cached;
+    }
+
+    @Override
+    public void downloadVideo(String id) {
+        if (!downloadExists.getOrDefault(id, false) || needReset) {
+            service().downloadVideo(id);
+            downloadExists.put(id, true);
+        } else {
+            System.out.println("    [proxy] CACHE HIT — '" + id
+                    + "' already on disk, skipping download");
+        }
+    }
+}
+
+// ─── The Client — unchanged, and unaware ──────────────────────────────
+class YouTubeManager {
+    protected final ThirdPartyYouTubeLib service;
+
+    YouTubeManager(ThirdPartyYouTubeLib service) {
+        this.service = service;
+    }
+
+    void renderVideoPage(String id) {
+        String info = service.getVideoInfo(id);
+        System.out.println("  rendering page: " + info);
+    }
+
+    void renderListPanel() {
+        List<String> list = service.listVideos();
+        System.out.println("  rendering thumbnails: " + list);
+    }
+
+    void reactOnUserInput(String id) {
+        renderVideoPage(id);
+        renderListPanel();
+    }
+}
+
+// ─── Demo ─────────────────────────────────────────────────────────────
+public class ProxyDemo {
+    public static void main(String[] args) {
+        ThirdPartyYouTubeLib naive = new ThirdPartyYouTubeClass();
+        ThirdPartyYouTubeLib proxied = new CachedYouTubeClass();
+
+        long t1 = time(new YouTubeManager(naive), "WITHOUT proxy");
+        long t2 = time(new YouTubeManager(proxied), "WITH caching proxy");
+
+        System.out.println();
+        System.out.println("Naive:  " + roundToTenth(t1) + " ms (approx)");
+        System.out.println("Cached: " + roundToTenth(t2) + " ms (approx)");
+    }
+
+    static long time(YouTubeManager manager, String label) {
+        System.out.println(label + ":");
+        long start = System.currentTimeMillis();
+        manager.reactOnUserInput("catz");
+        manager.reactOnUserInput("catz");     // same video again
+        manager.reactOnUserInput("catz");     // and again
+        return System.currentTimeMillis() - start;
+    }
+
+    /** Round to the nearest 100ms so the printed output is stable. */
+    static long roundToTenth(long ms) {
+        return Math.round(ms / 100.0) * 100;
+    }
+}
+```
+
+**Output**
+
+```
+WITHOUT proxy:
+    [network] fetched metadata for 'catz'
+  rendering page: Video metadata for catz
+    [network] fetched video list from YouTube
+  rendering thumbnails: [catz, dogz, birdz]
+    [network] fetched metadata for 'catz'
+  rendering page: Video metadata for catz
+    [network] fetched video list from YouTube
+  rendering thumbnails: [catz, dogz, birdz]
+    [network] fetched metadata for 'catz'
+  rendering page: Video metadata for catz
+    [network] fetched video list from YouTube
+  rendering thumbnails: [catz, dogz, birdz]
+WITH caching proxy:
+    [proxy] creating the real service (first use)
+    [network] fetched metadata for 'catz'
+  rendering page: Video metadata for catz
+    [network] fetched video list from YouTube
+  rendering thumbnails: [catz, dogz, birdz]
+    [proxy] CACHE HIT for metadata 'catz'
+  rendering page: Video metadata for catz
+    [proxy] CACHE HIT for video list
+  rendering thumbnails: [catz, dogz, birdz]
+    [proxy] CACHE HIT for metadata 'catz'
+  rendering page: Video metadata for catz
+    [proxy] CACHE HIT for video list
+  rendering thumbnails: [catz, dogz, birdz]
+
+Naive:  1200 ms (approx)
+Cached: 400 ms (approx)
+```
+
+Six network round trips become two. `YouTubeManager` was **not modified** — the only change is which
+object was handed to its constructor.
+
+### Notes on the Java translation
+
+- The proxy's power comes entirely from **implementing the same interface** as the service. That is
+  the precondition for the substitution being invisible.
+- Two patterns are stacked here, as the book does: **caching** (skip repeat work) and **lazy
+  initialization** (don't even build the service until first use). `[proxy] creating the real
+  service (first use)` prints exactly once.
+- `needReset` is the cache-invalidation escape hatch. Real code would use a TTL or size-bounded
+  eviction instead of a boolean.
+
+### The kinds of proxy
+
+Same structure, different intent — the name comes from what you put in the delegating method:
+
+| Kind | What the proxy adds before/after delegating |
+|---|---|
+| **Virtual** | Lazy creation of an expensive object (`service()` above) |
+| **Caching** | Store and reuse results (the demo's main job) |
+| **Protection** | Check permissions, reject unauthorized callers |
+| **Remote** | Hide network/RPC; the "service" lives on another machine |
+| **Logging** | Record every call and its arguments |
+| **Smart reference** | Reference counting, auto-close of unused resources |
+
+A protection proxy in ten lines:
+
+```java
+class ProtectedYouTube implements ThirdPartyYouTubeLib {
+    private final ThirdPartyYouTubeLib service;
+    private final String role;
+
+    ProtectedYouTube(ThirdPartyYouTubeLib service, String role) {
+        this.service = service;
+        this.role = role;
+    }
+
+    @Override
+    public void downloadVideo(String id) {
+        if (!role.equals("PREMIUM")) {
+            throw new SecurityException("Downloads require a premium account");
+        }
+        service.downloadVideo(id);
+    }
+
+    @Override public List<String> listVideos()        { return service.listVideos(); }
+    @Override public String getVideoInfo(String id)   { return service.getVideoInfo(id); }
+}
+```
+
+### Dynamic proxies — Java's built-in support
+
+Writing a proxy class per interface is tedious. `java.lang.reflect.Proxy` generates one at runtime:
+
+```java
+import java.lang.reflect.*;
+
+ThirdPartyYouTubeLib logged = (ThirdPartyYouTubeLib) Proxy.newProxyInstance(
+    ThirdPartyYouTubeLib.class.getClassLoader(),
+    new Class<?>[]{ ThirdPartyYouTubeLib.class },
+    (proxy, method, methodArgs) -> {
+        System.out.println("-> " + method.getName());
+        Object result = method.invoke(new ThirdPartyYouTubeClass(), methodArgs);
+        System.out.println("<- " + method.getName());
+        return result;
+    });
+```
+
+This is the machinery behind Spring AOP, `@Transactional`, `@Cacheable`, Mockito mocks, and JPA
+lazy-loaded entities. (For classes rather than interfaces, frameworks use CGLIB or ByteBuddy to
+generate a subclass instead.)
+
+### Proxy vs. Decorator vs. Adapter
+
+All three wrap an object and implement its interface. They differ in **intent** and in **who
+controls the lifecycle**:
+
+| | Proxy | Decorator | Adapter |
+|---|---|---|---|
+| Intent | Control **access** to the object | **Add** responsibilities | **Change** the interface |
+| Interface vs. wrappee | Identical | Identical | Different |
+| Who creates the wrappee | Usually the **proxy itself** | The **client** passes it in | The client passes it in |
+| Typical stacking | One layer | Many layers | One layer |
+
+### Where this appears in the JDK
+
+- `java.lang.reflect.Proxy` — the dynamic proxy facility itself
+- `java.rmi.*` — remote proxies; the stub looks local and talks over the wire
+- `java.lang.ref.WeakReference` / `SoftReference` — smart-reference proxies
+- Hibernate/JPA lazy entity proxies — the object you hold isn't loaded until you touch a field
+- Spring `@Transactional`, `@Cacheable`, `@Async` — every one is a proxy wrapped around your bean
+
+---
+
 ## Applicability
 
 *There are dozens of ways to utilize the Proxy pattern. Let's go over the most popular uses.*

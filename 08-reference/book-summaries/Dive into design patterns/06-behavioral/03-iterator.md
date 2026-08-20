@@ -222,6 +222,311 @@ The client code isn't coupled to concrete classes because it works with collecti
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`IteratorDemo.java`).
+
+```java
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// ─── The element being traversed ──────────────────────────────────────
+class Profile {
+    private final String id;
+    private final String email;
+    private final String company;
+    private final Map<String, List<String>> contacts = new HashMap<>();
+
+    Profile(String id, String email, String company, String... contactPairs) {
+        this.id = id;
+        this.email = email;
+        this.company = company;
+        for (String pair : contactPairs) {
+            String[] parts = pair.split(":");
+            contacts.computeIfAbsent(parts[0], k -> new ArrayList<>()).add(parts[1]);
+        }
+    }
+
+    String getId()      { return id; }
+    String getEmail()   { return email; }
+    String getCompany() { return company; }
+
+    List<String> getContacts(String type) {
+        return contacts.getOrDefault(type, List.of());
+    }
+}
+
+// ─── Iterator interface ───────────────────────────────────────────────
+interface ProfileIterator {
+    boolean hasMore();
+    Profile getNext();
+    void reset();
+}
+
+// ─── Collection interface: a FACTORY for iterators ────────────────────
+// Several methods, because several traversal strategies exist.
+interface SocialNetwork {
+    ProfileIterator createFriendsIterator(String profileId);
+    ProfileIterator createCoworkersIterator(String profileId);
+}
+
+// ─── Concrete collection ──────────────────────────────────────────────
+class Facebook implements SocialNetwork {
+    private final List<Profile> profiles;
+
+    Facebook(List<Profile> cache) {
+        this.profiles = cache;
+    }
+
+    Profile requestProfileFromFacebook(String profileId) {
+        simulateNetworkLatency();
+        return profiles.stream()
+                .filter(p -> p.getId().equals(profileId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** The expensive call the iterator hides behind lazy init. */
+    List<String> socialGraphRequest(String profileId, String type) {
+        System.out.println("    [network] fetching '" + type
+                + "' of " + profileId + " ...");
+        simulateNetworkLatency();
+        Profile profile = requestProfileFromFacebook(profileId);
+        return profile == null ? List.of() : profile.getContacts(type);
+    }
+
+    private void simulateNetworkLatency() {
+        // Real code would block on a REST call here.
+    }
+
+    @Override
+    public ProfileIterator createFriendsIterator(String profileId) {
+        return new FacebookIterator(this, profileId, "friends");
+    }
+
+    @Override
+    public ProfileIterator createCoworkersIterator(String profileId) {
+        return new FacebookIterator(this, profileId, "coworkers");
+    }
+}
+
+// ─── Concrete iterator ────────────────────────────────────────────────
+class FacebookIterator implements ProfileIterator {
+    private final Facebook facebook;
+    private final String profileId;
+    private final String type;
+
+    // Each iterator carries its OWN position, so two iterators over the
+    // same collection never interfere.
+    private int currentPosition = 0;
+    private List<String> cache;
+
+    FacebookIterator(Facebook facebook, String profileId, String type) {
+        this.facebook = facebook;
+        this.profileId = profileId;
+        this.type = type;
+    }
+
+    /** The network call is deferred until the first hasMore(). */
+    private void lazyInit() {
+        if (cache == null) {
+            cache = facebook.socialGraphRequest(profileId, type);
+        }
+    }
+
+    @Override
+    public boolean hasMore() {
+        lazyInit();
+        return currentPosition < cache.size();
+    }
+
+    @Override
+    public Profile getNext() {
+        if (!hasMore()) {
+            return null;
+        }
+        String friendId = cache.get(currentPosition);
+        currentPosition++;
+        return facebook.requestProfileFromFacebook(friendId);
+    }
+
+    @Override
+    public void reset() {
+        currentPosition = 0;
+    }
+}
+
+// ─── Client: receives an ITERATOR, never the collection ───────────────
+class SocialSpammer {
+    void send(ProfileIterator iterator, String message) {
+        while (iterator.hasMore()) {
+            Profile profile = iterator.getNext();
+            System.out.println("  Sent to " + profile.getEmail() + ": " + message);
+        }
+    }
+}
+
+// ─── Application wires it together ────────────────────────────────────
+public class IteratorDemo {
+    public static void main(String[] args) {
+        Profile anna = new Profile("anna", "anna@fb.com", "Acme",
+                "friends:bob", "friends:carol", "coworkers:bob", "coworkers:dave");
+        Profile bob   = new Profile("bob",   "bob@fb.com",   "Acme");
+        Profile carol = new Profile("carol", "carol@fb.com", "Globex");
+        Profile dave  = new Profile("dave",  "dave@fb.com",  "Acme");
+
+        SocialNetwork network = new Facebook(List.of(anna, bob, carol, dave));
+        SocialSpammer spammer = new SocialSpammer();
+
+        System.out.println("Spamming Anna's FRIENDS:");
+        spammer.send(network.createFriendsIterator("anna"), "Very important message");
+
+        System.out.println();
+        System.out.println("Spamming Anna's COWORKERS:");
+        spammer.send(network.createCoworkersIterator("anna"), "Very important message");
+
+        System.out.println();
+        System.out.println("Two independent iterators over the same data:");
+        ProfileIterator a = network.createFriendsIterator("anna");
+        ProfileIterator b = network.createFriendsIterator("anna");
+        System.out.println("  a -> " + a.getNext().getId());
+        System.out.println("  b -> " + b.getNext().getId()
+                + "   (b is NOT affected by a's position)");
+        System.out.println("  a -> " + a.getNext().getId());
+    }
+}
+```
+
+**Output**
+
+```
+Spamming Anna's FRIENDS:
+    [network] fetching 'friends' of anna ...
+  Sent to bob@fb.com: Very important message
+  Sent to carol@fb.com: Very important message
+
+Spamming Anna's COWORKERS:
+    [network] fetching 'coworkers' of anna ...
+  Sent to bob@fb.com: Very important message
+  Sent to dave@fb.com: Very important message
+
+Two independent iterators over the same data:
+    [network] fetching 'friends' of anna ...
+  a -> bob
+    [network] fetching 'friends' of anna ...
+  b -> bob   (b is NOT affected by a's position)
+  a -> carol
+```
+
+`SocialSpammer.send()` is written **once** and drives two entirely different traversals. And the two
+iterators at the end prove the key invariant: iteration state lives in the *iterator*, not the
+collection.
+
+### Notes on the Java translation
+
+- **The collection is a factory for iterators.** `createFriendsIterator` / `createCoworkersIterator`
+  return the *interface*, so the client never names `FacebookIterator`.
+- **`currentPosition` lives on the iterator.** Put it on the collection and you can only ever have
+  one traversal in flight — which is exactly the bug the pattern exists to prevent.
+- The client is handed an **iterator, not a collection**. It cannot add, remove, or reorder — a
+  useful encapsulation win the book highlights.
+- `lazyInit()` means constructing an iterator costs nothing; the network call happens on first use.
+
+### Java's built-in Iterator — what you'll actually use
+
+Java has the pattern baked into the language. Implement `Iterable<T>` and your type works with the
+enhanced `for` loop:
+
+```java
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+class Playlist implements Iterable<String> {
+    private final String[] songs;
+
+    Playlist(String... songs) { this.songs = songs; }
+
+    @Override
+    public Iterator<String> iterator() {
+        return new Iterator<>() {
+            private int index = 0;
+
+            @Override
+            public boolean hasNext() {
+                return index < songs.length;
+            }
+
+            @Override
+            public String next() {
+                if (!hasNext()) throw new NoSuchElementException();
+                return songs[index++];
+            }
+        };
+    }
+
+    /** A second traversal order — the pattern's real payoff. */
+    Iterable<String> reversed() {
+        return () -> new Iterator<>() {
+            private int index = songs.length - 1;
+            public boolean hasNext() { return index >= 0; }
+            public String next() { return songs[index--]; }
+        };
+    }
+}
+
+// for (String s : playlist)             { ... }   // forward
+// for (String s : playlist.reversed())  { ... }   // backward
+```
+
+Mapping the book's names onto the JDK's:
+
+| Book | Java |
+|---|---|
+| `IterableCollection` | `java.lang.Iterable<T>` |
+| `createIterator()` | `iterator()` |
+| `Iterator` | `java.util.Iterator<T>` |
+| `hasMore()` | `hasNext()` |
+| `getNext()` | `next()` |
+
+### Fail-fast iterators and `ConcurrentModificationException`
+
+A detail the book doesn't cover but every Java developer hits:
+
+```java
+List<String> list = new ArrayList<>(List.of("a", "b", "c"));
+for (String s : list) {
+    if (s.equals("b")) list.remove(s);   // ConcurrentModificationException
+}
+```
+
+JDK collections keep a `modCount`; the iterator snapshots it and throws if the collection changes
+underneath. The fixes:
+
+```java
+list.removeIf(s -> s.equals("b"));                    // best
+
+Iterator<String> it = list.iterator();                // or use the iterator's own remove()
+while (it.hasNext()) {
+    if (it.next().equals("b")) it.remove();
+}
+```
+
+`CopyOnWriteArrayList` and `ConcurrentHashMap` provide **weakly consistent** iterators instead —
+they never throw, but may not reflect concurrent updates.
+
+### Where this appears in the JDK
+
+- `java.util.Iterator` / `Iterable` / `ListIterator` (bidirectional) — the pattern, standardised
+- Every collection: `ArrayList`, `HashMap.entrySet()`, `TreeSet` (in sorted order), `LinkedList`
+- `java.util.Scanner` — iterates tokens from a stream
+- `java.util.Enumeration` — the legacy version, from Java 1.0
+- `java.util.Spliterator` — the parallel-capable iterator underlying the Streams API
+- `java.nio.file.DirectoryStream` — iterates a directory lazily without loading it all
+
+---
+
 ## Applicability
 
 ### ▸ Use the Iterator pattern when your collection has a complex data structure under the hood, but you want to hide its complexity from clients (either for convenience or security reasons).

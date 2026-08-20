@@ -246,6 +246,163 @@ and slightly modify the app's initialization code so it selects that class when 
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`AbstractFactoryDemo.java`).
+
+```java
+// ─── Abstract products ────────────────────────────────────────────────
+// Each distinct product of the family gets its own base interface.
+interface Button {
+    void paint();
+}
+
+interface Checkbox {
+    void paint();
+}
+
+// ─── Concrete products: Windows variant ───────────────────────────────
+class WinButton implements Button {
+    @Override
+    public void paint() {
+        System.out.println("[Win]  Rendering a button in Windows style.");
+    }
+}
+
+class WinCheckbox implements Checkbox {
+    @Override
+    public void paint() {
+        System.out.println("[Win]  Rendering a checkbox in Windows style.");
+    }
+}
+
+// ─── Concrete products: macOS variant ─────────────────────────────────
+class MacButton implements Button {
+    @Override
+    public void paint() {
+        System.out.println("[Mac]  Rendering a button in macOS style.");
+    }
+}
+
+class MacCheckbox implements Checkbox {
+    @Override
+    public void paint() {
+        System.out.println("[Mac]  Rendering a checkbox in macOS style.");
+    }
+}
+
+// ─── Abstract factory ─────────────────────────────────────────────────
+// Declares creation methods for each product in the family. Products of
+// one family are designed to work together; mixing variants is what this
+// pattern prevents.
+interface GUIFactory {
+    Button createButton();
+    Checkbox createCheckbox();
+}
+
+// ─── Concrete factories ───────────────────────────────────────────────
+// Each concrete factory produces exactly one variant of the family, so
+// the resulting products are guaranteed to be compatible with each other.
+class WinFactory implements GUIFactory {
+    @Override
+    public Button createButton() {
+        return new WinButton();
+    }
+
+    @Override
+    public Checkbox createCheckbox() {
+        return new WinCheckbox();
+    }
+}
+
+class MacFactory implements GUIFactory {
+    @Override
+    public Button createButton() {
+        return new MacButton();
+    }
+
+    @Override
+    public Checkbox createCheckbox() {
+        return new MacCheckbox();
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+// Works with factories and products only through abstract types, so any
+// factory subclass can be passed in without breaking it.
+class Application {
+    private final GUIFactory factory;
+    private Button button;
+    private Checkbox checkbox;
+
+    Application(GUIFactory factory) {
+        this.factory = factory;
+    }
+
+    void createUI() {
+        this.button = factory.createButton();
+        this.checkbox = factory.createCheckbox();
+    }
+
+    void paint() {
+        button.paint();
+        checkbox.paint();
+    }
+}
+
+// ─── Configurator ─────────────────────────────────────────────────────
+public class AbstractFactoryDemo {
+
+    /** Picks the factory type from config/environment at startup. */
+    static GUIFactory configure(String os) {
+        if ("Windows".equals(os)) {
+            return new WinFactory();
+        } else if ("Mac".equals(os)) {
+            return new MacFactory();
+        }
+        throw new IllegalArgumentException("Error! Unknown operating system: " + os);
+    }
+
+    public static void main(String[] args) {
+        for (String os : new String[] { "Windows", "Mac" }) {
+            Application app = new Application(configure(os));
+            app.createUI();
+            app.paint();
+        }
+    }
+}
+```
+
+**Output**
+
+```
+[Win]  Rendering a button in Windows style.
+[Win]  Rendering a checkbox in Windows style.
+[Mac]  Rendering a button in macOS style.
+[Mac]  Rendering a checkbox in macOS style.
+```
+
+### Notes on the Java translation
+
+- The key guarantee is **structural**: because `WinFactory` is the only thing that says
+  `new WinButton()` and `new WinCheckbox()`, there is no code path that can hand `Application`
+  a `WinButton` alongside a `MacCheckbox`.
+- `Application` holds the factory in a `final` field and depends only on `GUIFactory`, `Button`,
+  and `Checkbox` — the concrete classes are named exactly once, inside `configure()`.
+- Adding a Linux variant means adding `LinuxButton`, `LinuxCheckbox`, `LinuxFactory`, and one
+  branch in `configure()`. **No change to `Application`.**
+- Compare with Factory Method: one factory method → one product. Here one factory → a *family*
+  of related products. Each method of `GUIFactory` is itself a factory method.
+
+### Where this appears in the JDK
+
+- `javax.xml.parsers.DocumentBuilderFactory` / `SAXParserFactory`
+- `javax.xml.transform.TransformerFactory`
+- `java.sql.Connection` (creates `Statement`, `PreparedStatement`, `CallableStatement` — a family
+  of objects all bound to the same concrete database driver)
+
+---
+
 ## Applicability
 
 ### ▸ Use the Abstract Factory when your code needs to work with various families of related products, but you don't want it to depend on the concrete classes of those products.

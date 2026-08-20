@@ -214,6 +214,257 @@ The memento class doesn't declare any public fields, getters or setters. Therefo
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`MementoDemo.java`). It uses the
+Command-as-caretaker structure the book describes, so this file and
+[`02-command.md`](02-command.md) fit together.
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+// ─── Originator ───────────────────────────────────────────────────────
+// Owns the state. It's the only class that can read a snapshot's guts.
+class Editor {
+    private String text = "";
+    private int curX, curY, selectionWidth;
+
+    void setText(String text)          { this.text = text; }
+    void setCursor(int x, int y)       { this.curX = x; this.curY = y; }
+    void setSelectionWidth(int width)  { this.selectionWidth = width; }
+
+    String getText() { return text; }
+
+    /** Saves the current state inside a memento. */
+    Snapshot createSnapshot() {
+        // The memento is immutable, so the originator hands its state
+        // to the constructor rather than to setters.
+        return new Snapshot(this, text, curX, curY, selectionWidth);
+    }
+
+    @Override
+    public String toString() {
+        return "text=\"" + text + "\" cursor=(" + curX + "," + curY
+                + ") selection=" + selectionWidth;
+    }
+
+    // ── Memento, nested so it can touch Editor's privates while the
+    //    outside world sees nothing but restore(). ──
+    static class Snapshot {
+        private final Editor editor;
+        private final String text;
+        private final int curX, curY, selectionWidth;
+
+        private Snapshot(Editor editor, String text, int curX, int curY, int selectionWidth) {
+            this.editor = editor;
+            this.text = text;
+            this.curX = curX;
+            this.curY = curY;
+            this.selectionWidth = selectionWidth;
+        }
+
+        /** The only public operation. No getters — nothing can read the state. */
+        void restore() {
+            editor.setText(text);
+            editor.setCursor(curX, curY);
+            editor.setSelectionWidth(selectionWidth);
+        }
+    }
+}
+
+// ─── Caretaker: a Command that carries its own backup ─────────────────
+abstract class Command {
+    protected final Editor editor;
+    private Editor.Snapshot backup;
+
+    Command(Editor editor) { this.editor = editor; }
+
+    void makeBackup() {
+        backup = editor.createSnapshot();
+    }
+
+    void undo() {
+        if (backup != null) {
+            backup.restore();
+        }
+    }
+
+    abstract String name();
+    abstract void execute();
+}
+
+class TypeCommand extends Command {
+    private final String addition;
+
+    TypeCommand(Editor editor, String addition) {
+        super(editor);
+        this.addition = addition;
+    }
+
+    @Override String name() { return "Type(\"" + addition + "\")"; }
+
+    @Override
+    public void execute() {
+        editor.setText(editor.getText() + addition);
+        editor.setCursor(editor.getText().length(), 0);
+        editor.setSelectionWidth(0);
+    }
+}
+
+class UppercaseCommand extends Command {
+    UppercaseCommand(Editor editor) { super(editor); }
+
+    @Override String name() { return "Uppercase"; }
+
+    @Override
+    public void execute() {
+        editor.setText(editor.getText().toUpperCase());
+        editor.setSelectionWidth(editor.getText().length());
+    }
+}
+
+class ClearCommand extends Command {
+    ClearCommand(Editor editor) { super(editor); }
+
+    @Override String name() { return "Clear"; }
+
+    @Override
+    public void execute() {
+        editor.setText("");
+        editor.setCursor(0, 0);
+        editor.setSelectionWidth(0);
+    }
+}
+
+// ─── Application: the undo stack ──────────────────────────────────────
+class Application {
+    private final Editor editor;
+    private final Deque<Command> history = new ArrayDeque<>();
+
+    Application(Editor editor) { this.editor = editor; }
+
+    void executeCommand(Command command) {
+        command.makeBackup();          // snapshot BEFORE mutating
+        command.execute();
+        history.push(command);
+        System.out.printf("run  %-18s -> %s%n", command.name(), editor);
+    }
+
+    void undo() {
+        if (history.isEmpty()) {
+            System.out.println("undo (nothing to undo)");
+            return;
+        }
+        Command command = history.pop();
+        command.undo();
+        System.out.printf("undo %-18s -> %s%n", command.name(), editor);
+    }
+}
+
+public class MementoDemo {
+    public static void main(String[] args) {
+        Editor editor = new Editor();
+        Application app = new Application(editor);
+
+        app.executeCommand(new TypeCommand(editor, "Hello"));
+        app.executeCommand(new TypeCommand(editor, ", world"));
+        app.executeCommand(new UppercaseCommand(editor));
+        app.executeCommand(new ClearCommand(editor));
+
+        System.out.println();
+        app.undo();
+        app.undo();
+        app.undo();
+        app.undo();
+        app.undo();
+    }
+}
+```
+
+**Output**
+
+```
+run  Type("Hello")      -> text="Hello" cursor=(5,0) selection=0
+run  Type(", world")    -> text="Hello, world" cursor=(12,0) selection=0
+run  Uppercase          -> text="HELLO, WORLD" cursor=(12,0) selection=12
+run  Clear              -> text="" cursor=(0,0) selection=0
+
+undo Clear              -> text="HELLO, WORLD" cursor=(12,0) selection=12
+undo Uppercase          -> text="Hello, world" cursor=(12,0) selection=0
+undo Type(", world")    -> text="Hello" cursor=(5,0) selection=0
+undo Type("Hello")      -> text="" cursor=(0,0) selection=0
+undo (nothing to undo)
+```
+
+Note that undo restores **all three fields**, not just the text — the cursor and selection come back
+too. That is the memento's job: capture the *whole* state, not the diff.
+
+### Notes on the Java translation
+
+- **`Snapshot` is a nested class with a private constructor and no getters.** Only `Editor` can
+  create one; nobody at all can read one. `restore()` is its entire public API. This is Java's
+  cleanest answer to the book's "no object can alter its contents" requirement — the nested class
+  can reach `Editor`'s privates, but the caretaker sees an opaque token.
+- **Every field is `final`.** The memento is immutable, so a stored snapshot can never drift.
+- **`makeBackup()` runs before `execute()`.** Snapshot the *pre-change* state, or undo restores the
+  state you were trying to escape.
+- The command is the **caretaker**: it holds the memento but never opens it. That's the pattern's
+  contract — the caretaker stores and passes mementos around, and only the originator interprets
+  them.
+
+### The narrow-interface trick
+
+If a nested class isn't an option (mementos stored in a separate module, say), use two interfaces —
+a wide one only the originator knows and a narrow one everyone else sees:
+
+```java
+/** What the caretaker is allowed to see: nothing. */
+interface Memento {
+    String getName();          // for a UI history list, optional
+}
+
+class ConcreteMemento implements Memento {
+    private final String state;
+
+    ConcreteMemento(String state) { this.state = state; }
+
+    /** Package-private: only the originator's package can call it. */
+    String getState() { return state; }
+
+    @Override public String getName() { return "snapshot@" + state.length(); }
+}
+```
+
+The caretaker's field is typed `Memento`, so `getState()` is invisible to it.
+
+### The memory cost, and how real editors dodge it
+
+A full snapshot per keystroke is ruinous. Production strategies:
+
+| Strategy | Idea |
+|---|---|
+| **Command-based undo** | store the *inverse operation*, not the state — cheap but every command needs an exact inverse |
+| **Sparse snapshots** | snapshot every N operations; replay commands forward from the nearest one |
+| **Copy-on-write / persistent structures** | share unchanged subtrees between snapshots (how ropes and Git work) |
+| **Bounded history** | cap the stack, drop the oldest — what most editors actually do |
+
+Also beware: a shallow memento of a mutable object stores a *reference*. If the originator later
+mutates that object in place, the "snapshot" changes with it. Copy defensively, or keep the state
+immutable (as `String` and the `int`s here are).
+
+### Where this appears in the JDK and frameworks
+
+- `java.io.Serializable` — serialising an object graph is a memento written to bytes
+- `java.util.Date` / `Calendar` — `clone()`-based state capture in older APIs
+- `javax.swing.undo.UndoManager` and `UndoableEdit` — Swing's built-in undo stack
+- JPA/Hibernate — the persistence context snapshots entities on load to compute dirty state at flush
+- Database savepoints (`Connection.setSavepoint()`) and transaction rollback — the same idea at the
+  storage layer
+- Kubernetes/Terraform state files, and VM/container snapshots — mementos at the infrastructure scale
+
+---
+
 ## Applicability
 
 ### ▸ Use the Memento pattern when you want to produce snapshots of the object's state to be able to restore a previous state of the object.

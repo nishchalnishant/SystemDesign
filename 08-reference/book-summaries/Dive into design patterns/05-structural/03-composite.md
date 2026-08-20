@@ -216,6 +216,317 @@ the client doesn't know whether it's working with a simple shape or a compound o
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`CompositeDemo.java`). The
+`draw()` method is filled in with real bounding-box arithmetic so the recursion is visible.
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+// ─── Component ────────────────────────────────────────────────────────
+// The single interface the client uses for BOTH leaves and containers.
+interface Graphic {
+    void move(int x, int y);
+    void draw(String indent);
+
+    // Bounding box, used by composites to "sum up" their children.
+    int left();
+    int top();
+    int right();
+    int bottom();
+}
+
+// ─── Leaf ─────────────────────────────────────────────────────────────
+class Dot implements Graphic {
+    protected int x;
+    protected int y;
+
+    Dot(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    @Override
+    public void move(int dx, int dy) {
+        this.x += dx;
+        this.y += dy;
+    }
+
+    @Override
+    public void draw(String indent) {
+        System.out.println(indent + "Dot at (" + x + ", " + y + ")");
+    }
+
+    @Override public int left()   { return x; }
+    @Override public int top()    { return y; }
+    @Override public int right()  { return x; }
+    @Override public int bottom() { return y; }
+}
+
+// Components can extend other components.
+class Circle extends Dot {
+    private final int radius;
+
+    Circle(int x, int y, int radius) {
+        super(x, y);
+        this.radius = radius;
+    }
+
+    @Override
+    public void draw(String indent) {
+        System.out.println(indent + "Circle at (" + x + ", " + y + ") r=" + radius);
+    }
+
+    @Override public int left()   { return x - radius; }
+    @Override public int top()    { return y - radius; }
+    @Override public int right()  { return x + radius; }
+    @Override public int bottom() { return y + radius; }
+}
+
+// ─── Composite ────────────────────────────────────────────────────────
+class CompoundGraphic implements Graphic {
+    private final List<Graphic> children = new ArrayList<>();
+
+    void add(Graphic child) {
+        children.add(child);
+    }
+
+    void add(Graphic... items) {
+        for (Graphic g : items) children.add(g);
+    }
+
+    void remove(Graphic child) {
+        children.remove(child);
+    }
+
+    /** Move: simply forward the request to every child. */
+    @Override
+    public void move(int dx, int dy) {
+        for (Graphic child : children) {
+            child.move(dx, dy);
+        }
+    }
+
+    /**
+     * Draw: recurse into every child, then draw a dashed rectangle
+     * around the union of their bounding boxes. Because each child may
+     * itself be a composite, the WHOLE tree is traversed.
+     */
+    @Override
+    public void draw(String indent) {
+        System.out.println(indent + "CompoundGraphic ["
+                + children.size() + " children] {");
+        for (Graphic child : children) {
+            child.draw(indent + "    ");
+        }
+        System.out.println(indent + "    -- dashed bounds: ("
+                + left() + ", " + top() + ") to (" + right() + ", " + bottom() + ")");
+        System.out.println(indent + "}");
+    }
+
+    @Override
+    public int left() {
+        return children.stream().mapToInt(Graphic::left).min().orElse(0);
+    }
+
+    @Override
+    public int top() {
+        return children.stream().mapToInt(Graphic::top).min().orElse(0);
+    }
+
+    @Override
+    public int right() {
+        return children.stream().mapToInt(Graphic::right).max().orElse(0);
+    }
+
+    @Override
+    public int bottom() {
+        return children.stream().mapToInt(Graphic::bottom).max().orElse(0);
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+class ImageEditor {
+    private final CompoundGraphic all = new CompoundGraphic();
+
+    void load() {
+        all.add(new Dot(1, 2));
+        all.add(new Circle(5, 3, 10));
+        all.add(new Dot(30, 30));
+        all.add(new Circle(40, 40, 5));
+    }
+
+    /** Combine selected components into one complex composite. */
+    void groupSelected(Graphic... components) {
+        CompoundGraphic group = new CompoundGraphic();
+        for (Graphic component : components) {
+            group.add(component);
+            all.remove(component);
+        }
+        all.add(group);
+    }
+
+    CompoundGraphic root() {
+        return all;
+    }
+}
+
+public class CompositeDemo {
+    public static void main(String[] args) {
+        ImageEditor editor = new ImageEditor();
+
+        Dot d1 = new Dot(1, 2);
+        Circle c1 = new Circle(5, 3, 10);
+        Dot d2 = new Dot(30, 30);
+        Circle c2 = new Circle(40, 40, 5);
+
+        CompoundGraphic all = editor.root();
+        all.add(d1, c1, d2, c2);
+
+        System.out.println("=== Flat ===");
+        all.draw("");
+
+        // Group the two far-away shapes into a nested composite.
+        CompoundGraphic group = new CompoundGraphic();
+        group.add(d2, c2);
+        all.remove(d2);
+        all.remove(c2);
+        all.add(group);
+
+        System.out.println();
+        System.out.println("=== After grouping ===");
+        all.draw("");
+
+        // The client calls move() on the ROOT and does not care that
+        // the tree is now two levels deep.
+        System.out.println();
+        System.out.println("=== After all.move(100, 100) ===");
+        all.move(100, 100);
+        all.draw("");
+    }
+}
+```
+
+**Output**
+
+```
+=== Flat ===
+CompoundGraphic [4 children] {
+    Dot at (1, 2)
+    Circle at (5, 3) r=10
+    Dot at (30, 30)
+    Circle at (40, 40) r=5
+    -- dashed bounds: (-5, -7) to (45, 45)
+}
+
+=== After grouping ===
+CompoundGraphic [3 children] {
+    Dot at (1, 2)
+    Circle at (5, 3) r=10
+    CompoundGraphic [2 children] {
+        Dot at (30, 30)
+        Circle at (40, 40) r=5
+        -- dashed bounds: (30, 30) to (45, 45)
+    }
+    -- dashed bounds: (-5, -7) to (45, 45)
+}
+
+=== After all.move(100, 100) ===
+CompoundGraphic [3 children] {
+    Dot at (101, 102)
+    Circle at (105, 103) r=10
+    CompoundGraphic [2 children] {
+        Dot at (130, 130)
+        Circle at (140, 140) r=5
+        -- dashed bounds: (130, 130) to (145, 145)
+    }
+    -- dashed bounds: (95, 93) to (145, 145)
+}
+```
+
+The nested composite's `move` was never called by the client — the recursion reached it.
+
+### Notes on the Java translation
+
+- `CompoundGraphic.left()` uses `.min()` over children; a leaf just returns its own coordinate.
+  That is the "sum up the results" step the book describes, made concrete.
+- **Recursion is the whole pattern.** Every composite method is `for (child : children)
+  child.sameMethod()`, and the base case is the leaf.
+- The client's final `all.move(100, 100)` touches four shapes across two nesting levels with one
+  call. It never asks "is this a leaf or a container?"
+
+### The design tension: where do `add`/`remove` live?
+
+Two options, and the GoF explicitly calls this out as a trade-off:
+
+**(a) Declare them on the `Component` interface** (transparency). Every object looks identical to
+the client — no type checks needed — but a leaf must implement `add()` by throwing:
+
+```java
+interface Graphic {
+    void draw();
+    default void add(Graphic g)    { throw new UnsupportedOperationException(); }
+    default void remove(Graphic g) { throw new UnsupportedOperationException(); }
+}
+```
+
+**(b) Declare them only on `Composite`** (safety, used above). The compiler prevents
+`dot.add(circle)`, but the client must downcast or type-check to build a tree.
+
+**Trade-off:** (a) favours uniformity and is what GoF leans toward; (b) favours type safety and is
+more idiomatic Java. Pick (b) unless the client genuinely needs to add children without knowing the
+node type.
+
+### A second familiar example: a filesystem
+
+```java
+interface FileSystemNode {
+    String name();
+    long size();
+}
+
+class FileNode implements FileSystemNode {
+    private final String name;
+    private final long bytes;
+
+    FileNode(String name, long bytes) { this.name = name; this.bytes = bytes; }
+
+    @Override public String name() { return name; }
+    @Override public long size()   { return bytes; }      // leaf: knows its own size
+}
+
+class DirectoryNode implements FileSystemNode {
+    private final String name;
+    private final List<FileSystemNode> children = new ArrayList<>();
+
+    DirectoryNode(String name) { this.name = name; }
+
+    void add(FileSystemNode node) { children.add(node); }
+
+    @Override public String name() { return name; }
+
+    @Override
+    public long size() {                                   // composite: sums children
+        return children.stream().mapToLong(FileSystemNode::size).sum();
+    }
+}
+```
+
+`du -sh` is the Composite pattern.
+
+### Where this appears in the JDK
+
+- `java.awt.Container` — a `Container` **is a** `Component` and **holds** `Component`s; Swing's
+  `JPanel`, `JFrame` nest arbitrarily deep. The textbook JDK composite.
+- `javax.swing.JMenu` contains `JMenuItem`s, and a `JMenu` **is a** `JMenuItem`.
+- The DOM: `org.w3c.dom.Node`, where `Element` holds child `Node`s.
+- `java.io.File` — a file or a directory behind one type.
+- Composite exceptions / `Throwable.getSuppressed()`.
+
+---
+
 ## Applicability
 
 ### ▸ Use the Composite pattern when you have to implement a tree-like object structure.

@@ -172,6 +172,187 @@ In this example, the context uses multiple strategies to execute various arithme
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`StrategyDemo.java`).
+
+```java
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+// ─── Strategy interface ───────────────────────────────────────────────
+interface Strategy {
+    int execute(int a, int b);
+}
+
+// ─── Concrete strategies ──────────────────────────────────────────────
+class ConcreteStrategyAdd implements Strategy {
+    @Override public int execute(int a, int b) { return a + b; }
+}
+
+class ConcreteStrategySubtract implements Strategy {
+    @Override public int execute(int a, int b) { return a - b; }
+}
+
+class ConcreteStrategyMultiply implements Strategy {
+    @Override public int execute(int a, int b) { return a * b; }
+}
+
+// ─── Context ──────────────────────────────────────────────────────────
+class Context {
+    // The context never knows the concrete class — only the interface.
+    private Strategy strategy;
+
+    void setStrategy(Strategy strategy) { this.strategy = strategy; }
+
+    int executeStrategy(int a, int b) {
+        if (strategy == null) {
+            throw new IllegalStateException("no strategy set");
+        }
+        return strategy.execute(a, b);
+    }
+}
+
+// ─── Client: picks the strategy, so it must know the differences ──────
+public class StrategyDemo {
+    public static void main(String[] args) {
+        Context context = new Context();
+
+        Map<String, Strategy> actions = new LinkedHashMap<>();
+        actions.put("addition",       new ConcreteStrategyAdd());
+        actions.put("subtraction",    new ConcreteStrategySubtract());
+        actions.put("multiplication", new ConcreteStrategyMultiply());
+
+        int first = 12, second = 4;
+
+        for (Map.Entry<String, Strategy> action : actions.entrySet()) {
+            context.setStrategy(action.getValue());          // swapped at RUNTIME
+            int result = context.executeStrategy(first, second);
+            System.out.printf("%-15s %d ? %d = %d%n",
+                    action.getKey(), first, second, result);
+        }
+
+        // A brand-new algorithm, added without touching Context.
+        System.out.println();
+        context.setStrategy((a, b) -> a / b);                 // lambda strategy
+        System.out.printf("%-15s %d ? %d = %d%n",
+                "division", first, second, context.executeStrategy(first, second));
+    }
+}
+```
+
+**Output**
+
+```
+addition        12 ? 4 = 16
+subtraction     12 ? 4 = 8
+multiplication  12 ? 4 = 48
+
+division        12 ? 4 = 3
+```
+
+`Context` was compiled before division existed and needed no change to support it — that is the
+Open/Closed Principle, delivered by composition rather than by inheritance.
+
+### What this replaces
+
+The pattern exists to kill this:
+
+```java
+int execute(String action, int a, int b) {
+    if (action.equals("addition"))            return a + b;
+    else if (action.equals("subtraction"))    return a - b;
+    else if (action.equals("multiplication")) return a * b;
+    // every new operation edits this method — and every edit
+    // risks breaking the operations already in it
+    throw new IllegalArgumentException(action);
+}
+```
+
+### A more realistic example: route planning
+
+The book's arithmetic is deliberately minimal. Here's the shape you'd actually meet:
+
+```java
+interface RouteStrategy {
+    void buildRoute(String from, String to);
+}
+
+class RoadStrategy implements RouteStrategy {
+    public void buildRoute(String from, String to) {
+        // A* over the road graph, respecting one-way streets
+    }
+}
+
+class WalkingStrategy implements RouteStrategy {
+    public void buildRoute(String from, String to) {
+        // pedestrian paths, ignores one-way, allows stairs
+    }
+}
+
+class PublicTransportStrategy implements RouteStrategy {
+    public void buildRoute(String from, String to) {
+        // timetable-aware search with transfer penalties
+    }
+}
+
+class Navigator {
+    private RouteStrategy strategy;
+
+    void setStrategy(RouteStrategy strategy) { this.strategy = strategy; }
+
+    void buildRoute(String from, String to) { strategy.buildRoute(from, to); }
+}
+```
+
+`Navigator` handles the map, zoom, and markers; it knows nothing about pathfinding. Adding cycling
+routes is one new class.
+
+### Notes on the Java translation
+
+- **`Strategy` is a functional interface**, so any concrete strategy can be a lambda or a method
+  reference. In modern Java, one-method strategies almost never justify a named class:
+
+```java
+context.setStrategy(Integer::sum);
+context.setStrategy((a, b) -> a % b);
+```
+
+  The named-class form still earns its keep when the strategy needs its own fields, configuration, or
+  several methods.
+- **The client picks the strategy.** The book is explicit: the client "should be aware of the
+  differences between strategies in order to make the right choice." That's the pattern's main
+  drawback — it leaks knowledge of the alternatives to the caller.
+- **`setStrategy` at runtime** is what separates this from plain polymorphism: the same `Context`
+  object changes behaviour mid-life.
+- A `Map<String, Strategy>` lookup, as used above, is the standard way to turn the client's `if`
+  chain into a table.
+
+### Strategy vs. State vs. Template Method vs. Command
+
+| | Who swaps | Strategies know each other | Varies |
+|---|---|---|---|
+| **Strategy** | the client | no | the algorithm |
+| **State** | the states themselves | yes | behaviour as condition changes |
+| **Template Method** | nobody — fixed at compile time by subclassing | n/a | steps within a fixed skeleton |
+| **Command** | the client | no | *what* to do, plus when and undo |
+
+Strategy and State are the same UML diagram with opposite intents; Strategy and Template Method
+solve the same problem with composition vs. inheritance. See [`07-state.md`](07-state.md) and
+[`09-template-method.md`](09-template-method.md).
+
+### Where this appears in the JDK and frameworks
+
+- `java.util.Comparator` — the canonical Java strategy; `list.sort(comparator)` swaps the ordering
+  algorithm without touching the sort
+- `java.util.function.Function` / `Predicate` / `Supplier` — strategies as first-class values
+- `javax.servlet.http.HttpServlet.service()` dispatching to `doGet`/`doPost`
+- `java.util.concurrent.RejectedExecutionHandler` — `AbortPolicy`, `CallerRunsPolicy`, `DiscardPolicy`
+- `ThreadFactory`, `SSLSocketFactory`, and Spring Security's `PasswordEncoder` (bcrypt/argon2/scrypt)
+- `java.util.zip.Deflater` compression levels; any pluggable serialiser (JSON/XML/protobuf)
+
+---
+
 ## Applicability
 
 ### ▸ Use the Strategy pattern when you want to use different variants of an algorithm within an object and be able to switch from one algorithm to another during runtime.

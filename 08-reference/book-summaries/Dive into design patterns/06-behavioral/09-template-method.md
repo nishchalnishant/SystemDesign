@@ -197,6 +197,256 @@ All races in the game have almost the same types of units and buildings. Therefo
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`TemplateMethodDemo.java`).
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+// ─── The abstract class holding the skeleton ──────────────────────────
+abstract class GameAI {
+    protected final String race;
+    protected int resources = 0;
+    protected final List<String> builtStructures = new ArrayList<>();
+    protected final List<String> scouts = new ArrayList<>();
+    protected final List<String> warriors = new ArrayList<>();
+
+    GameAI(String race, int startingResources) {
+        this.race = race;
+        this.resources = startingResources;
+    }
+
+    /**
+     * THE TEMPLATE METHOD. final, because subclasses must fill in the
+     * steps — never rearrange them.
+     */
+    final void turn() {
+        System.out.println("== " + race + " turn ==");
+        collectResources();
+        buildStructures();
+        buildUnits();
+        attack();
+    }
+
+    /** A step with a usable default implementation. */
+    void collectResources() {
+        for (String structure : builtStructures) {
+            resources += 10;
+        }
+        System.out.println("  collected -> " + resources + " gold");
+    }
+
+    // Steps every subclass MUST supply.
+    abstract void buildStructures();
+    abstract void buildUnits();
+
+    /** A class can have more than one template method. */
+    void attack() {
+        String enemy = closestEnemy();
+        if (enemy == null) {
+            sendScouts("map centre");
+        } else {
+            sendWarriors(enemy);
+        }
+    }
+
+    abstract void sendScouts(String position);
+    abstract void sendWarriors(String position);
+
+    /** A HOOK: an empty (or default) step subclasses may optionally override. */
+    String closestEnemy() {
+        return null;
+    }
+}
+
+// ─── Concrete implementations ─────────────────────────────────────────
+class OrcsAI extends GameAI {
+    OrcsAI() { super("Orcs", 120); }
+
+    @Override
+    void buildStructures() {
+        if (resources >= 60) {
+            builtStructures.addAll(List.of("farm", "barracks", "stronghold"));
+            resources -= 60;
+            System.out.println("  built farms, barracks, stronghold ("
+                    + resources + " gold left)");
+        } else {
+            System.out.println("  no resources to build with");
+        }
+    }
+
+    @Override
+    void buildUnits() {
+        if (resources >= 20) {
+            resources -= 20;
+            if (scouts.isEmpty()) {
+                scouts.add("peon");
+                System.out.println("  built a peon -> scouts");
+            } else {
+                warriors.add("grunt");
+                System.out.println("  built a grunt -> warriors");
+            }
+        } else {
+            System.out.println("  not enough resources for units");
+        }
+    }
+
+    @Override
+    void sendScouts(String position) {
+        if (!scouts.isEmpty()) {
+            System.out.println("  sending " + scouts.size() + " scout(s) to " + position);
+        } else {
+            System.out.println("  no scouts to send");
+        }
+    }
+
+    @Override
+    void sendWarriors(String position) {
+        if (warriors.size() > 5) {
+            System.out.println("  charging " + position + " with " + warriors.size() + " grunts");
+        } else {
+            System.out.println("  too few warriors to attack");
+        }
+    }
+}
+
+class MonstersAI extends GameAI {
+    MonstersAI() { super("Monsters", 0); }
+
+    // Monsters don't collect, build, or produce — three steps
+    // deliberately overridden to do NOTHING.
+    @Override void collectResources() { /* monsters don't collect */ }
+    @Override void buildStructures()  { /* monsters don't build */ }
+    @Override void buildUnits()       { /* monsters don't build units */ }
+
+    @Override
+    void sendScouts(String position) {
+        System.out.println("  a lone monster wanders toward " + position);
+    }
+
+    @Override
+    void sendWarriors(String position) {
+        System.out.println("  the horde swarms " + position);
+    }
+}
+
+public class TemplateMethodDemo {
+    public static void main(String[] args) {
+        List<GameAI> players = List.of(new OrcsAI(), new MonstersAI());
+
+        for (int round = 1; round <= 3; round++) {
+            System.out.println("--- Round " + round + " ---");
+            for (GameAI ai : players) {
+                ai.turn();
+            }
+            System.out.println();
+        }
+    }
+}
+```
+
+**Output**
+
+```
+--- Round 1 ---
+== Orcs turn ==
+  collected -> 120 gold
+  built farms, barracks, stronghold (60 gold left)
+  built a peon -> scouts
+  sending 1 scout(s) to map centre
+== Monsters turn ==
+  a lone monster wanders toward map centre
+
+--- Round 2 ---
+== Orcs turn ==
+  collected -> 70 gold
+  built farms, barracks, stronghold (10 gold left)
+  not enough resources for units
+  sending 1 scout(s) to map centre
+== Monsters turn ==
+  a lone monster wanders toward map centre
+
+--- Round 3 ---
+== Orcs turn ==
+  collected -> 70 gold
+  built farms, barracks, stronghold (10 gold left)
+  not enough resources for units
+  sending 1 scout(s) to map centre
+== Monsters turn ==
+  a lone monster wanders toward map centre
+
+```
+
+Both races run the *identical* four-step turn, which exists in exactly one place. `MonstersAI`
+participates by overriding three of those steps into no-ops — no conditional in `turn()` says
+"monsters are special."
+
+### Notes on the Java translation
+
+- **`turn()` is `final`.** The book stresses that subclasses "must not override the template method
+  itself"; Java lets you enforce that at compile time rather than by convention. Do it.
+- **Three kinds of step:**
+  | Kind | Java | Subclass |
+  |---|---|---|
+  | fixed step | `final` or non-abstract with no intent to override | inherits it |
+  | required step | `abstract` | **must** implement |
+  | hook | non-abstract, empty or a sane default | **may** override |
+  `collectResources()` is a default step (Monsters override it away); `closestEnemy()` is a hook.
+- **`buildStructures`/`buildUnits` are `abstract`,** so the compiler refuses a subclass that forgets
+  one. That is a real advantage over Strategy, where a missing piece is a runtime `null`.
+- **The steps are package-private, not public.** They're internal to the algorithm; only `turn()`
+  is the public entry point. Widening them invites clients to call a step out of order.
+
+### The inversion of control
+
+Template Method is the **Hollywood Principle**: "Don't call us, we'll call you." The subclass never
+drives the algorithm; the framework's `turn()` calls down into the subclass at the points it chooses.
+This is why the pattern is the backbone of nearly every framework — you supply the parts, the
+framework owns the order.
+
+### Template Method vs. Strategy
+
+The same problem, solved by inheritance vs. composition:
+
+| | Template Method | Strategy |
+|---|---|---|
+| Mechanism | inheritance | composition |
+| Bound at | compile time | runtime |
+| Granularity | swaps *steps* inside a fixed algorithm | swaps the *whole* algorithm |
+| Coupling | tight — subclass depends on the base class's internals | loose — only the interface |
+| Class count | one per variant | one per variant, but freely combinable |
+
+Template Method's weaknesses are inheritance's weaknesses: you get one shot at a superclass, the
+subclass can be broken by base-class changes (a Liskov violation waiting to happen), and a long
+skeleton with many hooks becomes hard to follow. Strategy is the usual modern default; Template
+Method still wins when the steps genuinely form one fixed algorithm and you want the compiler to
+enforce that every variant supplies each piece.
+
+You can also blend them — make the template method call *injected* strategies for the steps:
+
+```java
+final void turn() {
+    resourceCollector.collect(this);   // steps as pluggable objects
+    builder.build(this);
+    attacker.attack(this);
+}
+```
+
+### Where this appears in the JDK and frameworks
+
+- `java.util.AbstractList` / `AbstractMap` / `AbstractSet` — implement `get()` and `size()`, inherit
+  everything else
+- `java.io.InputStream.read(byte[], int, int)` — built on the abstract single-byte `read()`
+- `javax.servlet.http.HttpServlet.service()` — dispatches to `doGet`, `doPost`, `doPut`, …
+- `java.util.AbstractCollection.toString()`, and `Collections.sort`'s merge driven by `compareTo`
+- JUnit's `setUp`/`test`/`tearDown` lifecycle; Spring's `JdbcTemplate` (open connection → your
+  callback → close, always); `AbstractApplicationContext.refresh()`
+- `java.awt.Component.paint()`, and Android's `Activity` lifecycle callbacks
+
+---
+
 ## Applicability
 
 ### ▸ Use the Template Method pattern when you want to let clients extend only particular steps of an algorithm, but not the whole algorithm or its structure.

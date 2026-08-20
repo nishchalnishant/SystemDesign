@@ -204,6 +204,220 @@ Adding new subscribers to the program doesn't require changes to existing publis
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`ObserverDemo.java`). Note that the
+publisher **delegates** subscription management to an `EventManager` rather than inheriting it —
+exactly the composition-over-inheritance point the book makes.
+
+```java
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// ─── Subscriber interface ─────────────────────────────────────────────
+interface EventListener {
+    void update(String filename);
+}
+
+// ─── The reusable subscription machinery ──────────────────────────────
+class EventManager {
+    private final Map<String, List<EventListener>> listeners = new HashMap<>();
+
+    EventManager(String... operations) {
+        for (String operation : operations) {
+            listeners.put(operation, new ArrayList<>());
+        }
+    }
+
+    void subscribe(String eventType, EventListener listener) {
+        listeners.get(eventType).add(listener);
+    }
+
+    void unsubscribe(String eventType, EventListener listener) {
+        listeners.get(eventType).remove(listener);
+    }
+
+    void notify(String eventType, String data) {
+        // Iterate a COPY: a listener may unsubscribe itself during the
+        // callback, which would otherwise throw ConcurrentModificationException.
+        for (EventListener listener : List.copyOf(listeners.get(eventType))) {
+            listener.update(data);
+        }
+    }
+}
+
+// ─── Concrete publisher ───────────────────────────────────────────────
+// Editor is NOT a subclass of EventManager — it holds one. That matters:
+// a real publisher usually already has a superclass.
+class Editor {
+    public final EventManager events = new EventManager("open", "save");
+    private String file;
+
+    void openFile(String path) {
+        this.file = path;
+        events.notify("open", file);
+    }
+
+    void saveFile() {
+        if (file == null) {
+            throw new IllegalStateException("no file opened");
+        }
+        events.notify("save", file);
+    }
+}
+
+// ─── Concrete subscribers ─────────────────────────────────────────────
+class LoggingListener implements EventListener {
+    private final String logFile;
+    private final String message;
+
+    LoggingListener(String logFile, String message) {
+        this.logFile = logFile;
+        this.message = message;
+    }
+
+    @Override
+    public void update(String filename) {
+        System.out.println("  [" + logFile + "] " + message.replace("%s", filename));
+    }
+}
+
+class EmailAlertsListener implements EventListener {
+    private final String email;
+    private final String message;
+
+    EmailAlertsListener(String email, String message) {
+        this.email = email;
+        this.message = message;
+    }
+
+    @Override
+    public void update(String filename) {
+        System.out.println("  [mail -> " + email + "] " + message.replace("%s", filename));
+    }
+}
+
+public class ObserverDemo {
+    public static void main(String[] args) {
+        Editor editor = new Editor();
+
+        EventListener logger = new LoggingListener(
+                "/path/to/log.txt", "Someone has opened the file: %s");
+        editor.events.subscribe("open", logger);
+
+        EventListener emailAlerts = new EmailAlertsListener(
+                "admin@example.com", "Someone has changed the file: %s");
+        editor.events.subscribe("save", emailAlerts);
+
+        System.out.println("open:");
+        editor.openFile("test.txt");
+        System.out.println("save:");
+        editor.saveFile();
+
+        // Subscribers come and go at RUNTIME — the publisher is untouched.
+        System.out.println("\nAdding a second save-listener (a lambda):");
+        EventListener backup = filename ->
+                System.out.println("  [backup] copied " + filename + " to s3://bucket/");
+        editor.events.subscribe("save", backup);
+        editor.saveFile();
+
+        System.out.println("\nUnsubscribing the email alerts:");
+        editor.events.unsubscribe("save", emailAlerts);
+        editor.saveFile();
+    }
+}
+```
+
+**Output**
+
+```
+open:
+  [/path/to/log.txt] Someone has opened the file: test.txt
+save:
+  [mail -> admin@example.com] Someone has changed the file: test.txt
+
+Adding a second save-listener (a lambda):
+  [mail -> admin@example.com] Someone has changed the file: test.txt
+  [backup] copied test.txt to s3://bucket/
+
+Unsubscribing the email alerts:
+  [backup] copied test.txt to s3://bucket/
+```
+
+`Editor` was never modified to add the backup listener. That is the Open/Closed Principle in its
+most literal form.
+
+### Notes on the Java translation
+
+- **`EventManager` is composed, not inherited.** The book flags this explicitly: a real publisher is
+  often already a subclass of something, so subscription management goes in a helper object. It also
+  makes the machinery reusable across unrelated publishers.
+- **Keyed by event type.** A single publisher can broadcast several distinct events; a subscriber
+  picks the ones it cares about. Without this you'd need one publisher per event.
+- **`List.copyOf` in `notify()`.** A listener that unsubscribes itself inside `update()` would
+  otherwise throw `ConcurrentModificationException`. This is a real production bug, not a theoretical
+  one.
+- **`EventListener` is a functional interface**, so any subscriber can be a lambda — the book notes
+  that in a language with functional types the whole subscriber hierarchy collapses into a set of
+  functions.
+
+### Push vs. pull
+
+The pseudocode **pushes** the data (`update(filename)`). The alternative is to **pull**:
+
+```java
+interface EventListener {
+    void update(Editor source);      // subscriber asks the publisher for what it needs
+}
+```
+
+| | Push | Pull |
+|---|---|---|
+| Publisher sends | exactly the changed data | just "something changed" + itself |
+| Coupling | subscribers depend on the payload's shape | subscribers depend on the publisher's API |
+| Efficiency | good — no extra calls | subscriber may fetch data it didn't need |
+
+Push is usually the better default; pull is handy when different subscribers need very different
+slices of a large state.
+
+### The pitfalls
+
+- **Notification order is unspecified.** If one subscriber depends on another having run first, the
+  design is already broken. Don't rely on registration order.
+- **Lapsed listeners leak memory.** A publisher that outlives its subscribers holds strong
+  references to them forever — the classic Swing/Android leak. Fixes: always `unsubscribe()` in a
+  teardown/`close()`, or hold `WeakReference`s.
+- **A throwing subscriber can kill the broadcast.** Wrap each `update()` in a try/catch if one bad
+  listener mustn't starve the rest.
+- **Cascading updates** — subscriber A's `update()` mutates the publisher, triggering another
+  notification — can loop forever. Guard with a re-entrancy flag.
+
+### Observer vs. Mediator vs. Chain of Responsibility
+
+| | Shape | Publisher knows |
+|---|---|---|
+| **Observer** | one → many broadcast | a list it never inspects |
+| **Mediator** | many ↔ many through a hub | the mediator knows every component |
+| **Chain of Responsibility** | one → one → one, sequential | only the next handler |
+
+Observer broadcasts to *everyone* subscribed; Chain of Responsibility passes along until *someone*
+handles it. See [`04-mediator.md`](04-mediator.md) and
+[`01-chain-of-responsibility.md`](01-chain-of-responsibility.md).
+
+### Where this appears in the JDK and frameworks
+
+- `java.util.EventListener` and all its descendants — `ActionListener`, `MouseListener`, …
+- `java.beans.PropertyChangeListener` / `PropertyChangeSupport` — literally an `EventManager`
+- `java.util.Observer` / `Observable` — **deprecated since Java 9**: not serialisable, no event
+  types, and unordered notifications. Don't use it.
+- `java.util.concurrent.Flow` (Java 9+) — Reactive Streams: Observer plus *backpressure*
+- Spring's `ApplicationListener` / `@EventListener`; RxJava and Project Reactor; the DOM's
+  `addEventListener`; Kafka consumer groups
+
+---
+
 ## Applicability
 
 ### ▸ Use the Observer pattern when changes to the state of one object may require changing other objects, and the actual set of objects is unknown beforehand or changes dynamically.

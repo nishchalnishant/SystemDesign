@@ -238,6 +238,134 @@ functional whichever type of buttons it works with.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above. Everything is in one file
+(`FactoryMethodDemo.java`) so you can run it directly with `java FactoryMethodDemo.java`.
+
+```java
+// ─── Product interface ────────────────────────────────────────────────
+// Declares the operations that all concrete products must implement.
+interface Button {
+    void render();
+    void onClick(Runnable action);
+}
+
+// ─── Concrete products ────────────────────────────────────────────────
+class WindowsButton implements Button {
+    private Runnable action;
+
+    @Override
+    public void render() {
+        System.out.println("[Windows] Drawing a native Win32 button.");
+        onClick(() -> System.out.println("[Windows] Dialog closed via native event."));
+    }
+
+    @Override
+    public void onClick(Runnable action) {
+        this.action = action;       // bind a native OS click event
+        this.action.run();          // simulate the user clicking it
+    }
+}
+
+class HTMLButton implements Button {
+    private Runnable action;
+
+    @Override
+    public void render() {
+        System.out.println("[Web] <button>OK</button>");
+        onClick(() -> System.out.println("[Web] Dialog closed via browser event."));
+    }
+
+    @Override
+    public void onClick(Runnable action) {
+        this.action = action;       // bind a browser click event
+        this.action.run();
+    }
+}
+
+// ─── Creator ──────────────────────────────────────────────────────────
+// Note: despite its name, the creator's primary responsibility is the
+// business logic in render(), not product creation.
+abstract class Dialog {
+
+    /** The factory method. Subclasses decide the concrete product. */
+    protected abstract Button createButton();
+
+    /** Core business logic that relies on the product. */
+    public void render() {
+        Button okButton = createButton();   // call the factory method
+        okButton.render();                  // now use the product
+    }
+}
+
+// ─── Concrete creators ────────────────────────────────────────────────
+class WindowsDialog extends Dialog {
+    @Override
+    protected Button createButton() {
+        return new WindowsButton();
+    }
+}
+
+class WebDialog extends Dialog {
+    @Override
+    protected Button createButton() {
+        return new HTMLButton();
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class FactoryMethodDemo {
+    private static Dialog dialog;
+
+    /** The app picks a creator type from configuration at runtime. */
+    static void initialize(String os) {
+        if ("Windows".equals(os)) {
+            dialog = new WindowsDialog();
+        } else if ("Web".equals(os)) {
+            dialog = new WebDialog();
+        } else {
+            throw new IllegalArgumentException("Error! Unknown operating system: " + os);
+        }
+    }
+
+    public static void main(String[] args) {
+        // The client works with the creator through its base type only.
+        initialize("Windows");
+        dialog.render();
+
+        initialize("Web");
+        dialog.render();
+    }
+}
+```
+
+**Output**
+
+```
+[Windows] Drawing a native Win32 button.
+[Windows] Dialog closed via native event.
+[Web] <button>OK</button>
+[Web] Dialog closed via browser event.
+```
+
+### Notes on the Java translation
+
+- The pseudocode's `abstract method createButton():Button` becomes an `abstract` method with
+  `protected` access — the factory method is an extension point for subclasses, not public API.
+- The `onClick(f)` callback parameter maps naturally onto `java.lang.Runnable` (or any functional
+  interface); pre-Java-8 code would pass an anonymous `ActionListener` instead.
+- `Dialog` is declared `abstract` because it has no sensible default button. If you wanted a
+  default product instead, drop `abstract` and `return new HTMLButton();` in the base class.
+
+### Where this appears in the JDK
+
+- `java.util.Calendar.getInstance()`, `NumberFormat.getInstance()`, `ResourceBundle.getBundle()`
+- `java.net.URLStreamHandlerFactory.createURLStreamHandler()`
+- `javax.xml.parsers.DocumentBuilderFactory.newDocumentBuilder()`
+
+---
+
 ## Applicability
 
 ### ▸ Use the Factory Method when you don't know beforehand the exact types and dependencies of the objects your code should work with.

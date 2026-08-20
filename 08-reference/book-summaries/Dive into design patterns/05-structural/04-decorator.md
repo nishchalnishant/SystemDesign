@@ -298,6 +298,264 @@ interchangeable in the client code.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`DecoratorDemo.java`). The
+encryption is a toy Base64 round-trip and the "compression" a run-length encoder, so both
+transformations are genuinely reversible and you can watch the layers unwrap.
+
+```java
+import java.util.Base64;
+
+// ─── Component ────────────────────────────────────────────────────────
+interface DataSource {
+    void writeData(String data);
+    String readData();
+}
+
+// ─── Concrete component ───────────────────────────────────────────────
+// Stands in for a real file; keeps the bytes in memory so the demo runs
+// anywhere. It has no idea it will ever be wrapped.
+class FileDataSource implements DataSource {
+    private final String filename;
+    private String storage = "";
+
+    FileDataSource(String filename) {
+        this.filename = filename;
+    }
+
+    @Override
+    public void writeData(String data) {
+        storage = data;
+        System.out.println("  [disk] wrote to " + filename + ": " + data);
+    }
+
+    @Override
+    public String readData() {
+        return storage;
+    }
+}
+
+// ─── Base decorator ───────────────────────────────────────────────────
+// Implements the SAME interface and holds a reference to a wrappee.
+// By default it does nothing but delegate.
+class DataSourceDecorator implements DataSource {
+    protected final DataSource wrappee;
+
+    DataSourceDecorator(DataSource source) {
+        this.wrappee = source;
+    }
+
+    @Override
+    public void writeData(String data) {
+        wrappee.writeData(data);
+    }
+
+    @Override
+    public String readData() {
+        return wrappee.readData();
+    }
+}
+
+// ─── Concrete decorators ──────────────────────────────────────────────
+class EncryptionDecorator extends DataSourceDecorator {
+
+    EncryptionDecorator(DataSource source) {
+        super(source);
+    }
+
+    @Override
+    public void writeData(String data) {
+        super.writeData(encode(data));       // transform, THEN delegate
+    }
+
+    @Override
+    public String readData() {
+        return decode(super.readData());     // delegate, THEN transform
+    }
+
+    private String encode(String data) {
+        return Base64.getEncoder().encodeToString(data.getBytes());
+    }
+
+    private String decode(String data) {
+        return new String(Base64.getDecoder().decode(data));
+    }
+}
+
+class CompressionDecorator extends DataSourceDecorator {
+
+    CompressionDecorator(DataSource source) {
+        super(source);
+    }
+
+    @Override
+    public void writeData(String data) {
+        super.writeData(compress(data));
+    }
+
+    @Override
+    public String readData() {
+        return decompress(super.readData());
+    }
+
+    /** Toy run-length encoding: "aaab" -> "3a1b". */
+    private String compress(String data) {
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        while (i < data.length()) {
+            char c = data.charAt(i);
+            int run = 1;
+            while (i + run < data.length() && data.charAt(i + run) == c) run++;
+            out.append(run).append(c);
+            i += run;
+        }
+        return out.toString();
+    }
+
+    private String decompress(String data) {
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        while (i < data.length()) {
+            int j = i;
+            while (Character.isDigit(data.charAt(j))) j++;
+            int run = Integer.parseInt(data.substring(i, j));
+            char c = data.charAt(j);
+            out.append(String.valueOf(c).repeat(run));
+            i = j + 1;
+        }
+        return out.toString();
+    }
+}
+
+// ─── Client that never knows the stack shape ──────────────────────────
+class SalaryManager {
+    private final DataSource source;
+
+    SalaryManager(DataSource source) {
+        this.source = source;
+    }
+
+    void save(String records) {
+        source.writeData(records);
+    }
+
+    String load() {
+        return source.readData();
+    }
+}
+
+// ─── Demo ─────────────────────────────────────────────────────────────
+public class DecoratorDemo {
+    public static void main(String[] args) {
+        String salaryRecords = "aaabbbccd";
+
+        System.out.println("Option 1 — building the stack step by step:");
+
+        DataSource source = new FileDataSource("somefile.dat");
+        source.writeData(salaryRecords);
+
+        source = new CompressionDecorator(new FileDataSource("compressed.dat"));
+        source.writeData(salaryRecords);
+
+        // Compression > Encryption > FileDataSource
+        // (outermost first: compress the plain text, THEN encrypt it)
+        source = new CompressionDecorator(
+                     new EncryptionDecorator(
+                         new FileDataSource("secure.dat")));
+        source.writeData(salaryRecords);
+        System.out.println("  read back through the stack: " + source.readData());
+
+        System.out.println();
+        System.out.println("Option 2 — the app configurator assembles the stack:");
+
+        boolean enabledEncryption = true;
+        boolean enabledCompression = true;
+
+        DataSource configured = new FileDataSource("salary.dat");
+        if (enabledEncryption)  configured = new EncryptionDecorator(configured);
+        if (enabledCompression) configured = new CompressionDecorator(configured);
+
+        SalaryManager manager = new SalaryManager(configured);
+        manager.save(salaryRecords);
+        System.out.println("  SalaryManager.load(): " + manager.load());
+        System.out.println("  round-trip intact?    "
+                + salaryRecords.equals(manager.load()));
+    }
+}
+```
+
+**Output**
+
+```
+Option 1 — building the stack step by step:
+  [disk] wrote to somefile.dat: aaabbbccd
+  [disk] wrote to compressed.dat: 3a3b2c1d
+  [disk] wrote to secure.dat: M2EzYjJjMWQ=
+  read back through the stack: aaabbbccd
+
+Option 2 — the app configurator assembles the stack:
+  [disk] wrote to salary.dat: M2EzYjJjMWQ=
+  SalaryManager.load(): aaabbbccd
+  round-trip intact?    true
+```
+
+Both stacks compress first and encrypt second, so both land the same bytes on disk — and
+`SalaryManager` never learns which stack it was handed.
+
+### Notes on the Java translation
+
+- **Order of layering matters.** The *outermost* decorator runs first on the way in.
+  `new Compression(new Encryption(file))` compresses the plain text and then encrypts the result;
+  flipping it to `new Encryption(new Compression(file))` would try to compress ciphertext, which in
+  reality achieves nothing (encrypted bytes have no redundancy left) and in this toy demo actually
+  corrupts the round trip, because the RLE codec assumes a small alphabet. Compress-then-encrypt is
+  the correct real-world order.
+- `writeData` transforms *before* delegating; `readData` delegates *first*, then transforms. Every
+  decorator pair must be symmetric or the round trip breaks.
+- Concrete decorators call `super.writeData(...)`, not `wrappee.writeData(...)` — as the book notes,
+  going through the base class keeps concrete decorators extensible.
+- Because `DataSourceDecorator` **is a** `DataSource`, a decorator can wrap another decorator to
+  unlimited depth. That is the ability inheritance can't give you.
+
+### Decorator vs. subclassing
+
+Suppose you need plain / compressed / encrypted / compressed+encrypted. With inheritance:
+`FileDataSource`, `CompressedFileDataSource`, `EncryptedFileDataSource`,
+`CompressedEncryptedFileDataSource` — **2ⁿ classes** for n features, and you must pick at compile
+time. With Decorator: **n classes**, combined at runtime, in any order, any number of times.
+
+| | Inheritance | Decorator |
+|---|---|---|
+| When chosen | Compile time | Runtime |
+| Combinations | One class per combination | Compose freely |
+| Applies to | The whole class | One object |
+| Can be undone | No | Yes — just don't wrap |
+
+### Where this appears in the JDK
+
+**`java.io` is the largest decorator family in the standard library** — it is *why* the stream API
+looks the way it does:
+
+```java
+InputStream in = new GZIPInputStream(
+                     new BufferedInputStream(
+                         new FileInputStream("data.gz")));
+```
+
+- `BufferedInputStream`, `DataInputStream`, `GZIPInputStream`, `CipherInputStream`,
+  `PushbackInputStream` all **wrap** an `InputStream` and **are** an `InputStream`
+- `BufferedWriter`, `PrintWriter`, `FilterReader` on the character side
+- `java.util.Collections.unmodifiableList/synchronizedList/checkedList` — wrappers that add
+  behaviour to any `List` without touching its class
+- `javax.servlet.http.HttpServletRequestWrapper` / `HttpServletResponseWrapper`
+- Spring's transactional and caching proxies decorate your beans
+
+The `java.io` design is also the standard criticism of the pattern: the stack is verbose to build
+and a debugger shows you five nested wrappers instead of one object.
+
+---
+
 ## Applicability
 
 ### ▸ Use the Decorator pattern when you need to be able to assign extra behaviors to objects at runtime without breaking the code that uses these objects.

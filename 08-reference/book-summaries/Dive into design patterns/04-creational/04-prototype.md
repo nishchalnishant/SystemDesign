@@ -219,6 +219,262 @@ the parent's cloning method before copying its own field values** to the resulti
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`PrototypeDemo.java`), using the
+**copy-constructor** approach the book describes.
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+// ─── Base prototype ───────────────────────────────────────────────────
+abstract class Shape {
+    int x;
+    int y;
+    String color;
+
+    /** A regular constructor. */
+    Shape() { }
+
+    /**
+     * The prototype constructor: a fresh object is initialized with
+     * values copied from an existing object. A subclass calls this via
+     * super(source) so that fields declared here — including private
+     * ones — get copied properly.
+     */
+    Shape(Shape source) {
+        this();
+        this.x = source.x;
+        this.y = source.y;
+        this.color = source.color;
+    }
+
+    /** The clone operation returns one of the Shape subclasses. */
+    public abstract Shape clone();
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof Shape)) return false;
+        Shape s = (Shape) o;
+        return s.x == x && s.y == y && Objects.equals(s.color, color);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(x, y, color);
+    }
+}
+
+// ─── Concrete prototypes ──────────────────────────────────────────────
+class Rectangle extends Shape {
+    int width;
+    int height;
+
+    Rectangle() { }
+
+    Rectangle(Rectangle source) {
+        super(source);              // copy the inherited fields
+        this.width = source.width;
+        this.height = source.height;
+    }
+
+    @Override
+    public Shape clone() {
+        return new Rectangle(this);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof Rectangle) || !super.equals(o)) return false;
+        Rectangle r = (Rectangle) o;
+        return r.width == width && r.height == height;
+    }
+
+    @Override
+    public String toString() {
+        return "Rectangle{x=" + x + ", y=" + y + ", color=" + color
+             + ", w=" + width + ", h=" + height + "}";
+    }
+}
+
+class Circle extends Shape {
+    int radius;
+
+    Circle() { }
+
+    Circle(Circle source) {
+        super(source);
+        this.radius = source.radius;
+    }
+
+    @Override
+    public Shape clone() {
+        return new Circle(this);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof Circle) || !super.equals(o)) return false;
+        return ((Circle) o).radius == radius;
+    }
+
+    @Override
+    public String toString() {
+        return "Circle{x=" + x + ", y=" + y + ", color=" + color
+             + ", r=" + radius + "}";
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class PrototypeDemo {
+    public static void main(String[] args) {
+        List<Shape> shapes = new ArrayList<>();
+
+        Circle circle = new Circle();
+        circle.x = 10;
+        circle.y = 10;
+        circle.radius = 20;
+        circle.color = "red";
+        shapes.add(circle);
+
+        Shape anotherCircle = circle.clone();
+        shapes.add(anotherCircle);
+
+        Rectangle rectangle = new Rectangle();
+        rectangle.width = 10;
+        rectangle.height = 20;
+        rectangle.color = "blue";
+        shapes.add(rectangle);
+
+        // Business logic: copy the whole array without knowing the
+        // concrete type of anything in it. Polymorphism dispatches to
+        // the right clone(), so we get real Circles and Rectangles —
+        // not a set of degraded base Shape objects.
+        List<Shape> shapesCopy = new ArrayList<>();
+        for (Shape s : shapes) {
+            shapesCopy.add(s.clone());
+        }
+
+        for (int i = 0; i < shapes.size(); i++) {
+            Shape a = shapes.get(i);
+            Shape b = shapesCopy.get(i);
+            System.out.println(b);
+            System.out.println("   same contents? " + a.equals(b)
+                             + " | same object? " + (a == b)
+                             + " | same class? " + (a.getClass() == b.getClass()));
+        }
+    }
+}
+```
+
+**Output**
+
+```
+Circle{x=10, y=10, color=red, r=20}
+   same contents? true | same object? false | same class? true
+Circle{x=10, y=10, color=red, r=20}
+   same contents? true | same object? false | same class? true
+Rectangle{x=0, y=0, color=blue, w=10, h=20}
+   same contents? true | same object? false | same class? true
+```
+
+That last line is the whole point: `same contents? true` but `same object? false`, and the clone
+kept its **real class** even though the loop only knew it as a `Shape`.
+
+### Notes on the Java translation
+
+- `clone()` is declared to return `Shape`, but Java's **covariant return types** let you narrow it
+  to `Circle` in the subclass (`public Circle clone()`) if callers benefit from the precise type.
+- The copy constructor does the real work; `clone()` is a one-liner that picks the right one. This
+  is why the book notes nobody ever sees a partly-built clone — the object is fully initialized
+  before the constructor returns.
+
+### Java's built-in `Cloneable` — and why to avoid it
+
+Java ships a native cloning mechanism, but it is widely considered a **broken design** (*Effective
+Java* Item 13 is titled "Override clone judiciously" and recommends copy constructors instead):
+
+```java
+class Circle implements Cloneable {          // Cloneable is a MARKER interface — no methods
+    int radius;
+
+    @Override
+    public Circle clone() {
+        try {
+            return (Circle) super.clone();   // Object.clone() does a shallow, field-by-field copy
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e);     // unreachable: we implement Cloneable
+        }
+    }
+}
+```
+
+Problems with it:
+
+1. **`Cloneable` declares no methods.** It merely changes the behaviour of the `protected`
+   `Object.clone()`. Forgetting it throws `CloneNotSupportedException` at runtime, not compile time.
+2. **`Object.clone()` is shallow.** Mutable reference fields are *shared* between original and
+   clone, so mutating one affects the other. You must deep-copy them by hand.
+3. **It bypasses constructors,** so `final` fields can't be assigned and invariants can be skipped.
+4. The checked `CloneNotSupportedException` forces boilerplate at every call site.
+
+**Shallow vs. deep copy** — the trap in one example:
+
+```java
+class Person {
+    String name;                // immutable → sharing is safe
+    List<String> nicknames;     // mutable   → sharing is a BUG
+
+    Person(Person src) {
+        this.name = src.name;                              // fine: String is immutable
+        this.nicknames = new ArrayList<>(src.nicknames);   // deep copy: NEW list
+        // this.nicknames = src.nicknames;   // ← shallow: both objects share one list!
+    }
+}
+```
+
+### Prototype Registry
+
+A common companion: a registry that stores pre-configured prototypes by key, so clients fetch a
+ready-made object by name and clone it, rather than configuring one from scratch.
+
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+class ShapeRegistry {
+    private final Map<String, Shape> items = new HashMap<>();
+
+    void put(String key, Shape shape) {
+        items.put(key, shape);
+    }
+
+    Shape get(String key) {
+        Shape prototype = items.get(key);
+        if (prototype == null) {
+            throw new IllegalArgumentException("No prototype registered for: " + key);
+        }
+        return prototype.clone();      // hand out a copy, never the master
+    }
+}
+
+// Usage:
+// registry.put("big-red-circle", preconfiguredCircle);
+// Shape s = registry.get("big-red-circle");   // a fresh, independent copy
+```
+
+### Where this appears in the JDK
+
+- `java.lang.Object.clone()` (the native mechanism, guarded by `Cloneable`)
+- `java.util.ArrayList.clone()`, `HashMap.clone()`, and most collection implementations
+- `java.util.Calendar.clone()`, `java.util.Date.clone()`
+- Copy constructors throughout: `new ArrayList<>(other)`, `new HashMap<>(other)`,
+  `new String(other)` — the idiomatic modern replacement
+
+---
+
 ## Applicability
 
 ### ▸ Use the Prototype pattern when your code shouldn't depend on the concrete classes of objects that you need to copy.

@@ -243,6 +243,289 @@ When a user points the mouse cursor at an element and presses the `F1` key, the 
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`ChainDemo.java`). Note that
+the chain here is the **containment tree** — the pattern is layered on top of a Composite.
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+// ─── Handler interface ────────────────────────────────────────────────
+interface ComponentWithContextualHelp {
+    void showHelp();
+}
+
+// ─── Base handler ─────────────────────────────────────────────────────
+abstract class Component implements ComponentWithContextualHelp {
+    String tooltipText;
+
+    /** The container is the NEXT LINK in the chain. */
+    protected Container container;
+
+    protected final String name;
+
+    Component(String name) {
+        this.name = name;
+    }
+
+    /**
+     * Handle it if we can; otherwise pass it up. A handler that can
+     * neither handle nor forward simply ends the chain.
+     */
+    @Override
+    public void showHelp() {
+        if (tooltipText != null) {
+            System.out.println("Tooltip on " + name + ": " + tooltipText);
+        } else if (container != null) {
+            System.out.println("  (" + name + " has no help, passing up to "
+                    + container.name + ")");
+            container.showHelp();
+        } else {
+            System.out.println("  (" + name + " has no help and no container "
+                    + "— request unhandled)");
+        }
+    }
+}
+
+// ─── Containers build the chain links ─────────────────────────────────
+abstract class Container extends Component {
+    protected final List<Component> children = new ArrayList<>();
+
+    Container(String name) {
+        super(name);
+    }
+
+    void add(Component child) {
+        children.add(child);
+        child.container = this;      // ← this line IS the chain wiring
+    }
+}
+
+// ─── Concrete handlers ────────────────────────────────────────────────
+// A primitive component is fine with the default behaviour.
+class Button extends Component {
+    Button(String name) {
+        super(name);
+    }
+}
+
+// A complex component overrides it — but can still fall back to super.
+class Panel extends Container {
+    String modalHelpText;
+
+    Panel(String name) {
+        super(name);
+    }
+
+    @Override
+    public void showHelp() {
+        if (modalHelpText != null) {
+            System.out.println("Modal window on " + name + ": " + modalHelpText);
+        } else {
+            super.showHelp();
+        }
+    }
+}
+
+class Dialog extends Container {
+    String wikiPageURL;
+
+    Dialog(String name) {
+        super(name);
+    }
+
+    @Override
+    public void showHelp() {
+        if (wikiPageURL != null) {
+            System.out.println("Opening wiki page for " + name + ": " + wikiPageURL);
+        } else {
+            super.showHelp();
+        }
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class ChainDemo {
+    public static void main(String[] args) {
+        // Every application configures the chain differently.
+        Dialog dialog = new Dialog("Budget Reports");
+        dialog.wikiPageURL = "http://example.com/help/budget";
+
+        Panel panel = new Panel("Main Panel");
+        panel.modalHelpText = "This panel does budget calculations...";
+
+        Button ok = new Button("OK");
+        ok.tooltipText = "This is an OK button that confirms the operation.";
+
+        Button cancel = new Button("Cancel");
+        // deliberately NO tooltip — the request must bubble up
+
+        Panel emptyPanel = new Panel("Toolbar");
+        // deliberately NO modalHelpText either
+
+        Button save = new Button("Save");
+        // no tooltip
+
+        panel.add(ok);
+        panel.add(cancel);
+        emptyPanel.add(save);
+        dialog.add(panel);
+        dialog.add(emptyPanel);
+
+        System.out.println("--- F1 pressed over OK (handled immediately) ---");
+        ok.showHelp();
+
+        System.out.println();
+        System.out.println("--- F1 pressed over Cancel (bubbles up one level) ---");
+        cancel.showHelp();
+
+        System.out.println();
+        System.out.println("--- F1 pressed over Save (bubbles up two levels) ---");
+        save.showHelp();
+    }
+}
+```
+
+**Output**
+
+```
+--- F1 pressed over OK (handled immediately) ---
+Tooltip on OK: This is an OK button that confirms the operation.
+
+--- F1 pressed over Cancel (bubbles up one level) ---
+  (Cancel has no help, passing up to Main Panel)
+Modal window on Main Panel: This panel does budget calculations...
+
+--- F1 pressed over Save (bubbles up two levels) ---
+  (Save has no help, passing up to Toolbar)
+  (Toolbar has no help, passing up to Budget Reports)
+Opening wiki page for Budget Reports: http://example.com/help/budget
+```
+
+Three identical `showHelp()` calls, three different handlers, and no caller knew which one would
+answer.
+
+### Notes on the Java translation
+
+- `child.container = this` inside `add()` is the entire chain construction. The Composite tree
+  doubles as the handler chain — no separate wiring.
+- Each handler makes exactly one decision: **handle, or forward**. Neither the sender nor any
+  handler knows the chain's full shape.
+- `Panel` and `Dialog` override `showHelp()` but call `super.showHelp()` when they can't help. That
+  fall-through is what keeps them composable.
+
+### The other common shape: an explicit linked chain
+
+The GUI version reuses an existing tree. Most business uses build the chain explicitly, which makes
+the "next handler" relationship visible:
+
+```java
+abstract class Middleware {
+    private Middleware next;
+
+    /** Fluent linking: Middleware.link(a, b, c) */
+    static Middleware link(Middleware first, Middleware... chain) {
+        Middleware head = first;
+        for (Middleware nextInChain : chain) {
+            head.next = nextInChain;
+            head = nextInChain;
+        }
+        return first;
+    }
+
+    /** Returns false to STOP the chain. */
+    abstract boolean check(String email, String password);
+
+    protected boolean checkNext(String email, String password) {
+        if (next == null) {
+            return true;              // end of chain: everything passed
+        }
+        return next.check(email, password);
+    }
+}
+
+class ThrottlingMiddleware extends Middleware {
+    private final int requestPerMinute;
+    private int request;
+
+    ThrottlingMiddleware(int requestPerMinute) {
+        this.requestPerMinute = requestPerMinute;
+    }
+
+    @Override
+    boolean check(String email, String password) {
+        if (++request > requestPerMinute) {
+            System.out.println("Request limit exceeded!");
+            return false;             // short-circuit
+        }
+        return checkNext(email, password);
+    }
+}
+
+class UserExistsMiddleware extends Middleware {
+    @Override
+    boolean check(String email, String password) {
+        if (!email.contains("@")) {
+            System.out.println("This email is not registered!");
+            return false;
+        }
+        return checkNext(email, password);
+    }
+}
+
+class RoleCheckMiddleware extends Middleware {
+    @Override
+    boolean check(String email, String password) {
+        if (email.startsWith("admin")) {
+            System.out.println("Hello, admin!");
+            return true;              // handled; stop here
+        }
+        return checkNext(email, password);
+    }
+}
+
+// Usage — the chain is data, reorderable at runtime:
+// Middleware chain = Middleware.link(
+//         new ThrottlingMiddleware(2),
+//         new UserExistsMiddleware(),
+//         new RoleCheckMiddleware());
+// chain.check("admin@example.com", "secret");
+```
+
+### The two variants of "handled"
+
+The pattern admits two contracts, and mixing them up causes bugs:
+
+1. **Stop at the first handler** (the GUI example, and `try/catch`). A request has exactly one
+   owner; the first capable handler consumes it.
+2. **Every handler runs** (validation pipelines, servlet filters, logging). Each link does its part
+   and always forwards, unless something fails.
+
+Decide which one your chain is, and document it — the interface looks identical either way.
+
+### Trade-offs
+
+- **Pro:** senders and receivers are fully decoupled; handlers can be added, removed, and reordered
+  at runtime; each handler stays small and single-purpose (SRP).
+- **Con:** a request **may go unhandled** and silently fall off the end of the chain — as `Save`
+  nearly did above. Debugging is harder because the call path is dynamic; a long chain adds
+  latency.
+
+### Where this appears in the JDK and ecosystem
+
+- `javax.servlet.Filter` / `FilterChain` — `chain.doFilter(request, response)` is literally
+  `checkNext()`
+- `java.util.logging.Logger` — a log record propagates from a logger to its parent loggers
+- Exception handling itself: an uncaught exception bubbles up the call stack until a `catch` claims
+  it. The chain is the stack.
+- `java.awt` event bubbling through the component hierarchy
+- Spring Security's filter chain; Netty's `ChannelPipeline`; OkHttp/Retrofit interceptors
+- Any HTTP middleware stack (Express, ASP.NET, Rack) is this pattern
+
+---
+
 ## Applicability
 
 ### ▸ Use the Chain of Responsibility pattern when your program is expected to process different kinds of requests in various ways, but the exact types of requests and their sequences are unknown beforehand.

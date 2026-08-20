@@ -222,6 +222,188 @@ the right object and reusing it if needed.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`FlyweightDemo.java`), planting
+1,000,000 trees drawn from only 3 distinct types.
+
+```java
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+// ─── Flyweight: the INTRINSIC (shared, immutable) state ───────────────
+// Everything here repeats across huge numbers of trees. It is made
+// immutable — a flyweight shared by a million contexts must never
+// change out from under any of them.
+final class TreeType {
+    private final String name;
+    private final String color;
+    private final String texture;   // stands in for a multi-KB bitmap
+
+    TreeType(String name, String color, String texture) {
+        this.name = name;
+        this.color = color;
+        this.texture = texture;
+    }
+
+    /**
+     * The extrinsic state (x, y) is PASSED IN rather than stored.
+     * That is the defining move of the pattern.
+     */
+    void draw(String canvas, int x, int y) {
+        // Real code would blit a bitmap; we just describe it.
+        // System.out.println("Drawing " + name + " at (" + x + "," + y + ")");
+    }
+
+    @Override
+    public String toString() {
+        return name + "/" + color;
+    }
+}
+
+// ─── Flyweight factory ────────────────────────────────────────────────
+// The client MUST go through here — that is what guarantees sharing.
+class TreeFactory {
+    private static final Map<String, TreeType> treeTypes = new HashMap<>();
+
+    static TreeType getTreeType(String name, String color, String texture) {
+        String key = name + "-" + color + "-" + texture;
+        // Returns the existing instance if one matches; creates only on miss.
+        return treeTypes.computeIfAbsent(key,
+                k -> new TreeType(name, color, texture));
+    }
+
+    static int distinctTypes() {
+        return treeTypes.size();
+    }
+}
+
+// ─── Context: the EXTRINSIC (unique, per-object) state ────────────────
+// Tiny: two ints plus one reference. This is what you make millions of.
+class Tree {
+    private final int x;
+    private final int y;
+    private final TreeType type;    // a SHARED pointer, not a copy
+
+    Tree(int x, int y, TreeType type) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+    }
+
+    void draw(String canvas) {
+        type.draw(canvas, x, y);
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+class Forest {
+    private final List<Tree> trees = new ArrayList<>();
+
+    void plantTree(int x, int y, String name, String color, String texture) {
+        TreeType type = TreeFactory.getTreeType(name, color, texture);
+        trees.add(new Tree(x, y, type));
+    }
+
+    void draw(String canvas) {
+        for (Tree tree : trees) {
+            tree.draw(canvas);
+        }
+    }
+
+    int size() {
+        return trees.size();
+    }
+}
+
+public class FlyweightDemo {
+    static final int TREES_TO_DRAW = 1_000_000;
+    static final String[][] SPECIES = {
+        {"Summer Oak", "Green",      "oak-bark.png"},
+        {"Autumn Oak", "Orange",     "oak-bark.png"},
+        {"Pine",       "Dark Green", "pine-bark.png"},
+    };
+
+    public static void main(String[] args) {
+        Runtime rt = Runtime.getRuntime();
+        System.gc();
+        long before = rt.totalMemory() - rt.freeMemory();
+
+        Forest forest = new Forest();
+        for (int i = 0; i < TREES_TO_DRAW; i++) {
+            String[] s = SPECIES[i % SPECIES.length];
+            forest.plantTree(i % 1000, i / 1000, s[0], s[1], s[2]);
+        }
+        forest.draw("canvas");
+
+        System.gc();
+        long after = rt.totalMemory() - rt.freeMemory();
+
+        System.out.println(forest.size() + " trees drawn");
+        System.out.println("---------------------");
+        System.out.println("Tree objects (contexts):  " + forest.size());
+        System.out.println("TreeType objects (flyweights): "
+                + TreeFactory.distinctTypes());
+        System.out.printf("Approx. heap used: %,d KB%n", (after - before) / 1024);
+        System.out.printf("Sharing ratio: %,d contexts per flyweight%n",
+                forest.size() / TreeFactory.distinctTypes());
+    }
+}
+```
+
+**Output** (heap figure varies by JVM and GC; the object counts do not)
+
+```
+1000000 trees drawn
+---------------------
+Tree objects (contexts):  1000000
+TreeType objects (flyweights): 3
+Approx. heap used: 29,614 KB
+Sharing ratio: 333,333 contexts per flyweight
+```
+
+**Three** `TreeType` objects back **a million** trees. Without the pattern, each `Tree` would carry
+its own copy of `name`, `color`, and a texture bitmap — the same three payloads duplicated 333,333
+times each.
+
+### Notes on the Java translation
+
+- **Intrinsic vs. extrinsic is the whole design decision.** Intrinsic = shared, repeating,
+  context-free (texture, color). Extrinsic = unique per object, passed in as a parameter (x, y).
+  Getting this split wrong is the only real way to get Flyweight wrong.
+- **The flyweight must be immutable.** `TreeType` is `final` with `final` fields. A mutable
+  flyweight shared by a million contexts is a data race waiting to happen — and mutating it changes
+  every context at once.
+- `computeIfAbsent` is the idiomatic Java factory body: one atomic lookup-or-create.
+- For a thread-safe factory, swap `HashMap` for `ConcurrentHashMap` — `computeIfAbsent` then
+  guarantees a single instance even under concurrent misses.
+
+### The trade-off the book warns about
+
+You are trading **CPU for RAM**:
+
+- Every call now does a **map lookup** to find the flyweight.
+- Extrinsic state must be **recomputed or passed** on every call rather than read from a field.
+- The code gets harder to read: state that logically belongs to one thing now lives in two places.
+
+Only reach for Flyweight when you have **measured** a memory problem caused by object count. Below a
+few hundred thousand objects it is almost always premature.
+
+### Where this appears in the JDK
+
+- **`String` interning** — the string pool is a flyweight factory. Every `"hello"` literal in your
+  program is the same object; `String.intern()` gets you into the pool explicitly.
+- **`Integer.valueOf(int)`** caches −128..127, which is exactly why `Integer a = 127, b = 127;
+  a == b` is `true` but `Integer a = 128, b = 128; a == b` is `false`. The most famous Java gotcha
+  is a flyweight.
+- `Boolean.valueOf`, `Character.valueOf`, `Long.valueOf`, `Short.valueOf` — same caching contract
+- `java.awt.Font` / `FontMetrics` — glyph data is shared across every character drawn
+- Enum constants — one instance per constant, shared program-wide
+
+---
+
 ## Applicability
 
 ### ▸ Use the Flyweight pattern only when your program must support a huge number of objects which barely fit into available RAM.

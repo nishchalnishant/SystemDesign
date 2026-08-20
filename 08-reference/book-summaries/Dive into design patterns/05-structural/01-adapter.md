@@ -208,6 +208,195 @@ other words, the radius of the smallest circle that can accommodate the square p
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`AdapterDemo.java`).
+
+```java
+// ─── The target interface the client already understands ──────────────
+class RoundHole {
+    private final double radius;
+
+    RoundHole(double radius) {
+        this.radius = radius;
+    }
+
+    double getRadius() {
+        return radius;
+    }
+
+    boolean fits(RoundPeg peg) {
+        return this.getRadius() >= peg.getRadius();
+    }
+}
+
+class RoundPeg {
+    private final double radius;
+
+    RoundPeg() {
+        this.radius = 0;
+    }
+
+    RoundPeg(double radius) {
+        this.radius = radius;
+    }
+
+    double getRadius() {
+        return radius;
+    }
+}
+
+// ─── The incompatible "service" / legacy class ────────────────────────
+// Note it is NOT modified in any way — that is the point of the pattern.
+class SquarePeg {
+    private final double width;
+
+    SquarePeg(double width) {
+        this.width = width;
+    }
+
+    double getWidth() {
+        return width;
+    }
+}
+
+// ─── The adapter ──────────────────────────────────────────────────────
+// It EXTENDS RoundPeg so it can be passed anywhere a RoundPeg is
+// expected, and it HOLDS a SquarePeg to do the real work.
+class SquarePegAdapter extends RoundPeg {
+    private final SquarePeg peg;
+
+    SquarePegAdapter(SquarePeg peg) {
+        this.peg = peg;
+    }
+
+    @Override
+    double getRadius() {
+        // The smallest circle that can accommodate the square:
+        // half the diagonal = width * sqrt(2) / 2.
+        return peg.getWidth() * Math.sqrt(2) / 2;
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class AdapterDemo {
+    public static void main(String[] args) {
+        RoundHole hole = new RoundHole(5);
+        RoundPeg rpeg = new RoundPeg(5);
+        System.out.println("Round peg r=5 in round hole r=5 -> " + hole.fits(rpeg));
+
+        SquarePeg smallSqPeg = new SquarePeg(5);
+        SquarePeg largeSqPeg = new SquarePeg(10);
+        // hole.fits(smallSqPeg);   // ← won't compile: incompatible types
+
+        RoundPeg smallAdapter = new SquarePegAdapter(smallSqPeg);
+        RoundPeg largeAdapter = new SquarePegAdapter(largeSqPeg);
+
+        System.out.printf("Square peg w=5  -> effective radius %.2f -> fits? %s%n",
+                smallAdapter.getRadius(), hole.fits(smallAdapter));
+        System.out.printf("Square peg w=10 -> effective radius %.2f -> fits? %s%n",
+                largeAdapter.getRadius(), hole.fits(largeAdapter));
+    }
+}
+```
+
+**Output**
+
+```
+Round peg r=5 in round hole r=5 -> true
+Square peg w=5  -> effective radius 3.54 -> fits? true
+Square peg w=10 -> effective radius 7.07 -> fits? false
+```
+
+The commented-out line is the crux: `hole.fits(smallSqPeg)` is a **compile error**, not a runtime
+one. The adapter is what makes the call legal.
+
+### Object adapter vs. class adapter
+
+The version above is a **class adapter** — it inherits from `RoundPeg`. The more common and more
+flexible **object adapter** implements an interface and delegates:
+
+```java
+interface RoundPegLike {
+    double getRadius();
+}
+
+class SquarePegObjectAdapter implements RoundPegLike {
+    private final SquarePeg peg;                 // composition, not inheritance
+
+    SquarePegObjectAdapter(SquarePeg peg) {
+        this.peg = peg;
+    }
+
+    @Override
+    public double getRadius() {
+        return peg.getWidth() * Math.sqrt(2) / 2;
+    }
+}
+```
+
+| | Class adapter | Object adapter |
+|---|---|---|
+| Mechanism | Inheritance (`extends`) | Composition (holds a field) |
+| Java limit | Only **one** superclass — can't adapt two classes at once | No limit; can wrap anything |
+| Can adapt subclasses? | No, bound to one concrete type | Yes, works with any subtype |
+| Can override adaptee behaviour? | Yes | Only by delegating |
+| **Recommendation** | Rare in Java | **Default choice** |
+
+Java's single-inheritance rule makes the object adapter the practical default: you can only `extend`
+one thing, but you can hold as many fields as you like.
+
+### A realistic example: adapting a third-party API
+
+```java
+// Your app's interface.
+interface WeatherService {
+    double temperatureCelsius(String city);
+}
+
+// A third-party library you cannot change; wrong units, wrong shape.
+class ThirdPartyWeatherApi {
+    String fetchWeatherJson(String zip) {
+        return "{\"temp_f\": 72.5}";
+    }
+}
+
+// The adapter absorbs BOTH the interface mismatch and the data
+// format mismatch — that second job is very common in practice.
+class WeatherApiAdapter implements WeatherService {
+    private final ThirdPartyWeatherApi api;
+
+    WeatherApiAdapter(ThirdPartyWeatherApi api) {
+        this.api = api;
+    }
+
+    @Override
+    public double temperatureCelsius(String city) {
+        String json = api.fetchWeatherJson(cityToZip(city));
+        double fahrenheit = parseTempF(json);
+        return (fahrenheit - 32) * 5 / 9;
+    }
+
+    private String cityToZip(String city) { return "94103"; }
+    private double parseTempF(String json) {
+        int i = json.indexOf(':');
+        return Double.parseDouble(json.substring(i + 1, json.indexOf('}')).trim());
+    }
+}
+```
+
+### Where this appears in the JDK
+
+- `java.util.Arrays.asList(T...)` — adapts an array to the `List` interface
+- `java.io.InputStreamReader(InputStream)` and `OutputStreamWriter(OutputStream)` — adapt a
+  **byte** stream to a **character** stream. The textbook JDK adapter.
+- `java.util.Collections.list(Enumeration)` — adapts the legacy `Enumeration` to `List`
+- `java.util.Collections.enumeration(Collection)` — the reverse direction
+- `javax.xml.bind.annotation.adapters.XmlAdapter`
+- Spring MVC's `HandlerAdapter`
+
+---
+
 ## Applicability
 
 ### ▸ Use the Adapter class when you want to use some existing class, but its interface isn't compatible with the rest of your code.

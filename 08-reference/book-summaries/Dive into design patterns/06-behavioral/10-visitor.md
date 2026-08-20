@@ -237,6 +237,340 @@ In this example, the Visitor pattern adds XML export support to the class hierar
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`VisitorDemo.java`).
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
+// ─── Element interface ────────────────────────────────────────────────
+interface Shape {
+    void move(int x, int y);
+    String draw();
+    String accept(Visitor visitor);      // the double-dispatch hook
+}
+
+// ─── Concrete elements ────────────────────────────────────────────────
+class Dot implements Shape {
+    protected final int id;
+    protected int x, y;
+
+    Dot(int id, int x, int y) { this.id = id; this.x = x; this.y = y; }
+
+    int getId() { return id; }
+    int getX()  { return x; }
+    int getY()  { return y; }
+
+    @Override public void move(int dx, int dy) { x += dx; y += dy; }
+    @Override public String draw()             { return "dot"; }
+
+    // Calls visitDot — matching THIS class. That's how the visitor
+    // learns the element's concrete type.
+    @Override public String accept(Visitor visitor) { return visitor.visitDot(this); }
+}
+
+class Circle extends Dot {
+    private final int radius;
+
+    Circle(int id, int x, int y, int radius) {
+        super(id, x, y);
+        this.radius = radius;
+    }
+
+    int getRadius() { return radius; }
+
+    @Override public String draw() { return "circle"; }
+
+    // Overriding accept is MANDATORY. Inherit Dot's and every circle
+    // silently exports as a dot.
+    @Override public String accept(Visitor visitor) { return visitor.visitCircle(this); }
+}
+
+class Rectangle implements Shape {
+    private final int id;
+    private int x, y;
+    private final int width, height;
+
+    Rectangle(int id, int x, int y, int width, int height) {
+        this.id = id; this.x = x; this.y = y;
+        this.width = width; this.height = height;
+    }
+
+    int getId()     { return id; }
+    int getX()      { return x; }
+    int getY()      { return y; }
+    int getWidth()  { return width; }
+    int getHeight() { return height; }
+
+    @Override public void move(int dx, int dy) { x += dx; y += dy; }
+    @Override public String draw()             { return "rectangle"; }
+    @Override public String accept(Visitor visitor) { return visitor.visitRectangle(this); }
+}
+
+class CompoundShape implements Shape {
+    private final int id;
+    private final List<Shape> children = new ArrayList<>();
+
+    CompoundShape(int id) { this.id = id; }
+
+    int getId()               { return id; }
+    List<Shape> getChildren() { return children; }
+    void add(Shape shape)     { children.add(shape); }
+
+    @Override public void move(int dx, int dy) { children.forEach(c -> c.move(dx, dy)); }
+    @Override public String draw()             { return "compound"; }
+    @Override public String accept(Visitor visitor) { return visitor.visitCompoundShape(this); }
+}
+
+// ─── Visitor interface: one method per element class ──────────────────
+interface Visitor {
+    String visitDot(Dot dot);
+    String visitCircle(Circle circle);
+    String visitRectangle(Rectangle rectangle);
+    String visitCompoundShape(CompoundShape compound);
+}
+
+// ─── Concrete visitor #1: XML export ──────────────────────────────────
+class XMLExportVisitor implements Visitor {
+
+    String export(Shape... shapes) {
+        StringBuilder sb = new StringBuilder("<?xml version=\"1.0\"?>\n");
+        for (Shape shape : shapes) {
+            sb.append(shape.accept(this));       // dispatch happens here
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public String visitDot(Dot dot) {
+        return "<dot>\n  <id>" + dot.getId() + "</id>\n"
+             + "  <x>" + dot.getX() + "</x>\n"
+             + "  <y>" + dot.getY() + "</y>\n</dot>\n";
+    }
+
+    @Override
+    public String visitCircle(Circle circle) {
+        return "<circle>\n  <id>" + circle.getId() + "</id>\n"
+             + "  <x>" + circle.getX() + "</x>\n"
+             + "  <y>" + circle.getY() + "</y>\n"
+             + "  <radius>" + circle.getRadius() + "</radius>\n</circle>\n";
+    }
+
+    @Override
+    public String visitRectangle(Rectangle r) {
+        return "<rectangle>\n  <id>" + r.getId() + "</id>\n"
+             + "  <x>" + r.getX() + "</x>\n"
+             + "  <y>" + r.getY() + "</y>\n"
+             + "  <width>" + r.getWidth() + "</width>\n"
+             + "  <height>" + r.getHeight() + "</height>\n</rectangle>\n";
+    }
+
+    @Override
+    public String visitCompoundShape(CompoundShape compound) {
+        StringBuilder sb = new StringBuilder("<compound_graphic>\n  <id>"
+                + compound.getId() + "</id>\n");
+        for (Shape child : compound.getChildren()) {
+            // Recurse: the visitor drives the Composite traversal.
+            sb.append(child.accept(this).indent(2));
+        }
+        return sb.append("</compound_graphic>\n").toString();
+    }
+}
+
+// ─── Concrete visitor #2: added WITHOUT touching any Shape class ──────
+class AreaVisitor implements Visitor {
+    @Override public String visitDot(Dot dot)             { return "0.00"; }
+
+    @Override
+    public String visitCircle(Circle circle) {
+        return String.format("%.2f", Math.PI * circle.getRadius() * circle.getRadius());
+    }
+
+    @Override
+    public String visitRectangle(Rectangle r) {
+        return String.format("%.2f", (double) r.getWidth() * r.getHeight());
+    }
+
+    @Override
+    public String visitCompoundShape(CompoundShape compound) {
+        double total = compound.getChildren().stream()
+                .mapToDouble(child -> Double.parseDouble(child.accept(this)))
+                .sum();
+        return String.format("%.2f", total);
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class VisitorDemo {
+    public static void main(String[] args) {
+        List<Shape> allShapes = new ArrayList<>();
+        allShapes.add(new Dot(1, 10, 55));
+        allShapes.add(new Circle(2, 23, 15, 10));
+        allShapes.add(new Rectangle(3, 10, 17, 20, 30));
+
+        CompoundShape compound = new CompoundShape(4);
+        compound.add(new Dot(5, 30, 45));
+        compound.add(new Circle(6, 40, 18, 20));
+        allShapes.add(compound);
+
+        System.out.println(new XMLExportVisitor()
+                .export(allShapes.toArray(new Shape[0])));
+
+        Visitor area = new AreaVisitor();
+        System.out.println("Areas (a second visitor, zero changes to Shape):");
+        for (Shape shape : allShapes) {
+            System.out.println("  " + shape.draw() + " -> " + shape.accept(area));
+        }
+    }
+}
+```
+
+**Output**
+
+```
+<?xml version="1.0"?>
+<dot>
+  <id>1</id>
+  <x>10</x>
+  <y>55</y>
+</dot>
+<circle>
+  <id>2</id>
+  <x>23</x>
+  <y>15</y>
+  <radius>10</radius>
+</circle>
+<rectangle>
+  <id>3</id>
+  <x>10</x>
+  <y>17</y>
+  <width>20</width>
+  <height>30</height>
+</rectangle>
+<compound_graphic>
+  <id>4</id>
+  <dot>
+    <id>5</id>
+    <x>30</x>
+    <y>45</y>
+  </dot>
+  <circle>
+    <id>6</id>
+    <x>40</x>
+    <y>18</y>
+    <radius>20</radius>
+  </circle>
+</compound_graphic>
+
+Areas (a second visitor, zero changes to Shape):
+  dot -> 0.00
+  circle -> 314.16
+  rectangle -> 600.00
+  compound -> 1256.64
+```
+
+`AreaVisitor` is an entirely new operation over the whole hierarchy, and not one line of `Dot`,
+`Circle`, `Rectangle`, or `CompoundShape` changed to support it.
+
+### Why `accept` exists: double dispatch
+
+This is the question the book flags, and it's the whole pattern. Java dispatches on the **runtime**
+type of the receiver but only the **compile-time** type of the arguments. So this does not work:
+
+```java
+class BrokenVisitor {
+    String visit(Dot d)       { return "dot"; }
+    String visit(Circle c)    { return "circle"; }
+    String visit(Shape s)     { return "??? unknown"; }
+}
+
+Shape shape = new Circle(1, 0, 0, 5);
+new BrokenVisitor().visit(shape);   // -> "??? unknown"
+```
+
+The variable is declared `Shape`, so the compiler picks `visit(Shape)` at compile time. Overload
+resolution is static.
+
+`accept` fixes it with two virtual calls in a row:
+
+1. `shape.accept(visitor)` — dispatches on the shape's **runtime** type, landing in `Circle.accept`.
+2. Inside `Circle.accept`, `this` is statically known to be `Circle`, so `visitor.visitCircle(this)`
+   picks the right overload — and dispatches on the visitor's runtime type.
+
+Two dispatches, so the correct method is chosen from *both* type hierarchies. Hence "double
+dispatch."
+
+The `instanceof` alternative works but centralises a growing chain that must be edited for every new
+shape:
+
+```java
+if (shape instanceof Circle c)         { /* ... */ }
+else if (shape instanceof Rectangle r) { /* ... */ }
+else if (shape instanceof Dot d)       { /* ... */ }
+```
+
+### The trade-off: which axis is stable?
+
+Visitor makes exactly one direction cheap:
+
+| Change | Visitor | `instanceof` / methods-on-elements |
+|---|---|---|
+| add an **operation** | one new visitor class, zero element edits | edit every element class |
+| add an **element type** | edit the `Visitor` interface **and every existing visitor** | one new class |
+
+So use Visitor when the element hierarchy is **stable** and operations keep arriving — compilers
+(AST nodes fixed; type-check, optimise, generate code keep being added) are the canonical case.
+Avoid it when new element types appear regularly.
+
+Two more costs:
+- **Encapsulation leaks.** `AreaVisitor` needs `getRadius()`, `getWidth()`, `getHeight()`. Elements
+  must expose enough state for every visitor, which pushes their internals public.
+- **`accept` is easy to forget on a subclass.** `Circle extends Dot` above *must* override `accept`;
+  inherit it and circles silently export as dots. This is a genuinely nasty bug class.
+
+### The modern Java alternative: sealed types + pattern matching
+
+Java 21's sealed interfaces and record patterns give you exhaustive dispatch without `accept` — the
+compiler checks you handled every case, and adding a variant produces a compile error in every
+switch, which is exactly the safety Visitor provides:
+
+```java
+sealed interface Shape permits Dot, Circle, Rectangle, CompoundShape {}
+
+record Dot(int id, int x, int y) implements Shape {}
+record Circle(int id, int x, int y, int radius) implements Shape {}
+record Rectangle(int id, int x, int y, int width, int height) implements Shape {}
+record CompoundShape(int id, List<Shape> children) implements Shape {}
+
+static double area(Shape shape) {
+    return switch (shape) {                       // no default needed — exhaustive
+        case Dot d                        -> 0;
+        case Circle c                     -> Math.PI * c.radius() * c.radius();
+        case Rectangle r                  -> (double) r.width() * r.height();
+        case CompoundShape cs             -> cs.children().stream()
+                                                .mapToDouble(VisitorDemo::area).sum();
+    };
+}
+```
+
+For new Java code over a closed hierarchy, prefer this. Understand Visitor anyway — you will meet it
+constantly in older codebases, in generated parser code, and in libraries targeting older language
+levels.
+
+### Where this appears in the JDK and frameworks
+
+- `java.nio.file.FileVisitor` + `Files.walkFileTree` — the JDK's clearest Visitor
+- `javax.lang.model.element.ElementVisitor` and `TypeVisitor` — annotation processing
+- `javax.lang.model.util.SimpleElementVisitor`, and `com.sun.source.tree.TreeVisitor` (javac's AST)
+- ANTLR's generated `BaseVisitor` classes; ASM's `ClassVisitor`/`MethodVisitor` for bytecode
+- `javax.faces.component.visit.VisitCallback`; Jackson's `JsonNode` visitors
+- Compilers and static analysers generally — the pattern's natural home
+
+---
+
 ## Applicability
 
 ### ▸ Use the Visitor when you need to perform an operation on all elements of a complex object structure (for example, an object tree).

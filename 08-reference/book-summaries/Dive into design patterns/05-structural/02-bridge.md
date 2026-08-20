@@ -235,6 +235,217 @@ remote's constructor.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`BridgeDemo.java`).
+
+```java
+// ═══ IMPLEMENTATION hierarchy ═════════════════════════════════════════
+// Primitive, low-level operations. Note it does NOT mirror the
+// abstraction's interface — there is no "togglePower" here.
+interface Device {
+    boolean isEnabled();
+    void enable();
+    void disable();
+    int getVolume();
+    void setVolume(int percent);
+    int getChannel();
+    void setChannel(int channel);
+    void printStatus();
+}
+
+class Tv implements Device {
+    private boolean on = false;
+    private int volume = 30;
+    private int channel = 1;
+
+    @Override public boolean isEnabled()   { return on; }
+    @Override public void enable()         { on = true; }
+    @Override public void disable()        { on = false; }
+    @Override public int getVolume()       { return volume; }
+    @Override public void setVolume(int v) { volume = Math.max(0, Math.min(100, v)); }
+    @Override public int getChannel()      { return channel; }
+    @Override public void setChannel(int c){ channel = c; }
+
+    @Override
+    public void printStatus() {
+        System.out.println("  | TV    | power=" + (on ? "on" : "off")
+                + " volume=" + volume + " channel=" + channel);
+    }
+}
+
+class Radio implements Device {
+    private boolean on = false;
+    private int volume = 20;
+    private int channel = 88;
+
+    @Override public boolean isEnabled()   { return on; }
+    @Override public void enable()         { on = true; }
+    @Override public void disable()        { on = false; }
+    @Override public int getVolume()       { return volume; }
+    @Override public void setVolume(int v) { volume = Math.max(0, Math.min(100, v)); }
+    @Override public int getChannel()      { return channel; }
+    @Override public void setChannel(int c){ channel = c; }
+
+    @Override
+    public void printStatus() {
+        System.out.println("  | Radio | power=" + (on ? "on" : "off")
+                + " volume=" + volume + " station=" + channel);
+    }
+}
+
+// ═══ ABSTRACTION hierarchy ════════════════════════════════════════════
+// Higher-level operations built out of the primitives above.
+class RemoteControl {
+    protected final Device device;          // ← THE BRIDGE
+
+    RemoteControl(Device device) {
+        this.device = device;
+    }
+
+    void togglePower() {
+        if (device.isEnabled()) {
+            device.disable();
+        } else {
+            device.enable();
+        }
+    }
+
+    void volumeDown()  { device.setVolume(device.getVolume() - 10); }
+    void volumeUp()    { device.setVolume(device.getVolume() + 10); }
+    void channelDown() { device.setChannel(device.getChannel() - 1); }
+    void channelUp()   { device.setChannel(device.getChannel() + 1); }
+}
+
+// Extended independently of the Device hierarchy.
+class AdvancedRemoteControl extends RemoteControl {
+    AdvancedRemoteControl(Device device) {
+        super(device);
+    }
+
+    void mute() {
+        device.setVolume(0);
+    }
+}
+
+// ═══ Client ═══════════════════════════════════════════════════════════
+public class BridgeDemo {
+    public static void main(String[] args) {
+        Device tv = new Tv();
+        RemoteControl basic = new RemoteControl(tv);
+        System.out.println("Basic remote + TV:");
+        basic.togglePower();
+        basic.volumeUp();
+        basic.channelUp();
+        tv.printStatus();
+
+        Device radio = new Radio();
+        AdvancedRemoteControl advanced = new AdvancedRemoteControl(radio);
+        System.out.println("Advanced remote + Radio:");
+        advanced.togglePower();
+        advanced.volumeUp();
+        advanced.mute();
+        radio.printStatus();
+
+        // The same advanced remote type works with the TV too — that is
+        // the 2 x 2 combinatorial freedom the Bridge buys you.
+        System.out.println("Advanced remote + TV:");
+        AdvancedRemoteControl advancedTv = new AdvancedRemoteControl(tv);
+        advancedTv.mute();
+        tv.printStatus();
+    }
+}
+```
+
+**Output**
+
+```
+Basic remote + TV:
+  | TV    | power=on volume=40 channel=2
+Advanced remote + Radio:
+  | Radio | power=on volume=0 station=88
+Advanced remote + TV:
+  | TV    | power=on volume=0 channel=2
+```
+
+### Notes on the Java translation
+
+- The bridge is the single line `protected final Device device;`. Everything else follows from it.
+- `RemoteControl` is a **concrete class**, not abstract — the book's "abstraction" means
+  *high-level control layer*, not the Java `abstract` keyword. Naming that trips up most readers.
+- The two hierarchies grow **independently**: adding a `SmartSpeaker` device requires zero remote
+  changes, and adding a `VoiceRemote` requires zero device changes.
+
+### Why not just inherit? The combinatorial explosion
+
+Without the bridge you would need a class per combination:
+
+```
+                Tv            Radio         SmartSpeaker
+Basic        TvRemote      RadioRemote   SpeakerRemote
+Advanced     TvAdvRemote   RadioAdvRemote SpeakerAdvRemote
+Voice        TvVoice       RadioVoice    SpeakerVoice
+```
+
+That's **3 × 3 = 9** classes, and adding one device makes it 12. With the Bridge it's **3 + 3 = 6**,
+and adding a device makes it 7. The pattern converts a *product* into a *sum*.
+
+### The classic real-world use: platform-independent GUI/driver layers
+
+```java
+// Abstraction: shapes the app draws.
+abstract class Shape {
+    protected final Renderer renderer;      // bridge to the drawing backend
+
+    Shape(Renderer renderer) { this.renderer = renderer; }
+
+    abstract void draw();
+}
+
+class Circle extends Shape {
+    private final float x, y, radius;
+
+    Circle(Renderer renderer, float x, float y, float radius) {
+        super(renderer);
+        this.x = x; this.y = y; this.radius = radius;
+    }
+
+    @Override
+    void draw() { renderer.renderCircle(x, y, radius); }
+}
+
+// Implementation: how pixels actually get made.
+interface Renderer {
+    void renderCircle(float x, float y, float radius);
+}
+
+class VectorRenderer implements Renderer {
+    public void renderCircle(float x, float y, float r) {
+        System.out.println("Drawing a vector circle of radius " + r);
+    }
+}
+
+class RasterRenderer implements Renderer {
+    public void renderCircle(float x, float y, float r) {
+        System.out.println("Rasterizing pixels for a circle of radius " + r);
+    }
+}
+```
+
+Shapes × renderers stay independent: `new Circle(new RasterRenderer(), 0, 0, 5)`.
+
+### Where this appears in the JDK
+
+- **JDBC** is the canonical example: `java.sql.Driver` / `DriverManager` is the abstraction, and
+  each vendor's driver (`com.mysql.cj.jdbc.Driver`, PostgreSQL's, Oracle's) is the implementation.
+  Your code against `Connection`/`Statement` never changes when you swap databases.
+- **SLF4J**: the logging API is the abstraction; Logback, Log4j2, and `java.util.logging` are
+  interchangeable implementations bound at deploy time.
+- `java.awt` peer classes — `Component` bridges to a native, platform-specific `ComponentPeer`.
+- JCA/JCE: `java.security.MessageDigest` bridges to a provider's `MessageDigestSpi`.
+
+---
+
 ## Applicability
 
 ### ▸ Use the Bridge pattern when you want to divide and organize a monolithic class that has several variants of some functionality.

@@ -139,6 +139,167 @@ the facade's methods**.
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`FacadeDemo.java`). The
+"third-party framework" classes are stubbed but kept deliberately awkward — that awkwardness is
+what the facade exists to hide.
+
+```java
+// ═══ The complex third-party framework (we don't control this) ════════
+class VideoFile {
+    private final String name;
+    private final String codecType;
+
+    VideoFile(String name) {
+        this.name = name;
+        this.codecType = name.substring(name.indexOf(".") + 1);
+    }
+
+    String getCodecType() { return codecType; }
+    String getName()      { return name; }
+}
+
+interface Codec { }
+
+class MPEG4CompressionCodec implements Codec {
+    final String type = "mp4";
+}
+
+class OggCompressionCodec implements Codec {
+    final String type = "ogg";
+}
+
+class CodecFactory {
+    static Codec extract(VideoFile file) {
+        String type = file.getCodecType();
+        if (type.equals("mp4")) {
+            System.out.println("  CodecFactory: extracting mpeg4 audio...");
+            return new MPEG4CompressionCodec();
+        }
+        System.out.println("  CodecFactory: extracting ogg audio...");
+        return new OggCompressionCodec();
+    }
+}
+
+class BitrateReader {
+    static VideoFile read(VideoFile file, Codec codec) {
+        System.out.println("  BitrateReader: reading file...");
+        return file;
+    }
+
+    static VideoFile convert(VideoFile buffer, Codec codec) {
+        System.out.println("  BitrateReader: writing file...");
+        return buffer;
+    }
+}
+
+class AudioMixer {
+    VideoFile fix(VideoFile result) {
+        System.out.println("  AudioMixer: fixing audio...");
+        return result;
+    }
+}
+
+// ═══ The Facade ═══════════════════════════════════════════════════════
+// One method. It knows the correct call order, which objects to build,
+// and in which sequence — knowledge the client should not have to carry.
+class VideoConverter {
+
+    public VideoFile convert(String filename, String format) {
+        System.out.println("VideoConverter: conversion started.");
+
+        VideoFile file = new VideoFile(filename);
+        Codec sourceCodec = CodecFactory.extract(file);
+
+        Codec destinationCodec;
+        if (format.equals("mp4")) {
+            destinationCodec = new MPEG4CompressionCodec();
+        } else {
+            destinationCodec = new OggCompressionCodec();
+        }
+
+        VideoFile buffer = BitrateReader.read(file, sourceCodec);
+        VideoFile intermediateResult = BitrateReader.convert(buffer, destinationCodec);
+        VideoFile result = new AudioMixer().fix(intermediateResult);
+
+        System.out.println("VideoConverter: conversion completed.");
+        return result;
+    }
+}
+
+// ═══ Client ═══════════════════════════════════════════════════════════
+// Depends on exactly ONE framework-adjacent class: VideoConverter.
+public class FacadeDemo {
+    public static void main(String[] args) {
+        VideoConverter converter = new VideoConverter();
+        VideoFile mp4 = converter.convert("funny-cats-video.ogg", "mp4");
+        System.out.println("Saved: " + mp4.getName());
+    }
+}
+```
+
+**Output**
+
+```
+VideoConverter: conversion started.
+  CodecFactory: extracting ogg audio...
+  BitrateReader: reading file...
+  BitrateReader: writing file...
+  AudioMixer: fixing audio...
+VideoConverter: conversion completed.
+Saved: funny-cats-video.ogg
+```
+
+Count the classes `main` mentions: **one**. Count the classes the conversion actually touches:
+**seven**. That gap is the pattern.
+
+### Notes on the Java translation
+
+- The facade **adds no new functionality**. Every line inside `convert()` is a call the client could
+  have written — the facade just spares it from knowing the order and the wiring.
+- The facade is a **plain class, not an interface**. It does not have to implement the subsystem's
+  types, and usually shouldn't.
+- Subsystem classes stay public and directly reachable. A facade is a **convenient default path**,
+  not a wall — a power user who needs a custom bitrate can still call `BitrateReader` directly. This
+  is the key difference from an Adapter, which is usually the only way through.
+
+### Additional Facades: avoiding the God Object
+
+The main risk of the pattern is the facade growing into a class that knows everything. The remedy is
+**more facades, each narrow**:
+
+```java
+class VideoConversionFacade { /* conversion only */ }
+class VideoUploadFacade     { /* upload + progress reporting only */ }
+class VideoMetadataFacade   { /* thumbnails, tags, descriptions only */ }
+```
+
+A facade can also delegate to another facade rather than reaching into the subsystem itself.
+
+### Facade vs. Adapter vs. Mediator
+
+| | Facade | Adapter | Mediator |
+|---|---|---|---|
+| Purpose | **Simplify** access to a subsystem | **Convert** one interface into another | **Decouple** peers from each other |
+| Interface | Brand-new, convenient | Dictated by an existing client | Brand-new |
+| Subsystem awareness | Subsystem doesn't know the facade | Adaptee doesn't know the adapter | Components **do** know the mediator |
+| Direction | One-way (client → subsystem) | One-way | Bidirectional |
+
+A useful shorthand: Adapter makes an interface *usable*; Facade makes an interface *pleasant*.
+
+### Where this appears in the JDK
+
+- `javax.faces.context.FacesContext` — hides `HttpServletRequest`/`Response`/`Session` behind one
+  object
+- `java.net.URL` — `openStream()` hides socket setup, protocol handlers, and stream wiring
+- `javax.servlet.http.HttpSession`
+- SLF4J's `LoggerFactory.getLogger()` sits in front of a large configuration subsystem
+- Spring's `JdbcTemplate` — one call replaces `Connection` → `PreparedStatement` → `ResultSet` →
+  exception translation → resource cleanup. Probably the most-used facade in the Java ecosystem.
+
+---
+
 ## Applicability
 
 ### ▸ Use the Facade pattern when you need to have a limited but straightforward interface to a complex subsystem.

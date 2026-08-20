@@ -252,6 +252,300 @@ The main object of the player is always linked to a state object that performs m
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`StateDemo.java`).
+
+```java
+import java.util.List;
+
+// ─── Base state ───────────────────────────────────────────────────────
+// Holds a backreference to the context so a state can transition it.
+abstract class State {
+    protected final AudioPlayer player;
+
+    State(AudioPlayer player) { this.player = player; }
+
+    abstract String name();
+    abstract void clickLock();
+    abstract void clickPlay();
+    abstract void clickNext(boolean doubleClick);
+    abstract void clickPrevious(boolean doubleClick);
+}
+
+// ─── Concrete states ──────────────────────────────────────────────────
+class LockedState extends State {
+    LockedState(AudioPlayer player) { super(player); }
+
+    @Override String name() { return "Locked"; }
+
+    /** Unlocking returns to whichever state the player was really in. */
+    @Override
+    void clickLock() {
+        if (player.isPlaying()) {
+            player.changeState(new PlayingState(player));
+        } else {
+            player.changeState(new ReadyState(player));
+        }
+    }
+
+    @Override void clickPlay()                        { ignored(); }
+    @Override void clickNext(boolean doubleClick)     { ignored(); }
+    @Override void clickPrevious(boolean doubleClick) { ignored(); }
+
+    private void ignored() {
+        System.out.println("    (locked — ignored)");
+    }
+}
+
+class ReadyState extends State {
+    ReadyState(AudioPlayer player) { super(player); }
+
+    @Override String name() { return "Ready"; }
+
+    @Override
+    void clickLock() {
+        player.changeState(new LockedState(player));
+    }
+
+    @Override
+    void clickPlay() {
+        player.startPlayback();
+        player.changeState(new PlayingState(player));
+    }
+
+    @Override void clickNext(boolean doubleClick)     { player.nextSong(); }
+    @Override void clickPrevious(boolean doubleClick) { player.previousSong(); }
+}
+
+class PlayingState extends State {
+    PlayingState(AudioPlayer player) { super(player); }
+
+    @Override String name() { return "Playing"; }
+
+    @Override
+    void clickLock() {
+        player.changeState(new LockedState(player));
+    }
+
+    @Override
+    void clickPlay() {
+        player.stopPlayback();
+        player.changeState(new ReadyState(player));
+    }
+
+    /** Same button, different meaning: the hallmark of the pattern. */
+    @Override
+    void clickNext(boolean doubleClick) {
+        if (doubleClick) player.nextSong();
+        else             player.fastForward(5);
+    }
+
+    @Override
+    void clickPrevious(boolean doubleClick) {
+        if (doubleClick) player.previousSong();
+        else             player.rewind(5);
+    }
+}
+
+// ─── Context ──────────────────────────────────────────────────────────
+class AudioPlayer {
+    private State state;
+    private boolean playing = false;
+    private final List<String> playlist =
+            List.of("Song A", "Song B", "Song C");
+    private int currentSong = 0;
+
+    AudioPlayer() {
+        this.state = new ReadyState(this);
+    }
+
+    /** States call this on themselves to move the context along. */
+    void changeState(State state) {
+        System.out.println("    state: " + this.state.name() + " -> " + state.name());
+        this.state = state;
+    }
+
+    boolean isPlaying()  { return playing; }
+    String stateName()   { return state.name(); }
+
+    // ── UI methods delegate straight to the active state ──
+    void clickLock()                        { echo("lock");  state.clickLock(); }
+    void clickPlay()                        { echo("play");  state.clickPlay(); }
+    void clickNext(boolean doubleClick)     { echo("next" + (doubleClick ? " (double)" : ""));
+                                              state.clickNext(doubleClick); }
+    void clickPrevious(boolean doubleClick) { echo("prev" + (doubleClick ? " (double)" : ""));
+                                              state.clickPrevious(doubleClick); }
+
+    private void echo(String button) {
+        System.out.printf("[%-7s] press %s%n", state.name(), button);
+    }
+
+    // ── Service methods the states call ──
+    void startPlayback() { playing = true;  System.out.println("    playing \"" + current() + "\""); }
+    void stopPlayback()  { playing = false; System.out.println("    paused"); }
+
+    void nextSong() {
+        currentSong = (currentSong + 1) % playlist.size();
+        System.out.println("    next -> \"" + current() + "\"");
+    }
+
+    void previousSong() {
+        currentSong = (currentSong - 1 + playlist.size()) % playlist.size();
+        System.out.println("    prev -> \"" + current() + "\"");
+    }
+
+    void fastForward(int seconds) { System.out.println("    fast-forward " + seconds + "s"); }
+    void rewind(int seconds)      { System.out.println("    rewind " + seconds + "s"); }
+
+    private String current() { return playlist.get(currentSong); }
+}
+
+public class StateDemo {
+    public static void main(String[] args) {
+        AudioPlayer player = new AudioPlayer();
+
+        player.clickNext(false);      // Ready: skips to the next song
+        player.clickPlay();           // Ready -> Playing
+        player.clickNext(false);      // Playing: SAME button now fast-forwards
+        player.clickNext(true);       // Playing + double click: next song
+        player.clickLock();           // Playing -> Locked
+        player.clickPlay();           // Locked: ignored
+        player.clickNext(false);      // Locked: ignored
+        player.clickLock();           // Locked -> Playing (it was playing)
+        player.clickPlay();           // Playing -> Ready
+        player.clickLock();           // Ready -> Locked
+        player.clickLock();           // Locked -> Ready (it wasn't playing)
+    }
+}
+```
+
+**Output**
+
+```
+[Ready  ] press next
+    next -> "Song B"
+[Ready  ] press play
+    playing "Song B"
+    state: Ready -> Playing
+[Playing] press next
+    fast-forward 5s
+[Playing] press next (double)
+    next -> "Song C"
+[Playing] press lock
+    state: Playing -> Locked
+[Locked ] press play
+    (locked — ignored)
+[Locked ] press next
+    (locked — ignored)
+[Locked ] press lock
+    state: Locked -> Playing
+[Playing] press play
+    paused
+    state: Playing -> Ready
+[Ready  ] press lock
+    state: Ready -> Locked
+[Locked ] press lock
+    state: Locked -> Ready
+```
+
+The two `clickNext(false)` presses are the pattern in one line: identical call, completely different
+behaviour, and `AudioPlayer` contains no `if` deciding which.
+
+### What this replaces
+
+Without the pattern, every method on the player becomes a conditional swamp:
+
+```java
+// The version the pattern eliminates.
+void clickPlay() {
+    if (state.equals("locked")) {
+        return;
+    } else if (state.equals("ready")) {
+        startPlayback();
+        state = "playing";
+    } else if (state.equals("playing")) {
+        stopPlayback();
+        state = "ready";
+    }
+}
+// ...and the same four-branch block repeated in clickLock,
+// clickNext, clickPrevious. Adding a fifth state means editing
+// every one of them.
+```
+
+Adding a `BufferingState` to the pattern version is one new class and zero edits to existing
+methods.
+
+### Notes on the Java translation
+
+- **The state holds a backreference to the context** (`protected final AudioPlayer player`), which is
+  how it both reads context data and triggers its own replacement via `changeState`.
+- **`LockedState.clickLock()` branches on `player.isPlaying()`.** This is why the boolean survives
+  alongside the state object: "locked" is orthogonal to "was playing", so the context has to
+  remember which state to return to.
+- **`clickNext(boolean doubleClick)`** replaces the pseudocode's ambient `event.doubleclick`. Java
+  has no implicit event object, so the flag is a parameter.
+- **States are created fresh on each transition here.** They're stateless, so you can just as well
+  cache them as singletons and cut the allocations:
+
+```java
+class AudioPlayer {
+    private final State ready   = new ReadyState(this);
+    private final State playing = new PlayingState(this);
+    private final State locked  = new LockedState(this);
+}
+```
+
+### The enum variant
+
+For a small, fixed set of states, a Java `enum` with abstract methods is compact and exhaustive:
+
+```java
+enum PlayerState {
+    READY {
+        @Override void clickPlay(AudioPlayer p) { p.startPlayback(); p.setState(PLAYING); }
+    },
+    PLAYING {
+        @Override void clickPlay(AudioPlayer p) { p.stopPlayback(); p.setState(READY); }
+    },
+    LOCKED {
+        @Override void clickPlay(AudioPlayer p) { /* ignored */ }
+    };
+
+    abstract void clickPlay(AudioPlayer p);
+}
+```
+
+Free `switch` exhaustiveness, free `valueOf`/serialisation, no allocation. The cost: enum constants
+can't carry per-instance mutable state, and you can't add a state without recompiling the enum.
+
+### State vs. Strategy
+
+They are structurally **identical** — a context delegating to an interchangeable object. The
+difference is entirely in intent:
+
+| | State | Strategy |
+|---|---|---|
+| Who swaps the object | the states themselves, at runtime | the client, usually once |
+| Do the objects know each other | yes — `ReadyState` names `PlayingState` | no — strategies are independent |
+| What varies | behaviour as the object's *condition* changes | which *algorithm* solves the same problem |
+| Mental model | a finite state machine | a pluggable algorithm |
+
+See [`08-strategy.md`](08-strategy.md).
+
+### Where this appears in the JDK and frameworks
+
+- `java.lang.Thread` — `NEW`, `RUNNABLE`, `BLOCKED`, `WAITING`, `TERMINATED`, with legal transitions
+- `java.util.Iterator` — has-next / exhausted are effectively two states
+- `javax.faces.lifecycle.Lifecycle` — JSF request phases
+- Spring State Machine, and the TCP connection state diagram (`LISTEN`/`ESTABLISHED`/`CLOSE_WAIT`…),
+  which is the textbook real-world example
+- Order/workflow engines: `PENDING → PAID → SHIPPED → DELIVERED`, where each state permits a
+  different set of operations
+
+---
+
 ## Applicability
 
 ### ▸ Use the State pattern when you have an object that behaves differently depending on its current state, the number of states is enormous, and the state-specific code changes frequently.

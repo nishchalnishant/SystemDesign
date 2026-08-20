@@ -149,6 +149,182 @@ method **caches the first created object** and returns it in all subsequent call
 
 ---
 
+## Java Implementation
+
+A complete, compilable translation of the pseudocode above (`SingletonDemo.java`), including the
+double-checked locking the book highlights.
+
+```java
+// ─── The Singleton ────────────────────────────────────────────────────
+final class Database {
+
+    /**
+     * The field must be VOLATILE in Java. Without it, double-checked
+     * locking is broken: another thread can observe a non-null
+     * reference to a partially-constructed object, because the JIT and
+     * the CPU are free to reorder the "allocate / construct / assign"
+     * steps. volatile forbids that reordering.
+     */
+    private static volatile Database instance;
+
+    private final String connectionString;
+
+    /** Private: nobody outside can call `new Database()`. */
+    private Database(String connectionString) {
+        this.connectionString = connectionString;
+        System.out.println("[Database] connecting to " + connectionString + " ...");
+    }
+
+    /** The static creation method that acts as the constructor. */
+    public static Database getInstance() {
+        if (instance == null) {                 // 1st check — no lock, the fast path
+            synchronized (Database.class) {     // acquire the thread lock
+                if (instance == null) {         // 2nd check — another thread may
+                    instance = new Database("jdbc:demo://localhost/app");
+                }                               //   have won the race while we waited
+            }
+        }
+        return instance;
+    }
+
+    /** Business logic that runs on the single instance. */
+    public void query(String sql) {
+        System.out.println("[Database] executing: " + sql);
+    }
+}
+
+// ─── Client ───────────────────────────────────────────────────────────
+public class SingletonDemo {
+    public static void main(String[] args) throws InterruptedException {
+        Database foo = Database.getInstance();
+        foo.query("SELECT * FROM users");
+
+        Database bar = Database.getInstance();
+        bar.query("SELECT * FROM orders");
+
+        System.out.println("foo == bar ? " + (foo == bar));
+
+        // Hammer it from several threads to show only one object is built.
+        Runnable task = () -> Database.getInstance().query("SELECT 1");
+        Thread t1 = new Thread(task);
+        Thread t2 = new Thread(task);
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+
+        System.out.println("still one instance? " + (Database.getInstance() == foo));
+    }
+}
+```
+
+**Output**
+
+```
+[Database] connecting to jdbc:demo://localhost/app ...
+[Database] executing: SELECT * FROM users
+[Database] executing: SELECT * FROM orders
+foo == bar ? true
+[Database] executing: SELECT 1
+[Database] executing: SELECT 1
+still one instance? true
+```
+
+Note that `[Database] connecting ...` prints **exactly once**, even though `getInstance()` is called
+five times across three threads.
+
+### Notes on the Java translation
+
+- `synchronized (Database.class)` is the Java form of the book's `acquireThreadLock()`. It locks on
+  the class object, which is the natural monitor for a static method.
+- The **first** null check exists purely for performance: once the instance is built, every
+  subsequent call returns without touching a lock at all.
+- The **second** null check exists for correctness: two threads can both pass check #1 and queue up
+  on the lock; without check #2 the second one would build a second instance.
+- `volatile` is not optional. Double-checked locking without it was a famously broken idiom in Java
+  before the JSR-133 memory model (Java 5) gave `volatile` its happens-before guarantee.
+
+### The four Java variants, and when to use each
+
+**1. Eager initialization** — simplest, thread-safe for free (the JVM guarantees class
+initialization is synchronized). Use it when construction is cheap and the instance is always used.
+
+```java
+final class Config {
+    private static final Config INSTANCE = new Config();
+    private Config() { }
+    public static Config getInstance() { return INSTANCE; }
+}
+```
+
+**2. Synchronized method** — correct but slow: every single call pays for the lock, forever.
+
+```java
+public static synchronized Database getInstance() {
+    if (instance == null) instance = new Database();
+    return instance;
+}
+```
+
+**3. Initialization-on-demand holder idiom** — lazy *and* lock-free, with no `volatile` subtlety.
+The nested class isn't loaded until `getInstance()` first references it, and the JVM handles the
+synchronization. **This is the best lazy singleton in plain Java.**
+
+```java
+final class Database {
+    private Database() { }
+
+    private static class Holder {
+        static final Database INSTANCE = new Database();
+    }
+
+    public static Database getInstance() {
+        return Holder.INSTANCE;
+    }
+}
+```
+
+**4. Enum singleton** — *Effective Java* Item 3 calls this "the best way to implement a singleton."
+It is serialization-safe and reflection-proof for free; the other three are not.
+
+```java
+enum Database {
+    INSTANCE;
+
+    public void query(String sql) {
+        System.out.println("executing: " + sql);
+    }
+}
+
+// Usage: Database.INSTANCE.query("SELECT 1");
+```
+
+### The attacks the naive versions don't survive
+
+Variants 1–3 can all be broken; the enum cannot.
+
+- **Reflection:** `Constructor<Database> c = Database.class.getDeclaredConstructor();`
+  `c.setAccessible(true); c.newInstance();` — a brand-new second instance. Defend by throwing from
+  the private constructor if `instance != null`.
+- **Serialization:** deserializing produces a fresh object. Defend by implementing
+  `private Object readResolve() { return getInstance(); }`.
+- **Cloning:** override `clone()` to throw `CloneNotSupportedException` (or just don't implement
+  `Cloneable`).
+- **Multiple classloaders:** each classloader gets its own copy of the class, hence its own
+  instance. Rarely fixable from inside the class.
+
+### Where this appears in the JDK
+
+- `java.lang.Runtime.getRuntime()`
+- `java.awt.Desktop.getDesktop()`
+- `java.awt.Toolkit.getDefaultToolkit()`
+- `java.lang.System` (all-static utility, a close relative)
+- Spring beans are singleton-scoped **by default** — which is the modern answer: let the DI
+  container own the lifecycle instead of hard-coding it into the class. That preserves
+  testability, which is the main practical criticism of the pattern.
+
+---
+
 ## Applicability
 
 ### ▸ Use the Singleton pattern when a class in your program should have just a single instance available to all clients.

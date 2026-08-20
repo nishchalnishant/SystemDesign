@@ -90,6 +90,7 @@ Every chapter is captured in full: problem narratives, solutions, real-world ana
 ---
 
 - [08-mnemonics-cheatsheet.md](08-mnemonics-cheatsheet.md) — Acronyms and phrases to remember the patterns
+- [09-sde3-interview-relevance.md](09-sde3-interview-relevance.md) — Patterns tiered by relevance to SDE-3 LLD/system-design interviews
 - [Conclusion & Footnotes](07-conclusion.md)
 
 ---
